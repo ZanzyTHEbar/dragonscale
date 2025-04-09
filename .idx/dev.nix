@@ -19,6 +19,8 @@
       "esbenp.prettier-vscode"
       "golang.go"
       "tamasfe.even-better-toml"
+      "jnoortheen.nix-ide"
+      "zxh404.vscode-proto3"
     ];
 
     # Enable previews
