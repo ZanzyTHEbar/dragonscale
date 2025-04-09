@@ -49,7 +49,9 @@
       "editor.defaultFormatter": "jnoortheen.nix-ide"
     },
     "nixEnvSelector.suggestion": false,
-    "nixEnvSelector.nixFile": "${workspaceFolder}/flake.nix"
+    "nixEnvSelector.nixFile": "${workspaceFolder}/flake.nix",
+    "IDX.aI.enableInlineCompletion": true,
+    "IDX.aI.enableCodebaseIndexing": true
   },
   "extensions": {
     "recommendations": [
