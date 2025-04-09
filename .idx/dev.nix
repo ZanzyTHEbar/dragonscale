@@ -2,7 +2,7 @@
 # see: https://firebase.google.com/docs/studio/customize-workspace
 { pkgs, ... }: {
   # Which nixpkgs channel to use.
-  channel = "stable-24.05"; # or "unstable"
+  channel = "unstable"; # or "unstable"
 
   # Use https://search.nixos.org/packages to find packages
   packages = [
@@ -11,14 +11,13 @@
   ];
 
   # Sets environment variables in the workspace
-  env = {};
+  env = { };
   idx = {
     # Search for the extensions you want on https://open-vsx.org/ and use "publisher.id"
     extensions = [
       "esbenp.prettier-vscode"
       "golang.go"
       "tamasfe.even-better-toml"
-      "jnoortheen.nix-ide"
       "zxh404.vscode-proto3"
       "shakram02.bash-beautify"
     ];
