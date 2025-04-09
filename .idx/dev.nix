@@ -15,12 +15,12 @@
   idx = {
     # Search for the extensions you want on https://open-vsx.org/ and use "publisher.id"
     extensions = [
-      # "vscodevim.vim"
       "esbenp.prettier-vscode"
       "golang.go"
       "tamasfe.even-better-toml"
       "jnoortheen.nix-ide"
       "zxh404.vscode-proto3"
+      "shakram02.bash-beautify"
     ];
 
     # Enable previews
