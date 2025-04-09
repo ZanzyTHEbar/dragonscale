@@ -23,6 +23,7 @@
       "tamasfe.even-better-toml"
       "zxh404.vscode-proto3"
       "shakram02.bash-beautify"
+      "jnoortheen.nix-ide"
     ];
 
     # Enable previews

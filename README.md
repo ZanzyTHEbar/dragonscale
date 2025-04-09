@@ -1,142 +1,283 @@
-# Decision Engine
+# Dragonscale Engineering Design Document
 
-## Introduction
+## 1. Introduction
 
-The `DecisionEngine` Pipeline is a parallel processing data-driven pipeline designed to provide a more efficient and effective Developer Experience (`DX`) for building truly Agentic systems with strong decision-making power. The key design goals of this project are to provide an easy-to-use library that makes building `Decision Pipelines` more accessible to developers, while also providing a high-level of performance and scalability.
+### 1.1 Purpose
 
-Some of the key features of the DecisionEngine Pipeline include:
+Dragonscale is a Golang library designed to provide an efficient execution runtime for LLM adapters. Inspired by LLMCompiler, it optimizes task execution through concurrency, hexagonal architecture, and advanced task scheduling, targeting applications requiring high performance and extensibility.
 
-- reducing response noise
-- increasing response relevancy
-- increasing response faithfulness
-- increasing response accuracy
-- increasing response diversity
-- Apply advanced scoring metrics
-- Sort documents by relevance
-- Generate multiple queries
-- Quick search using low-dimension vector
-- Re-rank results using high-dimension vector
-- Filter results based on initial scoring
-- Identify top N results
+### 1.2 Scope
 
-... and much more. The DecisionEngine Pipeline is designed to be a flexible and extensible library that can be used to build a wide variety of `Decision Pipelines` for a wide variety of use cases.
+This document outlines the design and implementation of Dragonscale, detailing its architecture, components, and strategies for task management, concurrency, and tool integration, enhanced with Mermaid diagrams and solutions to future improvements.
 
-At a high-level the DecisionEngine Pipeline is a system designed to take in a user query, process the query, generate a plan to execute the query, and then execute the plan to generate a response. The pipeline is broken up into several stages, each of which is responsible for a specific part of the process. We parallelize the pipeline to increase performance and scalability, where possible.
+### 1.3 References
 
-## Pipeline
+- [GitHub Repository: golang-low-level-design/task-scheduler](https://github.com/the-arcade-01/golang-low-level-design/tree/main/task-scheduler)
+- [LLMCompiler ICML 2024 Paper](https://arxiv.org/abs/2312.04511)
 
-The `DecisionEngine` Pipeline is broken up into the following stages:
+## 2. System Overview
 
-### **Query Processing**
+### 2.1 Goals
 
-The Query Processing stage is responsible for taking in a query and processing it into a format that can be used by the rest of the pipeline. This stage is responsible for tokenizing the query, compressing the query, and optimizing the query.
+- Provide a robust runtime for LLM adapters with efficient task scheduling.
+- Support concurrent task execution with optimized resource management.
+- Enable extensibility through community-defined tools using Model Context Protocol or WASM.
+- Ensure modularity and adaptability via hexagonal architecture and strategy pattern.
 
-We utilize an `EnsembleRetriever` pattern for a hybrid key-word and semantic based retrieval.
+### 2.2 Key Features
 
-Utilizing `tagging` and `metadata` around the query, we can have a more contextually rich query that can be used to retrieve more relevant documents.
+- **Task Scheduler**: Priority-based scheduling for one-time, fixed-rate, and fixed-delay tasks.
+- **Concurrency**: Worker pool with automated sizing for parallel execution.
+- **DAG Integration**: Dynamic and static Directed Acyclic Graphs (DAGs) with caching, pre-emption, and advanced optimization.
+- **Extensibility**: Plug-in tools via configuration files or WASM modules with sandboxing.
+- **Event Bus**: Loose coupling between components for scalability and flexibility.
 
-(sparse + dense retriever) + sparse reranker
+### 2.3 LLMCompiler Diagram
 
-#### **Retrievers**
-
-`Semantic Retriever`: This retriever is responsible for retrieving documents that are semantically similar to the query.
-
-- Utilizes `ParentDocumentRetriever` as root, `MultiQueryRetriever`, `Self-Querying`, and `ContextualCompressionRetriever`: _CharacterTextSplitter->EmbeddingsRedundantFilter->EmbeddingsFilter = DocumentCompressorPipeline as a compressor_.
-
-`Keyword Retriever`: This retriever is responsible for retrieving documents that contain the keywords in the query.
-
-- `BM25Retriever` is used as the keyword retriever.
-- Cache the results of the retriever for future use.
-- For `Long Term Memory`, we use the above query analysis with an additional `Time-Weighted vector store` retriever, as well as a cache for the `Time-Weighted vector store` retriever.
-- we hit the caches first, perform the query analysis, and then cache the results for future use.
-  - If the cache is not relevant to the query, we hit the main databases.
-- The output of this stage is a list of chunks that are unordered and with varying degrees of relevancy to the query.
-
-   1. **Cross Encoder**: The Cross Encoder stage is responsible for taking in the chunks from the Query Processing stage and ranking them based on their relevance to the query, returning a list of chunks that are highly semantically relevant to the query.
-       - Retrieves the top _n_ (5 is a nice starting) chunks.
-       - Utilizes a `LongContextReorder` to reorder the chunks based on the context of the query, in order to prevent the `Lost In the Middle Problem`.
-       - The output of this stage is a list of ordered chunks that are highly relevant to the query.
-
-### **Decision Engine**
-
-The Decision Engine stage is responsible for taking the initial user query and generating a plan to execute the query.
-
-- The decision engine uses ReWOO to generate a plan with variable substitution, then breaks down the plan into tasks, and finally executes the tasks while taking the result of one task and using it as input for the next task if there is a dependency.
-- Ingest the query and spawn two parallel pipelines: one for the Query Processing stage and one for the Decision Engine stage.
-  - `Query Processing Pipeline`:
-    - Tokenize the query.
-    - Compress the query.
-    - Optimize the query.
-    - Determine if Long Term Memory is needed, and if so, retrieve/update the relevant documents.
-    - Retrieve the top 5 chunks.
-  - `Decision Engine Pipeline`:
-       1. Generate step-by-step plan to execute the query.
-       2. Breakdown the plan into tasks.
-       3. Execute the tasks and track results, update the plan if necessary.
-       4. Collect the results and pass them to a Solver.
-       5. Solver Agent: The Solver Agent is a Self Reflection stage responsible for taking in the ordered chunks from the Query Processing Pipeline and the result of the `Decision Engine`'s previous step, then generating a response. This stage is responsible for generating a response that is coherent and relevant to the query.
-           - We utilize a Self Reflection pipeline to generate a response based on the ordered chunks.
-           - Utilizes tools such as web search, api calls, and other tools to construct a response.
-             - Here we check the response for relevancy, if it answers the question, and if it is coherent.
-               - If the response is not coherent, we re-run the Self Reflection pipeline.
-               - If the input chunk is not relevant, we use search tools to find relevant documents and re-run the Self Reflection pipeline.
-               - If the response is coherent, relevant, and answers the question, we return the response and update the cache with the query and the answer to use as an example later.
-       6. Formulate the response and return it to the user.
-
-## Charts
+Below is a Mermaid diagram illustrating the high-level architecture of LLMCompiler, which inspires Dragonscale:
 
 ```mermaid
-graph TB
-    A[Start Query] -->|Input Query| B[Query Processing]
-    A -->|Input Query| X[Decision Engine]
-    B --> C[Tokenize Query]
-    C --> D[Compress Query]
-    D --> E[Optimize Query]
-    E --> F[Check Cache]
-    F -->|Cache Hit| G[Use Cached Results] --> M
-    F -->|Cache Miss| H[EnsembleRetriever]
-    H --> I{Retriever Type}
-    I -->|Semantic| J[Semantic Retriever]
-    I -->|Keyword| K[Keyword Retriever]
-    J --> L[Cache Results]
-    K --> L
-    L --> M[Cross Encoder]
-    M --> N[LongContextReorder]
-    N --> O[Output Ordered Chunks]
-
-    X --> P[Generate Plan]
-    P --> Q[Breakdown Plan into Tasks]
-    Q --> R[Execute Tasks and Track Results]
-    R --> S[Collect Results]
-    O --> T[Solver Agent]
-    S --> T
-    T --> U[Self Reflection Pipeline]
-    U --> V{Check Response}
-    V -->|Not Coherent| W[Rerun Self Reflection]
-    V -->|Not Relevant| Y[Search for Relevant Documents]
-    V -->|Coherent and Relevant| Z[Formulate Final Response]
-    W --> U
-    Y --> U
-    Z --> AA[Update Cache with Response]
-    AA --> AB[Return Response to User]
-
-    classDef default fill:#f9f,stroke:#333,stroke-width:4px;
-    classDef decision fill:#ffff99,stroke:#333,stroke-width:4px;
-    classDef process fill:#add8e6,stroke:#333,stroke-width:4px;
-    classDef check fill:#ff6347,stroke:#333,stroke-width:4px;
-    class B,C,D,E,F,G,H,I,J,K,L,M,N,O,P,Q,R,S,T,U,V,W,Y,Z,AA,AB process;
-    class I check;
-    class P,Q,R,S,T,U decision;
+graph TD
+    A[Input Tasks] --> B[LLMCompiler Core]
+    B --> C[Task Decomposition]
+    B --> D[Dependency Analysis]
+    C --> E[DAG Generation]
+    D --> E
+    E --> F[Task Scheduler]
+    F --> G[Execution Engine]
+    G --> H[Output Results]
+    G --> I[Tool Integration]
 ```
+
+### 2.4 Dragonscale Diagram
+
+Below is a Mermaid diagram representing Dragonscale’s architecture:
 
 ```mermaid
-graph LR
-    A(Input Query) --> B(Generate Multiple Queries)
-    B -->|Each query variant| C(Quick Search Using Low-Dimension Vector)
-    C --> D1[Filter Results Based on Initial Scoring]
-    D1 --> D2[Identify Top N Results]
-    D2 --> E(Re-Rank Results Using High-Dimension Vector)
-    E --> F1[Apply Advanced Scoring Metrics]
-    F1 --> F2[Sort Documents by Relevance]
-    F2 --> G(Return Documents)
+graph TD
+    A[Task Input] --> B[Task Scheduler]
+    B --> C[Min-Heap Queue]
+    B --> D[Worker Pool]
+    D --> E[Task Execution]
+    E --> F[Event Bus]
+    F --> G[Tool Manager]
+    G --> H[Community Tools]
+    E --> I[DAG Executor]
+    I --> J[Static DAG Cache]
+    I --> K[Dynamic DAG Delta]
+    E --> L[Output Results]
 ```
+
+## 3. Requirements
+
+### 3.1 Functional Requirements
+
+- **Task Management**: Create, schedule, and stop tasks dynamically with attributes like priority and execution type.
+- **Task Execution**: Execute tasks based on priority and scheduled time, supporting multiple execution types.
+- **Concurrency**: Manage multiple tasks concurrently with an adaptive worker pool.
+- **Tool Integration**: Integrate community-defined tools securely.
+
+### 3.2 Non-Functional Requirements
+
+- **Scalability**: Handle large task volumes efficiently.
+- **Performance**: Optimize resource usage with advanced algorithms.
+- **Thread Safety**: Ensure safe concurrent operations.
+- **Extensibility**: Support future enhancements seamlessly.
+
+## 4. Architecture
+
+### 4.1 Hexagonal Architecture
+
+Dragonscale uses a hexagonal architecture:
+
+- **Core Domain**: Task scheduling and execution logic.
+- **Ports**: Interfaces for task management and tool integration.
+- **Adapters**: Worker pools, event bus, and tool implementations.
+
+### 4.2 Components
+
+- **Task Scheduler**: Priority-based task management.
+- **Worker Pool**: Concurrent execution with automated sizing.
+- **Event Bus**: Decoupled component communication.
+- **Strategy Pattern**: Flexible execution strategies.
+- **Tool Manager**: Sandboxed tool integration.
+- **DAG Executor**: Advanced DAG handling.
+
+### 4.3 Code Structure
+
+```
+github.com/ZanzyTHEbar/dragonscale/
+├── cmd/
+│   └── main.go
+├── internal/
+│   ├── config/
+│   │   └── pool.go
+│   ├── domain/
+│   │   ├── task.go
+│   │   └── scheduler.go
+│   ├── ports/
+│   │   └── executor.go
+│   ├── adapters/
+│   │   ├── workerpool/
+│   │   ├── eventbus/
+│   │   └── tools/
+│   └── utils/
+└── go.mod
+```
+
+## 5. Design Details
+
+### 5.1 Task Scheduler
+
+Uses a min-heap for O(log n) scheduling:
+
+```go
+type TaskScheduler struct {
+    mutex     *sync.Mutex
+    cond      *sync.Cond
+    pool      *WorkerPool
+    taskQueue *TaskHeap
+}
+
+func (ts *TaskScheduler) Schedule(task *Task) {
+    ts.mutex.Lock()
+    defer ts.mutex.Unlock()
+    heap.Push(ts.taskQueue, task)
+    ts.cond.Signal()
+}
+```
+
+### 5.2 Worker Pool with Automated Sizing
+
+Automatically adjusts worker count based on system load:
+
+```go
+type WorkerPool struct {
+    workers     int
+    workerQueue chan Runnable
+    wg          sync.WaitGroup
+    monitor     *LoadMonitor
+}
+
+type LoadMonitor struct {
+    cpuThreshold float64
+    memThreshold float64
+}
+
+func NewWorkerPool() *WorkerPool {
+    lm := &LoadMonitor{cpuThreshold: 0.8, memThreshold: 0.9}
+    workers := runtime.NumCPU() // Initial size
+    pool := &WorkerPool{
+        workers:     workers,
+        workerQueue: make(chan Runnable, 100),
+        monitor:     lm,
+    }
+    go pool.adjustSize()
+    pool.startWorkers()
+    return pool
+}
+
+func (wp *WorkerPool) adjustSize() {
+    for {
+        time.Sleep(10 * time.Second)
+        cpuUsage := wp.monitor.GetCPUUsage()
+        memUsage := wp.monitor.GetMemUsage()
+        if cpuUsage > wp.monitor.cpuThreshold || memUsage > wp.monitor.memThreshold {
+            wp.workers++
+            wp.wg.Add(1)
+            go wp.worker()
+        } else if wp.workers > runtime.NumCPU() && cpuUsage < 0.5 {
+            wp.workers--
+        }
+    }
+}
+
+func (wp *WorkerPool) worker() {
+    defer wp.wg.Done()
+    for task := range wp.workerQueue {
+        task.Run()
+    }
+}
+```
+
+### 5.3 DAG Integration with Advanced Optimization
+
+Supports advanced DAG optimization algorithms:
+
+- **Critical Path Method (CPM)**: Identifies the longest path to prioritize tasks.
+- **List Scheduling with Priority**: Assigns tasks to workers based on priority and dependencies.
+
+```go
+type DAGExecutor struct {
+    cache map[string]*DAG
+}
+
+func (de *DAGExecutor) OptimizeAndExecute(dag *DAG) {
+    if dag.Cacheable {
+        de.cache[dag.ID] = dag
+    }
+    criticalPath := de.computeCriticalPath(dag)
+    sortedTasks := de.listSchedule(dag, criticalPath)
+    for _, task := range sortedTasks {
+        taskScheduler.pool.Add(task)
+    }
+}
+
+func (de *DAGExecutor) computeCriticalPath(dag *DAG) []int {
+    // Simplified CPM: Calculate longest path through DAG
+    durations := make(map[int]int)
+    for i, task := range dag.Nodes {
+        durations[i] = task.EstimatedDuration
+        // Update with dependencies
+    }
+    return de.findLongestPath(durations, dag.Edges)
+}
+
+func (de *DAGExecutor) listSchedule(dag *DAG, criticalPath []int) []*Task {
+    // Priority-based scheduling respecting dependencies
+    return dag.Nodes // Placeholder for sorted list
+}
+```
+
+## 6. Performance Optimization
+
+- **Heap**: O(log n) task scheduling.
+- **Signal-Based Scheduling**: Reduces CPU usage.
+- **DAG Caching**: Minimizes recomputation.
+- **Automated Worker Sizing**: Balances load dynamically.
+
+## 7. Limitations and Solutions
+
+### 7.1 Known Limitations
+
+- **Dynamic DAG Complexity**: High overhead for frequent updates.
+- **Concurrency Overhead**: Excessive goroutines may degrade performance.
+
+### 7.2 Solutions
+
+- **Dynamic DAG**: Use delta storage with periodic compaction to reduce complexity.
+  ```go
+  func (de *DAGExecutor) UpdateDynamicDAG(dag *DAG, delta *Delta) {
+      dag.ApplyDelta(delta)
+      if time.Since(dag.LastCompaction) > 1*time.Hour {
+          dag.Compact()
+      }
+  }
+  ```
+- **Concurrency**: Cap worker pool size with automated scaling limits.
+  ```go
+  func (wp *WorkerPool) adjustSize() {
+      if wp.workers > runtime.NumCPU()*2 {
+          wp.workers = runtime.NumCPU() * 2 // Cap at 2x CPU cores
+      }
+  }
+  ```
+
+### 7.3 Future Work
+
+- **Advanced DAG Algorithms**: Integrate machine learning for predictive scheduling.
+- **Tool Ecosystem**: Expand WASM support with a plugin marketplace.
+
+## 8. Conclusion
+
+Dragonscale leverages Golang’s concurrency and LLMCompiler’s optimizations, enhanced with advanced DAG algorithms, automated worker sizing, and solutions to limitations, making it a robust and future-ready runtime for LLM adapters.
