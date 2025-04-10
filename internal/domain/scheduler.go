@@ -2,14 +2,13 @@ package domain
 
 import (
 	"container/heap"
+	"context"
+	"log"
 	"sync"
 	"time"
 
-        // Added for potential future use in Scheduler logic or related components
-        // "golang.org/x/sync/errgroup"
-        // "github.com/sourcegraph/conc"
+	"golang.org/x/sync/errgroup"
 )
-
 
 // TaskHeap implements heap.Interface and holds Tasks.
 // It uses pointers to Tasks (*Task) to avoid copying large structs.
@@ -69,8 +68,11 @@ type TaskScheduler struct {
 	cond      *sync.Cond      // Condition variable to signal new tasks or time changes
 	taskQueue *TaskHeap       // Priority queue for tasks
 	stopChan  chan struct{}   // Channel to signal the scheduler loop to stop
-	wg        sync.WaitGroup  // To wait for the scheduler loop to finish
 	running   bool            // Flag to indicate if the scheduler is running
+
+    // For improved concurrency management using errgroup
+    cancelFunc context.CancelFunc // Function to cancel the context
+    eg         *errgroup.Group    // errgroup for managing goroutines
 
     // WorkerPool integration - needs a reference to the pool
     pool      interface { // Define Add method for dispatching runnable jobs
@@ -96,7 +98,7 @@ func (ts *TaskScheduler) Schedule(task *Task) {
 	ts.mutex.Lock()
 	defer ts.mutex.Unlock()
 
-	if !ts.running {
+	if (!ts.running) {
 		// Optionally return an error or log if scheduler is stopped
         // log.Println("Scheduler stopped, not scheduling task:", task.ID)
 		return
@@ -116,11 +118,18 @@ func (ts *TaskScheduler) Start() {
 		return // Already running
 	}
 	ts.running = true
-    ts.stopChan = make(chan struct{}) // Recreate stopChan if previously stopped
+	ts.stopChan = make(chan struct{}) // Recreate stopChan if previously stopped
 	ts.mutex.Unlock()
 
-	ts.wg.Add(1)
-	go ts.runLoop()
+	// Create a context that can be canceled when stopping the scheduler
+	ctx, cancel := context.WithCancel(context.Background())
+	ts.cancelFunc = cancel
+
+	// Use errgroup to manage the loop goroutine with error handling
+	ts.eg, ctx = errgroup.WithContext(ctx)
+	ts.eg.Go(func() error {
+		return ts.runLoop(ctx)
+	})
 }
 
 // Stop signals the scheduler to stop processing tasks and waits for it to finish.
@@ -132,135 +141,216 @@ func (ts *TaskScheduler) Stop() {
 	}
 	ts.running = false
 	close(ts.stopChan) // Close the stop channel
+	
+	// Cancel the context to signal the runLoop to stop
+	if ts.cancelFunc != nil {
+		ts.cancelFunc()
+	}
+	
 	ts.cond.Broadcast() // Wake up the loop if it's waiting
 	ts.mutex.Unlock()
 
-	ts.wg.Wait() // Wait for the runLoop goroutine to exit
-}
-
-
-// runLoop is the main scheduler loop.
-func (ts *TaskScheduler) runLoop() {
-	defer ts.wg.Done()
-    var timer *time.Timer // Use a single timer to avoid garbage
-    defer func() {
-        if timer != nil {
-            timer.Stop()
-        }
-    }()
-
-	for {
-		ts.mutex.Lock()
-
-        // Inner loop to wait for the right condition (task ready or stop signal)
-        for {
-            if !ts.running {
-                ts.mutex.Unlock()
-                return // Exit if stopped
-            }
-
-            nextTask := ts.taskQueue.Peek()
-            var waitDuration time.Duration
-
-            if nextTask == nil {
-                waitDuration = -1 // Wait indefinitely if queue is empty
-            } else {
-                waitDuration = time.Until(nextTask.ScheduledTime)
-            }
-
-            if waitDuration <= 0 {
-                 // Task is ready or overdue (or queue was empty and now isn't)
-                 if nextTask != nil { // Ensure there's a task to process
-                    break // Exit wait loop to process the task
-                 } else {
-                    // Queue is still empty, continue waiting indefinitely
-                    waitDuration = -1
-                 }
-            }
-
-            // Stop existing timer if it's running
-            if timer != nil {
-                timer.Stop()
-                timer = nil
-            }
-
-            if waitDuration > 0 {
-                // Start a timer for the duration until the next task
-                 timer = time.NewTimer(waitDuration)
-            }
-
-            // Unlock mutex while waiting
-            ts.mutex.Unlock()
-
-            select {
-            case <-ts.stopChan:
-                // Ensure timer is stopped if we exit due to stop signal
-                if timer != nil {
-                    timer.Stop()
-                }
-                return // Exit runLoop
-
-            case <-ts.cond.Signal: // Wait for signal (new task added or explicit wake-up)
-                 // Re-acquire lock and loop again to check conditions
-                 if timer != nil {
-                      timer.Stop()
-                      timer = nil
-                 }
-                 ts.mutex.Lock() // Lock needed for next loop iteration
-                 continue // Re-evaluate queue and wait duration
-
-            case <-func() <-chan time.Time { // Handle nil timer case for select
-                 if timer == nil {
-                     return nil // Return nil channel if no timer (wait indefinitely)
-                 }
-                 return timer.C // Return timer channel
-                }():
-                 // Timer fired, task should be ready. Re-acquire lock and loop.
-                 ts.mutex.Lock() // Lock needed for next loop iteration
-                 timer = nil // Timer is drained
-                 continue // Re-evaluate queue and wait duration
-            }
-        } // End of inner wait loop
-
-        // --- Task Processing --- (Mutex is held here)
-
-        if !ts.running {
-            ts.mutex.Unlock()
-            return // Check again after acquiring lock
-        }
-
-        // Pop the ready task
-        taskToRun := heap.Pop(ts.taskQueue).(*Task)
-
-        // Update status before dispatching (while holding lock)
-        taskToRun.Status = Running
-        taskToRun.UpdatedAt = time.Now()
-        job := taskToRun.Job // Extract job
-
-        ts.mutex.Unlock() // *** Unlock before dispatching to worker pool ***
-
-        // Dispatch the job to the worker pool
-        // This is a blocking call if the pool's queue is full
-        // Consider making Add non-blocking or handle potential block
-        ts.pool.Add(job) // TODO: Handle error from Run() later
-
-        // --- Handle Recurring Task (Re-acquire lock) ---
-        ts.mutex.Lock()
-        if ts.running { // Check running status again before rescheduling
-             handleRecurringTask(ts, taskToRun)
-        }
-        ts.mutex.Unlock() // Unlock after handling recurring task
+	// Wait for the runLoop goroutine to exit
+	if ts.eg != nil {
+		if err := ts.eg.Wait(); err != nil {
+			log.Printf("Error in scheduler loop: %v", err)
+		}
 	}
 }
 
 
-// handleRecurringTask checks if a completed task is recurring and reschedules it.
-// Assumes lock is held by the caller.
-// NOTE: Still relies on approximation for FixedDelay completion time.
-func handleRecurringTask(ts *TaskScheduler, task *Task) {
-	now := time.Now()
-	task.UpdatedAt = now // Mark update time (completion conceptually)
+// runLoop is the main scheduler loop.
+func (ts *TaskScheduler) runLoop(ctx context.Context) error {
+	var timer *time.Timer // Use a single timer to avoid garbage
+	defer func() {
+		if timer != nil {
+			timer.Stop()
+		}
+	}()
 
+	for {
+		ts.mutex.Lock()
+		
+		// Check if we should exit the loop
+		if !ts.running {
+			ts.mutex.Unlock()
+			return nil
+		}
+		
+		// Get next task if available
+		nextTask := ts.peekTask()
+		
+		if nextTask == nil {
+			// No tasks in the queue, wait for signal or stop
+			// Use cond.Wait with a condition to handle context cancellation
+			waitCh := make(chan struct{})
+			go func() {
+				ts.cond.Wait()
+				close(waitCh)
+			}()
+			
+			ts.mutex.Unlock()
+			
+			// Wait for either condition signal or context cancellation
+			select {
+			case <-waitCh:
+				// Condition was signaled, continue the loop
+				continue
+			case <-ctx.Done():
+				// Context was canceled, exit the loop
+				return ctx.Err()
+			}
+		}
+		
+		// Calculate wait time until next task
+		now := time.Now()
+		waitTime := nextTask.ScheduledTime.Sub(now)
+		
+		if waitTime <= 0 {
+			// Task is due - pop it from queue and dispatch
+			task := heap.Pop(ts.taskQueue).(*Task)
+			task.Status = Running
+			task.UpdatedAt = now
+			
+			// Release the lock before dispatching to worker pool
+			ts.mutex.Unlock()
+			
+			// Dispatch to worker pool
+			ts.dispatchTask(task)
+			
+			// For FixedRate tasks, reschedule immediately
+			// Note: FixedDelay tasks are rescheduled in the taskWrapper after completion
+			if task.ExecutionType == FixedRate {
+				ts.rescheduleTask(task)
+			}
+			
+			continue
+		}
+		
+		// Set timer for next task
+		if timer == nil {
+			timer = time.NewTimer(waitTime)
+		} else {
+			timer.Reset(waitTime)
+		}
+		ts.mutex.Unlock()
+		
+		// Wait for timer, new task signal, or stop signal
+		select {
+		case <-timer.C:
+			// Timer expired, loop back to process the task
+			continue
+		case <-ts.stopChan:
+			// Stop signal received
+			return nil
+		case <-ctx.Done():
+			// Context canceled
+			return ctx.Err()
+		}
+	}
+}
+
+// peekTask returns the next task without removing it from the queue (already locked)
+func (ts *TaskScheduler) peekTask() *Task {
+    if ts.taskQueue.Len() == 0 {
+        return nil
+    }
+    return (*ts.taskQueue)[0]
+}
+
+// dispatchTask sends the task to the worker pool for execution
+func (ts *TaskScheduler) dispatchTask(task *Task) {
+    // Create a wrapper that will handle task completion and rescheduling
+    wrapper := &taskWrapper{
+        task:      task,
+        scheduler: ts,
+    }
+    
+    // Send to worker pool
+    ts.pool.Add(wrapper)
+}
+
+// rescheduleTask reschedules a recurring task
+func (ts *TaskScheduler) rescheduleTask(task *Task) {
+    // Only reschedule if it's a recurring task
+    if task.ExecutionType != FixedRate && task.ExecutionType != FixedDelay {
+        return
+    }
+    
+    // Clone the task with updated schedule time
+    newTask := &Task{
+        ID:             task.ID,
+        Priority:       task.Priority,
+        ExecutionType:  task.ExecutionType,
+        Job:            task.Job,
+        Dependencies:   task.Dependencies,
+        Interval:       task.Interval,
+        CreatedAt:      task.CreatedAt,
+        UpdatedAt:      time.Now(),
+    }
+    
+    // FixedRate tasks run on a fixed schedule regardless of execution time
+    if task.ExecutionType == FixedRate {
+        newTask.ScheduledTime = task.ScheduledTime.Add(task.Interval)
+    } else {
+        // FixedDelay tasks run after a delay from completion
+        // Will be rescheduled by the wrapper when the task completes
+        return
+    }
+    
+    // Schedule the task
+    ts.Schedule(newTask)
+}
+
+// taskWrapper wraps a task with completion handling
+type taskWrapper struct {
+    task      *Task
+    scheduler *TaskScheduler
+}
+
+// Run executes the task and handles completion
+func (tw *taskWrapper) Run() error {
+    // Execute the task
+    err := tw.task.Job.Run()
+    
+    // Update task status based on execution result
+    tw.scheduler.mutex.Lock()
+    if err != nil {
+        tw.task.Status = Failed
+    } else {
+        tw.task.Status = Completed
+    }
+    tw.task.UpdatedAt = time.Now()
+    tw.scheduler.mutex.Unlock()
+    
+    // For FixedDelay tasks, reschedule after completion
+    if tw.task.ExecutionType == FixedDelay {
+        newTask := &Task{
+            ID:             tw.task.ID,
+            Priority:       tw.task.Priority,
+            ScheduledTime:  time.Now().Add(tw.task.Interval),
+            ExecutionType:  tw.task.ExecutionType,
+            Job:            tw.task.Job,
+            Dependencies:   tw.task.Dependencies,
+            Interval:       tw.task.Interval,
+            CreatedAt:      tw.task.CreatedAt,
+            UpdatedAt:      time.Now(),
+        }
+        tw.scheduler.Schedule(newTask)
+    }
+    
+    return err
+}
+
+//! Deprecated
+// handleRecurringTask checks if a completed task is recurring and reschedules it.
+// This function is no longer needed as rescheduling is handled by the taskWrapper.
+// It's kept here for reference but should be removed in a future cleanup.
+func handleRecurringTask(ts *TaskScheduler, task *Task) {
+	// Deprecated - Rescheduling is now handled by taskWrapper.Run()
+	// This improves accuracy for FixedDelay tasks by ensuring they 
+	// are rescheduled based on actual completion time.
+	now := time.Now()
 	reschedule := false
 	switch task.ExecutionType {
 	case FixedRate:

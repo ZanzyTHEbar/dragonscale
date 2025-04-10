@@ -4,11 +4,10 @@ import (
 	"fmt"
 	"log"
 	"sync"
-	"time" // Added time import for placeholder tool simulation
 )
 
 // ExecutableTool defines the interface for any tool that can be executed by the manager.
-// This is a placeholder; real tools might need more complex context, input/output types.
+// TODO: This is a placeholder; real tools might need more complex context, input/output types.
 type ExecutableTool interface {
 	Execute(input interface{}) (output interface{}, err error)
 	Name() string
@@ -38,7 +37,7 @@ func NewSimpleToolManager() *SimpleToolManager {
 }
 
 // RegisterTool adds a tool to the manager.
-// In a real implementation, this might load from config or WASM.
+// TODO: In a real implementation, this might load from config or WASM.
 func (tm *SimpleToolManager) RegisterTool(tool ExecutableTool) error {
 	if tool == nil || tool.Name() == "" {
 		return fmt.Errorf("cannot register nil tool or tool with empty name")
@@ -68,7 +67,7 @@ func (tm *SimpleToolManager) ExecuteTool(toolName string, input interface{}) (ou
 	}
 
 	// log.Printf("Executing tool '%s'...", toolName) // Reduce noise
-	// Execution happens outside the lock to allow concurrent tool executions
+	// TODO: Execution happens outside the lock to allow concurrent tool executions
 	// assuming the tool's Execute method itself is safe or handles its own locking if needed.
 	output, err = tool.Execute(input)
 	if err != nil {
@@ -92,34 +91,3 @@ func (tm *SimpleToolManager) ListTools() []string {
 	return names
 }
 
-// --- Example Placeholder Tool ---
-
-// PlaceholderTool implements ExecutableTool for demonstration.
-type PlaceholderTool struct {
-	toolName string
-	toolDesc string
-}
-
-// NewPlaceholderTool creates a simple placeholder tool.
-func NewPlaceholderTool(name, description string) *PlaceholderTool {
-	return &PlaceholderTool{toolName: name, toolDesc: description}
-}
-
-// Name returns the tool's name.
-func (t *PlaceholderTool) Name() string {
-	return t.toolName
-}
-
-// Description returns the tool's description.
-func (t *PlaceholderTool) Description() string {
-	return t.toolDesc
-}
-
-// Execute simulates executing the placeholder tool.
-func (t *PlaceholderTool) Execute(input interface{}) (output interface{}, err error) {
-	// log.Printf("PlaceholderTool '%s' executing with input: %+v", t.toolName, input) // Reduce noise
-	// Simulate work
-	time.Sleep(10 * time.Millisecond)
-	result := fmt.Sprintf("Result from %s for input %+v", t.toolName, input)
-	return result, nil
-}

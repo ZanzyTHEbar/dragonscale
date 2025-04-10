@@ -1,0 +1,30 @@
+{
+    "system": {
+        "logLevel": "info",
+        "metricsEnabled": false,
+        "metricsEndpoint": "http://localhost:9091/metrics"
+    },
+    "workerPool": {
+        "initialWorkers": 4,
+        "minWorkers": 2,
+        "maxWorkers": 8,
+        "queueSize": 100,
+        "cpuThreshold": 0.8,
+        "memThreshold": 0.9
+    },
+    "scheduler": {
+        "enablePriorityBoost": true,
+        "maxTaskRetries": 3,
+        "defaultInterval": "10s"
+    },
+    "tools": {
+        "defaultTimeout": 10,
+        "allowedTools": [
+            "*"
+        ],
+        "sandboxEnabled": true
+    },
+    "eventBus": {
+        "defaultBufferSize": 20
+    }
+}

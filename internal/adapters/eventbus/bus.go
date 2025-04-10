@@ -10,33 +10,70 @@ import (
 
 // Subscriber is a channel that receives events for a specific topic.
 // Use a buffered channel to avoid blocking the publisher.
-type Subscriber chan domain.Event
+type Subscriber = chan domain.Event
+
+// EventFilter defines a function type for filtering events.
+type EventFilter = func(domain.Event) bool
 
 // EventBus defines the interface for publishing and subscribing to events.
 type EventBus interface {
 	Publish(event domain.Event)
 	Subscribe(topic string, bufferSize int) (Subscriber, error)
+	SubscribeWithFilter(topic string, filter EventFilter, bufferSize int) (Subscriber, error)
 	Unsubscribe(topic string, sub Subscriber) error
 	Stop()
+	GetTransport() string
+	SwitchTransport(transportType string) error
 }
 
 // SimpleEventBus is a basic in-memory event bus implementation using channels.
 type SimpleEventBus struct {
-	subscribers map[string]map[Subscriber]bool // Map topic to a Set of subscriber channels for faster unsubscribe
-	mu          sync.RWMutex                   // Protects subscribers map
-	stopChan    chan struct{}                  // To signal shutdown
-	isStopped   bool                           // Atomic bool could also be used
-	// wg          sync.WaitGroup               // To wait for publisher goroutine (if any)
+	subscribers     map[string]map[Subscriber]bool          // Map topic to a Set of subscriber channels
+	filteredSubs    map[string]map[*filteredSubscriber]bool // Map topic to filtered subscribers
+	mu              sync.RWMutex                            // Protects subscribers map
+	stopChan        chan struct{}                           // To signal shutdown
+	isStopped       bool                                    // Atomic bool could also be used
+	transportType   string                                  // Current transport mechanism (memory, http, grpc, kafka, etc.)
+	eventSerializer EventSerializer                         // Serializer for converting events to different formats
+}
+
+// filteredSubscriber combines a subscriber channel with its filter
+type filteredSubscriber struct {
+	channel Subscriber
+	filter  EventFilter
+}
+
+// EventSerializer defines the interface for event serialization.
+type EventSerializer interface {
+	Serialize(event domain.Event) ([]byte, error)
+	Deserialize(data []byte, format domain.EventFormat) (domain.Event, error)
+}
+
+// JSONSerializer is a basic JSON serializer for events.
+type JSONSerializer struct{}
+
+// Serialize converts an event to JSON bytes.
+func (s *JSONSerializer) Serialize(event domain.Event) ([]byte, error) {
+	return event.ToJSON()
+}
+
+// Deserialize converts JSON bytes back to an event.
+func (s *JSONSerializer) Deserialize(data []byte, format domain.EventFormat) (domain.Event, error) {
+	// Implementation would parse JSON back to event
+	// This is a simplification - actual implementation would use json.Unmarshal
+	return domain.Event{}, fmt.Errorf("deserialization not implemented for format: %s", format)
 }
 
 // NewSimpleEventBus creates a new SimpleEventBus.
 func NewSimpleEventBus() *SimpleEventBus {
-	bus := &SimpleEventBus{
-		subscribers: make(map[string]map[Subscriber]bool),
-		stopChan:    make(chan struct{}),
-		isStopped:   false,
+	return &SimpleEventBus{
+		subscribers:     make(map[string]map[Subscriber]bool),
+		filteredSubs:    make(map[string]map[*filteredSubscriber]bool),
+		stopChan:        make(chan struct{}),
+		isStopped:       false,
+		transportType:   "memory",
+		eventSerializer: &JSONSerializer{},
 	}
-	return bus
 }
 
 // Publish sends an event to all subscribers of the event's topic.
@@ -49,21 +86,41 @@ func (b *SimpleEventBus) Publish(event domain.Event) {
 		return
 	}
 
+	// Get regular subscribers
 	subsMap, found := b.subscribers[event.Topic]
-	if !found || len(subsMap) == 0 {
+
+	// Get filtered subscribers
+	filteredSubsMap, filteredFound := b.filteredSubs[event.Topic]
+
+	if (!found || len(subsMap) == 0) && (!filteredFound || len(filteredSubsMap) == 0) {
 		b.mu.RUnlock()
 		log.Printf("No subscribers for event topic '%s'", event.Topic)
 		return
 	}
 
-	// Create a list of subscribers to publish to outside the lock
+	// Create a list of regular subscribers to publish to outside the lock
 	subsList := make([]Subscriber, 0, len(subsMap))
 	for sub := range subsMap {
 		subsList = append(subsList, sub)
 	}
+
+	// Create a list of filtered subscribers that match the event
+	filteredSubsList := make([]*filteredSubscriber, 0)
+	if filteredFound {
+		for fsub := range filteredSubsMap {
+			if fsub.filter(event) {
+				filteredSubsList = append(filteredSubsList, fsub)
+			}
+		}
+	}
+
 	b.mu.RUnlock() // Release lock before sending
 
-	log.Printf("Publishing event to topic '%s' to %d subscribers", event.Topic, len(subsList))
+	totalSubs := len(subsList) + len(filteredSubsList)
+	log.Printf("Publishing event to topic '%s' to %d subscribers (%d regular, %d filtered)",
+		event.Topic, totalSubs, len(subsList), len(filteredSubsList))
+
+	// Publish to regular subscribers
 	for _, sub := range subsList {
 		select {
 		case sub <- event:
@@ -75,7 +132,21 @@ func (b *SimpleEventBus) Publish(event domain.Event) {
 		default:
 			// Subscriber channel buffer is full. Drop the event for this subscriber.
 			log.Printf("Warning: EventBus subscriber buffer full for topic '%s'. Event dropped.", event.Topic)
-			// Consider adding metrics or specific handling for dropped events
+		}
+	}
+
+	// Publish to filtered subscribers
+	for _, fsub := range filteredSubsList {
+		select {
+		case fsub.channel <- event:
+			// Event sent successfully
+		case <-b.stopChan:
+			// If bus stopped during publish, abort sending to remaining subs
+			log.Printf("EventBus stopping during publish to topic '%s'", event.Topic)
+			return
+		default:
+			// Subscriber channel buffer is full. Drop the event for this subscriber.
+			log.Printf("Warning: EventBus filtered subscriber buffer full for topic '%s'. Event dropped.", event.Topic)
 		}
 	}
 }
@@ -101,111 +172,227 @@ func (b *SimpleEventBus) Subscribe(topic string, bufferSize int) (Subscriber, er
 		b.subscribers[topic] = make(map[Subscriber]bool)
 	}
 
-	b.subscribers[topic][sub] = true // Add subscriber to the set
+	// Add the subscriber to the map
+	b.subscribers[topic][sub] = true
+	log.Printf("New subscriber added for topic '%s'. Total subscribers: %d", topic, len(b.subscribers[topic]))
 
-	// log.Printf("New subscriber added for topic '%s'. Total subscribers for topic: %d", topic, len(b.subscribers[topic]))
 	return sub, nil
 }
 
-// Unsubscribe removes a subscriber channel from a topic.
-func (b *SimpleEventBus) Unsubscribe(topic string, sub Subscriber) error {
-	b.mu.Lock() // Use Lock for modifying the map
+// SubscribeWithFilter creates a new subscriber channel for a given topic with a filter function.
+func (b *SimpleEventBus) SubscribeWithFilter(topic string, filter EventFilter, bufferSize int) (Subscriber, error) {
+	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	// No operation if stopped, but allow unsubscribe to clean up
-	// if b.isStopped { return fmt.Errorf("eventbus is stopped") }
-
-	if subsMap, found := b.subscribers[topic]; found {
-		if _, subExists := subsMap[sub]; subExists {
-			delete(subsMap, sub) // Remove subscriber from set
-			// If the set for the topic is now empty, remove the topic itself
-			if len(subsMap) == 0 {
-				delete(b.subscribers, topic)
-				// log.Printf("Last subscriber removed for topic '%s'. Topic deleted.", topic)
-			} else {
-				// log.Printf("Subscriber removed from topic '%s'. Remaining subscribers: %d", topic, len(subsMap))
-			}
-			// It's the subscriber's responsibility to close their channel.
-			return nil
-		} else {
-			// log.Printf("Attempted to unsubscribe non-existent subscriber from topic '%s'", topic)
-			return fmt.Errorf("subscriber not found for topic %s", topic)
-		}
-	} else {
-		// log.Printf("Attempted to unsubscribe from non-existent topic '%s'", topic)
-		return fmt.Errorf("topic %s not found", topic)
+	if b.isStopped {
+		return nil, fmt.Errorf("eventbus is stopped")
 	}
+
+	if bufferSize <= 0 {
+		bufferSize = 10 // Default buffer size
+	}
+
+	if filter == nil {
+		// If no filter provided, use regular subscription
+		return b.Subscribe(topic, bufferSize)
+	}
+
+	sub := make(Subscriber, bufferSize)
+	fsub := &filteredSubscriber{
+		channel: sub,
+		filter:  filter,
+	}
+
+	// Initialize the map for the topic if it doesn't exist
+	if _, found := b.filteredSubs[topic]; !found {
+		b.filteredSubs[topic] = make(map[*filteredSubscriber]bool)
+	}
+
+	// Add the filtered subscriber to the map
+	b.filteredSubs[topic][fsub] = true
+	log.Printf("New filtered subscriber added for topic '%s'. Total filtered subscribers: %d",
+		topic, len(b.filteredSubs[topic]))
+
+	return sub, nil
 }
 
-// Stop signals the event bus to stop publishing and cleans up resources.
+// Unsubscribe removes a subscriber from a topic.
+func (b *SimpleEventBus) Unsubscribe(topic string, sub Subscriber) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	if b.isStopped {
+		return fmt.Errorf("eventbus is stopped")
+	}
+
+	// Try to unsubscribe from regular subscribers
+	if topicSubs, found := b.subscribers[topic]; found {
+		if _, ok := topicSubs[sub]; ok {
+			delete(topicSubs, sub)
+			log.Printf("Subscriber removed from topic '%s'. Remaining subscribers: %d", topic, len(topicSubs))
+
+			// Clean up empty topic maps
+			if len(topicSubs) == 0 {
+				delete(b.subscribers, topic)
+				log.Printf("No more subscribers for topic '%s', removed topic", topic)
+			}
+
+			// Close the subscriber channel
+			close(sub)
+			return nil
+		}
+	}
+
+	// Try to unsubscribe from filtered subscribers
+	if filteredSubs, found := b.filteredSubs[topic]; found {
+		for fsub := range filteredSubs {
+			if fsub.channel == sub {
+				delete(filteredSubs, fsub)
+				log.Printf("Filtered subscriber removed from topic '%s'. Remaining filtered subscribers: %d",
+					topic, len(filteredSubs))
+
+				// Clean up empty topic maps
+				if len(filteredSubs) == 0 {
+					delete(b.filteredSubs, topic)
+					log.Printf("No more filtered subscribers for topic '%s', removed topic", topic)
+				}
+
+				// Close the subscriber channel
+				close(sub)
+				return nil
+			}
+		}
+	}
+
+	return fmt.Errorf("subscriber not found for topic '%s'", topic)
+}
+
+// Stop signals all goroutines to stop and closes all subscriber channels.
 func (b *SimpleEventBus) Stop() {
 	b.mu.Lock()
+	defer b.mu.Unlock()
+
 	if b.isStopped {
-		b.mu.Unlock()
-		return
+		return // Already stopped
 	}
-	close(b.stopChan) // Signal stop
+
+	// Signal stop
+	close(b.stopChan)
 	b.isStopped = true
-	// Clear subscribers map to prevent further publishes and help GC
+
+	// Close all regular subscriber channels
+	for topic, subs := range b.subscribers {
+		for sub := range subs {
+			close(sub)
+		}
+		log.Printf("Closed %d subscriber channels for topic '%s'", len(subs), topic)
+	}
+
+	// Close all filtered subscriber channels
+	for topic, fsubs := range b.filteredSubs {
+		for fsub := range fsubs {
+			close(fsub.channel)
+		}
+		log.Printf("Closed %d filtered subscriber channels for topic '%s'", len(fsubs), topic)
+	}
+
+	// Clear the subscribers maps
 	b.subscribers = make(map[string]map[Subscriber]bool)
-	b.mu.Unlock()
-
-	// Wait for any background goroutines (e.g., publisher) if implemented
-	// b.wg.Wait()
-	log.Println("SimpleEventBus stopped.")
+	b.filteredSubs = make(map[string]map[*filteredSubscriber]bool)
+	log.Println("EventBus stopped and all subscribers closed")
 }
 
-/*
-// Example Usage (Move to main.go or tests)
-func ExampleUsage() {
-	bus := NewSimpleEventBus()
-
-	subCompleted, _ := bus.Subscribe("task.completed", 10)
-	subFailed, _ := bus.Subscribe("task.failed", 10)
-
-	var wg sync.WaitGroup
-	wg.Add(2)
-
-	go func() {
-		defer wg.Done()
-		for event := range subCompleted {
-			log.Printf("Handler 1 Received Completed: %+v
-", event)
-            // Simulate work
-            time.Sleep(50 * time.Millisecond)
-		}
-		log.Println("Handler 1 (Completed) exiting.")
-	}()
-	go func() {
-		defer wg.Done()
-		for event := range subFailed {
-			log.Printf("Handler 2 Received Failed: %+v
-", event)
-		}
-		log.Println("Handler 2 (Failed) exiting.")
-	}()
-
-	bus.Publish(domain.NewEvent("task.completed", map[string]string{"taskId": "123", "result": "ok"}))
-	bus.Publish(domain.NewEvent("task.failed", map[string]string{"taskId": "456", "error": "timeout"}))
-	bus.Publish(domain.NewEvent("task.completed", map[string]string{"taskId": "789", "result": "done"}))
-
-	time.Sleep(100 * time.Millisecond) // Allow time for processing
-
-	bus.Unsubscribe("task.completed", subCompleted)
-	// Owner closes the channel
-	close(subCompleted)
-
-	bus.Publish(domain.NewEvent("task.completed", map[string]string{"taskId": "abc", "result": "final"})) // Not received by handler 1
-
-	time.Sleep(100 * time.Millisecond)
-	bus.Stop() // Stop the bus
-
-    // Close remaining subscriber channel after stopping the bus
-    // This ensures the range loop in the handler exits.
-	bus.Unsubscribe("task.failed", subFailed) // Optional: Unsubscribe before close
-    close(subFailed)
-
-    wg.Wait() // Wait for handlers to finish processing and exit
-	log.Println("Example usage finished.")
+// GetTransport returns the current transport mechanism.
+func (b *SimpleEventBus) GetTransport() string {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.transportType
 }
-*/
+
+// SwitchTransport changes the transport mechanism.
+// Note: In a real implementation, this would involve creating new connections,
+// migrating subscribers, etc.
+func (b *SimpleEventBus) SwitchTransport(transportType string) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	if b.isStopped {
+		return fmt.Errorf("cannot switch transport: eventbus is stopped")
+	}
+
+	supportedTransports := map[string]bool{
+		"memory": true,
+		"http":   true,
+		"grpc":   true,
+		"kafka":  true,
+	}
+
+	if !supportedTransports[transportType] {
+		return fmt.Errorf("unsupported transport type: %s", transportType)
+	}
+
+	if b.transportType == transportType {
+		return nil // Already using this transport
+	}
+
+	log.Printf("Switching eventbus transport from %s to %s", b.transportType, transportType)
+	b.transportType = transportType
+
+	// TODO: In a real implementation, this would involve:
+	// 1. Creating a new transport connection
+	// 2. Migrating subscribers
+	// 3. Closing the old transport connection
+
+	return nil
+}
+
+// GetSubscriberCount returns the number of subscribers for a given topic.
+func (b *SimpleEventBus) GetSubscriberCount(topic string) int {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+
+	count := 0
+	if topicSubs, found := b.subscribers[topic]; found {
+		count += len(topicSubs)
+	}
+	if filteredSubs, found := b.filteredSubs[topic]; found {
+		count += len(filteredSubs)
+	}
+	return count
+}
+
+// HasTopic checks if a topic has any subscribers.
+func (b *SimpleEventBus) HasTopic(topic string) bool {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+
+	_, regularFound := b.subscribers[topic]
+	_, filteredFound := b.filteredSubs[topic]
+	return regularFound || filteredFound
+}
+
+// ListTopics returns a list of all active topics.
+func (b *SimpleEventBus) ListTopics() []string {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+
+	topicSet := make(map[string]bool)
+
+	// Add regular subscriber topics
+	for topic := range b.subscribers {
+		topicSet[topic] = true
+	}
+
+	// Add filtered subscriber topics
+	for topic := range b.filteredSubs {
+		topicSet[topic] = true
+	}
+
+	// Convert to slice
+	topics := make([]string, 0, len(topicSet))
+	for topic := range topicSet {
+		topics = append(topics, topic)
+	}
+
+	return topics
+}
