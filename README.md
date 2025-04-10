@@ -1,5 +1,10 @@
 # Dragonscale
 
+> ![IMMPORTANT]\
+> This project is in the early-stage of development. The API is unstable. All contributions are welcome.
+> If you found this project useful, please consider sponsorship or support via Github Sponsors.
+> If you really need this project for a specific application, you can hire me as a freelance developer. I am happy to work with teams implementing AI applications.
+
 ## 1. Introduction
 
 ### 1.1 Purpose
