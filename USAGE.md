@@ -193,10 +193,10 @@ go func() {
 
 ### 5.3 Common Event Topics
 
-- `task.completed`: Published when a task completes successfully
-- `task.failed`: Published when a task fails
-- `dag.completed`: Published when a DAG completes
-- `system.load.high`: Published when system load exceeds thresholds
+- `task.completed`
+- `task.failed`
+- `dag.completed`
+- `system.load.high`
 
 ## 6. Monitoring and Statistics
 

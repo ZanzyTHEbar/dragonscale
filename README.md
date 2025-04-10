@@ -1,4 +1,4 @@
-# Dragonscale Engineering Design Document
+# Dragonscale
 
 ## 1. Introduction
 
@@ -6,13 +6,14 @@
 
 Dragonscale is a Golang library designed to provide an efficient execution runtime for LLM adapters. Inspired by LLMCompiler, it optimizes task execution through concurrency, hexagonal architecture, and advanced task scheduling, targeting applications requiring high performance and extensibility.
 
+Dragonscale aims to facilitate the integration of community-defined tools and models, enabling developers to create scalable and adaptable systems for large language model applications.
+
 ### 1.2 Scope
 
-This document outlines the design and implementation of Dragonscale, detailing its architecture, components, and strategies for task management, concurrency, and tool integration, enhanced with Mermaid diagrams and solutions to future improvements.
+This document outlines the design and implementation of Dragonscale, detailing its architecture, components, and strategies for task management, concurrency, and tool integrations.
 
 ### 1.3 References
 
-- [GitHub Repository: golang-low-level-design/task-scheduler](https://github.com/the-arcade-01/golang-low-level-design/tree/main/task-scheduler)
 - [LLMCompiler ICML 2024 Paper](https://arxiv.org/abs/2312.04511)
 
 ## 2. System Overview
@@ -51,7 +52,7 @@ graph TD
 
 ### 2.4 Dragonscale Diagram
 
-Below is a Mermaid diagram representing Dragonscale’s architecture:
+Below is a Mermaid diagram representing Dragonscale's architecture:
 
 ```mermaid
 graph TD
@@ -102,103 +103,17 @@ Dragonscale uses a hexagonal architecture:
 - **Strategy Pattern**: Flexible execution strategies.
 - **Tool Manager**: Sandboxed tool integration.
 - **DAG Executor**: Advanced DAG handling.
-
-### 4.3 Code Structure
-
-```
-github.com/ZanzyTHEbar/dragonscale/
-├── cmd/
-│   └── main.go
-├── internal/
-│   ├── config/
-│   │   └── pool.go
-│   ├── domain/
-│   │   ├── task.go
-│   │   └── scheduler.go
-│   ├── ports/
-│   │   └── executor.go
-│   ├── adapters/
-│   │   ├── workerpool/
-│   │   ├── eventbus/
-│   │   └── tools/
-│   └── utils/
-└── go.mod
-```
+- **Event Topics**: Common event topics for integration.
 
 ## 5. Design Details
 
 ### 5.1 Task Scheduler
 
-Uses a min-heap for O(log n) scheduling:
-
-```go
-type TaskScheduler struct {
-    mutex     *sync.Mutex
-    cond      *sync.Cond
-    pool      *WorkerPool
-    taskQueue *TaskHeap
-}
-
-func (ts *TaskScheduler) Schedule(task *Task) {
-    ts.mutex.Lock()
-    defer ts.mutex.Unlock()
-    heap.Push(ts.taskQueue, task)
-    ts.cond.Signal()
-}
-```
+- Uses a min-heap for O(log n) scheduling
 
 ### 5.2 Worker Pool with Automated Sizing
 
-Automatically adjusts worker count based on system load:
-
-```go
-type WorkerPool struct {
-    workers     int
-    workerQueue chan Runnable
-    wg          sync.WaitGroup
-    monitor     *LoadMonitor
-}
-
-type LoadMonitor struct {
-    cpuThreshold float64
-    memThreshold float64
-}
-
-func NewWorkerPool() *WorkerPool {
-    lm := &LoadMonitor{cpuThreshold: 0.8, memThreshold: 0.9}
-    workers := runtime.NumCPU() // Initial size
-    pool := &WorkerPool{
-        workers:     workers,
-        workerQueue: make(chan Runnable, 100),
-        monitor:     lm,
-    }
-    go pool.adjustSize()
-    pool.startWorkers()
-    return pool
-}
-
-func (wp *WorkerPool) adjustSize() {
-    for {
-        time.Sleep(10 * time.Second)
-        cpuUsage := wp.monitor.GetCPUUsage()
-        memUsage := wp.monitor.GetMemUsage()
-        if cpuUsage > wp.monitor.cpuThreshold || memUsage > wp.monitor.memThreshold {
-            wp.workers++
-            wp.wg.Add(1)
-            go wp.worker()
-        } else if wp.workers > runtime.NumCPU() && cpuUsage < 0.5 {
-            wp.workers--
-        }
-    }
-}
-
-func (wp *WorkerPool) worker() {
-    defer wp.wg.Done()
-    for task := range wp.workerQueue {
-        task.Run()
-    }
-}
-```
+- Automatically adjusts worker count based on system load:
 
 ### 5.3 DAG Integration with Advanced Optimization
 
@@ -206,38 +121,11 @@ Supports advanced DAG optimization algorithms:
 
 - **Critical Path Method (CPM)**: Identifies the longest path to prioritize tasks.
 - **List Scheduling with Priority**: Assigns tasks to workers based on priority and dependencies.
-
-```go
-type DAGExecutor struct {
-    cache map[string]*DAG
-}
-
-func (de *DAGExecutor) OptimizeAndExecute(dag *DAG) {
-    if dag.Cacheable {
-        de.cache[dag.ID] = dag
-    }
-    criticalPath := de.computeCriticalPath(dag)
-    sortedTasks := de.listSchedule(dag, criticalPath)
-    for _, task := range sortedTasks {
-        taskScheduler.pool.Add(task)
-    }
-}
-
-func (de *DAGExecutor) computeCriticalPath(dag *DAG) []int {
-    // Simplified CPM: Calculate longest path through DAG
-    durations := make(map[int]int)
-    for i, task := range dag.Nodes {
-        durations[i] = task.EstimatedDuration
-        // Update with dependencies
-    }
-    return de.findLongestPath(durations, dag.Edges)
-}
-
-func (de *DAGExecutor) listSchedule(dag *DAG, criticalPath []int) []*Task {
-    // Priority-based scheduling respecting dependencies
-    return dag.Nodes // Placeholder for sorted list
-}
-```
+- **Dynamic DAG**: Supports dynamic updates with delta storage for efficient recomputation.
+- **Caching**: Caches static DAGs for faster access.
+- **Pre-emption**: Allows task pre-emption for better resource utilization.
+- **Signal-Based Scheduling**: Uses signals to manage task execution and resource allocation.
+- **Automated Worker Sizing**: Dynamically adjusts worker pool size based on system load.
 
 ## 6. Performance Optimization
 
@@ -256,28 +144,9 @@ func (de *DAGExecutor) listSchedule(dag *DAG, criticalPath []int) []*Task {
 ### 7.2 Solutions
 
 - **Dynamic DAG**: Use delta storage with periodic compaction to reduce complexity.
-  ```go
-  func (de *DAGExecutor) UpdateDynamicDAG(dag *DAG, delta *Delta) {
-      dag.ApplyDelta(delta)
-      if time.Since(dag.LastCompaction) > 1*time.Hour {
-          dag.Compact()
-      }
-  }
-  ```
 - **Concurrency**: Cap worker pool size with automated scaling limits.
-  ```go
-  func (wp *WorkerPool) adjustSize() {
-      if wp.workers > runtime.NumCPU()*2 {
-          wp.workers = runtime.NumCPU() * 2 // Cap at 2x CPU cores
-      }
-  }
-  ```
 
 ### 7.3 Future Work
 
 - **Advanced DAG Algorithms**: Integrate machine learning for predictive scheduling.
 - **Tool Ecosystem**: Expand WASM support with a plugin marketplace.
-
-## 8. Conclusion
-
-Dragonscale leverages Golang’s concurrency and LLMCompiler’s optimizations, enhanced with advanced DAG algorithms, automated worker sizing, and solutions to limitations, making it a robust and future-ready runtime for LLM adapters.
