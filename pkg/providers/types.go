@@ -1,20 +1,21 @@
 package providers
 
-import "context"
+import (
+	"context"
 
-type ToolCall struct {
-	ID        string                 `json:"id"`
-	Type      string                 `json:"type,omitempty"`
-	Function  *FunctionCall          `json:"function,omitempty"`
-	Name      string                 `json:"name,omitempty"`
-	Arguments map[string]interface{} `json:"arguments,omitempty"`
-}
+	"github.com/sipeed/picoclaw/pkg/messages"
+)
 
-type FunctionCall struct {
-	Name      string `json:"name"`
-	Arguments string `json:"arguments"`
-}
+// Type aliases: canonical types now live in pkg/messages.
+// These aliases maintain backward compatibility during migration.
+type ToolCall = messages.ToolCall
+type FunctionCall = messages.FunctionCall
+type UsageInfo = messages.UsageInfo
+type Message = messages.Message
+type ToolDefinition = messages.ToolDefinition
+type ToolFunctionDefinition = messages.ToolFunctionDefinition
 
+// LLMResponse is the response from an LLM provider API call.
 type LLMResponse struct {
 	Content      string     `json:"content"`
 	ToolCalls    []ToolCall `json:"tool_calls,omitempty"`
@@ -22,31 +23,8 @@ type LLMResponse struct {
 	Usage        *UsageInfo `json:"usage,omitempty"`
 }
 
-type UsageInfo struct {
-	PromptTokens     int `json:"prompt_tokens"`
-	CompletionTokens int `json:"completion_tokens"`
-	TotalTokens      int `json:"total_tokens"`
-}
-
-type Message struct {
-	Role       string     `json:"role"`
-	Content    string     `json:"content"`
-	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`
-	ToolCallID string     `json:"tool_call_id,omitempty"`
-}
-
+// LLMProvider is the interface for LLM provider implementations.
 type LLMProvider interface {
 	Chat(ctx context.Context, messages []Message, tools []ToolDefinition, model string, options map[string]interface{}) (*LLMResponse, error)
 	GetDefaultModel() string
-}
-
-type ToolDefinition struct {
-	Type     string                 `json:"type"`
-	Function ToolFunctionDefinition `json:"function"`
-}
-
-type ToolFunctionDefinition struct {
-	Name        string                 `json:"name"`
-	Description string                 `json:"description"`
-	Parameters  map[string]interface{} `json:"parameters"`
 }
