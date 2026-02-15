@@ -8,7 +8,6 @@ package agent
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -17,11 +16,15 @@ import (
 	"sync/atomic"
 	"time"
 
+	fantasy "charm.land/fantasy"
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/constants"
+	picofantasy "github.com/sipeed/picoclaw/pkg/fantasy"
 	"github.com/sipeed/picoclaw/pkg/logger"
-	"github.com/sipeed/picoclaw/pkg/providers"
+	"github.com/sipeed/picoclaw/pkg/memory/delegate"
+	memstore "github.com/sipeed/picoclaw/pkg/memory/store"
+	"github.com/sipeed/picoclaw/pkg/messages"
 	"github.com/sipeed/picoclaw/pkg/session"
 	"github.com/sipeed/picoclaw/pkg/state"
 	"github.com/sipeed/picoclaw/pkg/tools"
@@ -29,18 +32,21 @@ import (
 )
 
 type AgentLoop struct {
-	bus            *bus.MessageBus
-	provider       providers.LLMProvider
-	workspace      string
-	model          string
-	contextWindow  int // Maximum context window size in tokens
-	maxIterations  int
-	sessions       *session.SessionManager
-	state          *state.Manager
-	contextBuilder *ContextBuilder
-	tools          *tools.ToolRegistry
-	running        atomic.Bool
-	summarizing    sync.Map // Tracks which sessions are currently being summarized
+	bus               *bus.MessageBus
+	languageModel     fantasy.LanguageModel
+	workspace         string
+	model             string
+	contextWindow     int // Maximum context window size in tokens
+	maxIterations     int
+	sessions          *session.SessionManager
+	state             *state.Manager
+	contextBuilder    *ContextBuilder
+	tools             *tools.ToolRegistry
+	memoryStore       *memstore.MemoryStore // 3-tier MemGPT memory (nil if init failed)
+	running           atomic.Bool
+	summarizing       sync.Map       // Tracks which sessions are currently being summarized
+	summarizeFailures sync.Map       // Tracks consecutive summarization failures per session (string -> int)
+	cfg               *config.Config // Stored for subagent factory access
 }
 
 // processOptions configures how a message is processed
@@ -53,6 +59,7 @@ type processOptions struct {
 	EnableSummary   bool   // Whether to trigger summarization
 	SendResponse    bool   // Whether to send response via bus
 	NoHistory       bool   // If true, don't load session history (for heartbeat)
+	Streaming       bool   // If true, stream token deltas to bus via OnTextDelta
 }
 
 // createToolRegistry creates a tool registry with common tools.
@@ -101,7 +108,7 @@ func createToolRegistry(workspace string, restrict bool, cfg *config.Config, msg
 	return registry
 }
 
-func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers.LLMProvider) *AgentLoop {
+func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, model fantasy.LanguageModel) *AgentLoop {
 	workspace := cfg.WorkspacePath()
 	os.MkdirAll(workspace, 0755)
 
@@ -111,7 +118,7 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 	toolsRegistry := createToolRegistry(workspace, restrict, cfg, msgBus)
 
 	// Create subagent manager with its own tool registry
-	subagentManager := tools.NewSubagentManager(provider, cfg.Agents.Defaults.Model, workspace, msgBus)
+	subagentManager := tools.NewSubagentManager(model, cfg.Agents.Defaults.Model, workspace, msgBus)
 	subagentTools := createToolRegistry(workspace, restrict, cfg, msgBus)
 	// Subagent doesn't need spawn/subagent tools to avoid recursion
 	subagentManager.SetTools(subagentTools)
@@ -133,18 +140,66 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers
 	contextBuilder := NewContextBuilder(workspace)
 	contextBuilder.SetToolsRegistry(toolsRegistry)
 
+	// Initialize 3-tier MemGPT memory system
+	var ms *memstore.MemoryStore
+	memDBPath := filepath.Join(workspace, "memory", "picoclaw.db")
+	os.MkdirAll(filepath.Dir(memDBPath), 0755)
+
+	del, err := delegate.NewLibSQLDelegate(memDBPath)
+	if err != nil {
+		logger.WarnCF("agent", "Failed to create memory delegate, memory system disabled",
+			map[string]interface{}{"error": err.Error()})
+	} else {
+		if err := del.Init(context.Background()); err != nil {
+			logger.WarnCF("agent", "Failed to init memory schema, memory system disabled",
+				map[string]interface{}{"error": err.Error()})
+			del.Close()
+		} else {
+			chunker := memstore.NewMarkdownChunker(memstore.DefaultMarkdownChunkerConfig())
+			ms = memstore.New(del, chunker, nil, memstore.Config{
+				ContextWindowTokens:    cfg.Agents.Defaults.MaxTokens,
+				OffloadThresholdTokens: 4000,
+			})
+			contextBuilder.SetMemoryStore(ms)
+
+			// Register the memory tool
+			memTool := NewMemGPTTool(ms, "picoclaw", "default")
+			toolsRegistry.Register(memTool)
+
+			logger.InfoCF("agent", "3-tier memory system initialized",
+				map[string]interface{}{"db_path": memDBPath})
+		}
+	}
+
+	// Register meta-tools for progressive disclosure (tool_search + tool_call)
+	toolsRegistry.RegisterMetaTools()
+
+	// If memory tool is a gateway, mark it visible in progressive mode
+	if ms != nil {
+		toolsRegistry.MarkGateway("memory")
+	}
+
+	// Apply progressive disclosure config
+	if cfg.Tools.ProgressiveDisclosure {
+		toolsRegistry.SetProgressiveDisclosure(true)
+		logger.InfoCF("agent", "Progressive tool disclosure enabled",
+			map[string]interface{}{"gateway_tools": toolsRegistry.ListVisible()})
+	}
+
 	return &AgentLoop{
 		bus:            msgBus,
-		provider:       provider,
+		languageModel:  model,
 		workspace:      workspace,
 		model:          cfg.Agents.Defaults.Model,
-		contextWindow:  cfg.Agents.Defaults.MaxTokens, // Restore context window for summarization
+		contextWindow:  cfg.Agents.Defaults.MaxTokens,
 		maxIterations:  cfg.Agents.Defaults.MaxToolIterations,
 		sessions:       sessionsManager,
 		state:          stateManager,
 		contextBuilder: contextBuilder,
 		tools:          toolsRegistry,
+		memoryStore:    ms,
 		summarizing:    sync.Map{},
+		cfg:            cfg,
 	}
 }
 
@@ -192,6 +247,9 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 
 func (al *AgentLoop) Stop() {
 	al.running.Store(false)
+	if al.memoryStore != nil {
+		al.memoryStore.Close()
+	}
 }
 
 func (al *AgentLoop) RegisterTool(tool tools.Tool) {
@@ -224,6 +282,29 @@ func (al *AgentLoop) ProcessDirectWithChannel(ctx context.Context, content, sess
 	}
 
 	return al.processMessage(ctx, msg)
+}
+
+// ProcessDirectStreaming processes a message with streaming token delivery.
+// Text deltas are published to the bus as StreamDelta messages in real time.
+func (al *AgentLoop) ProcessDirectStreaming(ctx context.Context, content, sessionKey, channel, chatID string) (string, error) {
+	msg := bus.InboundMessage{
+		Channel:    channel,
+		SenderID:   "user",
+		ChatID:     chatID,
+		Content:    content,
+		SessionKey: sessionKey,
+	}
+
+	return al.runAgentLoop(ctx, processOptions{
+		SessionKey:      msg.SessionKey,
+		Channel:         msg.Channel,
+		ChatID:          msg.ChatID,
+		UserMessage:     msg.Content,
+		DefaultResponse: "I've completed processing but have no response to give.",
+		EnableSummary:   true,
+		SendResponse:    false,
+		Streaming:       true,
+	})
 }
 
 // ProcessHeartbeat processes a heartbeat request without session history.
@@ -327,11 +408,14 @@ func (al *AgentLoop) processSystemMessage(ctx context.Context, msg bus.InboundMe
 }
 
 // runAgentLoop is the core message processing logic.
-// It handles context building, LLM calls, tool execution, and response handling.
+// It handles context building, Fantasy agent creation, tool execution, and response handling.
+// When opts.Streaming is true, delegates to runAgentLoopStreaming for real-time token delivery.
 func (al *AgentLoop) runAgentLoop(ctx context.Context, opts processOptions) (string, error) {
+	if opts.Streaming {
+		return al.runAgentLoopStreaming(ctx, opts)
+	}
 	// 0. Record last channel for heartbeat notifications (skip internal channels)
 	if opts.Channel != "" && opts.ChatID != "" {
-		// Don't record internal channels (cli, system, subagent)
 		if !constants.IsInternalChannel(opts.Channel) {
 			channelKey := fmt.Sprintf("%s:%s", opts.Channel, opts.ChatID)
 			if err := al.RecordLastChannel(channelKey); err != nil {
@@ -344,13 +428,13 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, opts processOptions) (str
 	al.updateToolContexts(opts.Channel, opts.ChatID)
 
 	// 2. Build messages (skip history for heartbeat)
-	var history []providers.Message
+	var history []messages.Message
 	var summary string
 	if !opts.NoHistory {
 		history = al.sessions.GetHistory(opts.SessionKey)
 		summary = al.sessions.GetSummary(opts.SessionKey)
 	}
-	messages := al.contextBuilder.BuildMessages(
+	builtMsgs := al.contextBuilder.BuildMessages(
 		history,
 		summary,
 		opts.UserMessage,
@@ -362,30 +446,89 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, opts processOptions) (str
 	// 3. Save user message to session
 	al.sessions.AddMessage(opts.SessionKey, "user", opts.UserMessage)
 
-	// 4. Run LLM iteration loop
-	finalContent, iteration, err := al.runLLMIteration(ctx, messages, opts)
-	if err != nil {
-		return "", err
+	// 4. Split built messages into system prompt, conversation history, and current user prompt.
+	// BuildMessages returns: [system, ...history, user]
+	systemPrompt := ""
+	var historyMsgs []messages.Message
+	userPrompt := opts.UserMessage
+
+	if len(builtMsgs) > 0 && builtMsgs[0].Role == "system" {
+		systemPrompt = builtMsgs[0].Content
+		// History is everything between system and last user message.
+		if len(builtMsgs) > 2 {
+			historyMsgs = builtMsgs[1 : len(builtMsgs)-1]
+		}
 	}
 
-	// If last tool had ForUser content and we already sent it, we might not need to send final response
-	// This is controlled by the tool's Silent flag and ForUser content
+	// 5. Convert history to Fantasy message format
+	fantasyHistory := picofantasy.MessagesToFantasy(historyMsgs)
 
-	// 5. Handle empty response
+	// 6. Build adapted tools from PicoClaw registry (with optional offloading)
+	adaptCfg := picofantasy.AdaptedToolsConfig{
+		MemStore:   al.memoryStore,
+		AgentID:    "picoclaw",
+		SessionKey: opts.SessionKey,
+	}
+	adaptedTools := picofantasy.BuildAdaptedTools(al.tools, al.bus, opts.Channel, opts.ChatID, adaptCfg)
+
+	// 7. Create Fantasy agent with tools and configuration
+	agentOpts := []fantasy.AgentOption{
+		fantasy.WithTools(adaptedTools...),
+		fantasy.WithStopConditions(fantasy.StepCountIs(al.maxIterations)),
+	}
+	if systemPrompt != "" {
+		agentOpts = append(agentOpts, fantasy.WithSystemPrompt(systemPrompt))
+	}
+	agent := fantasy.NewAgent(al.languageModel, agentOpts...)
+
+	logger.DebugCF("agent", "Fantasy agent created",
+		map[string]interface{}{
+			"model":          al.model,
+			"tools_count":    len(adaptedTools),
+			"history_count":  len(historyMsgs),
+			"max_iterations": al.maxIterations,
+			"memory_enabled": al.memoryStore != nil,
+		})
+
+	// 8. Call Fantasy agent.Generate()
+	result, err := agent.Generate(ctx, fantasy.AgentCall{
+		Prompt:   userPrompt,
+		Messages: fantasyHistory,
+	})
+	if err != nil {
+		logger.ErrorCF("agent", "Fantasy Generate failed",
+			map[string]interface{}{
+				"error": err.Error(),
+			})
+		return "", fmt.Errorf("agent Generate failed: %w", err)
+	}
+
+	// 9. Save all step messages to session
+	stepCount := len(result.Steps)
+	for _, step := range result.Steps {
+		stepMsgs := picofantasy.StepToMessages(step)
+		for _, m := range stepMsgs {
+			al.sessions.AddFullMessage(opts.SessionKey, m)
+		}
+	}
+
+	// 10. Extract final text
+	finalContent := result.Response.Content.Text()
+
+	// 11. Handle empty response
 	if finalContent == "" {
 		finalContent = opts.DefaultResponse
 	}
 
-	// 6. Save final assistant message to session
-	al.sessions.AddMessage(opts.SessionKey, "assistant", finalContent)
+	// 12. Save session
 	al.sessions.Save(opts.SessionKey)
 
-	// 7. Optional: summarization
+	// 13. Optional: summarization
 	if opts.EnableSummary {
 		al.maybeSummarize(opts.SessionKey)
 	}
 
-	// 8. Optional: send response via bus
+	// 14. Optional: send response via bus
 	if opts.SendResponse {
 		al.bus.PublishOutbound(bus.OutboundMessage{
 			Channel: opts.Channel,
@@ -394,178 +537,164 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, opts processOptions) (str
 		})
 	}
 
-	// 9. Log response
+	// 15. Log response
 	responsePreview := utils.Truncate(finalContent, 120)
 	logger.InfoCF("agent", fmt.Sprintf("Response: %s", responsePreview),
 		map[string]interface{}{
 			"session_key":  opts.SessionKey,
-			"iterations":   iteration,
+			"steps":        stepCount,
 			"final_length": len(finalContent),
 		})
 
 	return finalContent, nil
 }
 
-// runLLMIteration executes the LLM call loop with tool handling.
-// Returns the final content, iteration count, and any error.
-func (al *AgentLoop) runLLMIteration(ctx context.Context, messages []providers.Message, opts processOptions) (string, int, error) {
-	iteration := 0
-	var finalContent string
-
-	for iteration < al.maxIterations {
-		iteration++
-
-		logger.DebugCF("agent", "LLM iteration",
-			map[string]interface{}{
-				"iteration": iteration,
-				"max":       al.maxIterations,
-			})
-
-		// Build tool definitions
-		providerToolDefs := al.tools.ToProviderDefs()
-
-		// Log LLM request details
-		logger.DebugCF("agent", "LLM request",
-			map[string]interface{}{
-				"iteration":         iteration,
-				"model":             al.model,
-				"messages_count":    len(messages),
-				"tools_count":       len(providerToolDefs),
-				"max_tokens":        8192,
-				"temperature":       0.7,
-				"system_prompt_len": len(messages[0].Content),
-			})
-
-		// Log full messages (detailed)
-		logger.DebugCF("agent", "Full LLM request",
-			map[string]interface{}{
-				"iteration":     iteration,
-				"messages_json": formatMessagesForLog(messages),
-				"tools_json":    formatToolsForLog(providerToolDefs),
-			})
-
-		// Call LLM
-		response, err := al.provider.Chat(ctx, messages, providerToolDefs, al.model, map[string]interface{}{
-			"max_tokens":  8192,
-			"temperature": 0.7,
-		})
-
-		if err != nil {
-			logger.ErrorCF("agent", "LLM call failed",
-				map[string]interface{}{
-					"iteration": iteration,
-					"error":     err.Error(),
-				})
-			return "", iteration, fmt.Errorf("LLM call failed: %w", err)
-		}
-
-		// Check if no tool calls - we're done
-		if len(response.ToolCalls) == 0 {
-			finalContent = response.Content
-			logger.InfoCF("agent", "LLM response without tool calls (direct answer)",
-				map[string]interface{}{
-					"iteration":     iteration,
-					"content_chars": len(finalContent),
-				})
-			break
-		}
-
-		// Log tool calls
-		toolNames := make([]string, 0, len(response.ToolCalls))
-		for _, tc := range response.ToolCalls {
-			toolNames = append(toolNames, tc.Name)
-		}
-		logger.InfoCF("agent", "LLM requested tool calls",
-			map[string]interface{}{
-				"tools":     toolNames,
-				"count":     len(response.ToolCalls),
-				"iteration": iteration,
-			})
-
-		// Build assistant message with tool calls
-		assistantMsg := providers.Message{
-			Role:    "assistant",
-			Content: response.Content,
-		}
-		for _, tc := range response.ToolCalls {
-			argumentsJSON, _ := json.Marshal(tc.Arguments)
-			assistantMsg.ToolCalls = append(assistantMsg.ToolCalls, providers.ToolCall{
-				ID:   tc.ID,
-				Type: "function",
-				Function: &providers.FunctionCall{
-					Name:      tc.Name,
-					Arguments: string(argumentsJSON),
-				},
-			})
-		}
-		messages = append(messages, assistantMsg)
-
-		// Save assistant message with tool calls to session
-		al.sessions.AddFullMessage(opts.SessionKey, assistantMsg)
-
-		// Execute tool calls
-		for _, tc := range response.ToolCalls {
-			// Log tool call with arguments preview
-			argsJSON, _ := json.Marshal(tc.Arguments)
-			argsPreview := utils.Truncate(string(argsJSON), 200)
-			logger.InfoCF("agent", fmt.Sprintf("Tool call: %s(%s)", tc.Name, argsPreview),
-				map[string]interface{}{
-					"tool":      tc.Name,
-					"iteration": iteration,
-				})
-
-			// Create async callback for tools that implement AsyncTool
-			// NOTE: Following openclaw's design, async tools do NOT send results directly to users.
-			// Instead, they notify the agent via PublishInbound, and the agent decides
-			// whether to forward the result to the user (in processSystemMessage).
-			asyncCallback := func(callbackCtx context.Context, result *tools.ToolResult) {
-				// Log the async completion but don't send directly to user
-				// The agent will handle user notification via processSystemMessage
-				if !result.Silent && result.ForUser != "" {
-					logger.InfoCF("agent", "Async tool completed, agent will handle notification",
-						map[string]interface{}{
-							"tool":        tc.Name,
-							"content_len": len(result.ForUser),
-						})
-				}
+// runAgentLoopStreaming uses Fantasy's agent.Stream() to stream token deltas
+// to the bus in real time. Structure mirrors runAgentLoop but uses AgentStreamCall
+// with OnTextDelta, OnStepFinish, and OnToolCall callbacks.
+func (al *AgentLoop) runAgentLoopStreaming(ctx context.Context, opts processOptions) (string, error) {
+	// 0. Record last channel
+	if opts.Channel != "" && opts.ChatID != "" {
+		if !constants.IsInternalChannel(opts.Channel) {
+			channelKey := fmt.Sprintf("%s:%s", opts.Channel, opts.ChatID)
+			if err := al.RecordLastChannel(channelKey); err != nil {
+				logger.WarnCF("agent", "Failed to record last channel: %v", map[string]interface{}{"error": err.Error()})
 			}
-
-			toolResult := al.tools.ExecuteWithContext(ctx, tc.Name, tc.Arguments, opts.Channel, opts.ChatID, asyncCallback)
-
-			// Send ForUser content to user immediately if not Silent
-			if !toolResult.Silent && toolResult.ForUser != "" && opts.SendResponse {
-				al.bus.PublishOutbound(bus.OutboundMessage{
-					Channel: opts.Channel,
-					ChatID:  opts.ChatID,
-					Content: toolResult.ForUser,
-				})
-				logger.DebugCF("agent", "Sent tool result to user",
-					map[string]interface{}{
-						"tool":        tc.Name,
-						"content_len": len(toolResult.ForUser),
-					})
-			}
-
-			// Determine content for LLM based on tool result
-			contentForLLM := toolResult.ForLLM
-			if contentForLLM == "" && toolResult.Err != nil {
-				contentForLLM = toolResult.Err.Error()
-			}
-
-			toolResultMsg := providers.Message{
-				Role:       "tool",
-				Content:    contentForLLM,
-				ToolCallID: tc.ID,
-			}
-			messages = append(messages, toolResultMsg)
-
-			// Save tool result message to session
-			al.sessions.AddFullMessage(opts.SessionKey, toolResultMsg)
 		}
 	}
 
-	return finalContent, iteration, nil
+	// 1. Update tool contexts
+	al.updateToolContexts(opts.Channel, opts.ChatID)
+
+	// 2. Build messages
+	var history []messages.Message
+	var summary string
+	if !opts.NoHistory {
+		history = al.sessions.GetHistory(opts.SessionKey)
+		summary = al.sessions.GetSummary(opts.SessionKey)
+	}
+	builtMsgs := al.contextBuilder.BuildMessages(history, summary, opts.UserMessage, nil, opts.Channel, opts.ChatID)
+
+	// 3. Save user message
+	al.sessions.AddMessage(opts.SessionKey, "user", opts.UserMessage)
+
+	// 4. Split into system/history/user
+	systemPrompt := ""
+	var historyMsgs []messages.Message
+	userPrompt := opts.UserMessage
+
+	if len(builtMsgs) > 0 && builtMsgs[0].Role == "system" {
+		systemPrompt = builtMsgs[0].Content
+		if len(builtMsgs) > 2 {
+			historyMsgs = builtMsgs[1 : len(builtMsgs)-1]
+		}
+	}
+
+	// 5. Convert history
+	fantasyHistory := picofantasy.MessagesToFantasy(historyMsgs)
+
+	// 6. Build adapted tools (with optional offloading)
+	streamAdaptCfg := picofantasy.AdaptedToolsConfig{
+		MemStore:   al.memoryStore,
+		AgentID:    "picoclaw",
+		SessionKey: opts.SessionKey,
+	}
+	adaptedTools := picofantasy.BuildAdaptedTools(al.tools, al.bus, opts.Channel, opts.ChatID, streamAdaptCfg)
+
+	// 7. Create Fantasy agent
+	agentOpts := []fantasy.AgentOption{
+		fantasy.WithTools(adaptedTools...),
+		fantasy.WithStopConditions(fantasy.StepCountIs(al.maxIterations)),
+	}
+	if systemPrompt != "" {
+		agentOpts = append(agentOpts, fantasy.WithSystemPrompt(systemPrompt))
+	}
+	fantasyAgent := fantasy.NewAgent(al.languageModel, agentOpts...)
+
+	logger.DebugCF("agent", "Fantasy streaming agent created",
+		map[string]interface{}{
+			"model":          al.model,
+			"tools_count":    len(adaptedTools),
+			"history_count":  len(historyMsgs),
+			"max_iterations": al.maxIterations,
+			"memory_enabled": al.memoryStore != nil,
+		})
+
+	// 8. Build streaming call with callbacks
+	streamCall := fantasy.AgentStreamCall{
+		Prompt:   userPrompt,
+		Messages: fantasyHistory,
+
+		// Stream text deltas to bus in real time
+		OnTextDelta: func(id, text string) error {
+			if opts.Channel != "" && opts.ChatID != "" {
+				al.bus.PublishOutbound(bus.OutboundMessage{
+					Channel:     opts.Channel,
+					ChatID:      opts.ChatID,
+					Content:     text,
+					StreamDelta: true,
+				})
+			}
+			return nil
+		},
+
+		// Save each step's messages to session as they complete
+		OnStepFinish: func(step fantasy.StepResult) error {
+			stepMsgs := picofantasy.StepToMessages(step)
+			for _, m := range stepMsgs {
+				al.sessions.AddFullMessage(opts.SessionKey, m)
+			}
+			return nil
+		},
+
+		// Log tool calls as they happen
+		OnToolCall: func(tc fantasy.ToolCallContent) error {
+			logger.DebugCF("agent", "Streaming tool call",
+				map[string]interface{}{
+					"tool": tc.ToolName,
+					"id":   tc.ToolCallID,
+				})
+			return nil
+		},
+	}
+
+	// 9. Call Fantasy agent.Stream()
+	result, err := fantasyAgent.Stream(ctx, streamCall)
+	if err != nil {
+		logger.ErrorCF("agent", "Fantasy Stream failed",
+			map[string]interface{}{"error": err.Error()})
+		return "", fmt.Errorf("agent Stream failed: %w", err)
+	}
+
+	// 10. Extract final text
+	finalContent := result.Response.Content.Text()
+	if finalContent == "" {
+		finalContent = opts.DefaultResponse
+	}
+
+	// 11. Save session
+	al.sessions.Save(opts.SessionKey)
+
+	// 12. Summarization
+	if opts.EnableSummary {
+		al.maybeSummarize(opts.SessionKey)
+	}
+
+	// 13. Log response
+	stepCount := len(result.Steps)
+	responsePreview := utils.Truncate(finalContent, 120)
+	logger.InfoCF("agent", fmt.Sprintf("Streaming response: %s", responsePreview),
+		map[string]interface{}{
+			"session_key":  opts.SessionKey,
+			"steps":        stepCount,
+			"final_length": len(finalContent),
+			"total_tokens": result.TotalUsage.TotalTokens,
+		})
+
+	return finalContent, nil
 }
+
+// runLLMIteration — DELETED. Replaced by Fantasy's internal agent loop.
 
 // updateToolContexts updates the context for tools that need channel/chatID info.
 func (al *AgentLoop) updateToolContexts(channel, chatID string) {
@@ -621,16 +750,16 @@ func (al *AgentLoop) GetStartupInfo() map[string]interface{} {
 }
 
 // formatMessagesForLog formats messages for logging
-func formatMessagesForLog(messages []providers.Message) string {
-	if len(messages) == 0 {
+func formatMessagesForLog(msgs []messages.Message) string {
+	if len(msgs) == 0 {
 		return "[]"
 	}
 
 	var result string
 	result += "[\n"
-	for i, msg := range messages {
+	for i, msg := range msgs {
 		result += fmt.Sprintf("  [%d] Role: %s\n", i, msg.Role)
-		if msg.ToolCalls != nil && len(msg.ToolCalls) > 0 {
+		if len(msg.ToolCalls) > 0 {
 			result += "  ToolCalls:\n"
 			for _, tc := range msg.ToolCalls {
 				result += fmt.Sprintf("    - ID: %s, Type: %s, Name: %s\n", tc.ID, tc.Type, tc.Name)
@@ -647,25 +776,6 @@ func formatMessagesForLog(messages []providers.Message) string {
 			result += fmt.Sprintf("  ToolCallID: %s\n", msg.ToolCallID)
 		}
 		result += "\n"
-	}
-	result += "]"
-	return result
-}
-
-// formatToolsForLog formats tool definitions for logging
-func formatToolsForLog(tools []providers.ToolDefinition) string {
-	if len(tools) == 0 {
-		return "[]"
-	}
-
-	var result string
-	result += "[\n"
-	for i, tool := range tools {
-		result += fmt.Sprintf("  [%d] Type: %s, Name: %s\n", i, tool.Type, tool.Function.Name)
-		result += fmt.Sprintf("      Description: %s\n", tool.Function.Description)
-		if len(tool.Function.Parameters) > 0 {
-			result += fmt.Sprintf("      Parameters: %s\n", utils.Truncate(fmt.Sprintf("%v", tool.Function.Parameters), 200))
-		}
 	}
 	result += "]"
 	return result
@@ -689,14 +799,13 @@ func (al *AgentLoop) summarizeSession(sessionKey string) {
 	// Oversized Message Guard
 	// Skip messages larger than 50% of context window to prevent summarizer overflow
 	maxMessageTokens := al.contextWindow / 2
-	validMessages := make([]providers.Message, 0)
+	validMessages := make([]messages.Message, 0)
 	omitted := false
 
 	for _, m := range toSummarize {
 		if m.Role != "user" && m.Role != "assistant" {
 			continue
 		}
-		// Estimate tokens for this message
 		msgTokens := len(m.Content) / 4
 		if msgTokens > maxMessageTokens {
 			omitted = true
@@ -710,7 +819,6 @@ func (al *AgentLoop) summarizeSession(sessionKey string) {
 	}
 
 	// Multi-Part Summarization
-	// Split into two parts if history is significant
 	var finalSummary string
 	if len(validMessages) > 10 {
 		mid := len(validMessages) / 2
@@ -722,12 +830,9 @@ func (al *AgentLoop) summarizeSession(sessionKey string) {
 
 		// Merge them
 		mergePrompt := fmt.Sprintf("Merge these two conversation summaries into one cohesive summary:\n\n1: %s\n\n2: %s", s1, s2)
-		resp, err := al.provider.Chat(ctx, []providers.Message{{Role: "user", Content: mergePrompt}}, nil, al.model, map[string]interface{}{
-			"max_tokens":  1024,
-			"temperature": 0.3,
-		})
+		resp, err := al.callModel(ctx, mergePrompt)
 		if err == nil {
-			finalSummary = resp.Content
+			finalSummary = resp
 		} else {
 			finalSummary = s1 + " " + s2
 		}
@@ -743,11 +848,33 @@ func (al *AgentLoop) summarizeSession(sessionKey string) {
 		al.sessions.SetSummary(sessionKey, finalSummary)
 		al.sessions.TruncateHistory(sessionKey, 4)
 		al.sessions.Save(sessionKey)
+		al.summarizeFailures.Delete(sessionKey)
+	} else {
+		var count int
+		if v, ok := al.summarizeFailures.Load(sessionKey); ok {
+			count = v.(int)
+		}
+		count++
+		al.summarizeFailures.Store(sessionKey, count)
+
+		const maxSummarizeFailures = 3
+		const emergencyKeep = 10
+		if count >= maxSummarizeFailures {
+			logger.ErrorCF("agent", "Summarization failed repeatedly, force-truncating session",
+				map[string]interface{}{
+					"session":              sessionKey,
+					"consecutive_failures": count,
+					"keep":                 emergencyKeep,
+				})
+			al.sessions.TruncateHistory(sessionKey, emergencyKeep)
+			al.sessions.Save(sessionKey)
+			al.summarizeFailures.Delete(sessionKey)
+		}
 	}
 }
 
-// summarizeBatch summarizes a batch of messages.
-func (al *AgentLoop) summarizeBatch(ctx context.Context, batch []providers.Message, existingSummary string) (string, error) {
+// summarizeBatch summarizes a batch of messages using the Fantasy LanguageModel directly.
+func (al *AgentLoop) summarizeBatch(ctx context.Context, batch []messages.Message, existingSummary string) (string, error) {
 	prompt := "Provide a concise summary of this conversation segment, preserving core context and key points.\n"
 	if existingSummary != "" {
 		prompt += "Existing context: " + existingSummary + "\n"
@@ -757,20 +884,32 @@ func (al *AgentLoop) summarizeBatch(ctx context.Context, batch []providers.Messa
 		prompt += fmt.Sprintf("%s: %s\n", m.Role, m.Content)
 	}
 
-	response, err := al.provider.Chat(ctx, []providers.Message{{Role: "user", Content: prompt}}, nil, al.model, map[string]interface{}{
-		"max_tokens":  1024,
-		"temperature": 0.3,
+	return al.callModel(ctx, prompt)
+}
+
+// callModel makes a direct call to the Fantasy LanguageModel (no tools, no agent loop).
+// Used for summarization and other simple generation tasks.
+func (al *AgentLoop) callModel(ctx context.Context, prompt string) (string, error) {
+	temp := 0.3
+	maxTokens := int64(1024)
+
+	resp, err := al.languageModel.Generate(ctx, fantasy.Call{
+		Prompt: fantasy.Prompt{
+			fantasy.NewUserMessage(prompt),
+		},
+		Temperature:     &temp,
+		MaxOutputTokens: &maxTokens,
 	})
 	if err != nil {
 		return "", err
 	}
-	return response.Content, nil
+	return resp.Content.Text(), nil
 }
 
 // estimateTokens estimates the number of tokens in a message list.
-func (al *AgentLoop) estimateTokens(messages []providers.Message) int {
+func (al *AgentLoop) estimateTokens(msgs []messages.Message) int {
 	total := 0
-	for _, m := range messages {
+	for _, m := range msgs {
 		total += len(m.Content) / 4 // Simple heuristic: 4 chars per token
 	}
 	return total

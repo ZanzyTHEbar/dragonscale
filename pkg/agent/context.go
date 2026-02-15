@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -9,7 +10,8 @@ import (
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/logger"
-	"github.com/sipeed/picoclaw/pkg/providers"
+	"github.com/sipeed/picoclaw/pkg/memory"
+	"github.com/sipeed/picoclaw/pkg/messages"
 	"github.com/sipeed/picoclaw/pkg/skills"
 	"github.com/sipeed/picoclaw/pkg/tools"
 )
@@ -17,7 +19,8 @@ import (
 type ContextBuilder struct {
 	workspace    string
 	skillsLoader *skills.SkillsLoader
-	memory       *MemoryStore
+	memory       *MemoryStore        // Legacy file-based memory
+	memoryStore  memory.Memory       // New 3-tier MemGPT memory (may be nil)
 	tools        *tools.ToolRegistry // Direct reference to tool registry
 }
 
@@ -46,6 +49,11 @@ func NewContextBuilder(workspace string) *ContextBuilder {
 // SetToolsRegistry sets the tools registry for dynamic tool summary generation.
 func (cb *ContextBuilder) SetToolsRegistry(registry *tools.ToolRegistry) {
 	cb.tools = registry
+}
+
+// SetMemoryStore sets the 3-tier MemGPT memory store for working context injection.
+func (cb *ContextBuilder) SetMemoryStore(ms memory.Memory) {
+	cb.memoryStore = ms
 }
 
 func (cb *ContextBuilder) getIdentity() string {
@@ -128,10 +136,18 @@ The following skills extend your capabilities. To use a skill, read its SKILL.md
 %s`, skillsSummary))
 	}
 
-	// Memory context
+	// Legacy file-based memory context
 	memoryContext := cb.memory.GetMemoryContext()
 	if memoryContext != "" {
 		parts = append(parts, "# Memory\n\n"+memoryContext)
+	}
+
+	// 3-tier MemGPT working context injection
+	if cb.memoryStore != nil {
+		wcSection := cb.buildWorkingContextSection()
+		if wcSection != "" {
+			parts = append(parts, wcSection)
+		}
 	}
 
 	// Join with "---" separator
@@ -157,8 +173,46 @@ func (cb *ContextBuilder) LoadBootstrapFiles() string {
 	return result
 }
 
-func (cb *ContextBuilder) BuildMessages(history []providers.Message, summary string, currentMessage string, media []string, channel, chatID string) []providers.Message {
-	messages := []providers.Message{}
+// buildWorkingContextSection returns the working context section for the system prompt.
+// It includes the hot-tier working context buffer and memory usage instructions.
+func (cb *ContextBuilder) buildWorkingContextSection() string {
+	if cb.memoryStore == nil {
+		return ""
+	}
+
+	// Use a background context for system prompt building (non-blocking)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	var parts []string
+
+	// Inject working context (hot tier)
+	wc, err := cb.memoryStore.GetWorkingContext(ctx, "picoclaw", "default")
+	if err == nil && wc != "" {
+		parts = append(parts, "## Working Context\n\n"+wc)
+	}
+
+	// Memory system instructions
+	parts = append(parts, `## Memory System
+
+You have a 3-tier memory system accessible via the **memory** tool:
+
+- **Working Context** (hot): Always loaded. Use memory tool to update it with durable facts.
+- **Recall** (warm): Scored memory items. Search returns the most relevant.
+- **Archival** (cold): Large documents chunked and embedded for retrieval.
+
+Use the memory tool to:
+- **search**: Find relevant memories across all tiers.
+- **write**: Store important facts, preferences, decisions.
+- **status**: Check memory pressure and usage.
+
+Store important user preferences, key decisions, and facts you want to remember long-term.`)
+
+	return strings.Join(parts, "\n\n")
+}
+
+func (cb *ContextBuilder) BuildMessages(history []messages.Message, summary string, currentMessage string, media []string, channel, chatID string) []messages.Message {
+	msgs := []messages.Message{}
 
 	systemPrompt := cb.BuildSystemPrompt()
 
@@ -189,49 +243,41 @@ func (cb *ContextBuilder) BuildMessages(history []providers.Message, summary str
 		systemPrompt += "\n\n## Summary of Previous Conversation\n\n" + summary
 	}
 
-	//This fix prevents the session memory from LLM failure due to elimination of toolu_IDs required from LLM
-	// --- INICIO DEL FIX ---
-	//Diegox-17
-	for len(history) > 0 && (history[0].Role == "tool") {
-		logger.DebugCF("agent", "Removing orphaned tool message from history to prevent LLM error",
-			map[string]interface{}{"role": history[0].Role})
-		history = history[1:]
-	}
-	//Diegox-17
-	// --- FIN DEL FIX ---
+	// Note: Orphaned tool messages are now prevented at the source by
+	// tool-call-aware truncation in SessionManager.TruncateHistory().
 
-	messages = append(messages, providers.Message{
+	msgs = append(msgs, messages.Message{
 		Role:    "system",
 		Content: systemPrompt,
 	})
 
-	messages = append(messages, history...)
+	msgs = append(msgs, history...)
 
-	messages = append(messages, providers.Message{
+	msgs = append(msgs, messages.Message{
 		Role:    "user",
 		Content: currentMessage,
 	})
 
-	return messages
+	return msgs
 }
 
-func (cb *ContextBuilder) AddToolResult(messages []providers.Message, toolCallID, toolName, result string) []providers.Message {
-	messages = append(messages, providers.Message{
+func (cb *ContextBuilder) AddToolResult(msgs []messages.Message, toolCallID, toolName, result string) []messages.Message {
+	msgs = append(msgs, messages.Message{
 		Role:       "tool",
 		Content:    result,
 		ToolCallID: toolCallID,
 	})
-	return messages
+	return msgs
 }
 
-func (cb *ContextBuilder) AddAssistantMessage(messages []providers.Message, content string, toolCalls []map[string]interface{}) []providers.Message {
-	msg := providers.Message{
+func (cb *ContextBuilder) AddAssistantMessage(msgs []messages.Message, content string, toolCalls []map[string]interface{}) []messages.Message {
+	msg := messages.Message{
 		Role:    "assistant",
 		Content: content,
 	}
 	// Always add assistant message, whether or not it has tool calls
-	messages = append(messages, msg)
-	return messages
+	msgs = append(msgs, msg)
+	return msgs
 }
 
 func (cb *ContextBuilder) loadSkills() string {

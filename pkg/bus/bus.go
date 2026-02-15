@@ -3,6 +3,8 @@ package bus
 import (
 	"context"
 	"sync"
+
+	"github.com/sipeed/picoclaw/pkg/logger"
 )
 
 type MessageBus struct {
@@ -22,6 +24,22 @@ func NewMessageBus() *MessageBus {
 
 func (mb *MessageBus) PublishInbound(msg InboundMessage) {
 	mb.inbound <- msg
+}
+
+// TryPublishInbound attempts a non-blocking send. Returns false if the buffer
+// is full (message dropped). Callers should log and/or notify the user.
+func (mb *MessageBus) TryPublishInbound(msg InboundMessage) bool {
+	select {
+	case mb.inbound <- msg:
+		return true
+	default:
+		logger.InfoCF("bus", "Inbound buffer full, message dropped",
+			map[string]interface{}{
+				"channel":   msg.Channel,
+				"sender_id": msg.SenderID,
+			})
+		return false
+	}
 }
 
 func (mb *MessageBus) ConsumeInbound(ctx context.Context) (InboundMessage, bool) {

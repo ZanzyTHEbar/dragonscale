@@ -175,6 +175,7 @@ type ProviderConfig struct {
 	APIBase    string `json:"api_base" env:"PICOCLAW_PROVIDERS_{{.Name}}_API_BASE"`
 	Proxy      string `json:"proxy,omitempty" env:"PICOCLAW_PROVIDERS_{{.Name}}_PROXY"`
 	AuthMethod string `json:"auth_method,omitempty" env:"PICOCLAW_PROVIDERS_{{.Name}}_AUTH_METHOD"`
+	Timeout    int    `json:"timeout,omitempty" env:"PICOCLAW_PROVIDERS_{{.Name}}_TIMEOUT"` // seconds, 0 = default (120s)
 }
 
 type GatewayConfig struct {
@@ -199,7 +200,8 @@ type WebToolsConfig struct {
 }
 
 type ToolsConfig struct {
-	Web WebToolsConfig `json:"web"`
+	Web                   WebToolsConfig `json:"web"`
+	ProgressiveDisclosure bool           `json:"progressive_disclosure" env:"PICOCLAW_TOOLS_PROGRESSIVE_DISCLOSURE"`
 }
 
 func DefaultConfig() *Config {
@@ -332,7 +334,46 @@ func LoadConfig(path string) (*Config, error) {
 		return nil, err
 	}
 
+	if warnings := cfg.Validate(); len(warnings) > 0 {
+		for _, w := range warnings {
+			fmt.Fprintf(os.Stderr, "config warning: %s\n", w)
+		}
+	}
+
 	return cfg, nil
+}
+
+// Validate checks configuration for common issues. Returns a list of
+// warning strings. These are warnings rather than hard errors to maintain
+// backward compatibility, but they indicate values that will likely cause
+// problems at runtime.
+func (c *Config) Validate() []string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	var warnings []string
+
+	if c.Agents.Defaults.Model == "" {
+		warnings = append(warnings, "agents.defaults.model is empty: no default LLM model configured")
+	}
+
+	if c.Agents.Defaults.MaxTokens <= 0 {
+		warnings = append(warnings, fmt.Sprintf("agents.defaults.max_tokens=%d: should be > 0", c.Agents.Defaults.MaxTokens))
+	}
+
+	if c.Agents.Defaults.MaxToolIterations <= 0 {
+		warnings = append(warnings, fmt.Sprintf("agents.defaults.max_tool_iterations=%d: should be > 0", c.Agents.Defaults.MaxToolIterations))
+	}
+
+	if c.Gateway.Port < 0 || c.Gateway.Port > 65535 {
+		warnings = append(warnings, fmt.Sprintf("gateway.port=%d: must be in range 1-65535", c.Gateway.Port))
+	}
+
+	if c.Heartbeat.Interval < 0 {
+		warnings = append(warnings, fmt.Sprintf("heartbeat.interval=%d: must be >= 0", c.Heartbeat.Interval))
+	}
+
+	return warnings
 }
 
 func SaveConfig(path string, cfg *Config) error {

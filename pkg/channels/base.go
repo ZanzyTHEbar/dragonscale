@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync/atomic"
 
 	"github.com/sipeed/picoclaw/pkg/bus"
+	"github.com/sipeed/picoclaw/pkg/logger"
 )
 
 type Channel interface {
@@ -20,19 +22,20 @@ type Channel interface {
 type BaseChannel struct {
 	config    interface{}
 	bus       *bus.MessageBus
-	running   bool
+	running   atomic.Bool
 	name      string
 	allowList []string
 }
 
 func NewBaseChannel(name string, config interface{}, bus *bus.MessageBus, allowList []string) *BaseChannel {
-	return &BaseChannel{
+	bc := &BaseChannel{
 		config:    config,
 		bus:       bus,
 		name:      name,
 		allowList: allowList,
-		running:   false,
 	}
+	bc.running.Store(false)
+	return bc
 }
 
 func (c *BaseChannel) Name() string {
@@ -40,7 +43,7 @@ func (c *BaseChannel) Name() string {
 }
 
 func (c *BaseChannel) IsRunning() bool {
-	return c.running
+	return c.running.Load()
 }
 
 func (c *BaseChannel) IsAllowed(senderID string) bool {
@@ -100,9 +103,15 @@ func (c *BaseChannel) HandleMessage(senderID, chatID, content string, media []st
 		Metadata:   metadata,
 	}
 
-	c.bus.PublishInbound(msg)
+	if !c.bus.TryPublishInbound(msg) {
+		logger.InfoCF(c.name, "Message dropped (bus full)",
+			map[string]interface{}{
+				"sender_id": msg.SenderID,
+				"channel":   msg.Channel,
+			})
+	}
 }
 
 func (c *BaseChannel) setRunning(running bool) {
-	c.running = running
+	c.running.Store(running)
 }

@@ -26,10 +26,10 @@ import (
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/cron"
 	"github.com/sipeed/picoclaw/pkg/devices"
+	picofantasy "github.com/sipeed/picoclaw/pkg/fantasy"
 	"github.com/sipeed/picoclaw/pkg/heartbeat"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/migrate"
-	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/skills"
 	"github.com/sipeed/picoclaw/pkg/state"
 	"github.com/sipeed/picoclaw/pkg/tools"
@@ -508,14 +508,21 @@ func agentCmd() {
 		os.Exit(1)
 	}
 
-	provider, err := providers.CreateProvider(cfg)
+	fantasyProvider, err := picofantasy.CreateProvider(cfg)
 	if err != nil {
 		fmt.Printf("Error creating provider: %v\n", err)
 		os.Exit(1)
 	}
 
+	ctx := context.Background()
+	languageModel, err := fantasyProvider.LanguageModel(ctx, picofantasy.ModelID(cfg))
+	if err != nil {
+		fmt.Printf("Error creating language model: %v\n", err)
+		os.Exit(1)
+	}
+
 	msgBus := bus.NewMessageBus()
-	agentLoop := agent.NewAgentLoop(cfg, msgBus, provider)
+	agentLoop := agent.NewAgentLoop(cfg, msgBus, languageModel)
 
 	// Print agent startup info (only for interactive mode)
 	startupInfo := agentLoop.GetStartupInfo()
@@ -527,7 +534,6 @@ func agentCmd() {
 		})
 
 	if message != "" {
-		ctx := context.Background()
 		response, err := agentLoop.ProcessDirect(ctx, message, sessionKey)
 		if err != nil {
 			fmt.Printf("Error: %v\n", err)
@@ -643,14 +649,20 @@ func gatewayCmd() {
 		os.Exit(1)
 	}
 
-	provider, err := providers.CreateProvider(cfg)
+	fantasyProvider, err := picofantasy.CreateProvider(cfg)
 	if err != nil {
 		fmt.Printf("Error creating provider: %v\n", err)
 		os.Exit(1)
 	}
 
+	languageModel, err := fantasyProvider.LanguageModel(context.Background(), picofantasy.ModelID(cfg))
+	if err != nil {
+		fmt.Printf("Error creating language model: %v\n", err)
+		os.Exit(1)
+	}
+
 	msgBus := bus.NewMessageBus()
-	agentLoop := agent.NewAgentLoop(cfg, msgBus, provider)
+	agentLoop := agent.NewAgentLoop(cfg, msgBus, languageModel)
 
 	// Print agent startup info
 	fmt.Println("\n📦 Agent Status:")

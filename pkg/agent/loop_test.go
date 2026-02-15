@@ -2,30 +2,54 @@ package agent
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
+	fantasy "charm.land/fantasy"
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/config"
-	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/tools"
 )
 
-// mockProvider is a simple mock LLM provider for testing
-type mockProvider struct{}
+// mockLanguageModel is a simple mock fantasy.LanguageModel for testing
+type mockLanguageModel struct {
+	response string
+}
 
-func (m *mockProvider) Chat(ctx context.Context, messages []providers.Message, tools []providers.ToolDefinition, model string, opts map[string]interface{}) (*providers.LLMResponse, error) {
-	return &providers.LLMResponse{
-		Content:   "Mock response",
-		ToolCalls: []providers.ToolCall{},
+func newMockLanguageModel(response string) *mockLanguageModel {
+	if response == "" {
+		response = "Mock response"
+	}
+	return &mockLanguageModel{response: response}
+}
+
+func (m *mockLanguageModel) Generate(_ context.Context, call fantasy.Call) (*fantasy.Response, error) {
+	return &fantasy.Response{
+		Content:      fantasy.ResponseContent{fantasy.TextContent{Text: m.response}},
+		FinishReason: fantasy.FinishReasonStop,
 	}, nil
 }
 
-func (m *mockProvider) GetDefaultModel() string {
-	return "mock-model"
+func (m *mockLanguageModel) Stream(_ context.Context, call fantasy.Call) (fantasy.StreamResponse, error) {
+	return func(yield func(fantasy.StreamPart) bool) {
+		yield(fantasy.StreamPart{Type: fantasy.StreamPartTypeTextDelta, Delta: m.response})
+		yield(fantasy.StreamPart{Type: fantasy.StreamPartTypeFinish, FinishReason: fantasy.FinishReasonStop})
+	}, nil
 }
+
+func (m *mockLanguageModel) GenerateObject(_ context.Context, _ fantasy.ObjectCall) (*fantasy.ObjectResponse, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+
+func (m *mockLanguageModel) StreamObject(_ context.Context, _ fantasy.ObjectCall) (fantasy.ObjectStreamResponse, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+
+func (m *mockLanguageModel) Provider() string { return "mock" }
+func (m *mockLanguageModel) Model() string    { return "mock-model" }
 
 func TestRecordLastChannel(t *testing.T) {
 	// Create temp workspace
@@ -49,8 +73,8 @@ func TestRecordLastChannel(t *testing.T) {
 
 	// Create agent loop
 	msgBus := bus.NewMessageBus()
-	provider := &mockProvider{}
-	al := NewAgentLoop(cfg, msgBus, provider)
+	model := newMockLanguageModel("")
+	al := NewAgentLoop(cfg, msgBus, model)
 
 	// Test RecordLastChannel
 	testChannel := "test-channel"
@@ -66,7 +90,7 @@ func TestRecordLastChannel(t *testing.T) {
 	}
 
 	// Verify persistence by creating a new agent loop
-	al2 := NewAgentLoop(cfg, msgBus, provider)
+	al2 := NewAgentLoop(cfg, msgBus, model)
 	if al2.state.GetLastChannel() != testChannel {
 		t.Errorf("Expected persistent channel '%s', got '%s'", testChannel, al2.state.GetLastChannel())
 	}
@@ -94,8 +118,8 @@ func TestRecordLastChatID(t *testing.T) {
 
 	// Create agent loop
 	msgBus := bus.NewMessageBus()
-	provider := &mockProvider{}
-	al := NewAgentLoop(cfg, msgBus, provider)
+	model := newMockLanguageModel("")
+	al := NewAgentLoop(cfg, msgBus, model)
 
 	// Test RecordLastChatID
 	testChatID := "test-chat-id-123"
@@ -111,7 +135,7 @@ func TestRecordLastChatID(t *testing.T) {
 	}
 
 	// Verify persistence by creating a new agent loop
-	al2 := NewAgentLoop(cfg, msgBus, provider)
+	al2 := NewAgentLoop(cfg, msgBus, model)
 	if al2.state.GetLastChatID() != testChatID {
 		t.Errorf("Expected persistent chat ID '%s', got '%s'", testChatID, al2.state.GetLastChatID())
 	}
@@ -139,8 +163,8 @@ func TestNewAgentLoop_StateInitialized(t *testing.T) {
 
 	// Create agent loop
 	msgBus := bus.NewMessageBus()
-	provider := &mockProvider{}
-	al := NewAgentLoop(cfg, msgBus, provider)
+	model := newMockLanguageModel("")
+	al := NewAgentLoop(cfg, msgBus, model)
 
 	// Verify state manager is initialized
 	if al.state == nil {
@@ -174,8 +198,8 @@ func TestToolRegistry_ToolRegistration(t *testing.T) {
 	}
 
 	msgBus := bus.NewMessageBus()
-	provider := &mockProvider{}
-	al := NewAgentLoop(cfg, msgBus, provider)
+	model := newMockLanguageModel("")
+	al := NewAgentLoop(cfg, msgBus, model)
 
 	// Register a custom tool
 	customTool := &mockCustomTool{}
@@ -220,8 +244,8 @@ func TestToolContext_Updates(t *testing.T) {
 	}
 
 	msgBus := bus.NewMessageBus()
-	provider := &simpleMockProvider{response: "OK"}
-	_ = NewAgentLoop(cfg, msgBus, provider)
+	model := newMockLanguageModel("OK")
+	_ = NewAgentLoop(cfg, msgBus, model)
 
 	// Verify that ContextualTool interface is defined and can be implemented
 	// This test validates the interface contract exists
@@ -251,8 +275,8 @@ func TestToolRegistry_GetDefinitions(t *testing.T) {
 	}
 
 	msgBus := bus.NewMessageBus()
-	provider := &mockProvider{}
-	al := NewAgentLoop(cfg, msgBus, provider)
+	model := newMockLanguageModel("")
+	al := NewAgentLoop(cfg, msgBus, model)
 
 	// Register a test tool and verify it shows up in startup info
 	testTool := &mockCustomTool{}
@@ -295,8 +319,8 @@ func TestAgentLoop_GetStartupInfo(t *testing.T) {
 	}
 
 	msgBus := bus.NewMessageBus()
-	provider := &mockProvider{}
-	al := NewAgentLoop(cfg, msgBus, provider)
+	model := newMockLanguageModel("")
+	al := NewAgentLoop(cfg, msgBus, model)
 
 	info := al.GetStartupInfo()
 
@@ -342,8 +366,8 @@ func TestAgentLoop_Stop(t *testing.T) {
 	}
 
 	msgBus := bus.NewMessageBus()
-	provider := &mockProvider{}
-	al := NewAgentLoop(cfg, msgBus, provider)
+	model := newMockLanguageModel("")
+	al := NewAgentLoop(cfg, msgBus, model)
 
 	// Note: running is only set to true when Run() is called
 	// We can't test that without starting the event loop
@@ -357,21 +381,6 @@ func TestAgentLoop_Stop(t *testing.T) {
 }
 
 // Mock implementations for testing
-
-type simpleMockProvider struct {
-	response string
-}
-
-func (m *simpleMockProvider) Chat(ctx context.Context, messages []providers.Message, tools []providers.ToolDefinition, model string, opts map[string]interface{}) (*providers.LLMResponse, error) {
-	return &providers.LLMResponse{
-		Content:   m.response,
-		ToolCalls: []providers.ToolCall{},
-	}, nil
-}
-
-func (m *simpleMockProvider) GetDefaultModel() string {
-	return "mock-model"
-}
 
 // mockCustomTool is a simple mock tool for registration testing
 type mockCustomTool struct{}
@@ -464,8 +473,8 @@ func TestToolResult_SilentToolDoesNotSendUserMessage(t *testing.T) {
 	}
 
 	msgBus := bus.NewMessageBus()
-	provider := &simpleMockProvider{response: "File operation complete"}
-	al := NewAgentLoop(cfg, msgBus, provider)
+	model := newMockLanguageModel("File operation complete")
+	al := NewAgentLoop(cfg, msgBus, model)
 	helper := testHelper{al: al}
 
 	// ReadFileTool returns SilentResult, which should not send user message
@@ -506,8 +515,8 @@ func TestToolResult_UserFacingToolDoesSendMessage(t *testing.T) {
 	}
 
 	msgBus := bus.NewMessageBus()
-	provider := &simpleMockProvider{response: "Command output: hello world"}
-	al := NewAgentLoop(cfg, msgBus, provider)
+	model := newMockLanguageModel("Command output: hello world")
+	al := NewAgentLoop(cfg, msgBus, model)
 	helper := testHelper{al: al}
 
 	// ExecTool returns UserResult, which should send user message

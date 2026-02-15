@@ -146,14 +146,11 @@ func (hs *HeartbeatService) runLoop(stopChan chan struct{}) {
 func (hs *HeartbeatService) executeHeartbeat() {
 	hs.mu.RLock()
 	enabled := hs.enabled
+	stopped := hs.stopChan == nil
 	handler := hs.handler
-	if !hs.enabled || hs.stopChan == nil {
-		hs.mu.RUnlock()
-		return
-	}
 	hs.mu.RUnlock()
 
-	if !enabled {
+	if !enabled || stopped {
 		return
 	}
 

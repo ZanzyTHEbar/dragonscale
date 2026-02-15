@@ -72,7 +72,7 @@ func (c *MaixCamChannel) acceptConnections(ctx context.Context) {
 		default:
 			conn, err := c.listener.Accept()
 			if err != nil {
-				if c.running {
+				if c.IsRunning() {
 					logger.ErrorCF("maixcam", "Failed to accept connection", map[string]interface{}{
 						"error": err.Error(),
 					})
