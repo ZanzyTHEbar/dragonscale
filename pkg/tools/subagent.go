@@ -6,8 +6,8 @@ import (
 	"sync"
 	"time"
 
+	fantasy "charm.land/fantasy"
 	"github.com/sipeed/picoclaw/pkg/bus"
-	"github.com/sipeed/picoclaw/pkg/providers"
 )
 
 type SubagentTask struct {
@@ -24,7 +24,7 @@ type SubagentTask struct {
 type SubagentManager struct {
 	tasks         map[string]*SubagentTask
 	mu            sync.RWMutex
-	provider      providers.LLMProvider
+	model         fantasy.LanguageModel
 	defaultModel  string
 	bus           *bus.MessageBus
 	workspace     string
@@ -33,10 +33,10 @@ type SubagentManager struct {
 	nextID        int
 }
 
-func NewSubagentManager(provider providers.LLMProvider, defaultModel, workspace string, bus *bus.MessageBus) *SubagentManager {
+func NewSubagentManager(model fantasy.LanguageModel, defaultModel, workspace string, bus *bus.MessageBus) *SubagentManager {
 	return &SubagentManager{
 		tasks:         make(map[string]*SubagentTask),
-		provider:      provider,
+		model:         model,
 		defaultModel:  defaultModel,
 		bus:           bus,
 		workspace:     workspace,
@@ -47,7 +47,6 @@ func NewSubagentManager(provider providers.LLMProvider, defaultModel, workspace 
 }
 
 // SetTools sets the tool registry for subagent execution.
-// If not set, subagent will have access to the provided tools.
 func (sm *SubagentManager) SetTools(tools *ToolRegistry) {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
@@ -92,21 +91,9 @@ func (sm *SubagentManager) runTask(ctx context.Context, task *SubagentTask, call
 	task.Status = "running"
 	task.Created = time.Now().UnixMilli()
 
-	// Build system prompt for subagent
 	systemPrompt := `You are a subagent. Complete the given task independently and report the result.
 You have access to tools - use them as needed to complete your task.
 After completing the task, provide a clear summary of what was done.`
-
-	messages := []providers.Message{
-		{
-			Role:    "system",
-			Content: systemPrompt,
-		},
-		{
-			Role:    "user",
-			Content: task.Task,
-		},
-	}
 
 	// Check if context is already cancelled before starting
 	select {
@@ -119,28 +106,24 @@ After completing the task, provide a clear summary of what was done.`
 	default:
 	}
 
-	// Run tool loop with access to tools
+	// Run tool loop via Fantasy agent
 	sm.mu.RLock()
 	tools := sm.tools
 	maxIter := sm.maxIterations
 	sm.mu.RUnlock()
 
 	loopResult, err := RunToolLoop(ctx, ToolLoopConfig{
-		Provider:      sm.provider,
-		Model:         sm.defaultModel,
+		Model:         sm.model,
+		ModelID:       sm.defaultModel,
 		Tools:         tools,
+		Bus:           sm.bus,
 		MaxIterations: maxIter,
-		LLMOptions: map[string]any{
-			"max_tokens":  4096,
-			"temperature": 0.7,
-		},
-	}, messages, task.OriginChannel, task.OriginChatID)
+	}, systemPrompt, task.Task, task.OriginChannel, task.OriginChatID)
 
 	sm.mu.Lock()
 	var result *ToolResult
 	defer func() {
 		sm.mu.Unlock()
-		// Call callback if provided and result is set
 		if callback != nil && result != nil {
 			callback(ctx, result)
 		}
@@ -149,7 +132,6 @@ After completing the task, provide a clear summary of what was done.`
 	if err != nil {
 		task.Status = "failed"
 		task.Result = fmt.Sprintf("Error: %v", err)
-		// Check if it was cancelled
 		if ctx.Err() != nil {
 			task.Status = "cancelled"
 			task.Result = "Task cancelled during execution"
@@ -180,9 +162,8 @@ After completing the task, provide a clear summary of what was done.`
 		sm.bus.PublishInbound(bus.InboundMessage{
 			Channel:  "system",
 			SenderID: fmt.Sprintf("subagent:%s", task.ID),
-			// Format: "original_channel:original_chat_id" for routing back
-			ChatID:  fmt.Sprintf("%s:%s", task.OriginChannel, task.OriginChatID),
-			Content: announceContent,
+			ChatID:   fmt.Sprintf("%s:%s", task.OriginChannel, task.OriginChatID),
+			Content:  announceContent,
 		})
 	}
 }
@@ -206,8 +187,6 @@ func (sm *SubagentManager) ListTasks() []*SubagentTask {
 }
 
 // SubagentTool executes a subagent task synchronously and returns the result.
-// Unlike SpawnTool which runs tasks asynchronously, SubagentTool waits for completion
-// and returns the result directly in the ToolResult.
 type SubagentTool struct {
 	manager       *SubagentManager
 	originChannel string
@@ -264,19 +243,8 @@ func (t *SubagentTool) Execute(ctx context.Context, args map[string]interface{})
 		return ErrorResult("Subagent manager not configured").WithError(fmt.Errorf("manager is nil"))
 	}
 
-	// Build messages for subagent
-	messages := []providers.Message{
-		{
-			Role:    "system",
-			Content: "You are a subagent. Complete the given task independently and provide a clear, concise result.",
-		},
-		{
-			Role:    "user",
-			Content: task,
-		},
-	}
+	systemPrompt := "You are a subagent. Complete the given task independently and provide a clear, concise result."
 
-	// Use RunToolLoop to execute with tools (same as async SpawnTool)
 	sm := t.manager
 	sm.mu.RLock()
 	tools := sm.tools
@@ -284,15 +252,12 @@ func (t *SubagentTool) Execute(ctx context.Context, args map[string]interface{})
 	sm.mu.RUnlock()
 
 	loopResult, err := RunToolLoop(ctx, ToolLoopConfig{
-		Provider:      sm.provider,
-		Model:         sm.defaultModel,
+		Model:         sm.model,
+		ModelID:       sm.defaultModel,
 		Tools:         tools,
+		Bus:           sm.bus,
 		MaxIterations: maxIter,
-		LLMOptions: map[string]any{
-			"max_tokens":  4096,
-			"temperature": 0.7,
-		},
-	}, messages, t.originChannel, t.originChatID)
+	}, systemPrompt, task, t.originChannel, t.originChatID)
 
 	if err != nil {
 		return ErrorResult(fmt.Sprintf("Subagent execution failed: %v", err)).WithError(err)

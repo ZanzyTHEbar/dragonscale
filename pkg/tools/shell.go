@@ -4,13 +4,33 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
 	"runtime"
 	"strings"
+	"syscall"
 	"time"
+
+	"github.com/sipeed/picoclaw/pkg/logger"
+)
+
+// ShellMode controls how command filtering works.
+type ShellMode string
+
+const (
+	ShellModeDenyList  ShellMode = "denylist"  // default: block known-dangerous patterns
+	ShellModeAllowList ShellMode = "allowlist" // only permit commands matching allow patterns
+	ShellModeDisabled  ShellMode = "disabled"  // shell execution entirely disabled
+
+	// maxOutputBytes is the maximum bytes we'll read from stdout/stderr combined.
+	// This prevents OOM from commands like `yes` or `cat /dev/urandom`.
+	maxOutputBytes = 1024 * 1024 // 1 MB
+
+	// maxOutputDisplay is the max characters shown to the LLM.
+	maxOutputDisplay = 10000
 )
 
 type ExecTool struct {
@@ -19,19 +39,12 @@ type ExecTool struct {
 	denyPatterns        []*regexp.Regexp
 	allowPatterns       []*regexp.Regexp
 	restrictToWorkspace bool
+	mode                ShellMode
+	workspace           string // root workspace path for audit logging
 }
 
 func NewExecTool(workingDir string, restrict bool) *ExecTool {
-	denyPatterns := []*regexp.Regexp{
-		regexp.MustCompile(`\brm\s+-[rf]{1,2}\b`),
-		regexp.MustCompile(`\bdel\s+/[fq]\b`),
-		regexp.MustCompile(`\brmdir\s+/s\b`),
-		regexp.MustCompile(`\b(format|mkfs|diskpart)\b\s`), // Match disk wiping commands (must be followed by space/args)
-		regexp.MustCompile(`\bdd\s+if=`),
-		regexp.MustCompile(`>\s*/dev/sd[a-z]\b`), // Block writes to disk devices (but allow /dev/null)
-		regexp.MustCompile(`\b(shutdown|reboot|poweroff)\b`),
-		regexp.MustCompile(`:\(\)\s*\{.*\};\s*:`),
-	}
+	denyPatterns := buildDenyPatterns()
 
 	return &ExecTool{
 		workingDir:          workingDir,
@@ -39,7 +52,64 @@ func NewExecTool(workingDir string, restrict bool) *ExecTool {
 		denyPatterns:        denyPatterns,
 		allowPatterns:       nil,
 		restrictToWorkspace: restrict,
+		mode:                ShellModeDenyList,
+		workspace:           workingDir,
 	}
+}
+
+// buildDenyPatterns returns the hardened set of deny-list patterns.
+func buildDenyPatterns() []*regexp.Regexp {
+	patterns := []string{
+		// Destructive file operations
+		`\brm\s+-[rf]{1,2}\b`,
+		`\bdel\s+/[fq]\b`,
+		`\brmdir\s+/s\b`,
+
+		// Disk wiping
+		`\b(format|mkfs|diskpart)\b`,
+		`\bdd\s+if=`,
+		`>\s*/dev/sd[a-z]\b`,
+
+		// System control
+		`\b(shutdown|reboot|poweroff|init\s+[06])\b`,
+
+		// Fork bomb
+		`:\(\)\s*\{.*\};\s*:`,
+
+		// Scripting language exec bypass
+		`\b(python[23]?|perl|ruby)\s+.*(-c\s+|.*\b(system|exec|os\.system|subprocess|popen|eval)\b)`,
+
+		// Base64 decode piped to shell
+		`base64\s+(-d|--decode).*\|\s*(sh|bash|zsh|dash)`,
+
+		// curl/wget piped to shell
+		`\b(curl|wget)\b.*\|\s*(sh|bash|zsh|dash|sudo)`,
+
+		// Direct writes to critical system paths
+		`>\s*/etc/(passwd|shadow|sudoers|hosts)`,
+
+		// Crontab manipulation
+		`\bcrontab\s+-[re]\b`,
+
+		// Network exfiltration via common tools to non-local
+		`\bnc\s+-[el]`,
+
+		// chmod to world-writable
+		`\bchmod\s+.*777\b`,
+
+		// Attempting to modify env to bypass PATH
+		`\bexport\s+path\s*=`,
+		`\benv\s+path\s*=`,
+
+		// sudo escalation
+		`\bsudo\s+(su|bash|sh|zsh|chmod|chown)\b`,
+	}
+
+	compiled := make([]*regexp.Regexp, 0, len(patterns))
+	for _, p := range patterns {
+		compiled = append(compiled, regexp.MustCompile(p))
+	}
+	return compiled
 }
 
 func (t *ExecTool) Name() string {
@@ -85,7 +155,16 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]interface{}) *To
 		}
 	}
 
+	startTime := time.Now()
+
+	// Check if shell is disabled
+	if t.mode == ShellModeDisabled {
+		t.auditLog(command, cwd, -1, 0, true, time.Since(startTime))
+		return ErrorResult("Shell execution is disabled")
+	}
+
 	if guardError := t.guardCommand(command, cwd); guardError != "" {
+		t.auditLog(command, cwd, -1, 0, true, time.Since(startTime))
 		return ErrorResult(guardError)
 	}
 
@@ -102,24 +181,58 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]interface{}) *To
 		cmd.Dir = cwd
 	}
 
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
+	// Set process group so we can kill children on timeout
+	if runtime.GOOS != "windows" {
+		cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	}
 
-	err := cmd.Run()
+	// Use limited readers to prevent OOM from unbounded output
+	var stdout, stderr bytes.Buffer
+	stdoutPipe, err := cmd.StdoutPipe()
+	if err != nil {
+		return ErrorResult(fmt.Sprintf("failed to create stdout pipe: %v", err))
+	}
+	stderrPipe, err := cmd.StderrPipe()
+	if err != nil {
+		return ErrorResult(fmt.Sprintf("failed to create stderr pipe: %v", err))
+	}
+
+	if err := cmd.Start(); err != nil {
+		t.auditLog(command, cwd, -1, 0, false, time.Since(startTime))
+		return ErrorResult(fmt.Sprintf("failed to start command: %v", err))
+	}
+
+	// Read with size limits
+	io.Copy(&stdout, io.LimitReader(stdoutPipe, maxOutputBytes))
+	io.Copy(&stderr, io.LimitReader(stderrPipe, maxOutputBytes))
+
+	err = cmd.Wait()
+	duration := time.Since(startTime)
+
 	output := stdout.String()
 	if stderr.Len() > 0 {
 		output += "\nSTDERR:\n" + stderr.String()
 	}
 
+	exitCode := 0
 	if err != nil {
 		if cmdCtx.Err() == context.DeadlineExceeded {
+			// Kill the entire process group on timeout
+			t.killProcessGroup(cmd)
+
 			msg := fmt.Sprintf("Command timed out after %v", t.timeout)
+			t.auditLog(command, cwd, -1, len(output), false, duration)
 			return &ToolResult{
 				ForLLM:  msg,
 				ForUser: msg,
 				IsError: true,
 			}
+		}
+		// Extract exit code if possible
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			exitCode = exitErr.ExitCode()
+		} else {
+			exitCode = -1
 		}
 		output += fmt.Sprintf("\nExit code: %v", err)
 	}
@@ -128,10 +241,12 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]interface{}) *To
 		output = "(no output)"
 	}
 
-	maxLen := 10000
-	if len(output) > maxLen {
-		output = output[:maxLen] + fmt.Sprintf("\n... (truncated, %d more chars)", len(output)-maxLen)
+	// Truncate display output
+	if len(output) > maxOutputDisplay {
+		output = output[:maxOutputDisplay] + fmt.Sprintf("\n... (truncated, %d more chars)", len(output)-maxOutputDisplay)
 	}
+
+	t.auditLog(command, cwd, exitCode, len(output), false, duration)
 
 	if err != nil {
 		return &ToolResult{
@@ -148,17 +263,29 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]interface{}) *To
 	}
 }
 
+// killProcessGroup sends SIGKILL to the entire process group.
+func (t *ExecTool) killProcessGroup(cmd *exec.Cmd) {
+	if cmd.Process == nil || runtime.GOOS == "windows" {
+		return
+	}
+	pgid, err := syscall.Getpgid(cmd.Process.Pid)
+	if err != nil {
+		// Fallback: kill just the process
+		cmd.Process.Kill()
+		return
+	}
+	syscall.Kill(-pgid, syscall.SIGKILL)
+}
+
 func (t *ExecTool) guardCommand(command, cwd string) string {
 	cmd := strings.TrimSpace(command)
 	lower := strings.ToLower(cmd)
 
-	for _, pattern := range t.denyPatterns {
-		if pattern.MatchString(lower) {
-			return "Command blocked by safety guard (dangerous pattern detected)"
+	// In allowlist mode, only permit matching commands
+	if t.mode == ShellModeAllowList {
+		if len(t.allowPatterns) == 0 {
+			return "Command blocked: allowlist mode enabled but no patterns configured"
 		}
-	}
-
-	if len(t.allowPatterns) > 0 {
 		allowed := false
 		for _, pattern := range t.allowPatterns {
 			if pattern.MatchString(lower) {
@@ -168,6 +295,28 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
 		}
 		if !allowed {
 			return "Command blocked by safety guard (not in allowlist)"
+		}
+		// Even in allowlist mode, still check path traversal
+	} else {
+		// Denylist mode: check deny patterns
+		for _, pattern := range t.denyPatterns {
+			if pattern.MatchString(lower) {
+				return "Command blocked by safety guard (dangerous pattern detected)"
+			}
+		}
+
+		// Legacy allowlist check (for backward compat when in denylist mode)
+		if len(t.allowPatterns) > 0 {
+			allowed := false
+			for _, pattern := range t.allowPatterns {
+				if pattern.MatchString(lower) {
+					allowed = true
+					break
+				}
+			}
+			if !allowed {
+				return "Command blocked by safety guard (not in allowlist)"
+			}
 		}
 	}
 
@@ -204,12 +353,37 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
 	return ""
 }
 
+// auditLog writes a structured log entry for every shell command execution.
+func (t *ExecTool) auditLog(command, cwd string, exitCode, outputLen int, blocked bool, duration time.Duration) {
+	status := "ok"
+	if blocked {
+		status = "blocked"
+	} else if exitCode != 0 {
+		status = "error"
+	}
+
+	logger.InfoCF("shell", "Command execution",
+		map[string]interface{}{
+			"command":    command,
+			"cwd":        cwd,
+			"exit_code":  exitCode,
+			"output_len": outputLen,
+			"blocked":    blocked,
+			"status":     status,
+			"duration":   duration.String(),
+		})
+}
+
 func (t *ExecTool) SetTimeout(timeout time.Duration) {
 	t.timeout = timeout
 }
 
 func (t *ExecTool) SetRestrictToWorkspace(restrict bool) {
 	t.restrictToWorkspace = restrict
+}
+
+func (t *ExecTool) SetMode(mode ShellMode) {
+	t.mode = mode
 }
 
 func (t *ExecTool) SetAllowPatterns(patterns []string) error {

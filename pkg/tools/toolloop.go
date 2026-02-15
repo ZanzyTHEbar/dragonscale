@@ -11,18 +11,18 @@ import (
 	"encoding/json"
 	"fmt"
 
+	fantasy "charm.land/fantasy"
+	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/logger"
-	"github.com/sipeed/picoclaw/pkg/providers"
-	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
 // ToolLoopConfig configures the tool execution loop.
 type ToolLoopConfig struct {
-	Provider      providers.LLMProvider
-	Model         string
+	Model         fantasy.LanguageModel
+	ModelID       string
 	Tools         *ToolRegistry
+	Bus           *bus.MessageBus
 	MaxIterations int
-	LLMOptions    map[string]any
 }
 
 // ToolLoopResult contains the result of running the tool loop.
@@ -31,124 +31,154 @@ type ToolLoopResult struct {
 	Iterations int
 }
 
-// RunToolLoop executes the LLM + tool call iteration loop.
-// This is the core agent logic that can be reused by both main agent and subagents.
-func RunToolLoop(ctx context.Context, config ToolLoopConfig, messages []providers.Message, channel, chatID string) (*ToolLoopResult, error) {
-	iteration := 0
-	var finalContent string
+// RunToolLoop executes the Fantasy agent loop with PicoClaw tools.
+// This is the core agent logic reused by both main agent and subagents.
+func RunToolLoop(ctx context.Context, config ToolLoopConfig, systemPrompt, userPrompt, channel, chatID string) (*ToolLoopResult, error) {
+	// Build adapted tools
+	adaptedTools := BuildAdaptedToolsFromRegistry(config.Tools, config.Bus, channel, chatID)
 
-	for iteration < config.MaxIterations {
-		iteration++
-
-		logger.DebugCF("toolloop", "LLM iteration",
-			map[string]any{
-				"iteration": iteration,
-				"max":       config.MaxIterations,
-			})
-
-		// 1. Build tool definitions
-		var providerToolDefs []providers.ToolDefinition
-		if config.Tools != nil {
-			providerToolDefs = config.Tools.ToProviderDefs()
-		}
-
-		// 2. Set default LLM options
-		llmOpts := config.LLMOptions
-		if llmOpts == nil {
-			llmOpts = map[string]any{
-				"max_tokens":  4096,
-				"temperature": 0.7,
-			}
-		}
-
-		// 3. Call LLM
-		response, err := config.Provider.Chat(ctx, messages, providerToolDefs, config.Model, llmOpts)
-		if err != nil {
-			logger.ErrorCF("toolloop", "LLM call failed",
-				map[string]any{
-					"iteration": iteration,
-					"error":     err.Error(),
-				})
-			return nil, fmt.Errorf("LLM call failed: %w", err)
-		}
-
-		// 4. If no tool calls, we're done
-		if len(response.ToolCalls) == 0 {
-			finalContent = response.Content
-			logger.InfoCF("toolloop", "LLM response without tool calls (direct answer)",
-				map[string]any{
-					"iteration":     iteration,
-					"content_chars": len(finalContent),
-				})
-			break
-		}
-
-		// 5. Log tool calls
-		toolNames := make([]string, 0, len(response.ToolCalls))
-		for _, tc := range response.ToolCalls {
-			toolNames = append(toolNames, tc.Name)
-		}
-		logger.InfoCF("toolloop", "LLM requested tool calls",
-			map[string]any{
-				"tools":     toolNames,
-				"count":     len(response.ToolCalls),
-				"iteration": iteration,
-			})
-
-		// 6. Build assistant message with tool calls
-		assistantMsg := providers.Message{
-			Role:    "assistant",
-			Content: response.Content,
-		}
-		for _, tc := range response.ToolCalls {
-			argumentsJSON, _ := json.Marshal(tc.Arguments)
-			assistantMsg.ToolCalls = append(assistantMsg.ToolCalls, providers.ToolCall{
-				ID:   tc.ID,
-				Type: "function",
-				Function: &providers.FunctionCall{
-					Name:      tc.Name,
-					Arguments: string(argumentsJSON),
-				},
-			})
-		}
-		messages = append(messages, assistantMsg)
-
-		// 7. Execute tool calls
-		for _, tc := range response.ToolCalls {
-			argsJSON, _ := json.Marshal(tc.Arguments)
-			argsPreview := utils.Truncate(string(argsJSON), 200)
-			logger.InfoCF("toolloop", fmt.Sprintf("Tool call: %s(%s)", tc.Name, argsPreview),
-				map[string]any{
-					"tool":      tc.Name,
-					"iteration": iteration,
-				})
-
-			// Execute tool (no async callback for subagents - they run independently)
-			var toolResult *ToolResult
-			if config.Tools != nil {
-				toolResult = config.Tools.ExecuteWithContext(ctx, tc.Name, tc.Arguments, channel, chatID, nil)
-			} else {
-				toolResult = ErrorResult("No tools available")
-			}
-
-			// Determine content for LLM
-			contentForLLM := toolResult.ForLLM
-			if contentForLLM == "" && toolResult.Err != nil {
-				contentForLLM = toolResult.Err.Error()
-			}
-
-			// Add tool result message
-			toolResultMsg := providers.Message{
-				Role:       "tool",
-				Content:    contentForLLM,
-				ToolCallID: tc.ID,
-			}
-			messages = append(messages, toolResultMsg)
-		}
+	// Create Fantasy agent
+	agentOpts := []fantasy.AgentOption{
+		fantasy.WithTools(adaptedTools...),
+		fantasy.WithStopConditions(fantasy.StepCountIs(config.MaxIterations)),
 	}
+	if systemPrompt != "" {
+		agentOpts = append(agentOpts, fantasy.WithSystemPrompt(systemPrompt))
+	}
+	agent := fantasy.NewAgent(config.Model, agentOpts...)
+
+	logger.DebugCF("toolloop", "Fantasy agent created for tool loop",
+		map[string]any{
+			"tools_count":    len(adaptedTools),
+			"max_iterations": config.MaxIterations,
+		})
+
+	// Run Fantasy agent
+	result, err := agent.Generate(ctx, fantasy.AgentCall{
+		Prompt: userPrompt,
+	})
+	if err != nil {
+		logger.ErrorCF("toolloop", "Fantasy agent.Generate failed",
+			map[string]any{
+				"error": err.Error(),
+			})
+		return nil, fmt.Errorf("agent Generate failed: %w", err)
+	}
+
+	finalContent := result.Response.Content.Text()
+	stepCount := len(result.Steps)
+
+	logger.InfoCF("toolloop", "Tool loop completed",
+		map[string]any{
+			"steps":         stepCount,
+			"content_chars": len(finalContent),
+		})
 
 	return &ToolLoopResult{
 		Content:    finalContent,
-		Iterations: iteration,
+		Iterations: stepCount,
 	}, nil
+}
+
+// BuildAdaptedToolsFromRegistry wraps all tools in a ToolRegistry as Fantasy AgentTools.
+// This is a local wrapper that avoids circular imports by duplicating the adapter logic.
+func BuildAdaptedToolsFromRegistry(registry *ToolRegistry, msgBus *bus.MessageBus, channel, chatID string) []fantasy.AgentTool {
+	if registry == nil {
+		return nil
+	}
+
+	names := registry.List()
+	adapted := make([]fantasy.AgentTool, 0, len(names))
+
+	for _, name := range names {
+		tool, ok := registry.Get(name)
+		if !ok {
+			continue
+		}
+		adapted = append(adapted, &picoToolAdapter{
+			inner:   tool,
+			bus:     msgBus,
+			channel: channel,
+			chatID:  chatID,
+		})
+	}
+
+	return adapted
+}
+
+// picoToolAdapter wraps a PicoClaw tool as a Fantasy AgentTool.
+// This is a local copy to avoid circular imports with pkg/fantasy.
+type picoToolAdapter struct {
+	inner   Tool
+	bus     *bus.MessageBus
+	channel string
+	chatID  string
+}
+
+func (a *picoToolAdapter) Info() fantasy.ToolInfo {
+	return fantasy.ToolInfo{
+		Name:        a.inner.Name(),
+		Description: a.inner.Description(),
+		Parameters:  a.inner.Parameters(),
+	}
+}
+
+func (a *picoToolAdapter) Run(ctx context.Context, call fantasy.ToolCall) (fantasy.ToolResponse, error) {
+	args, err := parseToolCallArgs(call.Input)
+	if err != nil {
+		return fantasy.NewTextErrorResponse(fmt.Sprintf("invalid arguments: %v", err)), nil
+	}
+
+	if ct, ok := a.inner.(ContextualTool); ok {
+		ct.SetContext(a.channel, a.chatID)
+	}
+
+	if at, ok := a.inner.(AsyncTool); ok {
+		at.SetCallback(func(_ context.Context, result *ToolResult) {
+			if result != nil && result.ForUser != "" && !result.Silent && a.bus != nil {
+				a.bus.PublishOutbound(bus.OutboundMessage{
+					Channel: a.channel,
+					ChatID:  a.chatID,
+					Content: result.ForUser,
+				})
+			}
+		})
+	}
+
+	result := a.inner.Execute(ctx, args)
+	if result == nil {
+		return fantasy.NewTextErrorResponse("tool returned nil result"), nil
+	}
+
+	if result.ForUser != "" && !result.Silent && a.bus != nil {
+		a.bus.PublishOutbound(bus.OutboundMessage{
+			Channel: a.channel,
+			ChatID:  a.chatID,
+			Content: result.ForUser,
+		})
+	}
+
+	if result.IsError {
+		return fantasy.NewTextErrorResponse(result.ForLLM), nil
+	}
+	return fantasy.NewTextResponse(result.ForLLM), nil
+}
+
+func (a *picoToolAdapter) ProviderOptions() fantasy.ProviderOptions {
+	return fantasy.ProviderOptions{}
+}
+
+func (a *picoToolAdapter) SetProviderOptions(_ fantasy.ProviderOptions) {}
+
+// parseToolCallArgs deserializes JSON input string into args map.
+func parseToolCallArgs(input string) (map[string]interface{}, error) {
+	if input == "" || input == "{}" {
+		return map[string]interface{}{}, nil
+	}
+
+	var args map[string]interface{}
+	if err := json.Unmarshal([]byte(input), &args); err != nil {
+		return nil, fmt.Errorf("failed to parse tool arguments: %w", err)
+	}
+	return args, nil
 }

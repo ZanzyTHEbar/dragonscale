@@ -7,18 +7,76 @@ import (
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/logger"
-	"github.com/sipeed/picoclaw/pkg/providers"
 )
 
 type ToolRegistry struct {
-	tools map[string]Tool
-	mu    sync.RWMutex
+	tools                 map[string]Tool
+	mu                    sync.RWMutex
+	progressiveDisclosure bool
+	// gatewayTools are always visible even in progressive mode
+	gatewayTools map[string]bool
 }
 
 func NewToolRegistry() *ToolRegistry {
 	return &ToolRegistry{
-		tools: make(map[string]Tool),
+		tools:        make(map[string]Tool),
+		gatewayTools: make(map[string]bool),
 	}
+}
+
+// SetProgressiveDisclosure enables or disables progressive disclosure mode.
+// When enabled, GetVisibleDefinitions returns only gateway tools (tool_search,
+// tool_call, and any explicitly marked tools). The agent discovers others via tool_search.
+func (r *ToolRegistry) SetProgressiveDisclosure(enabled bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.progressiveDisclosure = enabled
+}
+
+// MarkGateway marks a tool name as always visible in progressive disclosure mode.
+func (r *ToolRegistry) MarkGateway(name string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.gatewayTools[name] = true
+}
+
+// RegisterMetaTools creates and registers tool_search and tool_call, then marks them
+// as gateway tools. Call this once after creating the registry.
+func (r *ToolRegistry) RegisterMetaTools() {
+	search := NewToolSearchTool(r)
+	call := NewToolCallTool(r)
+	r.Register(search)
+	r.Register(call)
+	r.MarkGateway("tool_search")
+	r.MarkGateway("tool_call")
+}
+
+// GetVisibleDefinitions returns tool definitions visible to the LLM.
+// In progressive disclosure mode, only gateway tools are returned.
+// In full mode, all tools are returned (same as GetDefinitions).
+func (r *ToolRegistry) GetVisibleDefinitions() []map[string]interface{} {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	if !r.progressiveDisclosure {
+		return r.getDefinitionsLocked()
+	}
+
+	definitions := make([]map[string]interface{}, 0)
+	for _, tool := range r.tools {
+		if r.gatewayTools[tool.Name()] {
+			definitions = append(definitions, ToolToSchema(tool))
+		}
+	}
+	return definitions
+}
+
+func (r *ToolRegistry) getDefinitionsLocked() []map[string]interface{} {
+	definitions := make([]map[string]interface{}, 0, len(r.tools))
+	for _, tool := range r.tools {
+		definitions = append(definitions, ToolToSchema(tool))
+	}
+	return definitions
 }
 
 func (r *ToolRegistry) Register(tool Tool) {
@@ -112,38 +170,6 @@ func (r *ToolRegistry) GetDefinitions() []map[string]interface{} {
 	return definitions
 }
 
-// ToProviderDefs converts tool definitions to provider-compatible format.
-// This is the format expected by LLM provider APIs.
-func (r *ToolRegistry) ToProviderDefs() []providers.ToolDefinition {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
-	definitions := make([]providers.ToolDefinition, 0, len(r.tools))
-	for _, tool := range r.tools {
-		schema := ToolToSchema(tool)
-
-		// Safely extract nested values with type checks
-		fn, ok := schema["function"].(map[string]interface{})
-		if !ok {
-			continue
-		}
-
-		name, _ := fn["name"].(string)
-		desc, _ := fn["description"].(string)
-		params, _ := fn["parameters"].(map[string]interface{})
-
-		definitions = append(definitions, providers.ToolDefinition{
-			Type: "function",
-			Function: providers.ToolFunctionDefinition{
-				Name:        name,
-				Description: desc,
-				Parameters:  params,
-			},
-		})
-	}
-	return definitions
-}
-
 // List returns a list of all registered tool names.
 func (r *ToolRegistry) List() []string {
 	r.mu.RLock()
@@ -152,6 +178,30 @@ func (r *ToolRegistry) List() []string {
 	names := make([]string, 0, len(r.tools))
 	for name := range r.tools {
 		names = append(names, name)
+	}
+	return names
+}
+
+// ListVisible returns tool names visible to the LLM.
+// In progressive disclosure mode, only gateway tools are returned.
+// In full mode, all tools are returned.
+func (r *ToolRegistry) ListVisible() []string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	if !r.progressiveDisclosure {
+		names := make([]string, 0, len(r.tools))
+		for name := range r.tools {
+			names = append(names, name)
+		}
+		return names
+	}
+
+	names := make([]string, 0, len(r.gatewayTools))
+	for name := range r.gatewayTools {
+		if _, ok := r.tools[name]; ok {
+			names = append(names, name)
+		}
 	}
 	return names
 }

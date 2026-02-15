@@ -1,0 +1,205 @@
+package tools
+
+import (
+	"context"
+	"testing"
+)
+
+func TestToolCallTool_Name(t *testing.T) {
+	r := NewToolRegistry()
+	tc := NewToolCallTool(r)
+	if tc.Name() != "tool_call" {
+		t.Errorf("expected tool_call, got %s", tc.Name())
+	}
+}
+
+func TestToolCallTool_Description(t *testing.T) {
+	r := NewToolRegistry()
+	tc := NewToolCallTool(r)
+	if tc.Description() == "" {
+		t.Error("expected non-empty description")
+	}
+}
+
+func TestToolCallTool_Parameters(t *testing.T) {
+	r := NewToolRegistry()
+	tc := NewToolCallTool(r)
+	params := tc.Parameters()
+
+	props, ok := params["properties"].(map[string]interface{})
+	if !ok {
+		t.Fatal("expected properties map")
+	}
+	if _, ok := props["tool_name"]; !ok {
+		t.Error("expected tool_name property")
+	}
+	if _, ok := props["arguments"]; !ok {
+		t.Error("expected arguments property")
+	}
+}
+
+func TestToolCallTool_MissingToolName(t *testing.T) {
+	r := NewToolRegistry()
+	tc := NewToolCallTool(r)
+	result := tc.Execute(context.Background(), map[string]interface{}{})
+
+	if !result.IsError {
+		t.Error("expected error for missing tool_name")
+	}
+}
+
+func TestToolCallTool_DispatchesToTool(t *testing.T) {
+	r := NewToolRegistry()
+	r.Register(&stubTool{name: "read_file", desc: "Read a file"})
+	tc := NewToolCallTool(r)
+
+	result := tc.Execute(context.Background(), map[string]interface{}{
+		"tool_name": "read_file",
+		"arguments": map[string]interface{}{"path": "/tmp/test.txt"},
+	})
+
+	if result.IsError {
+		t.Errorf("unexpected error: %s", result.ForLLM)
+	}
+	if result.ForLLM != "executed read_file" {
+		t.Errorf("expected 'executed read_file', got %s", result.ForLLM)
+	}
+}
+
+func TestToolCallTool_ToolNotFound(t *testing.T) {
+	r := NewToolRegistry()
+	tc := NewToolCallTool(r)
+
+	result := tc.Execute(context.Background(), map[string]interface{}{
+		"tool_name": "nonexistent",
+	})
+
+	if !result.IsError {
+		t.Error("expected error for nonexistent tool")
+	}
+}
+
+func TestToolCallTool_PreventRecursion_ToolCall(t *testing.T) {
+	r := NewToolRegistry()
+	r.RegisterMetaTools()
+
+	tc, _ := r.Get("tool_call")
+	result := tc.Execute(context.Background(), map[string]interface{}{
+		"tool_name": "tool_call",
+	})
+
+	if !result.IsError {
+		t.Error("expected error for recursive tool_call")
+	}
+}
+
+func TestToolCallTool_PreventRecursion_ToolSearch(t *testing.T) {
+	r := NewToolRegistry()
+	r.RegisterMetaTools()
+
+	tc, _ := r.Get("tool_call")
+	result := tc.Execute(context.Background(), map[string]interface{}{
+		"tool_name": "tool_search",
+	})
+
+	if !result.IsError {
+		t.Error("expected error for recursive tool_search")
+	}
+}
+
+func TestToolCallTool_JSONStringArguments(t *testing.T) {
+	r := NewToolRegistry()
+	r.Register(&echoTool{})
+	tc := NewToolCallTool(r)
+
+	result := tc.Execute(context.Background(), map[string]interface{}{
+		"tool_name": "echo",
+		"arguments": `{"msg":"hello"}`,
+	})
+
+	if result.IsError {
+		t.Errorf("unexpected error: %s", result.ForLLM)
+	}
+	if result.ForLLM != "hello" {
+		t.Errorf("expected 'hello', got %s", result.ForLLM)
+	}
+}
+
+func TestToolCallTool_NilArguments(t *testing.T) {
+	r := NewToolRegistry()
+	r.Register(&stubTool{name: "no_args", desc: "Tool that needs no args"})
+	tc := NewToolCallTool(r)
+
+	result := tc.Execute(context.Background(), map[string]interface{}{
+		"tool_name": "no_args",
+	})
+
+	if result.IsError {
+		t.Errorf("unexpected error: %s", result.ForLLM)
+	}
+}
+
+func TestToolCallTool_InvalidJSONArguments(t *testing.T) {
+	r := NewToolRegistry()
+	tc := NewToolCallTool(r)
+
+	result := tc.Execute(context.Background(), map[string]interface{}{
+		"tool_name": "anything",
+		"arguments": "not-json",
+	})
+
+	if !result.IsError {
+		t.Error("expected error for invalid JSON arguments")
+	}
+}
+
+func TestToolCallTool_ContextPropagation(t *testing.T) {
+	r := NewToolRegistry()
+	ct := &contextCaptureTool{}
+	r.Register(ct)
+
+	tc := NewToolCallTool(r)
+	tc.SetContext("test-channel", "test-chat")
+
+	tc.Execute(context.Background(), map[string]interface{}{
+		"tool_name": "capture",
+		"arguments": map[string]interface{}{},
+	})
+
+	// ToolCallTool dispatches via registry.ExecuteWithContext, which propagates channel/chatID
+	if ct.lastChannel != "test-channel" {
+		t.Errorf("expected channel propagation, got %s", ct.lastChannel)
+	}
+}
+
+// --- test helpers ---
+
+type echoTool struct{}
+
+func (e *echoTool) Name() string        { return "echo" }
+func (e *echoTool) Description() string { return "Echo a message" }
+func (e *echoTool) Parameters() map[string]interface{} {
+	return map[string]interface{}{}
+}
+func (e *echoTool) Execute(_ context.Context, args map[string]interface{}) *ToolResult {
+	msg, _ := args["msg"].(string)
+	return &ToolResult{ForLLM: msg}
+}
+
+type contextCaptureTool struct {
+	lastChannel string
+	lastChatID  string
+}
+
+func (c *contextCaptureTool) Name() string        { return "capture" }
+func (c *contextCaptureTool) Description() string { return "Capture context" }
+func (c *contextCaptureTool) Parameters() map[string]interface{} {
+	return map[string]interface{}{}
+}
+func (c *contextCaptureTool) SetContext(channel, chatID string) {
+	c.lastChannel = channel
+	c.lastChatID = chatID
+}
+func (c *contextCaptureTool) Execute(_ context.Context, _ map[string]interface{}) *ToolResult {
+	return &ToolResult{ForLLM: "captured"}
+}
