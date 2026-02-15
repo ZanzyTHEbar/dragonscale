@@ -47,6 +47,9 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Run go test
-        run: go test ./...
+      - name: Run go test with race detector
+        run: go test -race -coverprofile=coverage.txt -covermode=atomic ./...
 
+      - name: Print coverage summary
+        if: always()
+        run: go tool cover -func=coverage.txt | tail -1
