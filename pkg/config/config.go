@@ -49,9 +49,75 @@ type Config struct {
 	Providers ProvidersConfig `json:"providers"`
 	Gateway   GatewayConfig   `json:"gateway"`
 	Tools     ToolsConfig     `json:"tools"`
+	Memory    MemoryConfig    `json:"memory"`
 	Heartbeat HeartbeatConfig `json:"heartbeat"`
 	Devices   DevicesConfig   `json:"devices"`
 	mu        sync.RWMutex
+}
+
+// MemoryConfig configures the 3-tier MemGPT memory system.
+type MemoryConfig struct {
+	// Enabled controls whether the memory system is initialized. Default: true.
+	Enabled bool `json:"enabled" env:"PICOCLAW_MEMORY_ENABLED"`
+
+	// DBPath overrides the default database path (workspace/memory/picoclaw.db).
+	// Empty string uses the default.
+	DBPath string `json:"db_path" env:"PICOCLAW_MEMORY_DB_PATH"`
+
+	// EmbeddingDims is the vector dimensionality for archival embeddings.
+	// Default: 768 (sentence-transformers). Use 1536 for OpenAI ada-002, 384 for MiniLM.
+	EmbeddingDims int `json:"embedding_dims" env:"PICOCLAW_MEMORY_EMBEDDING_DIMS"`
+
+	// OffloadThresholdTokens is the token count above which tool results
+	// are automatically offloaded to archival memory. Default: 4000.
+	OffloadThresholdTokens int `json:"offload_threshold_tokens" env:"PICOCLAW_MEMORY_OFFLOAD_THRESHOLD_TOKENS"`
+
+	// Embedding configures the embedding provider for archival vector search.
+	Embedding EmbeddingConfig `json:"embedding"`
+
+	// Sync configures Turso embedded replica sync. When SyncURL is set,
+	// the local DB acts as an embedded replica that syncs with the remote primary.
+	Sync MemorySyncConfig `json:"sync"`
+}
+
+// EmbeddingConfig selects which embedding provider to use for archival memory.
+type EmbeddingConfig struct {
+	// Provider selects the embedding backend: "ollama", "openai", or "".
+	// Empty string disables embeddings (FTS5-only search).
+	Provider string `json:"provider" env:"PICOCLAW_MEMORY_EMBEDDING_PROVIDER"`
+
+	// Model is the embedding model name (e.g., "nomic-embed-text", "text-embedding-3-small").
+	// Defaults depend on provider: "nomic-embed-text" for Ollama, "text-embedding-3-small" for OpenAI.
+	Model string `json:"model" env:"PICOCLAW_MEMORY_EMBEDDING_MODEL"`
+
+	// APIBase overrides the provider's API base URL.
+	// For Ollama defaults to "http://localhost:11434".
+	// For OpenAI defaults to "https://api.openai.com/v1".
+	// Empty string uses the default for the selected provider.
+	APIBase string `json:"api_base" env:"PICOCLAW_MEMORY_EMBEDDING_API_BASE"`
+
+	// APIKey for the embedding provider. Required for OpenAI, optional for Ollama.
+	// If empty, falls back to the matching provider's key from providers config.
+	APIKey string `json:"api_key" env:"PICOCLAW_MEMORY_EMBEDDING_API_KEY"`
+}
+
+// MemorySyncConfig configures Turso embedded replica synchronization.
+// When SyncURL is empty, the database operates in local-only mode.
+type MemorySyncConfig struct {
+	// SyncURL is the Turso primary database URL (e.g., "libsql://mydb.turso.io").
+	// Empty string disables replication (local-only mode).
+	SyncURL string `json:"sync_url" env:"PICOCLAW_MEMORY_SYNC_URL"`
+
+	// AuthToken is the Turso authentication token for the remote database.
+	AuthToken string `json:"auth_token" env:"PICOCLAW_MEMORY_SYNC_AUTH_TOKEN"`
+
+	// SyncIntervalSeconds is how often to sync with the remote primary (in seconds).
+	// Zero means manual sync only. Default: 60.
+	SyncIntervalSeconds int `json:"sync_interval_seconds" env:"PICOCLAW_MEMORY_SYNC_INTERVAL_SECONDS"`
+
+	// EncryptionKey enables encryption-at-rest on the local database file.
+	// Empty string means no encryption.
+	EncryptionKey string `json:"encryption_key" env:"PICOCLAW_MEMORY_SYNC_ENCRYPTION_KEY"`
 }
 
 type AgentsConfig struct {
@@ -187,7 +253,7 @@ type ProviderConfig struct {
 	APIBase     string `json:"api_base" env:"PICOCLAW_PROVIDERS_{{.Name}}_API_BASE"`
 	Proxy       string `json:"proxy,omitempty" env:"PICOCLAW_PROVIDERS_{{.Name}}_PROXY"`
 	AuthMethod  string `json:"auth_method,omitempty" env:"PICOCLAW_PROVIDERS_{{.Name}}_AUTH_METHOD"`
-	Timeout      int    `json:"timeout,omitempty" env:"PICOCLAW_PROVIDERS_{{.Name}}_TIMEOUT"`       // seconds, 0 = default (120s)
+	Timeout     int    `json:"timeout,omitempty" env:"PICOCLAW_PROVIDERS_{{.Name}}_TIMEOUT"`           // seconds, 0 = default (120s)
 	ConnectMode string `json:"connect_mode,omitempty" env:"PICOCLAW_PROVIDERS_{{.Name}}_CONNECT_MODE"` // only for Github Copilot, `stdio` or `grpc`
 }
 
@@ -229,8 +295,8 @@ type CronToolsConfig struct {
 }
 
 type ToolsConfig struct {
-	Web                   WebToolsConfig   `json:"web"`
-	ProgressiveDisclosure bool             `json:"progressive_disclosure" env:"PICOCLAW_TOOLS_PROGRESSIVE_DISCLOSURE"`
+	Web                   WebToolsConfig  `json:"web"`
+	ProgressiveDisclosure bool            `json:"progressive_disclosure" env:"PICOCLAW_TOOLS_PROGRESSIVE_DISCLOSURE"`
 	Cron                  CronToolsConfig `json:"cron"`
 }
 
@@ -352,6 +418,14 @@ func DefaultConfig() *Config {
 			ProgressiveDisclosure: false,
 			Cron: CronToolsConfig{
 				ExecTimeoutMinutes: 5, // default 5 minutes for LLM operations
+			},
+		},
+		Memory: MemoryConfig{
+			Enabled:                true,
+			EmbeddingDims:          768,
+			OffloadThresholdTokens: 4000,
+			Sync: MemorySyncConfig{
+				SyncIntervalSeconds: 60,
 			},
 		},
 		Heartbeat: HeartbeatConfig{
