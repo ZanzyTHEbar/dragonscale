@@ -158,7 +158,7 @@ cd picoclaw
 make build
 ```
 
-> **Note:** Requires `CGO_ENABLED=1` — the go-libsql driver ships pre-compiled C binaries linked against glibc.
+> [!NOTE] Requires `CGO_ENABLED=1` — the go-libsql driver ships pre-compiled C binaries linked against glibc.
 
 ### Configure
 
@@ -446,7 +446,7 @@ See `internal/fantasy/VENDORING.md` for syncing the vendored Fantasy SDK.
 
 ## Upstream
 
-This is a fork of [sipeed/picoclaw](https://github.com/sipeed/picoclaw), originally inspired by [nanobot](https://github.com/HKUDS/nanobot). The upstream project targets $10 RISC-V hardware with <10MB RAM — a constraint this fork respects while extending the agent's cognitive architecture.
+This is a fork of [sipeed/picoclaw](https://github.com/sipeed/picoclaw), originally inspired by [nanobot](https://github.com/HKUDS/nanobot). The upstream project targets $10 RISC-V hardware with <10MB RAM — a constraint this fork tries to respect while extending the agent's cognitive architecture.
 
 ## License
 
