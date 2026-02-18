@@ -140,9 +140,13 @@ type agentSettings struct {
 	headers          map[string]string
 	providerOptions  ProviderOptions
 
-	// TODO: add support for provider tools
-	tools      []AgentTool
-	maxRetries *int
+	tools       []AgentTool
+	toolRuntime ToolRuntime
+	maxRetries  *int
+
+	transitionObservers []ReActTransitionObserver
+	stepObservers       []ReActStepObserver
+	toolResultObservers []ReActToolResultObserver
 
 	model LanguageModel
 
@@ -469,7 +473,12 @@ func (a *agent) Generate(ctx context.Context, opts AgentCall) (*AgentResult, err
 			}
 		}
 
-		toolResults, err := a.executeTools(ctx, stepTools, stepToolCalls, nil)
+		var toolResults []ToolResultContent
+		if a.settings.toolRuntime != nil {
+			toolResults, err = a.settings.toolRuntime.Execute(ctx, stepTools, stepToolCalls, nil)
+		} else {
+			toolResults, err = a.executeTools(ctx, stepTools, stepToolCalls, nil)
+		}
 
 		// Build step content with validated tool calls and tool results
 		stepContent := []Content{}
@@ -486,9 +495,11 @@ func (a *agent) Generate(ctx context.Context, opts AgentCall) (*AgentResult, err
 				stepContent = append(stepContent, content)
 			}
 		}
-		// Add tool results
-		for _, result := range toolResults {
-			stepContent = append(stepContent, result)
+		for _, tr := range toolResults {
+			stepContent = append(stepContent, tr)
+			for _, obs := range a.settings.toolResultObservers {
+				obs.OnReActToolResult(ctx, len(steps), tr)
+			}
 		}
 		currentStepMessages := toResponseMessages(stepContent)
 		responseMessages = append(responseMessages, currentStepMessages...)
@@ -504,6 +515,11 @@ func (a *agent) Generate(ctx context.Context, opts AgentCall) (*AgentResult, err
 			Messages: currentStepMessages,
 		}
 		steps = append(steps, stepResult)
+
+		for _, obs := range a.settings.stepObservers {
+			obs.OnReActStep(ctx, len(steps)-1, stepResult)
+		}
+
 		shouldStop := isStopConditionMet(opts.StopWhen, steps)
 
 		if shouldStop || err != nil || len(stepToolCalls) == 0 || result.FinishReason != FinishReasonToolCalls {
@@ -865,7 +881,10 @@ func (a *agent) Stream(ctx context.Context, opts AgentStreamCall) (*AgentResult,
 		steps = append(steps, result.StepResult)
 		totalUsage = addUsage(totalUsage, result.StepResult.Usage)
 
-		// Call step finished callback
+		for _, obs := range a.settings.stepObservers {
+			obs.OnReActStep(ctx, len(steps)-1, result.StepResult)
+		}
+
 		if opts.OnStepFinish != nil {
 			_ = opts.OnStepFinish(result.StepResult)
 		}
@@ -1095,6 +1114,39 @@ func WithOnRetry(callback OnRetryCallback) AgentOption {
 	}
 }
 
+// WithToolRuntime sets a custom ToolRuntime (DAG, parallel, offloading, etc.)
+// that replaces the default sequential tool execution. When set, the agent
+// delegates all tool execution to this runtime.
+func WithToolRuntime(rt ToolRuntime) AgentOption {
+	return func(s *agentSettings) {
+		s.toolRuntime = rt
+	}
+}
+
+// WithTransitionObserver appends a ReActTransitionObserver that fires on
+// every FSM state transition during Generate/Stream.
+func WithTransitionObserver(o ReActTransitionObserver) AgentOption {
+	return func(s *agentSettings) {
+		s.transitionObservers = append(s.transitionObservers, o)
+	}
+}
+
+// WithStepObserver appends a ReActStepObserver that fires after each
+// completed step.
+func WithStepObserver(o ReActStepObserver) AgentOption {
+	return func(s *agentSettings) {
+		s.stepObservers = append(s.stepObservers, o)
+	}
+}
+
+// WithToolResultObserver appends a ReActToolResultObserver that fires for
+// every tool result produced during execution.
+func WithToolResultObserver(o ReActToolResultObserver) AgentOption {
+	return func(s *agentSettings) {
+		s.toolResultObservers = append(s.toolResultObservers, o)
+	}
+}
+
 // processStepStream processes a single step's stream and returns the step result.
 func (a *agent) processStepStream(ctx context.Context, stream StreamResponse, opts AgentStreamCall, _ []StepResult, stepTools []AgentTool) (stepExecutionResult, error) {
 	var stepContent []Content
@@ -1112,12 +1164,14 @@ func (a *agent) processStepStream(ctx context.Context, stream StreamResponse, op
 	}
 	activeReasoningContent := make(map[string]reasoningContent)
 
-	// Set up concurrent tool execution
+	useRuntimeBatch := a.settings.toolRuntime != nil
+
+	// Set up concurrent tool execution (used only when no ToolRuntime is set)
 	type toolExecutionRequest struct {
 		toolCall ToolCallContent
 		parallel bool
 	}
-	toolChan := make(chan toolExecutionRequest, 10)
+	var toolChan chan toolExecutionRequest
 	var toolExecutionWg sync.WaitGroup
 	var toolStateMu sync.Mutex
 	toolResults := make([]ToolResultContent, 0)
@@ -1129,17 +1183,32 @@ func (a *agent) processStepStream(ctx context.Context, stream StreamResponse, op
 		toolMap[tool.Info().Name] = tool
 	}
 
-	// Semaphores for controlling parallelism
-	parallelSem := make(chan struct{}, 5)
-	var sequentialMu sync.Mutex
+	if !useRuntimeBatch {
+		toolChan = make(chan toolExecutionRequest, 10)
 
-	// Single coordinator goroutine that dispatches tools
-	toolExecutionWg.Go(func() {
-		for req := range toolChan {
-			if req.parallel {
-				parallelSem <- struct{}{}
-				toolExecutionWg.Go(func() {
-					defer func() { <-parallelSem }()
+		// Semaphores for controlling parallelism
+		parallelSem := make(chan struct{}, 5)
+		var sequentialMu sync.Mutex
+
+		// Single coordinator goroutine that dispatches tools
+		toolExecutionWg.Go(func() {
+			for req := range toolChan {
+				if req.parallel {
+					parallelSem <- struct{}{}
+					toolExecutionWg.Go(func() {
+						defer func() { <-parallelSem }()
+						result, isCriticalError := a.executeSingleTool(ctx, toolMap, req.toolCall, opts.OnToolResult)
+						toolStateMu.Lock()
+						toolResults = append(toolResults, result)
+						if isCriticalError && toolExecutionErr == nil {
+							if errorResult, ok := result.Result.(ToolResultOutputContentError); ok && errorResult.Error != nil {
+								toolExecutionErr = errorResult.Error
+							}
+						}
+						toolStateMu.Unlock()
+					})
+				} else {
+					sequentialMu.Lock()
 					result, isCriticalError := a.executeSingleTool(ctx, toolMap, req.toolCall, opts.OnToolResult)
 					toolStateMu.Lock()
 					toolResults = append(toolResults, result)
@@ -1149,22 +1218,11 @@ func (a *agent) processStepStream(ctx context.Context, stream StreamResponse, op
 						}
 					}
 					toolStateMu.Unlock()
-				})
-			} else {
-				sequentialMu.Lock()
-				result, isCriticalError := a.executeSingleTool(ctx, toolMap, req.toolCall, opts.OnToolResult)
-				toolStateMu.Lock()
-				toolResults = append(toolResults, result)
-				if isCriticalError && toolExecutionErr == nil {
-					if errorResult, ok := result.Result.(ToolResultOutputContentError); ok && errorResult.Error != nil {
-						toolExecutionErr = errorResult.Error
-					}
+					sequentialMu.Unlock()
 				}
-				toolStateMu.Unlock()
-				sequentialMu.Unlock()
 			}
-		}
-	})
+		})
+	}
 
 	// Process stream parts
 	for part := range stream {
@@ -1320,16 +1378,14 @@ func (a *agent) processStepStream(ctx context.Context, stream StreamResponse, op
 				}
 			}
 
-			// Determine if tool can run in parallel
-			isParallel := false
-			if tool, exists := toolMap[validatedToolCall.ToolName]; exists {
-				isParallel = tool.Info().Parallel
+			if !useRuntimeBatch {
+				isParallel := false
+				if tool, exists := toolMap[validatedToolCall.ToolName]; exists {
+					isParallel = tool.Info().Parallel
+				}
+				toolChan <- toolExecutionRequest{toolCall: validatedToolCall, parallel: isParallel}
 			}
 
-			// Send tool call to execution channel
-			toolChan <- toolExecutionRequest{toolCall: validatedToolCall, parallel: isParallel}
-
-			// Clean up active tool call
 			delete(activeToolCalls, part.ID)
 
 		case StreamPartTypeSource:
@@ -1364,19 +1420,26 @@ func (a *agent) processStepStream(ctx context.Context, stream StreamResponse, op
 		}
 	}
 
-	// Close the tool execution channel and wait for all executions to complete
-	close(toolChan)
-	toolExecutionWg.Wait()
-
-	// Check for tool execution errors
-	if toolExecutionErr != nil {
-		return stepExecutionResult{}, toolExecutionErr
+	if useRuntimeBatch {
+		if len(stepToolCalls) > 0 {
+			var err error
+			toolResults, err = a.settings.toolRuntime.Execute(ctx, stepTools, stepToolCalls, opts.OnToolResult)
+			if err != nil {
+				return stepExecutionResult{}, err
+			}
+		}
+	} else {
+		close(toolChan)
+		toolExecutionWg.Wait()
+		if toolExecutionErr != nil {
+			return stepExecutionResult{}, toolExecutionErr
+		}
 	}
 
-	// Add tool results to content if any
-	if len(toolResults) > 0 {
-		for _, result := range toolResults {
-			stepContent = append(stepContent, result)
+	for _, tr := range toolResults {
+		stepContent = append(stepContent, tr)
+		for _, obs := range a.settings.toolResultObservers {
+			obs.OnReActToolResult(ctx, 0, tr)
 		}
 	}
 
