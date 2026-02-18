@@ -59,3 +59,40 @@ CREATE TABLE IF NOT EXISTS memory_summaries (
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_summaries_agent_session ON memory_summaries(agent_id, session_key);
+-- Agent KV store: generic key-value pairs for agent state, preferences, config
+CREATE TABLE IF NOT EXISTS agent_kv (
+    agent_id TEXT NOT NULL,
+    key TEXT NOT NULL,
+    value TEXT NOT NULL DEFAULT '',
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (agent_id, key)
+);
+-- Agent documents: versioned named documents (bootstrap files, identity, etc.)
+CREATE TABLE IF NOT EXISTS agent_documents (
+    id BLOB PRIMARY KEY,
+    agent_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    category TEXT NOT NULL DEFAULT 'bootstrap',
+    content TEXT NOT NULL,
+    version INTEGER NOT NULL DEFAULT 1,
+    is_active BOOLEAN NOT NULL DEFAULT 1,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(agent_id, name)
+);
+CREATE INDEX IF NOT EXISTS idx_docs_agent_cat ON agent_documents(agent_id, category);
+CREATE INDEX IF NOT EXISTS idx_docs_name ON agent_documents(name);
+-- Agent audit log: append-only record of tool calls, state changes, etc.
+CREATE TABLE IF NOT EXISTS agent_audit_log (
+    id BLOB PRIMARY KEY,
+    agent_id TEXT NOT NULL,
+    session_key TEXT NOT NULL DEFAULT '',
+    action TEXT NOT NULL,
+    target TEXT NOT NULL DEFAULT '',
+    input TEXT,
+    output TEXT,
+    duration_ms INTEGER,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_audit_agent_time ON agent_audit_log(agent_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_action ON agent_audit_log(action);

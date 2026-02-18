@@ -204,6 +204,16 @@ func (m *MemoryStore) RetrieveArchival(ctx context.Context, id ids.UUID) (string
 	return string(buf), nil
 }
 
+// ReadByID loads the content of a memory entry by its UUID string.
+// Tries archival chunks first, then falls back to recall item.
+func (m *MemoryStore) ReadByID(ctx context.Context, agentID, idStr string) (string, error) {
+	id, err := ids.Parse(idStr)
+	if err != nil {
+		return "", fmt.Errorf("invalid ID: %w", err)
+	}
+	return m.RetrieveArchival(ctx, id)
+}
+
 // --- Retrieval pipeline ---
 
 func (m *MemoryStore) Search(ctx context.Context, query string, opts memory.SearchOptions) ([]memory.SearchResult, error) {

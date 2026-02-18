@@ -564,3 +564,141 @@ func TestEmbeddingValueScanRoundTrip(t *testing.T) {
 		}
 	}
 }
+
+func TestIntegration_FullStackNoDisk(t *testing.T) {
+	d := newTestDelegate(t)
+	ctx := context.Background()
+	agentID := "integration-agent"
+
+	t.Run("KV_Store", func(t *testing.T) {
+		if err := d.UpsertKV(ctx, agentID, "last_channel", "telegram:42"); err != nil {
+			t.Fatalf("UpsertKV: %v", err)
+		}
+		val, err := d.GetKV(ctx, agentID, "last_channel")
+		if err != nil {
+			t.Fatalf("GetKV: %v", err)
+		}
+		if val != "telegram:42" {
+			t.Errorf("expected telegram:42, got %q", val)
+		}
+
+		if err := d.UpsertKV(ctx, agentID, "cron:store", `{"version":1,"jobs":[]}`); err != nil {
+			t.Fatalf("UpsertKV cron: %v", err)
+		}
+		kvs, err := d.ListKVByPrefix(ctx, agentID, "cron:", 10)
+		if err != nil {
+			t.Fatalf("ListKVByPrefix: %v", err)
+		}
+		if len(kvs) != 1 {
+			t.Errorf("expected 1 cron KV, got %d", len(kvs))
+		}
+	})
+
+	t.Run("Documents", func(t *testing.T) {
+		doc := &memory.AgentDocument{
+			ID:       ids.New(),
+			AgentID:  agentID,
+			Name:     "AGENTS.md",
+			Category: "bootstrap",
+			Content:  "# Agent Config\nBootstrap content",
+			Version:  1,
+			IsActive: true,
+		}
+		if err := d.UpsertDocument(ctx, doc); err != nil {
+			t.Fatalf("UpsertDocument: %v", err)
+		}
+
+		got, err := d.GetDocument(ctx, agentID, "AGENTS.md")
+		if err != nil {
+			t.Fatalf("GetDocument: %v", err)
+		}
+		if got.Content != doc.Content {
+			t.Errorf("content mismatch: %q vs %q", got.Content, doc.Content)
+		}
+
+		docs, err := d.ListDocumentsByCategory(ctx, agentID, "bootstrap")
+		if err != nil {
+			t.Fatalf("ListDocumentsByCategory: %v", err)
+		}
+		if len(docs) != 1 {
+			t.Errorf("expected 1 bootstrap doc, got %d", len(docs))
+		}
+	})
+
+	t.Run("Sessions_via_RecallItems", func(t *testing.T) {
+		for i, msg := range []struct{ role, content string }{
+			{"user", "hello agent"},
+			{"assistant", "hi there!"},
+			{"user", "how are you?"},
+		} {
+			item := &memory.RecallItem{
+				ID:         ids.New(),
+				AgentID:    agentID,
+				SessionKey: "test-session",
+				Role:       msg.role,
+				Sector:     memory.SectorEpisodic,
+				Importance: 0.5,
+				Salience:   0.5,
+				Content:    msg.content,
+				Tags:       "session-message",
+			}
+			if err := d.InsertRecallItem(ctx, item); err != nil {
+				t.Fatalf("InsertRecallItem[%d]: %v", i, err)
+			}
+		}
+
+		items, err := d.ListRecallItems(ctx, agentID, "test-session", 100, 0)
+		if err != nil {
+			t.Fatalf("ListRecallItems: %v", err)
+		}
+		if len(items) != 3 {
+			t.Errorf("expected 3 session items, got %d", len(items))
+		}
+	})
+
+	t.Run("AuditLog", func(t *testing.T) {
+		entry := &memory.AuditEntry{
+			ID:         ids.New(),
+			AgentID:    agentID,
+			SessionKey: "test-session",
+			Action:     "tool_call",
+			Target:     "exec",
+			Input:      `{"command":"ls"}`,
+		}
+		if err := d.InsertAuditEntry(ctx, entry); err != nil {
+			t.Fatalf("InsertAuditEntry: %v", err)
+		}
+
+		entries, err := d.ListAuditEntries(ctx, agentID, 10)
+		if err != nil {
+			t.Fatalf("ListAuditEntries: %v", err)
+		}
+		if len(entries) != 1 {
+			t.Errorf("expected 1 audit entry, got %d", len(entries))
+		}
+		if entries[0].Target != "exec" {
+			t.Errorf("expected target 'exec', got %q", entries[0].Target)
+		}
+
+		count, err := d.CountAuditEntries(ctx, agentID)
+		if err != nil {
+			t.Fatalf("CountAuditEntries: %v", err)
+		}
+		if count != 1 {
+			t.Errorf("expected count 1, got %d", count)
+		}
+	})
+
+	t.Run("WorkingContext", func(t *testing.T) {
+		if err := d.UpsertWorkingContext(ctx, agentID, "sess-1", "agent memory contents"); err != nil {
+			t.Fatalf("UpsertWorkingContext: %v", err)
+		}
+		wc, err := d.GetWorkingContext(ctx, agentID, "sess-1")
+		if err != nil {
+			t.Fatalf("GetWorkingContext: %v", err)
+		}
+		if wc == nil || wc.Content != "agent memory contents" {
+			t.Errorf("unexpected working context: %v", wc)
+		}
+	})
+}

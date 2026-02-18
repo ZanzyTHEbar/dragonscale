@@ -119,3 +119,61 @@ SELECT id,
     updated_at
 FROM recall_items
 WHERE id IN (sqlc.slice('ids'));
+-- name: InsertSessionMessage :exec
+INSERT INTO recall_items (
+        id,
+        agent_id,
+        session_key,
+        role,
+        sector,
+        importance,
+        salience,
+        decay_rate,
+        content,
+        tags,
+        created_at,
+        updated_at
+    )
+VALUES (
+        sqlc.arg(id),
+        sqlc.arg(agent_id),
+        sqlc.arg(session_key),
+        sqlc.arg(role),
+        'episodic',
+        0.5,
+        0.5,
+        0.01,
+        sqlc.arg(content),
+        'session-message',
+        datetime('now'),
+        datetime('now')
+    );
+-- name: ListSessionMessages :many
+SELECT id,
+    agent_id,
+    session_key,
+    role,
+    sector,
+    importance,
+    salience,
+    decay_rate,
+    content,
+    tags,
+    created_at,
+    updated_at
+FROM recall_items
+WHERE agent_id = sqlc.arg(agent_id)
+    AND session_key = sqlc.arg(session_key)
+    AND tags = 'session-message'
+    AND (
+        role = sqlc.arg(role)
+        OR sqlc.arg(role) = ''
+    )
+ORDER BY created_at ASC
+LIMIT sqlc.arg(lim);
+-- name: CountSessionMessages :one
+SELECT COUNT(*)
+FROM recall_items
+WHERE agent_id = sqlc.arg(agent_id)
+    AND session_key = sqlc.arg(session_key)
+    AND tags = 'session-message';

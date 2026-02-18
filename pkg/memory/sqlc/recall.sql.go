@@ -44,6 +44,33 @@ func (q *Queries) CountRecallItems(ctx context.Context, arg CountRecallItemsPara
 	return count, err
 }
 
+const CountSessionMessages = `-- name: CountSessionMessages :one
+SELECT COUNT(*)
+FROM recall_items
+WHERE agent_id = ?1
+    AND session_key = ?2
+    AND tags = 'session-message'
+`
+
+type CountSessionMessagesParams struct {
+	AgentID    string `json:"agent_id"`
+	SessionKey string `json:"session_key"`
+}
+
+// CountSessionMessages
+//
+//	SELECT COUNT(*)
+//	FROM recall_items
+//	WHERE agent_id = ?1
+//	    AND session_key = ?2
+//	    AND tags = 'session-message'
+func (q *Queries) CountSessionMessages(ctx context.Context, arg CountSessionMessagesParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, CountSessionMessages, arg.AgentID, arg.SessionKey)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const DeleteRecallItem = `-- name: DeleteRecallItem :exec
 DELETE FROM recall_items
 WHERE id = ?1
@@ -292,6 +319,86 @@ func (q *Queries) InsertRecallItem(ctx context.Context, arg InsertRecallItemPara
 	return err
 }
 
+const InsertSessionMessage = `-- name: InsertSessionMessage :exec
+INSERT INTO recall_items (
+        id,
+        agent_id,
+        session_key,
+        role,
+        sector,
+        importance,
+        salience,
+        decay_rate,
+        content,
+        tags,
+        created_at,
+        updated_at
+    )
+VALUES (
+        ?1,
+        ?2,
+        ?3,
+        ?4,
+        'episodic',
+        0.5,
+        0.5,
+        0.01,
+        ?5,
+        'session-message',
+        datetime('now'),
+        datetime('now')
+    )
+`
+
+type InsertSessionMessageParams struct {
+	ID         ids.UUID `json:"id"`
+	AgentID    string   `json:"agent_id"`
+	SessionKey string   `json:"session_key"`
+	Role       string   `json:"role"`
+	Content    string   `json:"content"`
+}
+
+// InsertSessionMessage
+//
+//	INSERT INTO recall_items (
+//	        id,
+//	        agent_id,
+//	        session_key,
+//	        role,
+//	        sector,
+//	        importance,
+//	        salience,
+//	        decay_rate,
+//	        content,
+//	        tags,
+//	        created_at,
+//	        updated_at
+//	    )
+//	VALUES (
+//	        ?1,
+//	        ?2,
+//	        ?3,
+//	        ?4,
+//	        'episodic',
+//	        0.5,
+//	        0.5,
+//	        0.01,
+//	        ?5,
+//	        'session-message',
+//	        datetime('now'),
+//	        datetime('now')
+//	    )
+func (q *Queries) InsertSessionMessage(ctx context.Context, arg InsertSessionMessageParams) error {
+	_, err := q.db.ExecContext(ctx, InsertSessionMessage,
+		arg.ID,
+		arg.AgentID,
+		arg.SessionKey,
+		arg.Role,
+		arg.Content,
+	)
+	return err
+}
+
 const ListRecallItems = `-- name: ListRecallItems :many
 SELECT id,
     agent_id,
@@ -349,6 +456,103 @@ func (q *Queries) ListRecallItems(ctx context.Context, arg ListRecallItemsParams
 		arg.AgentID,
 		arg.SessionKey,
 		arg.Off,
+		arg.Lim,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []RecallItem{}
+	for rows.Next() {
+		var i RecallItem
+		if err := rows.Scan(
+			&i.ID,
+			&i.AgentID,
+			&i.SessionKey,
+			&i.Role,
+			&i.Sector,
+			&i.Importance,
+			&i.Salience,
+			&i.DecayRate,
+			&i.Content,
+			&i.Tags,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const ListSessionMessages = `-- name: ListSessionMessages :many
+SELECT id,
+    agent_id,
+    session_key,
+    role,
+    sector,
+    importance,
+    salience,
+    decay_rate,
+    content,
+    tags,
+    created_at,
+    updated_at
+FROM recall_items
+WHERE agent_id = ?1
+    AND session_key = ?2
+    AND tags = 'session-message'
+    AND (
+        role = ?3
+        OR ?3 = ''
+    )
+ORDER BY created_at ASC
+LIMIT ?4
+`
+
+type ListSessionMessagesParams struct {
+	AgentID    string `json:"agent_id"`
+	SessionKey string `json:"session_key"`
+	Role       string `json:"role"`
+	Lim        int64  `json:"lim"`
+}
+
+// ListSessionMessages
+//
+//	SELECT id,
+//	    agent_id,
+//	    session_key,
+//	    role,
+//	    sector,
+//	    importance,
+//	    salience,
+//	    decay_rate,
+//	    content,
+//	    tags,
+//	    created_at,
+//	    updated_at
+//	FROM recall_items
+//	WHERE agent_id = ?1
+//	    AND session_key = ?2
+//	    AND tags = 'session-message'
+//	    AND (
+//	        role = ?3
+//	        OR ?3 = ''
+//	    )
+//	ORDER BY created_at ASC
+//	LIMIT ?4
+func (q *Queries) ListSessionMessages(ctx context.Context, arg ListSessionMessagesParams) ([]RecallItem, error) {
+	rows, err := q.db.QueryContext(ctx, ListSessionMessages,
+		arg.AgentID,
+		arg.SessionKey,
+		arg.Role,
 		arg.Lim,
 	)
 	if err != nil {

@@ -40,6 +40,14 @@ sql:
             go_type:
               import: "github.com/sipeed/picoclaw/pkg/ids"
               type: "UUID"
+          - column: "agent_documents.id"
+            go_type:
+              import: "github.com/sipeed/picoclaw/pkg/ids"
+              type: "UUID"
+          - column: "agent_audit_log.id"
+            go_type:
+              import: "github.com/sipeed/picoclaw/pkg/ids"
+              type: "UUID"
           # Domain type: recall_items.sector → memory.Sector
           - column: "recall_items.sector"
             go_type:

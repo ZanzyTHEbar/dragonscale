@@ -14,6 +14,19 @@ type Querier interface {
 	//  SELECT COUNT(*)
 	//  FROM archival_chunks
 	CountArchivalChunks(ctx context.Context) (int64, error)
+	//CountAuditEntries
+	//
+	//  SELECT COUNT(*)
+	//  FROM agent_audit_log
+	//  WHERE agent_id = ?1
+	CountAuditEntries(ctx context.Context, arg CountAuditEntriesParams) (int64, error)
+	//CountAuditEntriesByAction
+	//
+	//  SELECT COUNT(*)
+	//  FROM agent_audit_log
+	//  WHERE agent_id = ?1
+	//      AND action = ?2
+	CountAuditEntriesByAction(ctx context.Context, arg CountAuditEntriesByActionParams) (int64, error)
 	//CountRecallItems
 	//
 	//  SELECT COUNT(*)
@@ -24,11 +37,31 @@ type Querier interface {
 	//          OR ?2 = ''
 	//      )
 	CountRecallItems(ctx context.Context, arg CountRecallItemsParams) (int64, error)
+	//CountSessionMessages
+	//
+	//  SELECT COUNT(*)
+	//  FROM recall_items
+	//  WHERE agent_id = ?1
+	//      AND session_key = ?2
+	//      AND tags = 'session-message'
+	CountSessionMessages(ctx context.Context, arg CountSessionMessagesParams) (int64, error)
 	//DeleteArchivalChunksByRecall
 	//
 	//  DELETE FROM archival_chunks
 	//  WHERE recall_id = ?1
 	DeleteArchivalChunksByRecall(ctx context.Context, arg DeleteArchivalChunksByRecallParams) error
+	//DeleteDocument
+	//
+	//  DELETE FROM agent_documents
+	//  WHERE agent_id = ?1
+	//      AND name = ?2
+	DeleteDocument(ctx context.Context, arg DeleteDocumentParams) error
+	//DeleteKV
+	//
+	//  DELETE FROM agent_kv
+	//  WHERE agent_id = ?1
+	//      AND key = ?2
+	DeleteKV(ctx context.Context, arg DeleteKVParams) error
 	//DeleteRecallItem
 	//
 	//  DELETE FROM recall_items
@@ -60,6 +93,31 @@ type Querier interface {
 	//  FROM archival_chunks
 	//  WHERE id IN (/*SLICE:ids*/?)
 	GetArchivalChunksByIDs(ctx context.Context, arg GetArchivalChunksByIDsParams) ([]ArchivalChunk, error)
+	// Agent Documents queries
+	//
+	//  SELECT id,
+	//      agent_id,
+	//      name,
+	//      category,
+	//      content,
+	//      version,
+	//      is_active,
+	//      created_at,
+	//      updated_at
+	//  FROM agent_documents
+	//  WHERE agent_id = ?1
+	//      AND name = ?2
+	GetDocument(ctx context.Context, arg GetDocumentParams) (AgentDocument, error)
+	// Agent KV Store queries
+	//
+	//  SELECT agent_id,
+	//      key,
+	//      value,
+	//      updated_at
+	//  FROM agent_kv
+	//  WHERE agent_id = ?1
+	//      AND key = ?2
+	GetKV(ctx context.Context, arg GetKVParams) (AgentKv, error)
 	//GetRecallItem
 	//
 	//  SELECT id,
@@ -127,6 +185,31 @@ type Querier interface {
 	//          datetime('now')
 	//      )
 	InsertArchivalChunk(ctx context.Context, arg InsertArchivalChunkParams) error
+	// Agent Audit Log queries
+	//
+	//  INSERT INTO agent_audit_log (
+	//          id,
+	//          agent_id,
+	//          session_key,
+	//          action,
+	//          target,
+	//          input,
+	//          output,
+	//          duration_ms,
+	//          created_at
+	//      )
+	//  VALUES (
+	//          ?1,
+	//          ?2,
+	//          ?3,
+	//          ?4,
+	//          ?5,
+	//          ?6,
+	//          ?7,
+	//          ?8,
+	//          datetime('now')
+	//      )
+	InsertAuditEntry(ctx context.Context, arg InsertAuditEntryParams) error
 	// Recall Item queries
 	//
 	//  INSERT INTO recall_items (
@@ -158,6 +241,37 @@ type Querier interface {
 	//          datetime('now')
 	//      )
 	InsertRecallItem(ctx context.Context, arg InsertRecallItemParams) error
+	//InsertSessionMessage
+	//
+	//  INSERT INTO recall_items (
+	//          id,
+	//          agent_id,
+	//          session_key,
+	//          role,
+	//          sector,
+	//          importance,
+	//          salience,
+	//          decay_rate,
+	//          content,
+	//          tags,
+	//          created_at,
+	//          updated_at
+	//      )
+	//  VALUES (
+	//          ?1,
+	//          ?2,
+	//          ?3,
+	//          ?4,
+	//          'episodic',
+	//          0.5,
+	//          0.5,
+	//          0.01,
+	//          ?5,
+	//          'session-message',
+	//          datetime('now'),
+	//          datetime('now')
+	//      )
+	InsertSessionMessage(ctx context.Context, arg InsertSessionMessageParams) error
 	// Memory Summary queries
 	//
 	//  INSERT INTO memory_summaries (
@@ -193,6 +307,23 @@ type Querier interface {
 	//  ORDER BY created_at DESC
 	//  LIMIT ?2 OFFSET ?1
 	ListAllArchivalChunks(ctx context.Context, arg ListAllArchivalChunksParams) ([]ArchivalChunk, error)
+	//ListAllDocuments
+	//
+	//  SELECT id,
+	//      agent_id,
+	//      name,
+	//      category,
+	//      content,
+	//      version,
+	//      is_active,
+	//      created_at,
+	//      updated_at
+	//  FROM agent_documents
+	//  WHERE agent_id = ?1
+	//      AND is_active = 1
+	//  ORDER BY category,
+	//      name
+	ListAllDocuments(ctx context.Context, arg ListAllDocumentsParams) ([]AgentDocument, error)
 	//ListArchivalChunks
 	//
 	//  SELECT id,
@@ -207,6 +338,85 @@ type Querier interface {
 	//  WHERE recall_id = ?1
 	//  ORDER BY chunk_index
 	ListArchivalChunks(ctx context.Context, arg ListArchivalChunksParams) ([]ArchivalChunk, error)
+	//ListAuditEntries
+	//
+	//  SELECT id,
+	//      agent_id,
+	//      session_key,
+	//      action,
+	//      target,
+	//      input,
+	//      output,
+	//      duration_ms,
+	//      created_at
+	//  FROM agent_audit_log
+	//  WHERE agent_id = ?1
+	//  ORDER BY created_at DESC
+	//  LIMIT ?2
+	ListAuditEntries(ctx context.Context, arg ListAuditEntriesParams) ([]AgentAuditLog, error)
+	//ListAuditEntriesByAction
+	//
+	//  SELECT id,
+	//      agent_id,
+	//      session_key,
+	//      action,
+	//      target,
+	//      input,
+	//      output,
+	//      duration_ms,
+	//      created_at
+	//  FROM agent_audit_log
+	//  WHERE agent_id = ?1
+	//      AND action = ?2
+	//  ORDER BY created_at DESC
+	//  LIMIT ?3
+	ListAuditEntriesByAction(ctx context.Context, arg ListAuditEntriesByActionParams) ([]AgentAuditLog, error)
+	//ListAuditEntriesBySession
+	//
+	//  SELECT id,
+	//      agent_id,
+	//      session_key,
+	//      action,
+	//      target,
+	//      input,
+	//      output,
+	//      duration_ms,
+	//      created_at
+	//  FROM agent_audit_log
+	//  WHERE agent_id = ?1
+	//      AND session_key = ?2
+	//  ORDER BY created_at DESC
+	//  LIMIT ?3
+	ListAuditEntriesBySession(ctx context.Context, arg ListAuditEntriesBySessionParams) ([]AgentAuditLog, error)
+	//ListDocumentsByCategory
+	//
+	//  SELECT id,
+	//      agent_id,
+	//      name,
+	//      category,
+	//      content,
+	//      version,
+	//      is_active,
+	//      created_at,
+	//      updated_at
+	//  FROM agent_documents
+	//  WHERE agent_id = ?1
+	//      AND category = ?2
+	//      AND is_active = 1
+	//  ORDER BY name
+	ListDocumentsByCategory(ctx context.Context, arg ListDocumentsByCategoryParams) ([]AgentDocument, error)
+	//ListKVByPrefix
+	//
+	//  SELECT agent_id,
+	//      key,
+	//      value,
+	//      updated_at
+	//  FROM agent_kv
+	//  WHERE agent_id = ?1
+	//      AND key LIKE ?2 || '%'
+	//  ORDER BY key
+	//  LIMIT ?3
+	ListKVByPrefix(ctx context.Context, arg ListKVByPrefixParams) ([]AgentKv, error)
 	//ListRecallItems
 	//
 	//  SELECT id,
@@ -230,6 +440,31 @@ type Querier interface {
 	//  ORDER BY created_at DESC
 	//  LIMIT ?4 OFFSET ?3
 	ListRecallItems(ctx context.Context, arg ListRecallItemsParams) ([]RecallItem, error)
+	//ListSessionMessages
+	//
+	//  SELECT id,
+	//      agent_id,
+	//      session_key,
+	//      role,
+	//      sector,
+	//      importance,
+	//      salience,
+	//      decay_rate,
+	//      content,
+	//      tags,
+	//      created_at,
+	//      updated_at
+	//  FROM recall_items
+	//  WHERE agent_id = ?1
+	//      AND session_key = ?2
+	//      AND tags = 'session-message'
+	//      AND (
+	//          role = ?3
+	//          OR ?3 = ''
+	//      )
+	//  ORDER BY created_at ASC
+	//  LIMIT ?4
+	ListSessionMessages(ctx context.Context, arg ListSessionMessagesParams) ([]RecallItem, error)
 	//ListSummaries
 	//
 	//  SELECT id,
@@ -248,6 +483,12 @@ type Querier interface {
 	//  ORDER BY created_at DESC
 	//  LIMIT ?3
 	ListSummaries(ctx context.Context, arg ListSummariesParams) ([]MemorySummary, error)
+	//PruneOldAuditEntries
+	//
+	//  DELETE FROM agent_audit_log
+	//  WHERE agent_id = ?1
+	//      AND created_at < ?2
+	PruneOldAuditEntries(ctx context.Context, arg PruneOldAuditEntriesParams) error
 	//SearchRecallByKeyword
 	//
 	//  SELECT ri.id,
@@ -281,6 +522,50 @@ type Querier interface {
 	//      updated_at = datetime('now')
 	//  WHERE id = ?8
 	UpdateRecallItem(ctx context.Context, arg UpdateRecallItemParams) error
+	//UpsertDocument
+	//
+	//  INSERT INTO agent_documents (
+	//          id,
+	//          agent_id,
+	//          name,
+	//          category,
+	//          content,
+	//          version,
+	//          is_active,
+	//          created_at,
+	//          updated_at
+	//      )
+	//  VALUES (
+	//          ?1,
+	//          ?2,
+	//          ?3,
+	//          ?4,
+	//          ?5,
+	//          1,
+	//          1,
+	//          datetime('now'),
+	//          datetime('now')
+	//      ) ON CONFLICT (agent_id, name) DO
+	//  UPDATE
+	//  SET content = excluded.content,
+	//      category = excluded.category,
+	//      version = agent_documents.version + 1,
+	//      is_active = 1,
+	//      updated_at = datetime('now')
+	UpsertDocument(ctx context.Context, arg UpsertDocumentParams) error
+	//UpsertKV
+	//
+	//  INSERT INTO agent_kv (agent_id, key, value, updated_at)
+	//  VALUES (
+	//          ?1,
+	//          ?2,
+	//          ?3,
+	//          datetime('now')
+	//      ) ON CONFLICT (agent_id, key) DO
+	//  UPDATE
+	//  SET value = excluded.value,
+	//      updated_at = excluded.updated_at
+	UpsertKV(ctx context.Context, arg UpsertKVParams) error
 	//UpsertWorkingContext
 	//
 	//  INSERT INTO working_context (agent_id, session_key, content, updated_at)

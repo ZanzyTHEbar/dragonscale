@@ -411,6 +411,235 @@ func (d *LibSQLDelegate) CountArchivalChunks(ctx context.Context) (int, error) {
 	return int(count), err
 }
 
+// --- Key-Value Store ---
+
+func (d *LibSQLDelegate) GetKV(ctx context.Context, agentID, key string) (string, error) {
+	row, err := d.queries.GetKV(ctx, memsqlc.GetKVParams{
+		AgentID: agentID,
+		Key:     key,
+	})
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	return row.Value, nil
+}
+
+func (d *LibSQLDelegate) UpsertKV(ctx context.Context, agentID, key, value string) error {
+	return d.queries.UpsertKV(ctx, memsqlc.UpsertKVParams{
+		AgentID: agentID,
+		Key:     key,
+		Value:   value,
+	})
+}
+
+func (d *LibSQLDelegate) DeleteKV(ctx context.Context, agentID, key string) error {
+	return d.queries.DeleteKV(ctx, memsqlc.DeleteKVParams{
+		AgentID: agentID,
+		Key:     key,
+	})
+}
+
+func (d *LibSQLDelegate) ListKVByPrefix(ctx context.Context, agentID, prefix string, limit int) (map[string]string, error) {
+	rows, err := d.queries.ListKVByPrefix(ctx, memsqlc.ListKVByPrefixParams{
+		AgentID: agentID,
+		Prefix:  &prefix,
+		Lim:     int64(limit),
+	})
+	if err != nil {
+		return nil, err
+	}
+	result := make(map[string]string, len(rows))
+	for _, row := range rows {
+		result[row.Key] = row.Value
+	}
+	return result, nil
+}
+
+// --- Documents ---
+
+func (d *LibSQLDelegate) GetDocument(ctx context.Context, agentID, name string) (*memory.AgentDocument, error) {
+	row, err := d.queries.GetDocument(ctx, memsqlc.GetDocumentParams{
+		AgentID: agentID,
+		Name:    name,
+	})
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return sqlcDocToMemory(row), nil
+}
+
+func (d *LibSQLDelegate) UpsertDocument(ctx context.Context, doc *memory.AgentDocument) error {
+	return d.queries.UpsertDocument(ctx, memsqlc.UpsertDocumentParams{
+		ID:       doc.ID,
+		AgentID:  doc.AgentID,
+		Name:     doc.Name,
+		Category: doc.Category,
+		Content:  doc.Content,
+	})
+}
+
+func (d *LibSQLDelegate) DeleteDocument(ctx context.Context, agentID, name string) error {
+	return d.queries.DeleteDocument(ctx, memsqlc.DeleteDocumentParams{
+		AgentID: agentID,
+		Name:    name,
+	})
+}
+
+func (d *LibSQLDelegate) ListDocumentsByCategory(ctx context.Context, agentID, category string) ([]*memory.AgentDocument, error) {
+	rows, err := d.queries.ListDocumentsByCategory(ctx, memsqlc.ListDocumentsByCategoryParams{
+		AgentID:  agentID,
+		Category: category,
+	})
+	if err != nil {
+		return nil, err
+	}
+	docs := make([]*memory.AgentDocument, len(rows))
+	for i, row := range rows {
+		docs[i] = sqlcDocToMemory(row)
+	}
+	return docs, nil
+}
+
+func (d *LibSQLDelegate) ListAllDocuments(ctx context.Context, agentID string) ([]*memory.AgentDocument, error) {
+	rows, err := d.queries.ListAllDocuments(ctx, memsqlc.ListAllDocumentsParams{
+		AgentID: agentID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	docs := make([]*memory.AgentDocument, len(rows))
+	for i, row := range rows {
+		docs[i] = sqlcDocToMemory(row)
+	}
+	return docs, nil
+}
+
+// --- Session Messages ---
+
+func (d *LibSQLDelegate) InsertSessionMessage(ctx context.Context, agentID, sessionKey, role, content string) error {
+	return d.queries.InsertSessionMessage(ctx, memsqlc.InsertSessionMessageParams{
+		ID:         ids.New(),
+		AgentID:    agentID,
+		SessionKey: sessionKey,
+		Role:       role,
+		Content:    content,
+	})
+}
+
+func (d *LibSQLDelegate) ListSessionMessages(ctx context.Context, agentID, sessionKey, role string, limit int) ([]*memory.RecallItem, error) {
+	rows, err := d.queries.ListSessionMessages(ctx, memsqlc.ListSessionMessagesParams{
+		AgentID:    agentID,
+		SessionKey: sessionKey,
+		Role:       role,
+		Lim:        int64(limit),
+	})
+	if err != nil {
+		return nil, err
+	}
+	items := make([]*memory.RecallItem, len(rows))
+	for i, row := range rows {
+		items[i] = sqlcRecallToMemory(row)
+	}
+	return items, nil
+}
+
+func (d *LibSQLDelegate) CountSessionMessages(ctx context.Context, agentID, sessionKey string) (int64, error) {
+	return d.queries.CountSessionMessages(ctx, memsqlc.CountSessionMessagesParams{
+		AgentID:    agentID,
+		SessionKey: sessionKey,
+	})
+}
+
+// --- Audit Log ---
+
+func (d *LibSQLDelegate) InsertAuditEntry(ctx context.Context, entry *memory.AuditEntry) error {
+	return d.queries.InsertAuditEntry(ctx, memsqlc.InsertAuditEntryParams{
+		ID:         entry.ID,
+		AgentID:    entry.AgentID,
+		SessionKey: entry.SessionKey,
+		Action:     entry.Action,
+		Target:     entry.Target,
+		Input:      &entry.Input,
+		Output:     &entry.Output,
+		DurationMs: ptrInt64(int64(entry.DurationMS)),
+	})
+}
+
+func (d *LibSQLDelegate) ListAuditEntries(ctx context.Context, agentID string, limit int) ([]*memory.AuditEntry, error) {
+	rows, err := d.queries.ListAuditEntries(ctx, memsqlc.ListAuditEntriesParams{
+		AgentID: agentID,
+		Lim:     int64(limit),
+	})
+	if err != nil {
+		return nil, err
+	}
+	entries := make([]*memory.AuditEntry, len(rows))
+	for i, row := range rows {
+		entries[i] = sqlcAuditToMemory(row)
+	}
+	return entries, nil
+}
+
+func (d *LibSQLDelegate) ListAuditEntriesByAction(ctx context.Context, agentID, action string, limit int) ([]*memory.AuditEntry, error) {
+	rows, err := d.queries.ListAuditEntriesByAction(ctx, memsqlc.ListAuditEntriesByActionParams{
+		AgentID: agentID,
+		Action:  action,
+		Lim:     int64(limit),
+	})
+	if err != nil {
+		return nil, err
+	}
+	entries := make([]*memory.AuditEntry, len(rows))
+	for i, row := range rows {
+		entries[i] = sqlcAuditToMemory(row)
+	}
+	return entries, nil
+}
+
+func (d *LibSQLDelegate) CountAuditEntries(ctx context.Context, agentID string) (int, error) {
+	count, err := d.queries.CountAuditEntries(ctx, memsqlc.CountAuditEntriesParams{
+		AgentID: agentID,
+	})
+	return int(count), err
+}
+
+func (d *LibSQLDelegate) ListAuditEntriesBySession(ctx context.Context, agentID, sessionKey string, limit int) ([]*memory.AuditEntry, error) {
+	rows, err := d.queries.ListAuditEntriesBySession(ctx, memsqlc.ListAuditEntriesBySessionParams{
+		AgentID:    agentID,
+		SessionKey: sessionKey,
+		Lim:        int64(limit),
+	})
+	if err != nil {
+		return nil, err
+	}
+	entries := make([]*memory.AuditEntry, len(rows))
+	for i, row := range rows {
+		entries[i] = sqlcAuditToMemory(row)
+	}
+	return entries, nil
+}
+
+func (d *LibSQLDelegate) PruneOldAuditEntries(ctx context.Context, agentID string, before time.Time) error {
+	return d.queries.PruneOldAuditEntries(ctx, memsqlc.PruneOldAuditEntriesParams{
+		AgentID: agentID,
+		Before:  before,
+	})
+}
+
+func (d *LibSQLDelegate) CountAuditEntriesByAction(ctx context.Context, agentID, action string) (int, error) {
+	count, err := d.queries.CountAuditEntriesByAction(ctx, memsqlc.CountAuditEntriesByActionParams{
+		AgentID: agentID,
+		Action:  action,
+	})
+	return int(count), err
+}
+
 // --- Conversion helpers ---
 
 func sqlcRecallToMemory(row memsqlc.RecallItem) *memory.RecallItem {
@@ -442,3 +671,40 @@ func sqlcChunkToMemory(row memsqlc.ArchivalChunk) *memory.ArchivalChunk {
 		CreatedAt:  row.CreatedAt,
 	}
 }
+
+func sqlcDocToMemory(row memsqlc.AgentDocument) *memory.AgentDocument {
+	return &memory.AgentDocument{
+		ID:        row.ID,
+		AgentID:   row.AgentID,
+		Name:      row.Name,
+		Category:  row.Category,
+		Content:   row.Content,
+		Version:   int(row.Version),
+		IsActive:  row.IsActive,
+		CreatedAt: row.CreatedAt,
+		UpdatedAt: row.UpdatedAt,
+	}
+}
+
+func sqlcAuditToMemory(row memsqlc.AgentAuditLog) *memory.AuditEntry {
+	entry := &memory.AuditEntry{
+		ID:         row.ID,
+		AgentID:    row.AgentID,
+		SessionKey: row.SessionKey,
+		Action:     row.Action,
+		Target:     row.Target,
+		CreatedAt:  row.CreatedAt,
+	}
+	if row.Input != nil {
+		entry.Input = *row.Input
+	}
+	if row.Output != nil {
+		entry.Output = *row.Output
+	}
+	if row.DurationMs != nil {
+		entry.DurationMS = int(*row.DurationMs)
+	}
+	return entry
+}
+
+func ptrInt64(v int64) *int64 { return &v }

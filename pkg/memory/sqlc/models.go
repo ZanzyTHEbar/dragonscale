@@ -11,6 +11,37 @@ import (
 	"github.com/sipeed/picoclaw/pkg/memory"
 )
 
+type AgentAuditLog struct {
+	ID         ids.UUID  `json:"id"`
+	AgentID    string    `json:"agent_id"`
+	SessionKey string    `json:"session_key"`
+	Action     string    `json:"action"`
+	Target     string    `json:"target"`
+	Input      *string   `json:"input"`
+	Output     *string   `json:"output"`
+	DurationMs *int64    `json:"duration_ms"`
+	CreatedAt  time.Time `json:"created_at"`
+}
+
+type AgentDocument struct {
+	ID        ids.UUID  `json:"id"`
+	AgentID   string    `json:"agent_id"`
+	Name      string    `json:"name"`
+	Category  string    `json:"category"`
+	Content   string    `json:"content"`
+	Version   int64     `json:"version"`
+	IsActive  bool      `json:"is_active"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+type AgentKv struct {
+	AgentID   string    `json:"agent_id"`
+	Key       string    `json:"key"`
+	Value     string    `json:"value"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
 type ArchivalChunk struct {
 	ID         ids.UUID         `json:"id"`
 	RecallID   ids.UUID         `json:"recall_id"`

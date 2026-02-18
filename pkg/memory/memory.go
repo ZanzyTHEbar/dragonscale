@@ -211,6 +211,34 @@ const (
 	PressureFlush   PressureLevel = "flush"   // > 85%
 )
 
+// --- Additional domain types ---
+
+// AgentDocument is a versioned named document stored in the database.
+type AgentDocument struct {
+	ID        ids.UUID
+	AgentID   string
+	Name      string
+	Category  string
+	Content   string
+	Version   int
+	IsActive  bool
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+// AuditEntry records a single agent action for the audit log.
+type AuditEntry struct {
+	ID         ids.UUID
+	AgentID    string
+	SessionKey string
+	Action     string // "tool_call", "memory_write", "doc_update", "state_change"
+	Target     string // tool name, doc name, key name
+	Input      string
+	Output     string
+	DurationMS int
+	CreatedAt  time.Time
+}
+
 // --- Delegate interface (backend) ---
 
 // MemoryDelegate is the pure storage backend for the memory system.
@@ -259,6 +287,25 @@ type MemoryDelegate interface {
 	// --- Stats ---
 	CountRecallItems(ctx context.Context, agentID, sessionKey string) (int, error)
 	CountArchivalChunks(ctx context.Context) (int, error)
+
+	// --- Key-Value Store ---
+	GetKV(ctx context.Context, agentID, key string) (string, error)
+	UpsertKV(ctx context.Context, agentID, key, value string) error
+	DeleteKV(ctx context.Context, agentID, key string) error
+	ListKVByPrefix(ctx context.Context, agentID, prefix string, limit int) (map[string]string, error)
+
+	// --- Documents ---
+	GetDocument(ctx context.Context, agentID, name string) (*AgentDocument, error)
+	UpsertDocument(ctx context.Context, doc *AgentDocument) error
+	DeleteDocument(ctx context.Context, agentID, name string) error
+	ListDocumentsByCategory(ctx context.Context, agentID, category string) ([]*AgentDocument, error)
+	ListAllDocuments(ctx context.Context, agentID string) ([]*AgentDocument, error)
+
+	// --- Audit Log ---
+	InsertAuditEntry(ctx context.Context, entry *AuditEntry) error
+	ListAuditEntries(ctx context.Context, agentID string, limit int) ([]*AuditEntry, error)
+	ListAuditEntriesByAction(ctx context.Context, agentID, action string, limit int) ([]*AuditEntry, error)
+	CountAuditEntries(ctx context.Context, agentID string) (int, error)
 
 	// --- Capability Detection ---
 	HasVectorSearch() bool
