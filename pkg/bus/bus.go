@@ -11,6 +11,7 @@ type MessageBus struct {
 	inbound  chan InboundMessage
 	outbound chan OutboundMessage
 	handlers map[string]MessageHandler
+	closed   bool
 	mu       sync.RWMutex
 }
 
@@ -23,6 +24,11 @@ func NewMessageBus() *MessageBus {
 }
 
 func (mb *MessageBus) PublishInbound(msg InboundMessage) {
+	mb.mu.RLock()
+	defer mb.mu.RUnlock()
+	if mb.closed {
+		return
+	}
 	mb.inbound <- msg
 }
 
@@ -52,6 +58,11 @@ func (mb *MessageBus) ConsumeInbound(ctx context.Context) (InboundMessage, bool)
 }
 
 func (mb *MessageBus) PublishOutbound(msg OutboundMessage) {
+	mb.mu.RLock()
+	defer mb.mu.RUnlock()
+	if mb.closed {
+		return
+	}
 	mb.outbound <- msg
 }
 
@@ -78,6 +89,12 @@ func (mb *MessageBus) GetHandler(channel string) (MessageHandler, bool) {
 }
 
 func (mb *MessageBus) Close() {
+	mb.mu.Lock()
+	defer mb.mu.Unlock()
+	if mb.closed {
+		return
+	}
+	mb.closed = true
 	close(mb.inbound)
 	close(mb.outbound)
 }

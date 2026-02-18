@@ -15,9 +15,11 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 
 	fantasy "charm.land/fantasy"
 	"github.com/sipeed/picoclaw/pkg/bus"
+	"github.com/sipeed/picoclaw/pkg/channels"
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/constants"
 	picofantasy "github.com/sipeed/picoclaw/pkg/fantasy"
@@ -47,6 +49,7 @@ type AgentLoop struct {
 	summarizing       sync.Map       // Tracks which sessions are currently being summarized
 	summarizeFailures sync.Map       // Tracks consecutive summarization failures per session (string -> int)
 	cfg               *config.Config // Stored for subagent factory access
+	channelManager    *channels.Manager
 }
 
 // processOptions configures how a message is processed
@@ -83,6 +86,9 @@ func createToolRegistry(workspace string, restrict bool, cfg *config.Config, msg
 		BraveEnabled:         cfg.Tools.Web.Brave.Enabled,
 		DuckDuckGoMaxResults: cfg.Tools.Web.DuckDuckGo.MaxResults,
 		DuckDuckGoEnabled:    cfg.Tools.Web.DuckDuckGo.Enabled,
+		PerplexityAPIKey:     cfg.Tools.Web.Perplexity.APIKey,
+		PerplexityMaxResults: cfg.Tools.Web.Perplexity.MaxResults,
+		PerplexityEnabled:    cfg.Tools.Web.Perplexity.Enabled,
 	}); searchTool != nil {
 		registry.Register(searchTool)
 	}
@@ -256,6 +262,10 @@ func (al *AgentLoop) RegisterTool(tool tools.Tool) {
 	al.tools.Register(tool)
 }
 
+func (al *AgentLoop) SetChannelManager(cm *channels.Manager) {
+	al.channelManager = cm
+}
+
 // RecordLastChannel records the last active channel for this workspace.
 // This uses the atomic state save mechanism to prevent data loss on crash.
 func (al *AgentLoop) RecordLastChannel(channel string) error {
@@ -341,6 +351,11 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 	// Route system messages to processSystemMessage
 	if msg.Channel == "system" {
 		return al.processSystemMessage(ctx, msg)
+	}
+
+	// Check for commands
+	if response, handled := al.handleCommand(ctx, msg); handled {
+		return response, nil
 	}
 
 	// Process as user message
@@ -525,7 +540,7 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, opts processOptions) (str
 
 	// 13. Optional: summarization
 	if opts.EnableSummary {
-		al.maybeSummarize(opts.SessionKey)
+		al.maybeSummarize(opts.SessionKey, opts.Channel, opts.ChatID)
 	}
 
 	// 14. Optional: send response via bus
@@ -677,7 +692,7 @@ func (al *AgentLoop) runAgentLoopStreaming(ctx context.Context, opts processOpti
 
 	// 12. Summarization
 	if opts.EnableSummary {
-		al.maybeSummarize(opts.SessionKey)
+		al.maybeSummarize(opts.SessionKey, opts.Channel, opts.ChatID)
 	}
 
 	// 13. Log response
@@ -717,7 +732,7 @@ func (al *AgentLoop) updateToolContexts(channel, chatID string) {
 }
 
 // maybeSummarize triggers summarization if the session history exceeds thresholds.
-func (al *AgentLoop) maybeSummarize(sessionKey string) {
+func (al *AgentLoop) maybeSummarize(sessionKey, channel, chatID string) {
 	newHistory := al.sessions.GetHistory(sessionKey)
 	tokenEstimate := al.estimateTokens(newHistory)
 	threshold := al.contextWindow * 75 / 100
@@ -726,10 +741,78 @@ func (al *AgentLoop) maybeSummarize(sessionKey string) {
 		if _, loading := al.summarizing.LoadOrStore(sessionKey, true); !loading {
 			go func() {
 				defer al.summarizing.Delete(sessionKey)
+				// Notify user about optimization if not an internal channel
+				if !constants.IsInternalChannel(channel) {
+					al.bus.PublishOutbound(bus.OutboundMessage{
+						Channel: channel,
+						ChatID:  chatID,
+						Content: "⚠️ Memory threshold reached. Optimizing conversation history...",
+					})
+				}
 				al.summarizeSession(sessionKey)
 			}()
 		}
 	}
+}
+
+// forceCompression aggressively reduces context when the limit is hit.
+// It drops the oldest 50% of messages (keeping system prompt and last user message).
+func (al *AgentLoop) forceCompression(sessionKey string) {
+	history := al.sessions.GetHistory(sessionKey)
+	if len(history) <= 4 {
+		return
+	}
+
+	// Keep system prompt (usually [0]) and the very last message (user's trigger)
+	// We want to drop the oldest half of the *conversation*
+	// Assuming [0] is system, [1:] is conversation
+	conversation := history[1 : len(history)-1]
+	if len(conversation) == 0 {
+		return
+	}
+
+	// Helper to find the mid-point of the conversation
+	mid := len(conversation) / 2
+
+	// New history structure:
+	// 1. System Prompt
+	// 2. [Summary of dropped part] - synthesized
+	// 3. Second half of conversation
+	// 4. Last message
+
+	// Simplified approach for emergency: Drop first half of conversation
+	// and rely on existing summary if present, or create a placeholder.
+
+	droppedCount := mid
+	keptConversation := conversation[mid:]
+
+	newHistory := make([]messages.Message, 0)
+	newHistory = append(newHistory, history[0]) // System prompt
+
+	// Add a note about compression
+	compressionNote := fmt.Sprintf("[System: Emergency compression dropped %d oldest messages due to context limit]", droppedCount)
+	// If there was an existing summary, we might lose it if it was in the dropped part (which is just messages).
+	// The summary is stored separately in session.Summary, so it persists!
+	// We just need to ensure the user knows there's a gap.
+
+	// We only modify the messages list here
+	newHistory = append(newHistory, messages.Message{
+		Role:    "system",
+		Content: compressionNote,
+	})
+
+	newHistory = append(newHistory, keptConversation...)
+	newHistory = append(newHistory, history[len(history)-1]) // Last message
+
+	// Update session
+	al.sessions.SetHistory(sessionKey, newHistory)
+	al.sessions.Save(sessionKey)
+
+	logger.WarnCF("agent", "Forced compression executed", map[string]interface{}{
+		"session_key":  sessionKey,
+		"dropped_msgs": droppedCount,
+		"new_count":    len(newHistory),
+	})
 }
 
 // GetStartupInfo returns information about loaded tools and skills for logging.
@@ -806,7 +889,7 @@ func (al *AgentLoop) summarizeSession(sessionKey string) {
 		if m.Role != "user" && m.Role != "assistant" {
 			continue
 		}
-		msgTokens := len(m.Content) / 4
+		msgTokens := len(m.Content) / 2
 		if msgTokens > maxMessageTokens {
 			omitted = true
 			continue
@@ -908,9 +991,92 @@ func (al *AgentLoop) callModel(ctx context.Context, prompt string) (string, erro
 
 // estimateTokens estimates the number of tokens in a message list.
 func (al *AgentLoop) estimateTokens(msgs []messages.Message) int {
-	total := 0
+	totalChars := 0
 	for _, m := range msgs {
-		total += len(m.Content) / 4 // Simple heuristic: 4 chars per token
+		totalChars += utf8.RuneCountInString(m.Content)
 	}
-	return total
+	return totalChars * 2 / 5
+}
+
+func (al *AgentLoop) handleCommand(ctx context.Context, msg bus.InboundMessage) (string, bool) {
+	content := strings.TrimSpace(msg.Content)
+	if !strings.HasPrefix(content, "/") {
+		return "", false
+	}
+
+	parts := strings.Fields(content)
+	if len(parts) == 0 {
+		return "", false
+	}
+
+	cmd := parts[0]
+	args := parts[1:]
+
+	switch cmd {
+	case "/show":
+		if len(args) < 1 {
+			return "Usage: /show [model|channel]", true
+		}
+		switch args[0] {
+		case "model":
+			return fmt.Sprintf("Current model: %s", al.model), true
+		case "channel":
+			return fmt.Sprintf("Current channel: %s", msg.Channel), true
+		default:
+			return fmt.Sprintf("Unknown show target: %s", args[0]), true
+		}
+
+	case "/list":
+		if len(args) < 1 {
+			return "Usage: /list [models|channels]", true
+		}
+		switch args[0] {
+		case "models":
+			// TODO: Fetch available models dynamically if possible
+			return "Available models: glm-4.7, claude-3-5-sonnet, gpt-4o (configured in config.json/env)", true
+		case "channels":
+			if al.channelManager == nil {
+				return "Channel manager not initialized", true
+			}
+			channels := al.channelManager.GetEnabledChannels()
+			if len(channels) == 0 {
+				return "No channels enabled", true
+			}
+			return fmt.Sprintf("Enabled channels: %s", strings.Join(channels, ", ")), true
+		default:
+			return fmt.Sprintf("Unknown list target: %s", args[0]), true
+		}
+
+	case "/switch":
+		if len(args) < 3 || args[1] != "to" {
+			return "Usage: /switch [model|channel] to <name>", true
+		}
+		target := args[0]
+		value := args[2]
+
+		switch target {
+		case "model":
+			oldModel := al.model
+			al.model = value
+			return fmt.Sprintf("Switched model from %s to %s", oldModel, value), true
+		case "channel":
+			// This changes the 'default' channel for some operations, or effectively redirects output?
+			// For now, let's just validate if the channel exists
+			if al.channelManager == nil {
+				return "Channel manager not initialized", true
+			}
+			if _, exists := al.channelManager.GetChannel(value); !exists && value != "cli" {
+				return fmt.Sprintf("Channel '%s' not found or not enabled", value), true
+			}
+
+			// If message came from CLI, maybe we want to redirect CLI output to this channel?
+			// That would require state persistence about "redirected channel"
+			// For now, just acknowledged.
+			return fmt.Sprintf("Switched target channel to %s (Note: this currently only validates existence)", value), true
+		default:
+			return fmt.Sprintf("Unknown switch target: %s", target), true
+		}
+	}
+
+	return "", false
 }

@@ -313,7 +313,7 @@ func (sm *SessionManager) CleanupStale(maxAge time.Duration) int {
 			delete(sm.sessions, key)
 			// Also remove the session file if it exists
 			if sm.storage != "" {
-				sessionPath := filepath.Join(sm.storage, key+".json")
+				sessionPath := filepath.Join(sm.storage, sanitizeFilename(key)+".json")
 				os.Remove(sessionPath)
 			}
 			removed++
@@ -331,13 +331,26 @@ func (sm *SessionManager) CleanupStale(maxAge time.Duration) int {
 	return removed
 }
 
+// sanitizeFilename converts a session key into a cross-platform safe filename.
+// Session keys use "channel:chatID" (e.g. "telegram:123456") but ':' is the
+// volume separator on Windows, so filepath.Base would misinterpret the key.
+// We replace it with '_'. The original key is preserved inside the JSON file,
+// so loadSessions still maps back to the right in-memory key.
+func sanitizeFilename(key string) string {
+	return strings.ReplaceAll(key, ":", "_")
+}
 func (sm *SessionManager) Save(key string) error {
 	if sm.storage == "" {
 		return nil
 	}
 
-	// Validate key to avoid invalid filenames and path traversal.
-	if key == "" || key == "." || key == ".." || key != filepath.Base(key) || strings.Contains(key, "/") || strings.Contains(key, "\\") {
+	filename := sanitizeFilename(key)
+
+	// filepath.IsLocal rejects empty names, "..", absolute paths, and
+	// OS-reserved device names (NUL, COM1 … on Windows).
+	// The extra checks reject "." and any directory separators so that
+	// the session file is always written directly inside sm.storage.
+	if filename == "." || !filepath.IsLocal(filename) || strings.ContainsAny(filename, `/\`) {
 		return os.ErrInvalid
 	}
 
@@ -389,7 +402,7 @@ func (sm *SessionManager) writeSessionToDisk(key string, session *Session) error
 		return err
 	}
 
-	sessionPath := filepath.Join(sm.storage, key+".json")
+	sessionPath := filepath.Join(sm.storage, sanitizeFilename(key)+".json")
 	tmpFile, err := os.CreateTemp(sm.storage, "session-*.tmp")
 	if err != nil {
 		return err
@@ -463,4 +476,20 @@ func (sm *SessionManager) loadSessions() error {
 	}
 
 	return nil
+}
+
+// SetHistory updates the messages of a session.
+func (sm *SessionManager) SetHistory(key string, history []messages.Message) {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+
+	session, ok := sm.sessions[key]
+	if ok {
+		// Create a deep copy to strictly isolate internal state
+		// from the caller's slice.
+		msgs := make([]messages.Message, len(history))
+		copy(msgs, history)
+		session.Messages = msgs
+		session.Updated = time.Now()
+	}
 }
