@@ -165,6 +165,19 @@ func (d *LibSQLDelegate) Init(ctx context.Context) error {
 	return nil
 }
 
+// MigrateDown rolls back all migrations. Intended for testing only.
+func (d *LibSQLDelegate) MigrateDown(ctx context.Context) error {
+	mctx := migrations.WithEmbeddingDims(ctx, d.embeddingDims)
+	provider, err := goose.NewProvider(goose.DialectSQLite3, d.db, nil)
+	if err != nil {
+		return fmt.Errorf("create migration provider: %w", err)
+	}
+	if _, err := provider.DownTo(mctx, 0); err != nil {
+		return fmt.Errorf("migration down: %w", err)
+	}
+	return nil
+}
+
 // EmbeddingDims returns the configured embedding vector dimensions.
 func (d *LibSQLDelegate) EmbeddingDims() int { return d.embeddingDims }
 

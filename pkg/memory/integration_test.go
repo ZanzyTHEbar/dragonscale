@@ -41,6 +41,45 @@ func TestIntegration_GooseMigrationIdempotent(t *testing.T) {
 	require.NoError(t, del.Init(ctx), "idempotent re-Init")
 }
 
+func TestIntegration_GooseMigration_DownUpRoundTrip(t *testing.T) {
+	del, err := delegate.NewLibSQLInMemory()
+	require.NoError(t, err)
+	defer del.Close()
+
+	ctx := context.Background()
+
+	require.NoError(t, del.Init(ctx), "initial up")
+
+	item := &memory.RecallItem{
+		AgentID:    testAgent,
+		SessionKey: testSession,
+		Role:       "user",
+		Sector:     memory.SectorEpisodic,
+		Content:    "pre-migration item",
+	}
+	chunker := memstore.NewMarkdownChunker(memstore.DefaultMarkdownChunkerConfig())
+	store := memstore.New(del, chunker, nil, memstore.DefaultConfig())
+	require.NoError(t, store.StoreRecall(ctx, item))
+
+	require.NoError(t, del.MigrateDown(ctx), "down migration should succeed")
+
+	require.NoError(t, del.Init(ctx), "re-up after down should succeed")
+
+	fetched, err := store.GetRecall(ctx, item.ID)
+	require.NoError(t, err)
+	assert.Nil(t, fetched, "data should be gone after down+up round-trip")
+
+	newItem := &memory.RecallItem{
+		AgentID:    testAgent,
+		SessionKey: testSession,
+		Role:       "user",
+		Sector:     memory.SectorEpisodic,
+		Content:    "post-migration item",
+	}
+	require.NoError(t, store.StoreRecall(ctx, newItem), "should be able to write after re-migration")
+	assert.False(t, newItem.ID.IsZero())
+}
+
 func TestIntegration_BlobPK_RoundTrip(t *testing.T) {
 	store, _ := setupFullStack(t)
 	ctx := context.Background()

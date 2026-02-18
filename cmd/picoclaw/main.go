@@ -33,6 +33,8 @@ import (
 	"github.com/sipeed/picoclaw/pkg/health"
 	"github.com/sipeed/picoclaw/pkg/heartbeat"
 	"github.com/sipeed/picoclaw/pkg/logger"
+	picomemory "github.com/sipeed/picoclaw/pkg/memory"
+	"github.com/sipeed/picoclaw/pkg/memory/delegate"
 	"github.com/sipeed/picoclaw/pkg/migrate"
 	"github.com/sipeed/picoclaw/pkg/skills"
 	"github.com/sipeed/picoclaw/pkg/state"
@@ -191,6 +193,8 @@ func main() {
 			fmt.Printf("Unknown skills command: %s\n", subcommand)
 			skillsHelp()
 		}
+	case "memory":
+		memoryCmd()
 	case "version", "--version", "-v":
 		printVersion()
 	default:
@@ -212,6 +216,7 @@ func printHelp() {
 	fmt.Println("  status      Show picoclaw status")
 	fmt.Println("  cron        Manage scheduled tasks")
 	fmt.Println("  migrate     Migrate from OpenClaw to PicoClaw")
+	fmt.Println("  memory      Memory system management (db status, session migration)")
 	fmt.Println("  skills      Manage skills (install, list, remove)")
 	fmt.Println("  version     Show version information")
 }
@@ -699,6 +704,112 @@ func gatewayCmd() {
 	agentLoop.Stop()
 	channelManager.StopAll(ctx)
 	fmt.Println("✓ Gateway stopped")
+}
+
+func memoryCmd() {
+	if len(os.Args) < 3 {
+		memoryHelp()
+		return
+	}
+
+	sub := os.Args[2]
+	switch sub {
+	case "migrate-sessions":
+		memoryMigrateSessions()
+	case "db-status":
+		memoryDBStatus()
+	case "--help", "-h":
+		memoryHelp()
+	default:
+		fmt.Printf("Unknown memory command: %s\n", sub)
+		memoryHelp()
+	}
+}
+
+func memoryHelp() {
+	fmt.Println("\nMemory system management")
+	fmt.Println()
+	fmt.Println("Usage: picoclaw memory <subcommand>")
+	fmt.Println()
+	fmt.Println("Subcommands:")
+	fmt.Println("  migrate-sessions   Import file-based sessions into recall memory")
+	fmt.Println("  db-status          Show migration version and table counts")
+}
+
+func memoryMigrateSessions() {
+	cfg, err := loadConfig()
+	if err != nil {
+		fmt.Printf("Error loading config: %v\n", err)
+		os.Exit(1)
+	}
+
+	if !cfg.Memory.Enabled {
+		fmt.Println("Memory system is disabled in config. Enable it first.")
+		os.Exit(1)
+	}
+
+	workspace := cfg.WorkspacePath()
+	memDBPath := cfg.Memory.DBPath
+	if memDBPath == "" {
+		memDBPath = filepath.Join(workspace, "memory", "picoclaw.db")
+	}
+	os.MkdirAll(filepath.Dir(memDBPath), 0755)
+
+	del, err := delegate.NewFromConfig(cfg.Memory, memDBPath)
+	if err != nil {
+		fmt.Printf("Error creating memory delegate: %v\n", err)
+		os.Exit(1)
+	}
+	defer del.Close()
+
+	ctx := context.Background()
+	if err := del.Init(ctx); err != nil {
+		fmt.Printf("Error initializing memory schema: %v\n", err)
+		os.Exit(1)
+	}
+
+	sessionsDir := filepath.Join(workspace, "sessions")
+	stats, err := picomemory.MigrateFileSessions(ctx, del, "picoclaw", sessionsDir)
+	if err != nil {
+		fmt.Printf("Migration error: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("Session migration complete:\n")
+	fmt.Printf("  Sessions found:    %d\n", stats.SessionsFound)
+	fmt.Printf("  Sessions migrated: %d\n", stats.SessionsMigrated)
+	fmt.Printf("  Items created:     %d\n", stats.ItemsCreated)
+	fmt.Printf("  Errors:            %d\n", stats.Errors)
+}
+
+func memoryDBStatus() {
+	cfg, err := loadConfig()
+	if err != nil {
+		fmt.Printf("Error loading config: %v\n", err)
+		os.Exit(1)
+	}
+
+	workspace := cfg.WorkspacePath()
+	memDBPath := cfg.Memory.DBPath
+	if memDBPath == "" {
+		memDBPath = filepath.Join(workspace, "memory", "picoclaw.db")
+	}
+
+	fi, err := os.Stat(memDBPath)
+	if err != nil {
+		fmt.Printf("Memory database not found: %s\n", memDBPath)
+		return
+	}
+
+	fmt.Printf("Memory database: %s\n", memDBPath)
+	fmt.Printf("Size: %.1f KB\n", float64(fi.Size())/1024)
+	fmt.Printf("Embedding dims: %d\n", cfg.Memory.EmbeddingDims)
+
+	if cfg.Memory.Sync.SyncURL != "" {
+		fmt.Printf("Turso replica: %s\n", cfg.Memory.Sync.SyncURL)
+	} else {
+		fmt.Println("Mode: local-only")
+	}
 }
 
 func statusCmd() {
