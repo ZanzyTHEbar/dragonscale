@@ -257,9 +257,9 @@ type MemoryDelegate interface {
 
 	// --- Recall Items ---
 	InsertRecallItem(ctx context.Context, item *RecallItem) error
-	GetRecallItem(ctx context.Context, id ids.UUID) (*RecallItem, error)
+	GetRecallItem(ctx context.Context, agentID string, id ids.UUID) (*RecallItem, error)
 	UpdateRecallItem(ctx context.Context, item *RecallItem) error
-	DeleteRecallItem(ctx context.Context, id ids.UUID) error
+	DeleteRecallItem(ctx context.Context, agentID string, id ids.UUID) error
 	ListRecallItems(ctx context.Context, agentID, sessionKey string, limit, offset int) ([]*RecallItem, error)
 	SearchRecallByKeyword(ctx context.Context, query, agentID string, limit int) ([]*RecallItem, error)
 
@@ -275,9 +275,9 @@ type MemoryDelegate interface {
 
 	// --- Archival Chunks ---
 	InsertArchivalChunk(ctx context.Context, chunk *ArchivalChunk) error
-	GetArchivalChunk(ctx context.Context, id ids.UUID) (*ArchivalChunk, error)
-	ListArchivalChunks(ctx context.Context, recallID ids.UUID) ([]*ArchivalChunk, error)
-	ListAllArchivalChunks(ctx context.Context, limit, offset int) ([]*ArchivalChunk, error)
+	GetArchivalChunk(ctx context.Context, agentID string, id ids.UUID) (*ArchivalChunk, error)
+	ListArchivalChunks(ctx context.Context, agentID string, recallID ids.UUID) ([]*ArchivalChunk, error)
+	ListAllArchivalChunks(ctx context.Context, agentID string, limit, offset int) ([]*ArchivalChunk, error)
 	DeleteArchivalChunks(ctx context.Context, recallID ids.UUID) error
 
 	// --- Summaries ---
@@ -286,7 +286,7 @@ type MemoryDelegate interface {
 
 	// --- Stats ---
 	CountRecallItems(ctx context.Context, agentID, sessionKey string) (int, error)
-	CountArchivalChunks(ctx context.Context) (int, error)
+	CountArchivalChunks(ctx context.Context, agentID string) (int, error)
 
 	// --- Key-Value Store ---
 	GetKV(ctx context.Context, agentID, key string) (string, error)

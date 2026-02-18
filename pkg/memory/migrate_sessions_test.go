@@ -37,11 +37,11 @@ func (m *mockDelegate) InsertRecallItem(_ context.Context, item *RecallItem) err
 	m.recallItems = append(m.recallItems, item)
 	return nil
 }
-func (m *mockDelegate) GetRecallItem(_ context.Context, _ ids.UUID) (*RecallItem, error) {
+func (m *mockDelegate) GetRecallItem(_ context.Context, _ string, _ ids.UUID) (*RecallItem, error) {
 	return nil, nil
 }
-func (m *mockDelegate) UpdateRecallItem(_ context.Context, _ *RecallItem) error { return nil }
-func (m *mockDelegate) DeleteRecallItem(_ context.Context, _ ids.UUID) error    { return nil }
+func (m *mockDelegate) UpdateRecallItem(_ context.Context, _ *RecallItem) error        { return nil }
+func (m *mockDelegate) DeleteRecallItem(_ context.Context, _ string, _ ids.UUID) error { return nil }
 func (m *mockDelegate) ListRecallItems(_ context.Context, _, _ string, _, _ int) ([]*RecallItem, error) {
 	return nil, nil
 }
@@ -55,13 +55,13 @@ func (m *mockDelegate) SearchArchivalByVector(_ context.Context, _ Embedding, _,
 	return nil, nil
 }
 func (m *mockDelegate) InsertArchivalChunk(_ context.Context, _ *ArchivalChunk) error { return nil }
-func (m *mockDelegate) GetArchivalChunk(_ context.Context, _ ids.UUID) (*ArchivalChunk, error) {
+func (m *mockDelegate) GetArchivalChunk(_ context.Context, _ string, _ ids.UUID) (*ArchivalChunk, error) {
 	return nil, nil
 }
-func (m *mockDelegate) ListArchivalChunks(_ context.Context, _ ids.UUID) ([]*ArchivalChunk, error) {
+func (m *mockDelegate) ListArchivalChunks(_ context.Context, _ string, _ ids.UUID) ([]*ArchivalChunk, error) {
 	return nil, nil
 }
-func (m *mockDelegate) ListAllArchivalChunks(_ context.Context, _, _ int) ([]*ArchivalChunk, error) {
+func (m *mockDelegate) ListAllArchivalChunks(_ context.Context, _ string, _, _ int) ([]*ArchivalChunk, error) {
 	return nil, nil
 }
 func (m *mockDelegate) DeleteArchivalChunks(_ context.Context, _ ids.UUID) error { return nil }
@@ -72,12 +72,12 @@ func (m *mockDelegate) ListSummaries(_ context.Context, _, _ string, _ int) ([]*
 func (m *mockDelegate) CountRecallItems(_ context.Context, _, _ string) (int, error) {
 	return len(m.recallItems), nil
 }
-func (m *mockDelegate) CountArchivalChunks(_ context.Context) (int, error)   { return 0, nil }
-func (m *mockDelegate) HasVectorSearch() bool                                { return false }
-func (m *mockDelegate) HasFTS() bool                                         { return false }
-func (m *mockDelegate) GetKV(_ context.Context, _, _ string) (string, error) { return "", nil }
-func (m *mockDelegate) UpsertKV(_ context.Context, _, _, _ string) error     { return nil }
-func (m *mockDelegate) DeleteKV(_ context.Context, _, _ string) error        { return nil }
+func (m *mockDelegate) CountArchivalChunks(_ context.Context, _ string) (int, error) { return 0, nil }
+func (m *mockDelegate) HasVectorSearch() bool                                        { return false }
+func (m *mockDelegate) HasFTS() bool                                                 { return false }
+func (m *mockDelegate) GetKV(_ context.Context, _, _ string) (string, error)         { return "", nil }
+func (m *mockDelegate) UpsertKV(_ context.Context, _, _, _ string) error             { return nil }
+func (m *mockDelegate) DeleteKV(_ context.Context, _, _ string) error                { return nil }
 func (m *mockDelegate) ListKVByPrefix(_ context.Context, _, _ string, _ int) (map[string]string, error) {
 	return nil, nil
 }

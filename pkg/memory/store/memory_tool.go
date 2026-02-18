@@ -71,6 +71,7 @@ type MemoryTool struct {
 
 // NewMemoryTool creates a MemoryTool bound to a specific agent and session.
 func NewMemoryTool(store *MemoryStore, agentID, session string) *MemoryTool {
+	store.SetAgentID(agentID)
 	return &MemoryTool{
 		store:   store,
 		agentID: agentID,

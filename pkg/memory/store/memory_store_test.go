@@ -70,6 +70,7 @@ func newTestStore(t *testing.T, withEmbedder bool) *MemoryStore {
 		OffloadThresholdTokens: 100,
 		DefaultHalfLifeHours:   168,
 	})
+	store.SetAgentID("agent-1")
 
 	t.Cleanup(func() { store.Close() })
 	return store

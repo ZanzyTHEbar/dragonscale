@@ -37,6 +37,7 @@ type MemoryStore struct {
 	embedder memory.EmbeddingProvider // may be nil if embeddings disabled
 	chunker  memory.Chunker
 	cfg      Config
+	agentID  string
 }
 
 // New creates a MemoryStore.
@@ -57,6 +58,11 @@ func New(delegate memory.MemoryDelegate, chunker memory.Chunker, embedder memory
 		chunker:  chunker,
 		cfg:      cfg,
 	}
+}
+
+// SetAgentID sets the agent identity used to scope all memory operations.
+func (m *MemoryStore) SetAgentID(agentID string) {
+	m.agentID = agentID
 }
 
 // --- Working Context (hot tier) ---
@@ -86,7 +92,7 @@ func (m *MemoryStore) StoreRecall(ctx context.Context, item *memory.RecallItem) 
 }
 
 func (m *MemoryStore) GetRecall(ctx context.Context, id ids.UUID) (*memory.RecallItem, error) {
-	return m.delegate.GetRecallItem(ctx, id)
+	return m.delegate.GetRecallItem(ctx, m.agentID, id)
 }
 
 func (m *MemoryStore) UpdateRecall(ctx context.Context, item *memory.RecallItem) error {
@@ -94,11 +100,10 @@ func (m *MemoryStore) UpdateRecall(ctx context.Context, item *memory.RecallItem)
 }
 
 func (m *MemoryStore) DeleteRecall(ctx context.Context, id ids.UUID) error {
-	// Cascade: delete archival chunks first
 	if err := m.delegate.DeleteArchivalChunks(ctx, id); err != nil {
 		return fmt.Errorf("delete archival chunks: %w", err)
 	}
-	return m.delegate.DeleteRecallItem(ctx, id)
+	return m.delegate.DeleteRecallItem(ctx, m.agentID, id)
 }
 
 // --- Archival (cold tier) ---
@@ -173,13 +178,12 @@ func (m *MemoryStore) StoreArchival(ctx context.Context, content, source string,
 
 // RetrieveArchival retrieves the full content of an archival item by its recall ID.
 func (m *MemoryStore) RetrieveArchival(ctx context.Context, id ids.UUID) (string, error) {
-	chunks, err := m.delegate.ListArchivalChunks(ctx, id)
+	chunks, err := m.delegate.ListArchivalChunks(ctx, m.agentID, id)
 	if err != nil {
 		return "", err
 	}
 	if len(chunks) == 0 {
-		// Try as a direct recall item
-		item, err := m.delegate.GetRecallItem(ctx, id)
+		item, err := m.delegate.GetRecallItem(ctx, m.agentID, id)
 		if err != nil {
 			return "", err
 		}
@@ -264,7 +268,7 @@ func (m *MemoryStore) Search(ctx context.Context, query string, opts memory.Sear
 	// Build a createdAt lookup from recall items
 	createdAtMap := make(map[ids.UUID]time.Time)
 	for _, r := range merged {
-		item, err := m.delegate.GetRecallItem(ctx, r.ID)
+		item, err := m.delegate.GetRecallItem(ctx, m.agentID, r.ID)
 		if err == nil && item != nil {
 			createdAtMap[r.ID] = item.CreatedAt
 		}
@@ -315,9 +319,9 @@ func (m *MemoryStore) applyMetadataFilters(ctx context.Context, results []memory
 
 	filtered := results[:0]
 	for _, r := range results {
-		item, err := m.delegate.GetRecallItem(ctx, r.ID)
+		item, err := m.delegate.GetRecallItem(ctx, m.agentID, r.ID)
 		if err != nil || item == nil {
-			continue // skip items we can't verify
+			continue
 		}
 
 		if needSessionFilter && item.SessionKey != opts.SessionKey {
@@ -383,7 +387,7 @@ func (m *MemoryStore) vectorSearchGoSide(ctx context.Context, queryVec memory.Em
 	offset := 0
 	batchSize := 5000
 	for {
-		batch, err := m.delegate.ListAllArchivalChunks(ctx, batchSize, offset)
+		batch, err := m.delegate.ListAllArchivalChunks(ctx, m.agentID, batchSize, offset)
 		if err != nil {
 			return nil, err
 		}
@@ -446,7 +450,7 @@ func (m *MemoryStore) ContextUsage(ctx context.Context, agentID, sessionKey stri
 		return nil, err
 	}
 
-	archivalCount, err := m.delegate.CountArchivalChunks(ctx)
+	archivalCount, err := m.delegate.CountArchivalChunks(ctx, m.agentID)
 	if err != nil {
 		return nil, err
 	}

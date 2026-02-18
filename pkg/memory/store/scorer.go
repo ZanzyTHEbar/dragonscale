@@ -2,13 +2,13 @@ package store
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"math"
 	"strings"
 
 	"charm.land/fantasy"
 	"github.com/sipeed/picoclaw/pkg/memory"
+	"github.com/sipeed/picoclaw/pkg/security"
 )
 
 // ScoreResult is the output of scoring a piece of content.
@@ -76,28 +76,24 @@ func (s *LLMScorer) Score(ctx context.Context, content, role, conversationContex
 }
 
 func parseScoringResponse(text string) (*ScoreResult, error) {
-	// Strip markdown code fences if present
-	text = strings.TrimSpace(text)
-	text = strings.TrimPrefix(text, "```json")
-	text = strings.TrimPrefix(text, "```")
-	text = strings.TrimSuffix(text, "```")
-	text = strings.TrimSpace(text)
-
 	var raw struct {
 		Importance float64 `json:"importance"`
 		Salience   float64 `json:"salience"`
 		Sector     string  `json:"sector"`
 	}
-	if err := json.Unmarshal([]byte(text), &raw); err != nil {
+	opts := &security.ExtractJSONOptions{
+		MaxInputBytes:         16 * 1024, // scoring responses should be tiny
+		DisallowUnknownFields: true,
+	}
+	if err := security.ExtractJSON(text, &raw, opts); err != nil {
 		return nil, fmt.Errorf("parse scoring response: %w (raw: %s)", err, text)
 	}
 
-	result := &ScoreResult{
+	return &ScoreResult{
 		Importance: clamp01(raw.Importance),
 		Salience:   clamp01(raw.Salience),
 		Sector:     normalizeSector(raw.Sector),
-	}
-	return result, nil
+	}, nil
 }
 
 // --- Heuristic Scorer (no LLM, rule-based fallback) ---

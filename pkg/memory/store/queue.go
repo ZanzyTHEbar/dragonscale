@@ -140,8 +140,7 @@ func (q *QueueManager) EvictOldest(ctx context.Context, agentID, sessionKey stri
 			continue
 		}
 
-		// Delete from warm tier (cascade deletes archival too, but that's the old archival)
-		if err := q.store.delegate.DeleteRecallItem(ctx, item.ID); err != nil {
+		if err := q.store.delegate.DeleteRecallItem(ctx, q.store.agentID, item.ID); err != nil {
 			continue
 		}
 
