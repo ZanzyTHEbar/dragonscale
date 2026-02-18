@@ -14,8 +14,14 @@ import (
 
 const AddAgentMention = `-- name: AddAgentMention :one
 INSERT INTO agent_mentions (
-    id, conversation_id, message_id, kind, target_id, raw, metadata_json
-)
+        id,
+        conversation_id,
+        message_id,
+        kind,
+        target_id,
+        raw,
+        metadata_json
+    )
 VALUES (?, ?, ?, ?, ?, ?, ?)
 RETURNING id, conversation_id, message_id, kind, target_id, raw, metadata_json, created_at, updated_at
 `
@@ -33,8 +39,14 @@ type AddAgentMentionParams struct {
 // AddAgentMention
 //
 //	INSERT INTO agent_mentions (
-//	    id, conversation_id, message_id, kind, target_id, raw, metadata_json
-//	)
+//	        id,
+//	        conversation_id,
+//	        message_id,
+//	        kind,
+//	        target_id,
+//	        raw,
+//	        metadata_json
+//	    )
 //	VALUES (?, ?, ?, ?, ?, ?, ?)
 //	RETURNING id, conversation_id, message_id, kind, target_id, raw, metadata_json, created_at, updated_at
 func (q *Queries) AddAgentMention(ctx context.Context, arg AddAgentMentionParams) (AgentMention, error) {
@@ -63,7 +75,8 @@ func (q *Queries) AddAgentMention(ctx context.Context, arg AddAgentMentionParams
 }
 
 const ListAgentMentionsByConversationID = `-- name: ListAgentMentionsByConversationID :many
-SELECT id, conversation_id, message_id, kind, target_id, raw, metadata_json, created_at, updated_at FROM agent_mentions
+SELECT id, conversation_id, message_id, kind, target_id, raw, metadata_json, created_at, updated_at
+FROM agent_mentions
 WHERE conversation_id = ?
 ORDER BY created_at DESC
 LIMIT ?2
@@ -76,7 +89,8 @@ type ListAgentMentionsByConversationIDParams struct {
 
 // ListAgentMentionsByConversationID
 //
-//	SELECT id, conversation_id, message_id, kind, target_id, raw, metadata_json, created_at, updated_at FROM agent_mentions
+//	SELECT id, conversation_id, message_id, kind, target_id, raw, metadata_json, created_at, updated_at
+//	FROM agent_mentions
 //	WHERE conversation_id = ?
 //	ORDER BY created_at DESC
 //	LIMIT ?2

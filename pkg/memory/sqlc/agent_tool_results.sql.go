@@ -14,9 +14,17 @@ import (
 
 const AddAgentToolResult = `-- name: AddAgentToolResult :one
 INSERT INTO agent_tool_results (
-    id, conversation_id, run_id, step_index,
-    tool_call_id, tool_name, full_key, preview, chunk_count, metadata_json
-)
+        id,
+        conversation_id,
+        run_id,
+        step_index,
+        tool_call_id,
+        tool_name,
+        full_key,
+        preview,
+        chunk_count,
+        metadata_json
+    )
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING id, conversation_id, run_id, step_index, tool_call_id, tool_name, full_key, preview, chunk_count, metadata_json, created_at, updated_at
 `
@@ -37,9 +45,17 @@ type AddAgentToolResultParams struct {
 // AddAgentToolResult
 //
 //	INSERT INTO agent_tool_results (
-//	    id, conversation_id, run_id, step_index,
-//	    tool_call_id, tool_name, full_key, preview, chunk_count, metadata_json
-//	)
+//	        id,
+//	        conversation_id,
+//	        run_id,
+//	        step_index,
+//	        tool_call_id,
+//	        tool_name,
+//	        full_key,
+//	        preview,
+//	        chunk_count,
+//	        metadata_json
+//	    )
 //	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 //	RETURNING id, conversation_id, run_id, step_index, tool_call_id, tool_name, full_key, preview, chunk_count, metadata_json, created_at, updated_at
 func (q *Queries) AddAgentToolResult(ctx context.Context, arg AddAgentToolResultParams) (AgentToolResult, error) {
@@ -74,8 +90,10 @@ func (q *Queries) AddAgentToolResult(ctx context.Context, arg AddAgentToolResult
 }
 
 const GetAgentToolResultByRunIDAndToolCallID = `-- name: GetAgentToolResultByRunIDAndToolCallID :one
-SELECT id, conversation_id, run_id, step_index, tool_call_id, tool_name, full_key, preview, chunk_count, metadata_json, created_at, updated_at FROM agent_tool_results
-WHERE run_id = ? AND tool_call_id = ?
+SELECT id, conversation_id, run_id, step_index, tool_call_id, tool_name, full_key, preview, chunk_count, metadata_json, created_at, updated_at
+FROM agent_tool_results
+WHERE run_id = ?
+    AND tool_call_id = ?
 LIMIT 1
 `
 
@@ -86,8 +104,10 @@ type GetAgentToolResultByRunIDAndToolCallIDParams struct {
 
 // GetAgentToolResultByRunIDAndToolCallID
 //
-//	SELECT id, conversation_id, run_id, step_index, tool_call_id, tool_name, full_key, preview, chunk_count, metadata_json, created_at, updated_at FROM agent_tool_results
-//	WHERE run_id = ? AND tool_call_id = ?
+//	SELECT id, conversation_id, run_id, step_index, tool_call_id, tool_name, full_key, preview, chunk_count, metadata_json, created_at, updated_at
+//	FROM agent_tool_results
+//	WHERE run_id = ?
+//	    AND tool_call_id = ?
 //	LIMIT 1
 func (q *Queries) GetAgentToolResultByRunIDAndToolCallID(ctx context.Context, arg GetAgentToolResultByRunIDAndToolCallIDParams) (AgentToolResult, error) {
 	row := q.db.QueryRowContext(ctx, GetAgentToolResultByRunIDAndToolCallID, arg.RunID, arg.ToolCallID)
@@ -110,7 +130,8 @@ func (q *Queries) GetAgentToolResultByRunIDAndToolCallID(ctx context.Context, ar
 }
 
 const ListAgentToolResultsByConversationID = `-- name: ListAgentToolResultsByConversationID :many
-SELECT id, conversation_id, run_id, step_index, tool_call_id, tool_name, full_key, preview, chunk_count, metadata_json, created_at, updated_at FROM agent_tool_results
+SELECT id, conversation_id, run_id, step_index, tool_call_id, tool_name, full_key, preview, chunk_count, metadata_json, created_at, updated_at
+FROM agent_tool_results
 WHERE conversation_id = ?
 ORDER BY created_at DESC
 `
@@ -121,7 +142,8 @@ type ListAgentToolResultsByConversationIDParams struct {
 
 // ListAgentToolResultsByConversationID
 //
-//	SELECT id, conversation_id, run_id, step_index, tool_call_id, tool_name, full_key, preview, chunk_count, metadata_json, created_at, updated_at FROM agent_tool_results
+//	SELECT id, conversation_id, run_id, step_index, tool_call_id, tool_name, full_key, preview, chunk_count, metadata_json, created_at, updated_at
+//	FROM agent_tool_results
 //	WHERE conversation_id = ?
 //	ORDER BY created_at DESC
 func (q *Queries) ListAgentToolResultsByConversationID(ctx context.Context, arg ListAgentToolResultsByConversationIDParams) ([]AgentToolResult, error) {
@@ -161,7 +183,8 @@ func (q *Queries) ListAgentToolResultsByConversationID(ctx context.Context, arg 
 }
 
 const ListAgentToolResultsByConversationIDLimit = `-- name: ListAgentToolResultsByConversationIDLimit :many
-SELECT id, conversation_id, run_id, step_index, tool_call_id, tool_name, full_key, preview, chunk_count, metadata_json, created_at, updated_at FROM agent_tool_results
+SELECT id, conversation_id, run_id, step_index, tool_call_id, tool_name, full_key, preview, chunk_count, metadata_json, created_at, updated_at
+FROM agent_tool_results
 WHERE conversation_id = ?
 ORDER BY created_at DESC
 LIMIT ?
@@ -174,7 +197,8 @@ type ListAgentToolResultsByConversationIDLimitParams struct {
 
 // ListAgentToolResultsByConversationIDLimit
 //
-//	SELECT id, conversation_id, run_id, step_index, tool_call_id, tool_name, full_key, preview, chunk_count, metadata_json, created_at, updated_at FROM agent_tool_results
+//	SELECT id, conversation_id, run_id, step_index, tool_call_id, tool_name, full_key, preview, chunk_count, metadata_json, created_at, updated_at
+//	FROM agent_tool_results
 //	WHERE conversation_id = ?
 //	ORDER BY created_at DESC
 //	LIMIT ?
@@ -215,9 +239,11 @@ func (q *Queries) ListAgentToolResultsByConversationIDLimit(ctx context.Context,
 }
 
 const ListAgentToolResultsByRunID = `-- name: ListAgentToolResultsByRunID :many
-SELECT id, conversation_id, run_id, step_index, tool_call_id, tool_name, full_key, preview, chunk_count, metadata_json, created_at, updated_at FROM agent_tool_results
+SELECT id, conversation_id, run_id, step_index, tool_call_id, tool_name, full_key, preview, chunk_count, metadata_json, created_at, updated_at
+FROM agent_tool_results
 WHERE run_id = ?
-ORDER BY step_index ASC, created_at ASC
+ORDER BY step_index ASC,
+    created_at ASC
 LIMIT ?2
 `
 
@@ -228,9 +254,11 @@ type ListAgentToolResultsByRunIDParams struct {
 
 // ListAgentToolResultsByRunID
 //
-//	SELECT id, conversation_id, run_id, step_index, tool_call_id, tool_name, full_key, preview, chunk_count, metadata_json, created_at, updated_at FROM agent_tool_results
+//	SELECT id, conversation_id, run_id, step_index, tool_call_id, tool_name, full_key, preview, chunk_count, metadata_json, created_at, updated_at
+//	FROM agent_tool_results
 //	WHERE run_id = ?
-//	ORDER BY step_index ASC, created_at ASC
+//	ORDER BY step_index ASC,
+//	    created_at ASC
 //	LIMIT ?2
 func (q *Queries) ListAgentToolResultsByRunID(ctx context.Context, arg ListAgentToolResultsByRunIDParams) ([]AgentToolResult, error) {
 	rows, err := q.db.QueryContext(ctx, ListAgentToolResultsByRunID, arg.RunID, arg.Lim)

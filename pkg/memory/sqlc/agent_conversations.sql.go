@@ -40,7 +40,10 @@ func (q *Queries) CreateAgentConversation(ctx context.Context, arg CreateAgentCo
 }
 
 const GetAgentConversation = `-- name: GetAgentConversation :one
-SELECT id, title, created_at, updated_at FROM agent_conversations WHERE id = ? LIMIT 1
+SELECT id, title, created_at, updated_at
+FROM agent_conversations
+WHERE id = ?
+LIMIT 1
 `
 
 type GetAgentConversationParams struct {
@@ -49,7 +52,10 @@ type GetAgentConversationParams struct {
 
 // GetAgentConversation
 //
-//	SELECT id, title, created_at, updated_at FROM agent_conversations WHERE id = ? LIMIT 1
+//	SELECT id, title, created_at, updated_at
+//	FROM agent_conversations
+//	WHERE id = ?
+//	LIMIT 1
 func (q *Queries) GetAgentConversation(ctx context.Context, arg GetAgentConversationParams) (AgentConversation, error) {
 	row := q.db.QueryRowContext(ctx, GetAgentConversation, arg.ID)
 	var i AgentConversation
@@ -63,7 +69,10 @@ func (q *Queries) GetAgentConversation(ctx context.Context, arg GetAgentConversa
 }
 
 const ListAgentConversations = `-- name: ListAgentConversations :many
-SELECT id, title, created_at, updated_at FROM agent_conversations ORDER BY created_at DESC LIMIT ?
+SELECT id, title, created_at, updated_at
+FROM agent_conversations
+ORDER BY created_at DESC
+LIMIT ?
 `
 
 type ListAgentConversationsParams struct {
@@ -72,7 +81,10 @@ type ListAgentConversationsParams struct {
 
 // ListAgentConversations
 //
-//	SELECT id, title, created_at, updated_at FROM agent_conversations ORDER BY created_at DESC LIMIT ?
+//	SELECT id, title, created_at, updated_at
+//	FROM agent_conversations
+//	ORDER BY created_at DESC
+//	LIMIT ?
 func (q *Queries) ListAgentConversations(ctx context.Context, arg ListAgentConversationsParams) ([]AgentConversation, error) {
 	rows, err := q.db.QueryContext(ctx, ListAgentConversations, arg.Limit)
 	if err != nil {

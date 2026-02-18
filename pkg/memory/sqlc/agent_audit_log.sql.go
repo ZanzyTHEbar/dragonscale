@@ -59,7 +59,7 @@ func (q *Queries) CountAuditEntriesByAction(ctx context.Context, arg CountAuditE
 	return count, err
 }
 
-const InsertAuditEntry = `-- name: InsertAuditEntry :exec
+const InsertAuditEntry = `-- name: InsertAuditEntry :one
 INSERT INTO agent_audit_log (
         id,
         agent_id,
@@ -82,6 +82,7 @@ VALUES (
         ?8,
         datetime('now')
     )
+RETURNING id, agent_id, session_key, action, target, input, output, duration_ms, created_at
 `
 
 type InsertAuditEntryParams struct {
@@ -119,8 +120,9 @@ type InsertAuditEntryParams struct {
 //	        ?8,
 //	        datetime('now')
 //	    )
-func (q *Queries) InsertAuditEntry(ctx context.Context, arg InsertAuditEntryParams) error {
-	_, err := q.db.ExecContext(ctx, InsertAuditEntry,
+//	RETURNING id, agent_id, session_key, action, target, input, output, duration_ms, created_at
+func (q *Queries) InsertAuditEntry(ctx context.Context, arg InsertAuditEntryParams) (AgentAuditLog, error) {
+	row := q.db.QueryRowContext(ctx, InsertAuditEntry,
 		arg.ID,
 		arg.AgentID,
 		arg.SessionKey,
@@ -130,7 +132,19 @@ func (q *Queries) InsertAuditEntry(ctx context.Context, arg InsertAuditEntryPara
 		arg.Output,
 		arg.DurationMs,
 	)
-	return err
+	var i AgentAuditLog
+	err := row.Scan(
+		&i.ID,
+		&i.AgentID,
+		&i.SessionKey,
+		&i.Action,
+		&i.Target,
+		&i.Input,
+		&i.Output,
+		&i.DurationMs,
+		&i.CreatedAt,
+	)
+	return i, err
 }
 
 const ListAuditEntries = `-- name: ListAuditEntries :many

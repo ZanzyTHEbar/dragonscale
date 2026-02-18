@@ -13,7 +13,13 @@ import (
 )
 
 const AddAgentMessage = `-- name: AddAgentMessage :one
-INSERT INTO agent_messages (id, conversation_id, role, content, metadata_json)
+INSERT INTO agent_messages (
+        id,
+        conversation_id,
+        role,
+        content,
+        metadata_json
+    )
 VALUES (?, ?, ?, ?, ?)
 RETURNING id, conversation_id, role, content, metadata_json, created_at, updated_at
 `
@@ -28,7 +34,13 @@ type AddAgentMessageParams struct {
 
 // AddAgentMessage
 //
-//	INSERT INTO agent_messages (id, conversation_id, role, content, metadata_json)
+//	INSERT INTO agent_messages (
+//	        id,
+//	        conversation_id,
+//	        role,
+//	        content,
+//	        metadata_json
+//	    )
 //	VALUES (?, ?, ?, ?, ?)
 //	RETURNING id, conversation_id, role, content, metadata_json, created_at, updated_at
 func (q *Queries) AddAgentMessage(ctx context.Context, arg AddAgentMessageParams) (AgentMessage, error) {
@@ -53,7 +65,8 @@ func (q *Queries) AddAgentMessage(ctx context.Context, arg AddAgentMessageParams
 }
 
 const ListAgentMessagesByConversationID = `-- name: ListAgentMessagesByConversationID :many
-SELECT id, conversation_id, role, content, metadata_json, created_at, updated_at FROM agent_messages
+SELECT id, conversation_id, role, content, metadata_json, created_at, updated_at
+FROM agent_messages
 WHERE conversation_id = ?
 ORDER BY created_at ASC
 `
@@ -64,7 +77,8 @@ type ListAgentMessagesByConversationIDParams struct {
 
 // ListAgentMessagesByConversationID
 //
-//	SELECT id, conversation_id, role, content, metadata_json, created_at, updated_at FROM agent_messages
+//	SELECT id, conversation_id, role, content, metadata_json, created_at, updated_at
+//	FROM agent_messages
 //	WHERE conversation_id = ?
 //	ORDER BY created_at ASC
 func (q *Queries) ListAgentMessagesByConversationID(ctx context.Context, arg ListAgentMessagesByConversationIDParams) ([]AgentMessage, error) {
@@ -99,7 +113,8 @@ func (q *Queries) ListAgentMessagesByConversationID(ctx context.Context, arg Lis
 }
 
 const ListAgentMessagesByConversationIDLimit = `-- name: ListAgentMessagesByConversationIDLimit :many
-SELECT id, conversation_id, role, content, metadata_json, created_at, updated_at FROM agent_messages
+SELECT id, conversation_id, role, content, metadata_json, created_at, updated_at
+FROM agent_messages
 WHERE conversation_id = ?
 ORDER BY created_at ASC
 LIMIT ?
@@ -112,7 +127,8 @@ type ListAgentMessagesByConversationIDLimitParams struct {
 
 // ListAgentMessagesByConversationIDLimit
 //
-//	SELECT id, conversation_id, role, content, metadata_json, created_at, updated_at FROM agent_messages
+//	SELECT id, conversation_id, role, content, metadata_json, created_at, updated_at
+//	FROM agent_messages
 //	WHERE conversation_id = ?
 //	ORDER BY created_at ASC
 //	LIMIT ?

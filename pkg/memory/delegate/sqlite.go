@@ -216,17 +216,18 @@ func (d *LibSQLDelegate) GetWorkingContext(ctx context.Context, agentID, session
 }
 
 func (d *LibSQLDelegate) UpsertWorkingContext(ctx context.Context, agentID, sessionKey, content string) error {
-	return d.queries.UpsertWorkingContext(ctx, memsqlc.UpsertWorkingContextParams{
+	_, err := d.queries.UpsertWorkingContext(ctx, memsqlc.UpsertWorkingContextParams{
 		AgentID:    agentID,
 		SessionKey: sessionKey,
 		Content:    content,
 	})
+	return err
 }
 
 // --- Recall Items ---
 
 func (d *LibSQLDelegate) InsertRecallItem(ctx context.Context, item *memory.RecallItem) error {
-	return d.queries.InsertRecallItem(ctx, memsqlc.InsertRecallItemParams{
+	row, err := d.queries.InsertRecallItem(ctx, memsqlc.InsertRecallItemParams{
 		ID:         item.ID,
 		AgentID:    item.AgentID,
 		SessionKey: item.SessionKey,
@@ -238,6 +239,12 @@ func (d *LibSQLDelegate) InsertRecallItem(ctx context.Context, item *memory.Reca
 		Content:    item.Content,
 		Tags:       item.Tags,
 	})
+	if err != nil {
+		return err
+	}
+	item.CreatedAt = row.CreatedAt
+	item.UpdatedAt = row.UpdatedAt
+	return nil
 }
 
 func (d *LibSQLDelegate) GetRecallItem(ctx context.Context, agentID string, id ids.UUID) (*memory.RecallItem, error) {
@@ -307,7 +314,7 @@ func (d *LibSQLDelegate) SearchRecallByKeyword(ctx context.Context, query, agent
 func (d *LibSQLDelegate) InsertArchivalChunk(ctx context.Context, chunk *memory.ArchivalChunk) error {
 	// Embedding.Value() returns nil (SQL NULL) for empty embeddings,
 	// and F32_BLOB bytes for populated ones — no manual conversion needed.
-	return d.queries.InsertArchivalChunk(ctx, memsqlc.InsertArchivalChunkParams{
+	row, err := d.queries.InsertArchivalChunk(ctx, memsqlc.InsertArchivalChunkParams{
 		ID:         chunk.ID,
 		RecallID:   chunk.RecallID,
 		ChunkIndex: int64(chunk.ChunkIndex),
@@ -316,6 +323,11 @@ func (d *LibSQLDelegate) InsertArchivalChunk(ctx context.Context, chunk *memory.
 		Source:     chunk.Source,
 		Hash:       chunk.Hash,
 	})
+	if err != nil {
+		return err
+	}
+	chunk.CreatedAt = row.CreatedAt
+	return nil
 }
 
 func (d *LibSQLDelegate) GetArchivalChunk(ctx context.Context, agentID string, id ids.UUID) (*memory.ArchivalChunk, error) {
@@ -364,7 +376,7 @@ func (d *LibSQLDelegate) DeleteArchivalChunks(ctx context.Context, recallID ids.
 // --- Summaries ---
 
 func (d *LibSQLDelegate) InsertSummary(ctx context.Context, summary *memory.MemorySummary) error {
-	return d.queries.InsertSummary(ctx, memsqlc.InsertSummaryParams{
+	row, err := d.queries.InsertSummary(ctx, memsqlc.InsertSummaryParams{
 		ID:         summary.ID,
 		AgentID:    summary.AgentID,
 		SessionKey: summary.SessionKey,
@@ -372,6 +384,11 @@ func (d *LibSQLDelegate) InsertSummary(ctx context.Context, summary *memory.Memo
 		FromMsgIdx: int64(summary.FromMsgIdx),
 		ToMsgIdx:   int64(summary.ToMsgIdx),
 	})
+	if err != nil {
+		return err
+	}
+	summary.CreatedAt = row.CreatedAt
+	return nil
 }
 
 func (d *LibSQLDelegate) ListSummaries(ctx context.Context, agentID, sessionKey string, limit int) ([]*memory.MemorySummary, error) {
@@ -430,11 +447,12 @@ func (d *LibSQLDelegate) GetKV(ctx context.Context, agentID, key string) (string
 }
 
 func (d *LibSQLDelegate) UpsertKV(ctx context.Context, agentID, key, value string) error {
-	return d.queries.UpsertKV(ctx, memsqlc.UpsertKVParams{
+	_, err := d.queries.UpsertKV(ctx, memsqlc.UpsertKVParams{
 		AgentID: agentID,
 		Key:     key,
 		Value:   value,
 	})
+	return err
 }
 
 func (d *LibSQLDelegate) DeleteKV(ctx context.Context, agentID, key string) error {
@@ -477,13 +495,21 @@ func (d *LibSQLDelegate) GetDocument(ctx context.Context, agentID, name string) 
 }
 
 func (d *LibSQLDelegate) UpsertDocument(ctx context.Context, doc *memory.AgentDocument) error {
-	return d.queries.UpsertDocument(ctx, memsqlc.UpsertDocumentParams{
+	row, err := d.queries.UpsertDocument(ctx, memsqlc.UpsertDocumentParams{
 		ID:       doc.ID,
 		AgentID:  doc.AgentID,
 		Name:     doc.Name,
 		Category: doc.Category,
 		Content:  doc.Content,
 	})
+	if err != nil {
+		return err
+	}
+	// Back-populate server-assigned version and timestamps.
+	doc.Version = int(row.Version)
+	doc.CreatedAt = row.CreatedAt
+	doc.UpdatedAt = row.UpdatedAt
+	return nil
 }
 
 func (d *LibSQLDelegate) DeleteDocument(ctx context.Context, agentID, name string) error {
@@ -527,13 +553,14 @@ func (d *LibSQLDelegate) ListAllDocuments(ctx context.Context, agentID string) (
 // --- Session Messages ---
 
 func (d *LibSQLDelegate) InsertSessionMessage(ctx context.Context, agentID, sessionKey, role, content string) error {
-	return d.queries.InsertSessionMessage(ctx, memsqlc.InsertSessionMessageParams{
+	_, err := d.queries.InsertSessionMessage(ctx, memsqlc.InsertSessionMessageParams{
 		ID:         ids.New(),
 		AgentID:    agentID,
 		SessionKey: sessionKey,
 		Role:       role,
 		Content:    content,
 	})
+	return err
 }
 
 func (d *LibSQLDelegate) ListSessionMessages(ctx context.Context, agentID, sessionKey, role string, limit int) ([]*memory.RecallItem, error) {
@@ -563,7 +590,7 @@ func (d *LibSQLDelegate) CountSessionMessages(ctx context.Context, agentID, sess
 // --- Audit Log ---
 
 func (d *LibSQLDelegate) InsertAuditEntry(ctx context.Context, entry *memory.AuditEntry) error {
-	return d.queries.InsertAuditEntry(ctx, memsqlc.InsertAuditEntryParams{
+	row, err := d.queries.InsertAuditEntry(ctx, memsqlc.InsertAuditEntryParams{
 		ID:         entry.ID,
 		AgentID:    entry.AgentID,
 		SessionKey: entry.SessionKey,
@@ -573,6 +600,11 @@ func (d *LibSQLDelegate) InsertAuditEntry(ctx context.Context, entry *memory.Aud
 		Output:     &entry.Output,
 		DurationMs: ptrInt64(int64(entry.DurationMS)),
 	})
+	if err != nil {
+		return err
+	}
+	entry.CreatedAt = row.CreatedAt
+	return nil
 }
 
 func (d *LibSQLDelegate) ListAuditEntries(ctx context.Context, agentID string, limit int) ([]*memory.AuditEntry, error) {

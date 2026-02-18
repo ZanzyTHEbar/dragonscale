@@ -20,7 +20,8 @@ SET status = 'running',
     locked_by = ?1,
     updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
     last_error = NULL
-WHERE id = ?2 AND status = 'queued'
+WHERE id = ?2
+    AND status = 'queued'
 RETURNING id, kind, status, run_at, attempts, max_attempts, locked_at, locked_by, payload_json, dedupe_key, last_error, created_at, updated_at, completed_at
 `
 
@@ -38,7 +39,8 @@ type ClaimJobByIDParams struct {
 //	    locked_by = ?1,
 //	    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
 //	    last_error = NULL
-//	WHERE id = ?2 AND status = 'queued'
+//	WHERE id = ?2
+//	    AND status = 'queued'
 //	RETURNING id, kind, status, run_at, attempts, max_attempts, locked_at, locked_by, payload_json, dedupe_key, last_error, created_at, updated_at, completed_at
 func (q *Queries) ClaimJobByID(ctx context.Context, arg ClaimJobByIDParams) (Job, error) {
 	row := q.db.QueryRowContext(ctx, ClaimJobByID, arg.LockedBy, arg.ID)
@@ -63,7 +65,10 @@ func (q *Queries) ClaimJobByID(ctx context.Context, arg ClaimJobByIDParams) (Job
 }
 
 const CountJobsByStatus = `-- name: CountJobsByStatus :many
-SELECT status, count(*) AS count FROM jobs GROUP BY status
+SELECT status,
+    count(*) AS count
+FROM jobs
+GROUP BY status
 `
 
 type CountJobsByStatusRow struct {
@@ -73,7 +78,10 @@ type CountJobsByStatusRow struct {
 
 // CountJobsByStatus
 //
-//	SELECT status, count(*) AS count FROM jobs GROUP BY status
+//	SELECT status,
+//	    count(*) AS count
+//	FROM jobs
+//	GROUP BY status
 func (q *Queries) CountJobsByStatus(ctx context.Context) ([]CountJobsByStatusRow, error) {
 	rows, err := q.db.QueryContext(ctx, CountJobsByStatus)
 	if err != nil {
@@ -99,18 +107,28 @@ func (q *Queries) CountJobsByStatus(ctx context.Context) ([]CountJobsByStatusRow
 
 const EnqueueJob = `-- name: EnqueueJob :one
 INSERT INTO jobs (
-    id, kind, status, run_at, max_attempts, payload_json, dedupe_key
-)
+        id,
+        kind,
+        status,
+        run_at,
+        max_attempts,
+        payload_json,
+        dedupe_key
+    )
 VALUES (
-    ?1,
-    ?2,
-    'queued',
-    coalesce(?3, strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-    coalesce(?4, 3),
-    coalesce(?5, '{}'),
-    ?6
-) ON CONFLICT(kind, dedupe_key)
-WHERE dedupe_key IS NOT NULL DO UPDATE
+        ?1,
+        ?2,
+        'queued',
+        coalesce(
+            ?3,
+            strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+        ),
+        coalesce(?4, 3),
+        coalesce(?5, '{}'),
+        ?6
+    ) ON CONFLICT(kind, dedupe_key)
+WHERE dedupe_key IS NOT NULL DO
+UPDATE
 SET status = 'queued',
     run_at = excluded.run_at,
     max_attempts = excluded.max_attempts,
@@ -133,18 +151,28 @@ type EnqueueJobParams struct {
 // EnqueueJob
 //
 //	INSERT INTO jobs (
-//	    id, kind, status, run_at, max_attempts, payload_json, dedupe_key
-//	)
+//	        id,
+//	        kind,
+//	        status,
+//	        run_at,
+//	        max_attempts,
+//	        payload_json,
+//	        dedupe_key
+//	    )
 //	VALUES (
-//	    ?1,
-//	    ?2,
-//	    'queued',
-//	    coalesce(?3, strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-//	    coalesce(?4, 3),
-//	    coalesce(?5, '{}'),
-//	    ?6
-//	) ON CONFLICT(kind, dedupe_key)
-//	WHERE dedupe_key IS NOT NULL DO UPDATE
+//	        ?1,
+//	        ?2,
+//	        'queued',
+//	        coalesce(
+//	            ?3,
+//	            strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+//	        ),
+//	        coalesce(?4, 3),
+//	        coalesce(?5, '{}'),
+//	        ?6
+//	    ) ON CONFLICT(kind, dedupe_key)
+//	WHERE dedupe_key IS NOT NULL DO
+//	UPDATE
 //	SET status = 'queued',
 //	    run_at = excluded.run_at,
 //	    max_attempts = excluded.max_attempts,
@@ -183,19 +211,23 @@ func (q *Queries) EnqueueJob(ctx context.Context, arg EnqueueJobParams) (Job, er
 }
 
 const FindNextRunnableJob = `-- name: FindNextRunnableJob :one
-SELECT id FROM jobs
+SELECT id
+FROM jobs
 WHERE status = 'queued'
-  AND run_at <= strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-ORDER BY run_at ASC, created_at ASC
+    AND run_at <= strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+ORDER BY run_at ASC,
+    created_at ASC
 LIMIT 1
 `
 
 // FindNextRunnableJob
 //
-//	SELECT id FROM jobs
+//	SELECT id
+//	FROM jobs
 //	WHERE status = 'queued'
-//	  AND run_at <= strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-//	ORDER BY run_at ASC, created_at ASC
+//	    AND run_at <= strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+//	ORDER BY run_at ASC,
+//	    created_at ASC
 //	LIMIT 1
 func (q *Queries) FindNextRunnableJob(ctx context.Context) (ids.UUID, error) {
 	row := q.db.QueryRowContext(ctx, FindNextRunnableJob)
@@ -205,7 +237,10 @@ func (q *Queries) FindNextRunnableJob(ctx context.Context) (ids.UUID, error) {
 }
 
 const GetJob = `-- name: GetJob :one
-SELECT id, kind, status, run_at, attempts, max_attempts, locked_at, locked_by, payload_json, dedupe_key, last_error, created_at, updated_at, completed_at FROM jobs WHERE id = ?1 LIMIT 1
+SELECT id, kind, status, run_at, attempts, max_attempts, locked_at, locked_by, payload_json, dedupe_key, last_error, created_at, updated_at, completed_at
+FROM jobs
+WHERE id = ?1
+LIMIT 1
 `
 
 type GetJobParams struct {
@@ -214,7 +249,10 @@ type GetJobParams struct {
 
 // GetJob
 //
-//	SELECT id, kind, status, run_at, attempts, max_attempts, locked_at, locked_by, payload_json, dedupe_key, last_error, created_at, updated_at, completed_at FROM jobs WHERE id = ?1 LIMIT 1
+//	SELECT id, kind, status, run_at, attempts, max_attempts, locked_at, locked_by, payload_json, dedupe_key, last_error, created_at, updated_at, completed_at
+//	FROM jobs
+//	WHERE id = ?1
+//	LIMIT 1
 func (q *Queries) GetJob(ctx context.Context, arg GetJobParams) (Job, error) {
 	row := q.db.QueryRowContext(ctx, GetJob, arg.ID)
 	var i Job
@@ -238,7 +276,10 @@ func (q *Queries) GetJob(ctx context.Context, arg GetJobParams) (Job, error) {
 }
 
 const ListJobs = `-- name: ListJobs :many
-SELECT id, kind, status, run_at, attempts, max_attempts, locked_at, locked_by, payload_json, dedupe_key, last_error, created_at, updated_at, completed_at FROM jobs ORDER BY created_at DESC LIMIT ?2 OFFSET ?1
+SELECT id, kind, status, run_at, attempts, max_attempts, locked_at, locked_by, payload_json, dedupe_key, last_error, created_at, updated_at, completed_at
+FROM jobs
+ORDER BY created_at DESC
+LIMIT ?2 OFFSET ?1
 `
 
 type ListJobsParams struct {
@@ -248,7 +289,10 @@ type ListJobsParams struct {
 
 // ListJobs
 //
-//	SELECT id, kind, status, run_at, attempts, max_attempts, locked_at, locked_by, payload_json, dedupe_key, last_error, created_at, updated_at, completed_at FROM jobs ORDER BY created_at DESC LIMIT ?2 OFFSET ?1
+//	SELECT id, kind, status, run_at, attempts, max_attempts, locked_at, locked_by, payload_json, dedupe_key, last_error, created_at, updated_at, completed_at
+//	FROM jobs
+//	ORDER BY created_at DESC
+//	LIMIT ?2 OFFSET ?1
 func (q *Queries) ListJobs(ctx context.Context, arg ListJobsParams) ([]Job, error) {
 	rows, err := q.db.QueryContext(ctx, ListJobs, arg.Off, arg.Lim)
 	if err != nil {
@@ -381,7 +425,10 @@ func (q *Queries) MarkJobSucceeded(ctx context.Context, arg MarkJobSucceededPara
 const RequeueJob = `-- name: RequeueJob :one
 UPDATE jobs
 SET status = 'queued',
-    run_at = coalesce(?1, strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    run_at = coalesce(
+        ?1,
+        strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+    ),
     updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
     last_error = ?2,
     locked_at = NULL,
@@ -401,7 +448,10 @@ type RequeueJobParams struct {
 //
 //	UPDATE jobs
 //	SET status = 'queued',
-//	    run_at = coalesce(?1, strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+//	    run_at = coalesce(
+//	        ?1,
+//	        strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+//	    ),
 //	    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
 //	    last_error = ?2,
 //	    locked_at = NULL,

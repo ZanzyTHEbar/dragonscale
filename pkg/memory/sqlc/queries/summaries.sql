@@ -1,5 +1,5 @@
 -- Memory Summary queries
--- name: InsertSummary :exec
+-- name: InsertSummary :one
 INSERT INTO memory_summaries (
         id,
         agent_id,
@@ -17,7 +17,8 @@ VALUES (
         sqlc.arg(from_msg_idx),
         sqlc.arg(to_msg_idx),
         datetime('now')
-    );
+    )
+RETURNING id, agent_id, session_key, content, from_msg_idx, to_msg_idx, created_at;
 -- name: ListSummaries :many
 SELECT id,
     agent_id,

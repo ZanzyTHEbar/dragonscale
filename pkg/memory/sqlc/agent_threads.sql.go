@@ -90,7 +90,8 @@ func (q *Queries) CreateAgentThread(ctx context.Context, arg CreateAgentThreadPa
 }
 
 const ListAgentThreadMessagesByThreadID = `-- name: ListAgentThreadMessagesByThreadID :many
-SELECT id, thread_id, role, content, metadata_json, created_at, updated_at FROM agent_thread_messages
+SELECT id, thread_id, role, content, metadata_json, created_at, updated_at
+FROM agent_thread_messages
 WHERE thread_id = ?
 ORDER BY created_at ASC
 `
@@ -101,7 +102,8 @@ type ListAgentThreadMessagesByThreadIDParams struct {
 
 // ListAgentThreadMessagesByThreadID
 //
-//	SELECT id, thread_id, role, content, metadata_json, created_at, updated_at FROM agent_thread_messages
+//	SELECT id, thread_id, role, content, metadata_json, created_at, updated_at
+//	FROM agent_thread_messages
 //	WHERE thread_id = ?
 //	ORDER BY created_at ASC
 func (q *Queries) ListAgentThreadMessagesByThreadID(ctx context.Context, arg ListAgentThreadMessagesByThreadIDParams) ([]AgentThreadMessage, error) {
@@ -136,7 +138,8 @@ func (q *Queries) ListAgentThreadMessagesByThreadID(ctx context.Context, arg Lis
 }
 
 const ListAgentThreadMessagesByThreadIDDescLimit = `-- name: ListAgentThreadMessagesByThreadIDDescLimit :many
-SELECT id, thread_id, role, content, metadata_json, created_at, updated_at FROM agent_thread_messages
+SELECT id, thread_id, role, content, metadata_json, created_at, updated_at
+FROM agent_thread_messages
 WHERE thread_id = ?
 ORDER BY created_at DESC
 LIMIT ?
@@ -149,7 +152,8 @@ type ListAgentThreadMessagesByThreadIDDescLimitParams struct {
 
 // ListAgentThreadMessagesByThreadIDDescLimit
 //
-//	SELECT id, thread_id, role, content, metadata_json, created_at, updated_at FROM agent_thread_messages
+//	SELECT id, thread_id, role, content, metadata_json, created_at, updated_at
+//	FROM agent_thread_messages
 //	WHERE thread_id = ?
 //	ORDER BY created_at DESC
 //	LIMIT ?
@@ -185,7 +189,8 @@ func (q *Queries) ListAgentThreadMessagesByThreadIDDescLimit(ctx context.Context
 }
 
 const ListAgentThreadsByConversationID = `-- name: ListAgentThreadsByConversationID :many
-SELECT id, conversation_id, title, metadata_json, created_at, updated_at FROM agent_threads
+SELECT id, conversation_id, title, metadata_json, created_at, updated_at
+FROM agent_threads
 WHERE conversation_id = ?
 ORDER BY created_at DESC
 LIMIT ?2
@@ -198,7 +203,8 @@ type ListAgentThreadsByConversationIDParams struct {
 
 // ListAgentThreadsByConversationID
 //
-//	SELECT id, conversation_id, title, metadata_json, created_at, updated_at FROM agent_threads
+//	SELECT id, conversation_id, title, metadata_json, created_at, updated_at
+//	FROM agent_threads
 //	WHERE conversation_id = ?
 //	ORDER BY created_at DESC
 //	LIMIT ?2

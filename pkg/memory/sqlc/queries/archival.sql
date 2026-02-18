@@ -1,5 +1,5 @@
 -- Archival Chunk queries
--- name: InsertArchivalChunk :exec
+-- name: InsertArchivalChunk :one
 INSERT INTO archival_chunks (
         id,
         recall_id,
@@ -19,7 +19,8 @@ VALUES (
         sqlc.arg(source),
         sqlc.arg(hash),
         datetime('now')
-    );
+    )
+RETURNING id, recall_id, chunk_index, content, embedding, source, hash, created_at;
 -- name: GetArchivalChunk :one
 SELECT ac.id,
     ac.recall_id,

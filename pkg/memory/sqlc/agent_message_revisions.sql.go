@@ -14,8 +14,13 @@ import (
 
 const AddAgentMessageRevision = `-- name: AddAgentMessageRevision :one
 INSERT INTO agent_message_revisions (
-    id, message_id, editor, old_content, new_content, metadata_json
-)
+        id,
+        message_id,
+        editor,
+        old_content,
+        new_content,
+        metadata_json
+    )
 VALUES (?, ?, ?, ?, ?, ?)
 RETURNING id, message_id, editor, old_content, new_content, metadata_json, created_at, updated_at
 `
@@ -32,8 +37,13 @@ type AddAgentMessageRevisionParams struct {
 // AddAgentMessageRevision
 //
 //	INSERT INTO agent_message_revisions (
-//	    id, message_id, editor, old_content, new_content, metadata_json
-//	)
+//	        id,
+//	        message_id,
+//	        editor,
+//	        old_content,
+//	        new_content,
+//	        metadata_json
+//	    )
 //	VALUES (?, ?, ?, ?, ?, ?)
 //	RETURNING id, message_id, editor, old_content, new_content, metadata_json, created_at, updated_at
 func (q *Queries) AddAgentMessageRevision(ctx context.Context, arg AddAgentMessageRevisionParams) (AgentMessageRevision, error) {
@@ -60,7 +70,8 @@ func (q *Queries) AddAgentMessageRevision(ctx context.Context, arg AddAgentMessa
 }
 
 const ListAgentMessageRevisionsByMessageID = `-- name: ListAgentMessageRevisionsByMessageID :many
-SELECT id, message_id, editor, old_content, new_content, metadata_json, created_at, updated_at FROM agent_message_revisions
+SELECT id, message_id, editor, old_content, new_content, metadata_json, created_at, updated_at
+FROM agent_message_revisions
 WHERE message_id = ?
 ORDER BY created_at DESC
 LIMIT ?2
@@ -73,7 +84,8 @@ type ListAgentMessageRevisionsByMessageIDParams struct {
 
 // ListAgentMessageRevisionsByMessageID
 //
-//	SELECT id, message_id, editor, old_content, new_content, metadata_json, created_at, updated_at FROM agent_message_revisions
+//	SELECT id, message_id, editor, old_content, new_content, metadata_json, created_at, updated_at
+//	FROM agent_message_revisions
 //	WHERE message_id = ?
 //	ORDER BY created_at DESC
 //	LIMIT ?2

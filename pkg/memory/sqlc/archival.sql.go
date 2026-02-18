@@ -184,7 +184,7 @@ func (q *Queries) GetArchivalChunksByIDs(ctx context.Context, arg GetArchivalChu
 	return items, nil
 }
 
-const InsertArchivalChunk = `-- name: InsertArchivalChunk :exec
+const InsertArchivalChunk = `-- name: InsertArchivalChunk :one
 INSERT INTO archival_chunks (
         id,
         recall_id,
@@ -205,6 +205,7 @@ VALUES (
         ?7,
         datetime('now')
     )
+RETURNING id, recall_id, chunk_index, content, embedding, source, hash, created_at
 `
 
 type InsertArchivalChunkParams struct {
@@ -239,8 +240,9 @@ type InsertArchivalChunkParams struct {
 //	        ?7,
 //	        datetime('now')
 //	    )
-func (q *Queries) InsertArchivalChunk(ctx context.Context, arg InsertArchivalChunkParams) error {
-	_, err := q.db.ExecContext(ctx, InsertArchivalChunk,
+//	RETURNING id, recall_id, chunk_index, content, embedding, source, hash, created_at
+func (q *Queries) InsertArchivalChunk(ctx context.Context, arg InsertArchivalChunkParams) (ArchivalChunk, error) {
+	row := q.db.QueryRowContext(ctx, InsertArchivalChunk,
 		arg.ID,
 		arg.RecallID,
 		arg.ChunkIndex,
@@ -249,7 +251,18 @@ func (q *Queries) InsertArchivalChunk(ctx context.Context, arg InsertArchivalChu
 		arg.Source,
 		arg.Hash,
 	)
-	return err
+	var i ArchivalChunk
+	err := row.Scan(
+		&i.ID,
+		&i.RecallID,
+		&i.ChunkIndex,
+		&i.Content,
+		&i.Embedding,
+		&i.Source,
+		&i.Hash,
+		&i.CreatedAt,
+	)
+	return i, err
 }
 
 const ListAllArchivalChunks = `-- name: ListAllArchivalChunks :many

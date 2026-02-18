@@ -14,8 +14,12 @@ import (
 
 const CreateAgentConversationLink = `-- name: CreateAgentConversationLink :one
 INSERT INTO agent_conversation_links (
-    id, conversation_id, linked_conversation_id, kind, metadata_json
-)
+        id,
+        conversation_id,
+        linked_conversation_id,
+        kind,
+        metadata_json
+    )
 VALUES (?, ?, ?, ?, ?)
 RETURNING id, conversation_id, linked_conversation_id, kind, metadata_json, created_at, updated_at
 `
@@ -31,8 +35,12 @@ type CreateAgentConversationLinkParams struct {
 // CreateAgentConversationLink
 //
 //	INSERT INTO agent_conversation_links (
-//	    id, conversation_id, linked_conversation_id, kind, metadata_json
-//	)
+//	        id,
+//	        conversation_id,
+//	        linked_conversation_id,
+//	        kind,
+//	        metadata_json
+//	    )
 //	VALUES (?, ?, ?, ?, ?)
 //	RETURNING id, conversation_id, linked_conversation_id, kind, metadata_json, created_at, updated_at
 func (q *Queries) CreateAgentConversationLink(ctx context.Context, arg CreateAgentConversationLinkParams) (AgentConversationLink, error) {
@@ -58,7 +66,9 @@ func (q *Queries) CreateAgentConversationLink(ctx context.Context, arg CreateAge
 
 const DeleteAgentConversationLink = `-- name: DeleteAgentConversationLink :exec
 DELETE FROM agent_conversation_links
-WHERE conversation_id = ? AND linked_conversation_id = ? AND kind = ?
+WHERE conversation_id = ?
+    AND linked_conversation_id = ?
+    AND kind = ?
 `
 
 type DeleteAgentConversationLinkParams struct {
@@ -70,14 +80,17 @@ type DeleteAgentConversationLinkParams struct {
 // DeleteAgentConversationLink
 //
 //	DELETE FROM agent_conversation_links
-//	WHERE conversation_id = ? AND linked_conversation_id = ? AND kind = ?
+//	WHERE conversation_id = ?
+//	    AND linked_conversation_id = ?
+//	    AND kind = ?
 func (q *Queries) DeleteAgentConversationLink(ctx context.Context, arg DeleteAgentConversationLinkParams) error {
 	_, err := q.db.ExecContext(ctx, DeleteAgentConversationLink, arg.ConversationID, arg.LinkedConversationID, arg.Kind)
 	return err
 }
 
 const ListAgentConversationLinksByConversationID = `-- name: ListAgentConversationLinksByConversationID :many
-SELECT id, conversation_id, linked_conversation_id, kind, metadata_json, created_at, updated_at FROM agent_conversation_links
+SELECT id, conversation_id, linked_conversation_id, kind, metadata_json, created_at, updated_at
+FROM agent_conversation_links
 WHERE conversation_id = ?
 ORDER BY created_at DESC
 LIMIT ?2
@@ -90,7 +103,8 @@ type ListAgentConversationLinksByConversationIDParams struct {
 
 // ListAgentConversationLinksByConversationID
 //
-//	SELECT id, conversation_id, linked_conversation_id, kind, metadata_json, created_at, updated_at FROM agent_conversation_links
+//	SELECT id, conversation_id, linked_conversation_id, kind, metadata_json, created_at, updated_at
+//	FROM agent_conversation_links
 //	WHERE conversation_id = ?
 //	ORDER BY created_at DESC
 //	LIMIT ?2

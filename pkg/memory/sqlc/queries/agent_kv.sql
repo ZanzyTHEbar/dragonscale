@@ -8,7 +8,7 @@ FROM agent_kv
 WHERE agent_id = sqlc.arg(agent_id)
     AND key = sqlc.arg(key)
 LIMIT 1;
--- name: UpsertKV :exec
+-- name: UpsertKV :one
 INSERT INTO agent_kv (agent_id, key, value, updated_at)
 VALUES (
         sqlc.arg(agent_id),
@@ -18,7 +18,8 @@ VALUES (
     ) ON CONFLICT (agent_id, key) DO
 UPDATE
 SET value = excluded.value,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+RETURNING agent_id, key, value, updated_at;
 -- name: DeleteKV :exec
 DELETE FROM agent_kv
 WHERE agent_id = sqlc.arg(agent_id)

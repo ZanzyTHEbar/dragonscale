@@ -1,5 +1,5 @@
 -- Recall Item queries
--- name: InsertRecallItem :exec
+-- name: InsertRecallItem :one
 INSERT INTO recall_items (
         id,
         agent_id,
@@ -27,7 +27,8 @@ VALUES (
         sqlc.arg(tags),
         datetime('now'),
         datetime('now')
-    );
+    )
+RETURNING id, agent_id, session_key, role, sector, importance, salience, decay_rate, content, tags, created_at, updated_at;
 -- name: GetRecallItem :one
 SELECT id,
     agent_id,
@@ -124,7 +125,7 @@ SELECT id,
 FROM recall_items
 WHERE id IN (sqlc.slice('ids'))
     AND agent_id = sqlc.arg(agent_id);
--- name: InsertSessionMessage :exec
+-- name: InsertSessionMessage :one
 INSERT INTO recall_items (
         id,
         agent_id,
@@ -152,7 +153,8 @@ VALUES (
         'session-message',
         datetime('now'),
         datetime('now')
-    );
+    )
+RETURNING id, agent_id, session_key, role, sector, importance, salience, decay_rate, content, tags, created_at, updated_at;
 -- name: ListSessionMessages :many
 SELECT id,
     agent_id,

@@ -13,7 +13,7 @@ FROM agent_documents
 WHERE agent_id = sqlc.arg(agent_id)
     AND name = sqlc.arg(name)
 LIMIT 1;
--- name: UpsertDocument :exec
+-- name: UpsertDocument :one
 INSERT INTO agent_documents (
         id,
         agent_id,
@@ -41,7 +41,8 @@ SET content = excluded.content,
     category = excluded.category,
     version = agent_documents.version + 1,
     is_active = 1,
-    updated_at = datetime('now');
+    updated_at = datetime('now')
+RETURNING id, agent_id, name, category, content, version, is_active, created_at, updated_at;
 -- name: ListDocumentsByCategory :many
 SELECT id,
     agent_id,

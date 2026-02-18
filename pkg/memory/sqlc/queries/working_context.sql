@@ -8,7 +8,7 @@ FROM working_context
 WHERE agent_id = sqlc.arg(agent_id)
     AND session_key = sqlc.arg(session_key)
 LIMIT 1;
--- name: UpsertWorkingContext :exec
+-- name: UpsertWorkingContext :one
 INSERT INTO working_context (agent_id, session_key, content, updated_at)
 VALUES (
         sqlc.arg(agent_id),
@@ -18,4 +18,5 @@ VALUES (
     ) ON CONFLICT (agent_id, session_key) DO
 UPDATE
 SET content = excluded.content,
-    updated_at = excluded.updated_at;
+    updated_at = excluded.updated_at
+RETURNING agent_id, session_key, content, updated_at;

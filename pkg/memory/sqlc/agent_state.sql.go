@@ -55,8 +55,16 @@ func (q *Queries) AddAgentRunState(ctx context.Context, arg AddAgentRunStatePara
 
 const AddAgentStateTransition = `-- name: AddAgentStateTransition :one
 INSERT INTO agent_state_transitions (
-    id, run_id, step_index, from_state, to_state, trigger, at, meta_json, error
-)
+        id,
+        run_id,
+        step_index,
+        from_state,
+        to_state,
+        trigger,
+        at,
+        meta_json,
+        error
+    )
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING id, run_id, step_index, from_state, to_state, "trigger", at, meta_json, error, created_at, updated_at
 `
@@ -76,8 +84,16 @@ type AddAgentStateTransitionParams struct {
 // AddAgentStateTransition
 //
 //	INSERT INTO agent_state_transitions (
-//	    id, run_id, step_index, from_state, to_state, trigger, at, meta_json, error
-//	)
+//	        id,
+//	        run_id,
+//	        step_index,
+//	        from_state,
+//	        to_state,
+//	        trigger,
+//	        at,
+//	        meta_json,
+//	        error
+//	    )
 //	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 //	RETURNING id, run_id, step_index, from_state, to_state, "trigger", at, meta_json, error, created_at, updated_at
 func (q *Queries) AddAgentStateTransition(ctx context.Context, arg AddAgentStateTransitionParams) (AgentStateTransition, error) {
@@ -110,7 +126,13 @@ func (q *Queries) AddAgentStateTransition(ctx context.Context, arg AddAgentState
 }
 
 const CreateAgentCheckpoint = `-- name: CreateAgentCheckpoint :one
-INSERT INTO agent_checkpoints (id, conversation_id, name, run_state_id, metadata_json)
+INSERT INTO agent_checkpoints (
+        id,
+        conversation_id,
+        name,
+        run_state_id,
+        metadata_json
+    )
 VALUES (?, ?, ?, ?, ?)
 RETURNING id, conversation_id, name, run_state_id, metadata_json, created_at, updated_at
 `
@@ -125,7 +147,13 @@ type CreateAgentCheckpointParams struct {
 
 // CreateAgentCheckpoint
 //
-//	INSERT INTO agent_checkpoints (id, conversation_id, name, run_state_id, metadata_json)
+//	INSERT INTO agent_checkpoints (
+//	        id,
+//	        conversation_id,
+//	        name,
+//	        run_state_id,
+//	        metadata_json
+//	    )
 //	VALUES (?, ?, ?, ?, ?)
 //	RETURNING id, conversation_id, name, run_state_id, metadata_json, created_at, updated_at
 func (q *Queries) CreateAgentCheckpoint(ctx context.Context, arg CreateAgentCheckpointParams) (AgentCheckpoint, error) {
@@ -187,8 +215,10 @@ func (q *Queries) CreateAgentRun(ctx context.Context, arg CreateAgentRunParams) 
 }
 
 const GetAgentCheckpointByConversationIDAndName = `-- name: GetAgentCheckpointByConversationIDAndName :one
-SELECT id, conversation_id, name, run_state_id, metadata_json, created_at, updated_at FROM agent_checkpoints
-WHERE conversation_id = ? AND name = ?
+SELECT id, conversation_id, name, run_state_id, metadata_json, created_at, updated_at
+FROM agent_checkpoints
+WHERE conversation_id = ?
+    AND name = ?
 LIMIT 1
 `
 
@@ -199,8 +229,10 @@ type GetAgentCheckpointByConversationIDAndNameParams struct {
 
 // GetAgentCheckpointByConversationIDAndName
 //
-//	SELECT id, conversation_id, name, run_state_id, metadata_json, created_at, updated_at FROM agent_checkpoints
-//	WHERE conversation_id = ? AND name = ?
+//	SELECT id, conversation_id, name, run_state_id, metadata_json, created_at, updated_at
+//	FROM agent_checkpoints
+//	WHERE conversation_id = ?
+//	    AND name = ?
 //	LIMIT 1
 func (q *Queries) GetAgentCheckpointByConversationIDAndName(ctx context.Context, arg GetAgentCheckpointByConversationIDAndNameParams) (AgentCheckpoint, error) {
 	row := q.db.QueryRowContext(ctx, GetAgentCheckpointByConversationIDAndName, arg.ConversationID, arg.Name)
@@ -218,7 +250,8 @@ func (q *Queries) GetAgentCheckpointByConversationIDAndName(ctx context.Context,
 }
 
 const GetAgentRunStateByID = `-- name: GetAgentRunStateByID :one
-SELECT id, run_id, step_index, state, snapshot_json, created_at, updated_at FROM agent_run_states
+SELECT id, run_id, step_index, state, snapshot_json, created_at, updated_at
+FROM agent_run_states
 WHERE id = ?
 LIMIT 1
 `
@@ -229,7 +262,8 @@ type GetAgentRunStateByIDParams struct {
 
 // GetAgentRunStateByID
 //
-//	SELECT id, run_id, step_index, state, snapshot_json, created_at, updated_at FROM agent_run_states
+//	SELECT id, run_id, step_index, state, snapshot_json, created_at, updated_at
+//	FROM agent_run_states
 //	WHERE id = ?
 //	LIMIT 1
 func (q *Queries) GetAgentRunStateByID(ctx context.Context, arg GetAgentRunStateByIDParams) (AgentRunState, error) {
@@ -248,7 +282,8 @@ func (q *Queries) GetAgentRunStateByID(ctx context.Context, arg GetAgentRunState
 }
 
 const GetLatestAgentRunByConversationID = `-- name: GetLatestAgentRunByConversationID :one
-SELECT id, conversation_id, status, metadata_json, created_at, updated_at FROM agent_runs
+SELECT id, conversation_id, status, metadata_json, created_at, updated_at
+FROM agent_runs
 WHERE conversation_id = ?
 ORDER BY created_at DESC
 LIMIT 1
@@ -260,7 +295,8 @@ type GetLatestAgentRunByConversationIDParams struct {
 
 // GetLatestAgentRunByConversationID
 //
-//	SELECT id, conversation_id, status, metadata_json, created_at, updated_at FROM agent_runs
+//	SELECT id, conversation_id, status, metadata_json, created_at, updated_at
+//	FROM agent_runs
 //	WHERE conversation_id = ?
 //	ORDER BY created_at DESC
 //	LIMIT 1
@@ -279,7 +315,8 @@ func (q *Queries) GetLatestAgentRunByConversationID(ctx context.Context, arg Get
 }
 
 const GetLatestAgentRunStateByRunID = `-- name: GetLatestAgentRunStateByRunID :one
-SELECT id, run_id, step_index, state, snapshot_json, created_at, updated_at FROM agent_run_states
+SELECT id, run_id, step_index, state, snapshot_json, created_at, updated_at
+FROM agent_run_states
 WHERE run_id = ?
 ORDER BY step_index DESC
 LIMIT 1
@@ -291,7 +328,8 @@ type GetLatestAgentRunStateByRunIDParams struct {
 
 // GetLatestAgentRunStateByRunID
 //
-//	SELECT id, run_id, step_index, state, snapshot_json, created_at, updated_at FROM agent_run_states
+//	SELECT id, run_id, step_index, state, snapshot_json, created_at, updated_at
+//	FROM agent_run_states
 //	WHERE run_id = ?
 //	ORDER BY step_index DESC
 //	LIMIT 1
@@ -311,7 +349,8 @@ func (q *Queries) GetLatestAgentRunStateByRunID(ctx context.Context, arg GetLate
 }
 
 const ListAgentCheckpointsByConversationID = `-- name: ListAgentCheckpointsByConversationID :many
-SELECT id, conversation_id, name, run_state_id, metadata_json, created_at, updated_at FROM agent_checkpoints
+SELECT id, conversation_id, name, run_state_id, metadata_json, created_at, updated_at
+FROM agent_checkpoints
 WHERE conversation_id = ?
 ORDER BY created_at DESC
 LIMIT ?2
@@ -324,7 +363,8 @@ type ListAgentCheckpointsByConversationIDParams struct {
 
 // ListAgentCheckpointsByConversationID
 //
-//	SELECT id, conversation_id, name, run_state_id, metadata_json, created_at, updated_at FROM agent_checkpoints
+//	SELECT id, conversation_id, name, run_state_id, metadata_json, created_at, updated_at
+//	FROM agent_checkpoints
 //	WHERE conversation_id = ?
 //	ORDER BY created_at DESC
 //	LIMIT ?2
@@ -360,7 +400,8 @@ func (q *Queries) ListAgentCheckpointsByConversationID(ctx context.Context, arg 
 }
 
 const ListAgentRunStatesByRunID = `-- name: ListAgentRunStatesByRunID :many
-SELECT id, run_id, step_index, state, snapshot_json, created_at, updated_at FROM agent_run_states
+SELECT id, run_id, step_index, state, snapshot_json, created_at, updated_at
+FROM agent_run_states
 WHERE run_id = ?
 ORDER BY step_index ASC
 LIMIT ?2
@@ -373,7 +414,8 @@ type ListAgentRunStatesByRunIDParams struct {
 
 // ListAgentRunStatesByRunID
 //
-//	SELECT id, run_id, step_index, state, snapshot_json, created_at, updated_at FROM agent_run_states
+//	SELECT id, run_id, step_index, state, snapshot_json, created_at, updated_at
+//	FROM agent_run_states
 //	WHERE run_id = ?
 //	ORDER BY step_index ASC
 //	LIMIT ?2
@@ -409,7 +451,8 @@ func (q *Queries) ListAgentRunStatesByRunID(ctx context.Context, arg ListAgentRu
 }
 
 const ListAgentStateTransitionsByRunID = `-- name: ListAgentStateTransitionsByRunID :many
-SELECT id, run_id, step_index, from_state, to_state, "trigger", at, meta_json, error, created_at, updated_at FROM agent_state_transitions
+SELECT id, run_id, step_index, from_state, to_state, "trigger", at, meta_json, error, created_at, updated_at
+FROM agent_state_transitions
 WHERE run_id = ?
 ORDER BY at ASC
 LIMIT ?2
@@ -422,7 +465,8 @@ type ListAgentStateTransitionsByRunIDParams struct {
 
 // ListAgentStateTransitionsByRunID
 //
-//	SELECT id, run_id, step_index, from_state, to_state, "trigger", at, meta_json, error, created_at, updated_at FROM agent_state_transitions
+//	SELECT id, run_id, step_index, from_state, to_state, "trigger", at, meta_json, error, created_at, updated_at
+//	FROM agent_state_transitions
 //	WHERE run_id = ?
 //	ORDER BY at ASC
 //	LIMIT ?2

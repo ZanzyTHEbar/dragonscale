@@ -47,7 +47,7 @@ func (q *Queries) GetWorkingContext(ctx context.Context, arg GetWorkingContextPa
 	return i, err
 }
 
-const UpsertWorkingContext = `-- name: UpsertWorkingContext :exec
+const UpsertWorkingContext = `-- name: UpsertWorkingContext :one
 INSERT INTO working_context (agent_id, session_key, content, updated_at)
 VALUES (
         ?1,
@@ -58,6 +58,7 @@ VALUES (
 UPDATE
 SET content = excluded.content,
     updated_at = excluded.updated_at
+RETURNING agent_id, session_key, content, updated_at
 `
 
 type UpsertWorkingContextParams struct {
@@ -78,7 +79,15 @@ type UpsertWorkingContextParams struct {
 //	UPDATE
 //	SET content = excluded.content,
 //	    updated_at = excluded.updated_at
-func (q *Queries) UpsertWorkingContext(ctx context.Context, arg UpsertWorkingContextParams) error {
-	_, err := q.db.ExecContext(ctx, UpsertWorkingContext, arg.AgentID, arg.SessionKey, arg.Content)
-	return err
+//	RETURNING agent_id, session_key, content, updated_at
+func (q *Queries) UpsertWorkingContext(ctx context.Context, arg UpsertWorkingContextParams) (WorkingContext, error) {
+	row := q.db.QueryRowContext(ctx, UpsertWorkingContext, arg.AgentID, arg.SessionKey, arg.Content)
+	var i WorkingContext
+	err := row.Scan(
+		&i.AgentID,
+		&i.SessionKey,
+		&i.Content,
+		&i.UpdatedAt,
+	)
+	return i, err
 }

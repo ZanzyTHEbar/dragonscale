@@ -125,7 +125,7 @@ func (q *Queries) ListKVByPrefix(ctx context.Context, arg ListKVByPrefixParams) 
 	return items, nil
 }
 
-const UpsertKV = `-- name: UpsertKV :exec
+const UpsertKV = `-- name: UpsertKV :one
 INSERT INTO agent_kv (agent_id, key, value, updated_at)
 VALUES (
         ?1,
@@ -136,6 +136,7 @@ VALUES (
 UPDATE
 SET value = excluded.value,
     updated_at = excluded.updated_at
+RETURNING agent_id, key, value, updated_at
 `
 
 type UpsertKVParams struct {
@@ -156,7 +157,15 @@ type UpsertKVParams struct {
 //	UPDATE
 //	SET value = excluded.value,
 //	    updated_at = excluded.updated_at
-func (q *Queries) UpsertKV(ctx context.Context, arg UpsertKVParams) error {
-	_, err := q.db.ExecContext(ctx, UpsertKV, arg.AgentID, arg.Key, arg.Value)
-	return err
+//	RETURNING agent_id, key, value, updated_at
+func (q *Queries) UpsertKV(ctx context.Context, arg UpsertKVParams) (AgentKv, error) {
+	row := q.db.QueryRowContext(ctx, UpsertKV, arg.AgentID, arg.Key, arg.Value)
+	var i AgentKv
+	err := row.Scan(
+		&i.AgentID,
+		&i.Key,
+		&i.Value,
+		&i.UpdatedAt,
+	)
+	return i, err
 }

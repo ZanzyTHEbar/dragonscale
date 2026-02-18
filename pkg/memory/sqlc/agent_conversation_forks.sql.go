@@ -14,8 +14,12 @@ import (
 
 const CreateAgentConversationFork = `-- name: CreateAgentConversationFork :one
 INSERT INTO agent_conversation_forks (
-    id, parent_conversation_id, child_conversation_id, checkpoint_id, metadata_json
-)
+        id,
+        parent_conversation_id,
+        child_conversation_id,
+        checkpoint_id,
+        metadata_json
+    )
 VALUES (?, ?, ?, ?, ?)
 RETURNING id, parent_conversation_id, child_conversation_id, checkpoint_id, metadata_json, created_at, updated_at
 `
@@ -31,8 +35,12 @@ type CreateAgentConversationForkParams struct {
 // CreateAgentConversationFork
 //
 //	INSERT INTO agent_conversation_forks (
-//	    id, parent_conversation_id, child_conversation_id, checkpoint_id, metadata_json
-//	)
+//	        id,
+//	        parent_conversation_id,
+//	        child_conversation_id,
+//	        checkpoint_id,
+//	        metadata_json
+//	    )
 //	VALUES (?, ?, ?, ?, ?)
 //	RETURNING id, parent_conversation_id, child_conversation_id, checkpoint_id, metadata_json, created_at, updated_at
 func (q *Queries) CreateAgentConversationFork(ctx context.Context, arg CreateAgentConversationForkParams) (AgentConversationFork, error) {
@@ -57,7 +65,8 @@ func (q *Queries) CreateAgentConversationFork(ctx context.Context, arg CreateAge
 }
 
 const GetAgentConversationForkByChildConversationID = `-- name: GetAgentConversationForkByChildConversationID :one
-SELECT id, parent_conversation_id, child_conversation_id, checkpoint_id, metadata_json, created_at, updated_at FROM agent_conversation_forks
+SELECT id, parent_conversation_id, child_conversation_id, checkpoint_id, metadata_json, created_at, updated_at
+FROM agent_conversation_forks
 WHERE child_conversation_id = ?
 LIMIT 1
 `
@@ -68,7 +77,8 @@ type GetAgentConversationForkByChildConversationIDParams struct {
 
 // GetAgentConversationForkByChildConversationID
 //
-//	SELECT id, parent_conversation_id, child_conversation_id, checkpoint_id, metadata_json, created_at, updated_at FROM agent_conversation_forks
+//	SELECT id, parent_conversation_id, child_conversation_id, checkpoint_id, metadata_json, created_at, updated_at
+//	FROM agent_conversation_forks
 //	WHERE child_conversation_id = ?
 //	LIMIT 1
 func (q *Queries) GetAgentConversationForkByChildConversationID(ctx context.Context, arg GetAgentConversationForkByChildConversationIDParams) (AgentConversationFork, error) {
@@ -87,7 +97,8 @@ func (q *Queries) GetAgentConversationForkByChildConversationID(ctx context.Cont
 }
 
 const ListAgentConversationForksByParentConversationID = `-- name: ListAgentConversationForksByParentConversationID :many
-SELECT id, parent_conversation_id, child_conversation_id, checkpoint_id, metadata_json, created_at, updated_at FROM agent_conversation_forks
+SELECT id, parent_conversation_id, child_conversation_id, checkpoint_id, metadata_json, created_at, updated_at
+FROM agent_conversation_forks
 WHERE parent_conversation_id = ?
 ORDER BY created_at DESC
 LIMIT ?2
@@ -100,7 +111,8 @@ type ListAgentConversationForksByParentConversationIDParams struct {
 
 // ListAgentConversationForksByParentConversationID
 //
-//	SELECT id, parent_conversation_id, child_conversation_id, checkpoint_id, metadata_json, created_at, updated_at FROM agent_conversation_forks
+//	SELECT id, parent_conversation_id, child_conversation_id, checkpoint_id, metadata_json, created_at, updated_at
+//	FROM agent_conversation_forks
 //	WHERE parent_conversation_id = ?
 //	ORDER BY created_at DESC
 //	LIMIT ?2

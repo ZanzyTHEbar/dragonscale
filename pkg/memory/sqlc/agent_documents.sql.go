@@ -232,7 +232,7 @@ func (q *Queries) ListDocumentsByCategory(ctx context.Context, arg ListDocuments
 	return items, nil
 }
 
-const UpsertDocument = `-- name: UpsertDocument :exec
+const UpsertDocument = `-- name: UpsertDocument :one
 INSERT INTO agent_documents (
         id,
         agent_id,
@@ -261,6 +261,7 @@ SET content = excluded.content,
     version = agent_documents.version + 1,
     is_active = 1,
     updated_at = datetime('now')
+RETURNING id, agent_id, name, category, content, version, is_active, created_at, updated_at
 `
 
 type UpsertDocumentParams struct {
@@ -301,13 +302,26 @@ type UpsertDocumentParams struct {
 //	    version = agent_documents.version + 1,
 //	    is_active = 1,
 //	    updated_at = datetime('now')
-func (q *Queries) UpsertDocument(ctx context.Context, arg UpsertDocumentParams) error {
-	_, err := q.db.ExecContext(ctx, UpsertDocument,
+//	RETURNING id, agent_id, name, category, content, version, is_active, created_at, updated_at
+func (q *Queries) UpsertDocument(ctx context.Context, arg UpsertDocumentParams) (AgentDocument, error) {
+	row := q.db.QueryRowContext(ctx, UpsertDocument,
 		arg.ID,
 		arg.AgentID,
 		arg.Name,
 		arg.Category,
 		arg.Content,
 	)
-	return err
+	var i AgentDocument
+	err := row.Scan(
+		&i.ID,
+		&i.AgentID,
+		&i.Name,
+		&i.Category,
+		&i.Content,
+		&i.Version,
+		&i.IsActive,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }

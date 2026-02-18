@@ -11,7 +11,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/ids"
 )
 
-const InsertSummary = `-- name: InsertSummary :exec
+const InsertSummary = `-- name: InsertSummary :one
 INSERT INTO memory_summaries (
         id,
         agent_id,
@@ -30,6 +30,7 @@ VALUES (
         ?6,
         datetime('now')
     )
+RETURNING id, agent_id, session_key, content, from_msg_idx, to_msg_idx, created_at
 `
 
 type InsertSummaryParams struct {
@@ -61,8 +62,9 @@ type InsertSummaryParams struct {
 //	        ?6,
 //	        datetime('now')
 //	    )
-func (q *Queries) InsertSummary(ctx context.Context, arg InsertSummaryParams) error {
-	_, err := q.db.ExecContext(ctx, InsertSummary,
+//	RETURNING id, agent_id, session_key, content, from_msg_idx, to_msg_idx, created_at
+func (q *Queries) InsertSummary(ctx context.Context, arg InsertSummaryParams) (MemorySummary, error) {
+	row := q.db.QueryRowContext(ctx, InsertSummary,
 		arg.ID,
 		arg.AgentID,
 		arg.SessionKey,
@@ -70,7 +72,17 @@ func (q *Queries) InsertSummary(ctx context.Context, arg InsertSummaryParams) er
 		arg.FromMsgIdx,
 		arg.ToMsgIdx,
 	)
-	return err
+	var i MemorySummary
+	err := row.Scan(
+		&i.ID,
+		&i.AgentID,
+		&i.SessionKey,
+		&i.Content,
+		&i.FromMsgIdx,
+		&i.ToMsgIdx,
+		&i.CreatedAt,
+	)
+	return i, err
 }
 
 const ListSummaries = `-- name: ListSummaries :many

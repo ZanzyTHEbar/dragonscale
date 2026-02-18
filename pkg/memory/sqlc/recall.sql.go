@@ -241,7 +241,7 @@ func (q *Queries) GetRecallItemsByIDs(ctx context.Context, arg GetRecallItemsByI
 	return items, nil
 }
 
-const InsertRecallItem = `-- name: InsertRecallItem :exec
+const InsertRecallItem = `-- name: InsertRecallItem :one
 INSERT INTO recall_items (
         id,
         agent_id,
@@ -270,6 +270,7 @@ VALUES (
         datetime('now'),
         datetime('now')
     )
+RETURNING id, agent_id, session_key, role, sector, importance, salience, decay_rate, content, tags, created_at, updated_at
 `
 
 type InsertRecallItemParams struct {
@@ -315,8 +316,9 @@ type InsertRecallItemParams struct {
 //	        datetime('now'),
 //	        datetime('now')
 //	    )
-func (q *Queries) InsertRecallItem(ctx context.Context, arg InsertRecallItemParams) error {
-	_, err := q.db.ExecContext(ctx, InsertRecallItem,
+//	RETURNING id, agent_id, session_key, role, sector, importance, salience, decay_rate, content, tags, created_at, updated_at
+func (q *Queries) InsertRecallItem(ctx context.Context, arg InsertRecallItemParams) (RecallItem, error) {
+	row := q.db.QueryRowContext(ctx, InsertRecallItem,
 		arg.ID,
 		arg.AgentID,
 		arg.SessionKey,
@@ -328,10 +330,25 @@ func (q *Queries) InsertRecallItem(ctx context.Context, arg InsertRecallItemPara
 		arg.Content,
 		arg.Tags,
 	)
-	return err
+	var i RecallItem
+	err := row.Scan(
+		&i.ID,
+		&i.AgentID,
+		&i.SessionKey,
+		&i.Role,
+		&i.Sector,
+		&i.Importance,
+		&i.Salience,
+		&i.DecayRate,
+		&i.Content,
+		&i.Tags,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }
 
-const InsertSessionMessage = `-- name: InsertSessionMessage :exec
+const InsertSessionMessage = `-- name: InsertSessionMessage :one
 INSERT INTO recall_items (
         id,
         agent_id,
@@ -360,6 +377,7 @@ VALUES (
         datetime('now'),
         datetime('now')
     )
+RETURNING id, agent_id, session_key, role, sector, importance, salience, decay_rate, content, tags, created_at, updated_at
 `
 
 type InsertSessionMessageParams struct {
@@ -400,15 +418,31 @@ type InsertSessionMessageParams struct {
 //	        datetime('now'),
 //	        datetime('now')
 //	    )
-func (q *Queries) InsertSessionMessage(ctx context.Context, arg InsertSessionMessageParams) error {
-	_, err := q.db.ExecContext(ctx, InsertSessionMessage,
+//	RETURNING id, agent_id, session_key, role, sector, importance, salience, decay_rate, content, tags, created_at, updated_at
+func (q *Queries) InsertSessionMessage(ctx context.Context, arg InsertSessionMessageParams) (RecallItem, error) {
+	row := q.db.QueryRowContext(ctx, InsertSessionMessage,
 		arg.ID,
 		arg.AgentID,
 		arg.SessionKey,
 		arg.Role,
 		arg.Content,
 	)
-	return err
+	var i RecallItem
+	err := row.Scan(
+		&i.ID,
+		&i.AgentID,
+		&i.SessionKey,
+		&i.Role,
+		&i.Sector,
+		&i.Importance,
+		&i.Salience,
+		&i.DecayRate,
+		&i.Content,
+		&i.Tags,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }
 
 const ListRecallItems = `-- name: ListRecallItems :many

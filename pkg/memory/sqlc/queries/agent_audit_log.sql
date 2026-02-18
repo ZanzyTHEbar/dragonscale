@@ -1,5 +1,5 @@
 -- Agent Audit Log queries
--- name: InsertAuditEntry :exec
+-- name: InsertAuditEntry :one
 INSERT INTO agent_audit_log (
         id,
         agent_id,
@@ -21,7 +21,8 @@ VALUES (
         sqlc.arg(output),
         sqlc.arg(duration_ms),
         datetime('now')
-    );
+    )
+RETURNING id, agent_id, session_key, action, target, input, output, duration_ms, created_at;
 -- name: ListAuditEntries :many
 SELECT id,
     agent_id,
