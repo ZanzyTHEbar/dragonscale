@@ -1,119 +1,227 @@
 
-# 🦐 PicoClaw Roadmap
+# PicoClaw Roadmap
 
-> [!WARNING]
-> This roadmap is a work in progress. It is not yet complete and is subject to change.
->
-> **Vision**: To build the ultimate lightweight, secure, and fully autonomous AI Agent infrastructure.automate the mundane, unleash your creativity
+> **Vision**: Ultra-lightweight, secure, fully autonomous AI agent infrastructure.
+> Automate the mundane, unleash your creativity.
 
 ---
 
-## 🚀 1. Core Optimization: Extreme Lightweight
+## 1. Core Optimization
 
-*Our defining characteristic. We fight software bloat to ensure PicoClaw runs smoothly on the smallest embedded devices.*
+*< 20MB on 64MB RAM embedded boards. RAM > binary size.*
 
-* [**Memory Footprint Reduction**](https://github.com/sipeed/picoclaw/issues/346) 
-  * **Goal**: Run smoothly on 64MB RAM embedded boards (e.g., low-end RISC-V SBCs) with the core process consuming < 20MB.
-  * **Context**: RAM is expensive and scarce on edge devices. Memory optimization takes precedence over storage size.
-  * **Action**: Analyze memory growth between releases, remove redundant dependencies, and optimize data structures.
-
-
-## 🛡️ 2. Security Hardening: Defense in Depth
-
-*Paying off early technical debt. We invite security experts to help build a "Secure-by-Default" agent.*
-
-* **Input Defense & Permission Control**
-  * **Prompt Injection Defense**: Harden JSON extraction logic to prevent LLM manipulation.
-  * **Tool Abuse Prevention**: Strict parameter validation to ensure generated commands stay within safe boundaries.
-  * **SSRF Protection**: Built-in blocklists for network tools to prevent accessing internal IPs (LAN/Metadata services).
-
-
-* **Sandboxing & Isolation**
-  * **Filesystem Sandbox**: Restrict file R/W operations to specific directories only.
-  * **Context Isolation**: Prevent data leakage between different user sessions or channels.
-  * **Privacy Redaction**: Auto-redact sensitive info (API Keys, PII) from logs and standard outputs.
-
-
-* **Authentication & Secrets**
-  * **Crypto Upgrade**: Adopt modern algorithms like `ChaCha20-Poly1305` for secret storage.
-  * **OAuth 2.0 Flow**: Deprecate hardcoded API keys in the CLI; move to secure OAuth flows.
-
-
-
-## 🔌 3. Connectivity: Protocol-First Architecture
-
-*Connect every model, reach every platform.*
-
-* **Provider**
-  * [**Architecture Upgrade**](https://github.com/sipeed/picoclaw/issues/283): Refactor from "Vendor-based" to "Protocol-based" classification (e.g., OpenAI-compatible, Ollama-compatible). *(Status: In progress by @Daming, ETA 5 days)*
-  * **Local Models**: Deep integration with **Ollama**, **vLLM**, **LM Studio**, and **Mistral** (local inference).
-  * **Online Models**: Continued support for frontier closed-source models.
-
-
-* **Channel**
-  * **IM Matrix**: QQ, WeChat (Work), DingTalk, Feishu (Lark), Telegram, Discord, WhatsApp, LINE, Slack, Email, KOOK, Signal, ...
-  * **Standards**: Support for the **OneBot** protocol.
-  * [**attachment**](https://github.com/sipeed/picoclaw/issues/348): Native handling of images, audio, and video attachments.
-
-
-* **Skill Marketplace**
-  * [**Discovery skills**](https://github.com/sipeed/picoclaw/issues/287): Implement `find_skill` to automatically discover and install skills from the [GitHub Skills Repo] or other registries.
-
-
-
-## 🧠 4. Advanced Capabilities: From Chatbot to Agentic AI
-
-*Beyond conversation—focusing on action and collaboration.*
-
-* **Operations**
-  * [**MCP Support**](https://github.com/sipeed/picoclaw/issues/290): Native support for the **Model Context Protocol (MCP)**.
-  * [**Browser Automation**](https://github.com/sipeed/picoclaw/issues/293): Headless browser control via CDP (Chrome DevTools Protocol) or ActionBook.
-  * [**Mobile Operation**](https://github.com/sipeed/picoclaw/issues/292): Android device control (similar to BotDrop).
-
-
-* **Multi-Agent Collaboration**
-  * [**Basic Multi-Agent**](https://github.com/sipeed/picoclaw/issues/294) implement
-  * [**Model Routing**](https://github.com/sipeed/picoclaw/issues/295): "Smart Routing" — dispatch simple tasks to small/local models (fast/cheap) and complex tasks to SOTA models (smart).
-  * [**Swarm Mode**](https://github.com/sipeed/picoclaw/issues/284): Collaboration between multiple PicoClaw instances on the same network.
-  * [**AIEOS**](https://github.com/sipeed/picoclaw/issues/296): Exploring AI-Native Operating System interaction paradigms.
-
-
-
-## 📚 5. Developer Experience (DevEx) & Documentation
-
-*Lowering the barrier to entry so anyone can deploy in minutes.*
-
-* [**QuickGuide (Zero-Config Start)**](https://github.com/sipeed/picoclaw/issues/350)
-  * Interactive CLI Wizard: If launched without config, automatically detect the environment and guide the user through Token/Network setup step-by-step.
-
-
-* **Comprehensive Documentation**
-  * **Platform Guides**: Dedicated guides for Windows, macOS, Linux, and Android.
-  * **Step-by-Step Tutorials**: "Babysitter-level" guides for configuring Providers and Channels.
-  * **AI-Assisted Docs**: Using AI to auto-generate API references and code comments (with human verification to prevent hallucinations).
-
-
-
-## 🤖 6. Engineering: AI-Powered Open Source
-
-*Born from Vibe Coding, we continue to use AI to accelerate development.*
-
-* **AI-Enhanced CI/CD**
-  * Integrate AI for automated Code Review, Linting, and PR Labeling.
-  * **Bot Noise Reduction**: Optimize bot interactions to keep PR timelines clean.
-  * **Issue Triage**: AI agents to analyze incoming issues and suggest preliminary fixes.
-
-
-
-## 🎨 7. Brand & Community
-
-* [**Logo Design**](https://github.com/sipeed/picoclaw/issues/297): We are looking for a **Mantis Shrimp (Stomatopoda)** logo design!
-  * *Concept*: Needs to reflect "Small but Mighty" and "Lightning Fast Strikes."
-
-
+- **Memory footprint reduction** — Profile per-release, strip redundant deps, optimize data structures.
 
 ---
 
-### 🤝 Call for Contributions
+## 2. Security Hardening
 
-We welcome community contributions to any item on this roadmap! Please comment on the relevant Issue or submit a PR. Let's build the best Edge AI Agent together!
+- **Prompt injection defense** — Harden JSON extraction against LLM manipulation.
+- **Tool abuse prevention** — Strict parameter validation, command boundary enforcement.
+- **SSRF protection** — Blocklists for internal IPs (LAN/metadata).
+- **Filesystem sandbox** — Restrict R/W to configured workspace.
+- **Context isolation** — No data leakage between sessions/channels.
+- **Privacy redaction** — Auto-strip API keys, PII from logs.
+- **Crypto upgrade** — `ChaCha20-Poly1305` for secret storage.
+- **OAuth 2.0 flow** — Replace hardcoded API keys.
+
+---
+
+## 3. Connectivity
+
+- **Protocol-first providers** — Classify by protocol (OpenAI-compatible, Ollama-compatible), not vendor.
+- **Local inference** — Ollama, vLLM, LM Studio, Mistral.
+- **Channel matrix** — Telegram, Discord, QQ, WeChat, DingTalk, Feishu, WhatsApp, LINE, Slack, Email, Signal, KOOK.
+- **OneBot support** — Standard IM protocol.
+- **Attachments** — Native image, audio, video handling.
+
+---
+
+## 4. Skill Graphs
+
+*Single skill files can't hold domain depth. Skill graphs solve this.*
+
+A skill graph is a network of skill files connected with `[[wikilinks]]`. Each node is one complete thought/technique/skill. Links carry meaning because they're woven into prose. The agent follows relevant paths, skips what doesn't matter.
+
+- **Wikilink resolution in `SkillsLoader`** — Parse `[[skill-name]]` links in skill markdown. Resolve to file paths. Expose link targets to the agent without loading full content.
+- **YAML frontmatter scanning** — Agent reads `description` fields from frontmatter to decide relevance before loading file bodies. Already partially implemented; extend to support `links`, `tags`, `domain` fields.
+- **Maps of Content (MOCs)** — Special skill files that organize clusters of related skills into navigable sub-topics. MOC index → skill descriptions → wikilinks → sections → full content.
+- **Progressive skill disclosure** — Mirror the existing tool disclosure pattern: `skill_search` (fuzzy match on name/description/tags) → `skill_read` (load specific node) → `skill_traverse` (follow a wikilink chain). Most decisions happen before reading a single full file.
+- **Skill graph index** — Root `INDEX.md` per skill graph that maps the landscape. Agent reads the index, understands topology, follows links relevant to the current task.
+- **Recursive graph traversal** — Same skill discovery pattern applies recursively inside the graph. Every node has a scannable description; every wikilink carries contextual meaning.
+- **Domain skill graph templates** — Starter graphs for common domains: trading (risk mgmt, market psychology, position sizing, technical analysis), legal (contract patterns, compliance, jurisdiction, precedent chains), company (org structure, product knowledge, processes, onboarding).
+
+*Extends*: `pkg/skills/loader.go` — currently flat directory scan → add graph-aware traversal.
+
+---
+
+## 5. Context Management
+
+*The agent loop currently appends forever. These features give it autonomy over its own context window.*
+
+### 5a. Observational Memory
+
+*Ref: Mastra OM — 94.87% LongMemEval, text-based, prompt-cacheable.*
+
+Compress raw conversation into prioritized observations. Two-block context: observations (stable prefix, cacheable) + uncompressed tail (append-only until threshold).
+
+- **Observer agent** — When uncompressed messages hit configurable token threshold (default 30K), a background pass compresses them into observation entries appended to the observation block. Format: `DATE EMOJI TIMESTAMP observation_text`. Emoji encodes priority: critical / notable / informational.
+- **Reflector agent** — When observations hit their own threshold (default 40K), garbage-collect low-priority observations. Infrequent; only time the full cache invalidates.
+- **Three-date model** — Each observation carries: observation date, referenced date, relative date. Improves temporal reasoning.
+- **Prompt cache alignment** — Observation block is a stable prefix. Messages append until threshold → full cache hit every turn. Observation run → partial cache hit. Reflection → full invalidation (rare).
+- **Async observation** — Observation runs outside the conversation loop in a background goroutine. Conversation doesn't block.
+
+*Extends*: `pkg/memory/store/` — new `ObservationStore` alongside existing 3-tier MemGPT.
+
+### 5b. Focus Primitives
+
+*Ref: Focus (arxiv 2601.07190) — slime mold-inspired autonomous context pruning. 22.7% token reduction, identical accuracy.*
+
+Give the agent two new tool primitives: `start_focus` and `complete_focus`. The agent autonomously decides when to consolidate learnings and prune raw history.
+
+- **`start_focus` tool** — Agent declares what it's investigating. Creates a checkpoint marker in the context.
+- **`complete_focus` tool** — Agent summarizes: what was attempted, what was learned, outcome. System appends summary to persistent Knowledge block, deletes everything between the checkpoint and current step.
+- **Sawtooth context pattern** — Context grows during exploration, collapses during consolidation. Converts monotonic growth into bounded oscillation.
+- **Aggressive prompting** — System prompt instructs the agent to consolidate every 10-15 tool calls. Passive prompting yields only 6% savings; explicit instructions yield 40%+.
+
+*Extends*: `pkg/tools/` — new `focus.go` with `start_focus`/`complete_focus` tools. `pkg/agent/loop.go` — checkpoint/prune logic.
+
+### 5c. Lossless Context Management (LCM)
+
+*Ref: Volt (papers.voltropy.com/LCM) — +29.2 pts avg on OOLONG, beats Claude Code at every context length 32K–1M.*
+
+Deterministic engine compresses old messages into a hierarchical DAG while keeping lossless pointers to every original. No model autonomy over memory scripts — the compression engine is deterministic.
+
+- **Hierarchical DAG** — Messages compress into tree nodes. Each node stores a summary + pointers to original messages. Multiple compression levels: raw → chunk summary → section summary → session summary.
+- **Lossless pointers** — Every compressed node retains byte-offset pointers to original content in the session store. Agent can "zoom in" on any summary to retrieve the original messages on demand.
+- **Deterministic compression** — No LLM call in the compression path. Use extractive summarization + token counting heuristics. Predictable, reproducible, auditable.
+- **Context budget allocation** — Given a context window size, allocate tokens across: system prompt, observations, DAG summaries, raw tail, tool results. Each category has a configurable max percentage.
+
+*Extends*: `pkg/memory/` — new `dag/` package. `pkg/agent/context.go` — context budget allocator.
+
+### 5d. RLM Memory Controller
+
+*Dedicated controller layer for Memory I/O — optimizes token usage, call frequency, read/write scheduling.*
+
+- **Read coalescing** — Batch multiple memory reads into a single DB round-trip. Reduce I/O calls per agent loop iteration.
+- **Write buffering** — Buffer memory writes and flush on consolidation boundaries (aligned with Focus checkpoints).
+- **Token budget enforcement** — Hard cap on tokens loaded from memory per turn. Controller decides what to fetch given the budget, using importance scores from the existing scoring pipeline.
+- **Adaptive fetch** — Controller adjusts retrieval depth based on task complexity signal (number of tool calls, error rate, context pressure).
+- **Recursive Language Models**: Utilize a full in-process RLM agent system to manage the memory store.
+
+*Extends*: `pkg/memory/store/` — new `Controller` layer wrapping `MemoryStore`.
+
+---
+
+## 6. Agentic Retrieval (A-RAG)
+
+*Ref: arxiv 2602.03442 — 94.5% HotpotQA, 50% fewer tokens than naive RAG.*
+
+*The agent decides what to search, how to search, and when to stop.*
+
+Currently retrieval is a single `memory search` call. A-RAG exposes hierarchical retrieval interfaces and lets the agent reason about which to use.
+
+- **`keyword_search` tool** — Exact lexical matching via FTS5 + BM25. Fast, precise. Already exists in delegate; promote to agent-visible tool.
+- **`semantic_search` tool** — Dense passage retrieval via vector ANN. Already exists; promote to agent-visible tool with explicit control over top-k, threshold.
+- **`chunk_read` tool** — Load full document/chunk content by ID. Agent follows up after search to read specific chunks. Avoids loading irrelevant content.
+- **Agent-driven retrieval loop** — Agent autonomously chains: keyword_search → filter → semantic_search → chunk_read. Decides when evidence is sufficient to answer.
+- **Test-time compute scaling** — Allow configurable max retrieval steps (default 10). More steps = higher accuracy at higher cost. Agent stops early when confident.
+- **Context efficiency** — Hierarchical design yields ~50% token reduction vs. single-shot retrieval with higher accuracy.
+
+*Extends*: `pkg/tools/` — new `retrieval.go` exposing keyword_search, semantic_search, chunk_read. `pkg/memory/delegate/` — already has the primitives; wire them as agent-callable tools.
+
+---
+
+## 7. Intelligent Delegation Protocol
+
+*Ref: Google DeepMind "Intelligent AI Delegation" — delegation as protocol, not prompt.*
+
+Current multi-agent: agent A spawns agent B. No formal responsibility structure. These items build enterprise-grade delegation.
+
+- **Dynamic capability assessment** — Before delegating, evaluate: delegatee capability, resource availability, risk, cost, verifiability, reversibility. Store capability profiles per agent/model in the KV store.
+- **Adaptive re-assignment** — Monitor delegatee progress. If underperforming (latency, error rate, quality signal), reassign mid-execution to a different agent or escalate to human.
+- **Audit log** — Append-only structured log of every delegation: who delegated, to whom, task description, constraints, outcome, verification status. Already have `agent_audit_log` table; extend schema for delegation events.
+- **Verifiable completion** — Delegatee must prove what it did. Completion report includes: actions taken, artifacts produced, verification evidence. Delegator validates before accepting.
+- **Trust calibration** — Maintain per-agent trust scores based on historical delegation outcomes. Over-trust (auto-accept everything) and under-trust (re-do everything) are both failure modes. Calibrate dynamically.
+- **Bounded authority** — Delegation carries explicit permission scopes. Delegatee cannot exceed the permission boundary of its delegator. Enforced at the tool registry level.
+- **Resilience** — Avoid monoculture: don't route all delegations to the same model. Diversify across providers. Circuit-breaker on provider failures.
+
+*Extends*: `pkg/agent/loop.go` (spawn/subagent logic), `pkg/memory/sqlc/queries/agent_audit_log.sql`, `pkg/tools/` (delegation tools).
+
+---
+
+## 8. Operations
+
+- **MCP support** — Native Model Context Protocol integration.
+- **Browser automation** — Headless CDP / ActionBook.
+- **Mobile operation** — Android device control.
+
+---
+
+## 9. Multi-Agent Core
+
+- **Model routing** — Small/local models for easy tasks, SOTA for hard ones.
+- **Swarm mode** — Multi-instance collaboration on LAN.
+- **AIEOS** — AI-native OS interaction paradigms.
+
+---
+
+## 10. Developer Experience
+
+- **Zero-config wizard** — Interactive CLI onboarding.
+- **Platform guides** — Windows, macOS, Linux, Android.
+- **AI-assisted docs** — Auto-generated API references with human verification.
+
+---
+
+## 11. Engineering
+
+- **AI-enhanced CI/CD** — Automated code review, linting, PR labeling.
+- **Issue triage** — AI agents analyze incoming issues, suggest fixes.
+
+---
+
+## 12. Brand & Community
+
+- **Logo** — Mantis Shrimp. Small but mighty. Lightning fast strikes.
+
+---
+
+### Dependency Graph
+
+```mermaid
+flowchart LR
+    SG[4. Skill Graphs] --> AR[6. Agentic Retrieval]
+    OM[5a. Observational Memory] --> FP[5b. Focus Primitives]
+    FP --> LCM[5c. LCM DAG]
+    LCM --> RLM[5d. RLM Controller]
+    AR --> DL[7. Delegation Protocol]
+    RLM --> DL
+    DL --> SW[9. Multi-Agent Core]
+
+    style SG fill:#2d1b4e,stroke:#e066ff,stroke-width:2px,color:#fff
+    style OM fill:#0d2137,stroke:#4d94ff,stroke-width:2px,color:#fff
+    style FP fill:#0d2137,stroke:#4d94ff,stroke-width:2px,color:#fff
+    style LCM fill:#0d2137,stroke:#4d94ff,stroke-width:2px,color:#fff
+    style RLM fill:#0d2137,stroke:#4d94ff,stroke-width:2px,color:#fff
+    style AR fill:#0b2e1a,stroke:#2eb82e,stroke-width:2px,color:#fff
+    style DL fill:#2e0b0b,stroke:#ff6b6b,stroke-width:2px,color:#fff
+    style SW fill:#2e1f0b,stroke:#ffab00,stroke-width:2px,color:#fff
+```
+
+### Priority Order
+
+| Phase | Items | Rationale |
+|-------|-------|-----------|
+| **P0** | Observational Memory, Focus Primitives, Skill Graphs | Immediate token savings + domain depth. Builds on existing `pkg/memory/` and `pkg/skills/`. |
+| **P1** | Agentic Retrieval, LCM DAG, Audit Log | Unlocks agent-driven knowledge navigation and context scaling. |
+| **P2** | RLM Controller, Delegation Protocol, Trust Calibration | Full autonomous delegation requires the memory + retrieval foundations from P0/P1. |
+
+### References
+
+- Skill Graphs: [arscontexta](https://github.com/arscontexta) — 249-file skill graph for knowledge systems
+- Observational Memory: [Mastra OM](https://mastra.ai) — 94.87% LongMemEval, text-based, prompt-cacheable
+- Lossless Context Management: [Volt/LCM](https://papers.voltropy.com/LCM) — +29.2 avg on OOLONG benchmark
+- Focus Primitives: [arxiv 2601.07190](https://arxiv.org/abs/2601.07190) — Physarum-inspired autonomous context pruning
+- Agentic RAG: [arxiv 2602.03442](https://arxiv.org/abs/2602.03442) — 94.5% HotpotQA, hierarchical retrieval
+- Intelligent Delegation: [Google DeepMind](https://arxiv.org/abs/2510.26493) — delegation as protocol, not prompt
