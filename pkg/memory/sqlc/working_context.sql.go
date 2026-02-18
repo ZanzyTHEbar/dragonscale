@@ -17,11 +17,12 @@ SELECT agent_id,
 FROM working_context
 WHERE agent_id = ?1
     AND session_key = ?2
+LIMIT 1
 `
 
 type GetWorkingContextParams struct {
-	AgentID    string `json:"agent_id"`
-	SessionKey string `json:"session_key"`
+	AgentID    string `db:"agent_id" json:"agent_id"`
+	SessionKey string `db:"session_key" json:"session_key"`
 }
 
 // Working Context queries
@@ -33,6 +34,7 @@ type GetWorkingContextParams struct {
 //	FROM working_context
 //	WHERE agent_id = ?1
 //	    AND session_key = ?2
+//	LIMIT 1
 func (q *Queries) GetWorkingContext(ctx context.Context, arg GetWorkingContextParams) (WorkingContext, error) {
 	row := q.db.QueryRowContext(ctx, GetWorkingContext, arg.AgentID, arg.SessionKey)
 	var i WorkingContext
@@ -59,9 +61,9 @@ SET content = excluded.content,
 `
 
 type UpsertWorkingContextParams struct {
-	AgentID    string `json:"agent_id"`
-	SessionKey string `json:"session_key"`
-	Content    string `json:"content"`
+	AgentID    string `db:"agent_id" json:"agent_id"`
+	SessionKey string `db:"session_key" json:"session_key"`
+	Content    string `db:"content" json:"content"`
 }
 
 // UpsertWorkingContext

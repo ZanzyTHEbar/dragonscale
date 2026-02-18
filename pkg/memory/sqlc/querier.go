@@ -6,14 +6,81 @@ package sqlc
 
 import (
 	"context"
+
+	"github.com/sipeed/picoclaw/pkg/ids"
 )
 
 type Querier interface {
+	//AddAgentMention
+	//
+	//  INSERT INTO agent_mentions (
+	//      id, conversation_id, message_id, kind, target_id, raw, metadata_json
+	//  )
+	//  VALUES (?, ?, ?, ?, ?, ?, ?)
+	//  RETURNING id, conversation_id, message_id, kind, target_id, raw, metadata_json, created_at, updated_at
+	AddAgentMention(ctx context.Context, arg AddAgentMentionParams) (AgentMention, error)
+	//AddAgentMessage
+	//
+	//  INSERT INTO agent_messages (id, conversation_id, role, content, metadata_json)
+	//  VALUES (?, ?, ?, ?, ?)
+	//  RETURNING id, conversation_id, role, content, metadata_json, created_at, updated_at
+	AddAgentMessage(ctx context.Context, arg AddAgentMessageParams) (AgentMessage, error)
+	//AddAgentMessageRevision
+	//
+	//  INSERT INTO agent_message_revisions (
+	//      id, message_id, editor, old_content, new_content, metadata_json
+	//  )
+	//  VALUES (?, ?, ?, ?, ?, ?)
+	//  RETURNING id, message_id, editor, old_content, new_content, metadata_json, created_at, updated_at
+	AddAgentMessageRevision(ctx context.Context, arg AddAgentMessageRevisionParams) (AgentMessageRevision, error)
+	//AddAgentRunState
+	//
+	//  INSERT INTO agent_run_states (id, run_id, step_index, state, snapshot_json)
+	//  VALUES (?, ?, ?, ?, ?)
+	//  RETURNING id, run_id, step_index, state, snapshot_json, created_at, updated_at
+	AddAgentRunState(ctx context.Context, arg AddAgentRunStateParams) (AgentRunState, error)
+	//AddAgentStateTransition
+	//
+	//  INSERT INTO agent_state_transitions (
+	//      id, run_id, step_index, from_state, to_state, trigger, at, meta_json, error
+	//  )
+	//  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+	//  RETURNING id, run_id, step_index, from_state, to_state, "trigger", at, meta_json, error, created_at, updated_at
+	AddAgentStateTransition(ctx context.Context, arg AddAgentStateTransitionParams) (AgentStateTransition, error)
+	//AddAgentThreadMessage
+	//
+	//  INSERT INTO agent_thread_messages (id, thread_id, role, content, metadata_json)
+	//  VALUES (?, ?, ?, ?, ?)
+	//  RETURNING id, thread_id, role, content, metadata_json, created_at, updated_at
+	AddAgentThreadMessage(ctx context.Context, arg AddAgentThreadMessageParams) (AgentThreadMessage, error)
+	//AddAgentToolResult
+	//
+	//  INSERT INTO agent_tool_results (
+	//      id, conversation_id, run_id, step_index,
+	//      tool_call_id, tool_name, full_key, preview, chunk_count, metadata_json
+	//  )
+	//  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	//  RETURNING id, conversation_id, run_id, step_index, tool_call_id, tool_name, full_key, preview, chunk_count, metadata_json, created_at, updated_at
+	AddAgentToolResult(ctx context.Context, arg AddAgentToolResultParams) (AgentToolResult, error)
+	//ClaimJobByID
+	//
+	//  UPDATE jobs
+	//  SET status = 'running',
+	//      attempts = attempts + 1,
+	//      locked_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+	//      locked_by = ?1,
+	//      updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+	//      last_error = NULL
+	//  WHERE id = ?2 AND status = 'queued'
+	//  RETURNING id, kind, status, run_at, attempts, max_attempts, locked_at, locked_by, payload_json, dedupe_key, last_error, created_at, updated_at, completed_at
+	ClaimJobByID(ctx context.Context, arg ClaimJobByIDParams) (Job, error)
 	//CountArchivalChunks
 	//
 	//  SELECT COUNT(*)
-	//  FROM archival_chunks
-	CountArchivalChunks(ctx context.Context) (int64, error)
+	//  FROM archival_chunks ac
+	//      JOIN recall_items ri ON ac.recall_id = ri.id
+	//  WHERE ri.agent_id = ?1
+	CountArchivalChunks(ctx context.Context, arg CountArchivalChunksParams) (int64, error)
 	//CountAuditEntries
 	//
 	//  SELECT COUNT(*)
@@ -27,6 +94,10 @@ type Querier interface {
 	//  WHERE agent_id = ?1
 	//      AND action = ?2
 	CountAuditEntriesByAction(ctx context.Context, arg CountAuditEntriesByActionParams) (int64, error)
+	//CountJobsByStatus
+	//
+	//  SELECT status, count(*) AS count FROM jobs GROUP BY status
+	CountJobsByStatus(ctx context.Context) ([]CountJobsByStatusRow, error)
 	//CountRecallItems
 	//
 	//  SELECT COUNT(*)
@@ -45,6 +116,51 @@ type Querier interface {
 	//      AND session_key = ?2
 	//      AND tags = 'session-message'
 	CountSessionMessages(ctx context.Context, arg CountSessionMessagesParams) (int64, error)
+	//CreateAgentCheckpoint
+	//
+	//  INSERT INTO agent_checkpoints (id, conversation_id, name, run_state_id, metadata_json)
+	//  VALUES (?, ?, ?, ?, ?)
+	//  RETURNING id, conversation_id, name, run_state_id, metadata_json, created_at, updated_at
+	CreateAgentCheckpoint(ctx context.Context, arg CreateAgentCheckpointParams) (AgentCheckpoint, error)
+	//CreateAgentConversation
+	//
+	//  INSERT INTO agent_conversations (id, title)
+	//  VALUES (?, ?)
+	//  RETURNING id, title, created_at, updated_at
+	CreateAgentConversation(ctx context.Context, arg CreateAgentConversationParams) (AgentConversation, error)
+	//CreateAgentConversationFork
+	//
+	//  INSERT INTO agent_conversation_forks (
+	//      id, parent_conversation_id, child_conversation_id, checkpoint_id, metadata_json
+	//  )
+	//  VALUES (?, ?, ?, ?, ?)
+	//  RETURNING id, parent_conversation_id, child_conversation_id, checkpoint_id, metadata_json, created_at, updated_at
+	CreateAgentConversationFork(ctx context.Context, arg CreateAgentConversationForkParams) (AgentConversationFork, error)
+	//CreateAgentConversationLink
+	//
+	//  INSERT INTO agent_conversation_links (
+	//      id, conversation_id, linked_conversation_id, kind, metadata_json
+	//  )
+	//  VALUES (?, ?, ?, ?, ?)
+	//  RETURNING id, conversation_id, linked_conversation_id, kind, metadata_json, created_at, updated_at
+	CreateAgentConversationLink(ctx context.Context, arg CreateAgentConversationLinkParams) (AgentConversationLink, error)
+	//CreateAgentRun
+	//
+	//  INSERT INTO agent_runs (id, conversation_id, status, metadata_json)
+	//  VALUES (?, ?, ?, ?)
+	//  RETURNING id, conversation_id, status, metadata_json, created_at, updated_at
+	CreateAgentRun(ctx context.Context, arg CreateAgentRunParams) (AgentRun, error)
+	//CreateAgentThread
+	//
+	//  INSERT INTO agent_threads (id, conversation_id, title, metadata_json)
+	//  VALUES (?, ?, ?, ?)
+	//  RETURNING id, conversation_id, title, metadata_json, created_at, updated_at
+	CreateAgentThread(ctx context.Context, arg CreateAgentThreadParams) (AgentThread, error)
+	//DeleteAgentConversationLink
+	//
+	//  DELETE FROM agent_conversation_links
+	//  WHERE conversation_id = ? AND linked_conversation_id = ? AND kind = ?
+	DeleteAgentConversationLink(ctx context.Context, arg DeleteAgentConversationLinkParams) error
 	//DeleteArchivalChunksByRecall
 	//
 	//  DELETE FROM archival_chunks
@@ -66,32 +182,98 @@ type Querier interface {
 	//
 	//  DELETE FROM recall_items
 	//  WHERE id = ?1
+	//      AND agent_id = ?2
 	DeleteRecallItem(ctx context.Context, arg DeleteRecallItemParams) error
+	//EnqueueJob
+	//
+	//  INSERT INTO jobs (
+	//      id, kind, status, run_at, max_attempts, payload_json, dedupe_key
+	//  )
+	//  VALUES (
+	//      ?1,
+	//      ?2,
+	//      'queued',
+	//      coalesce(?3, strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+	//      coalesce(?4, 3),
+	//      coalesce(?5, '{}'),
+	//      ?6
+	//  ) ON CONFLICT(kind, dedupe_key)
+	//  WHERE dedupe_key IS NOT NULL DO UPDATE
+	//  SET status = 'queued',
+	//      run_at = excluded.run_at,
+	//      max_attempts = excluded.max_attempts,
+	//      payload_json = excluded.payload_json,
+	//      attempts = 0,
+	//      last_error = NULL,
+	//      updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+	//  RETURNING id, kind, status, run_at, attempts, max_attempts, locked_at, locked_by, payload_json, dedupe_key, last_error, created_at, updated_at, completed_at
+	EnqueueJob(ctx context.Context, arg EnqueueJobParams) (Job, error)
+	//FindNextRunnableJob
+	//
+	//  SELECT id FROM jobs
+	//  WHERE status = 'queued'
+	//    AND run_at <= strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+	//  ORDER BY run_at ASC, created_at ASC
+	//  LIMIT 1
+	FindNextRunnableJob(ctx context.Context) (ids.UUID, error)
+	//GetAgentCheckpointByConversationIDAndName
+	//
+	//  SELECT id, conversation_id, name, run_state_id, metadata_json, created_at, updated_at FROM agent_checkpoints
+	//  WHERE conversation_id = ? AND name = ?
+	//  LIMIT 1
+	GetAgentCheckpointByConversationIDAndName(ctx context.Context, arg GetAgentCheckpointByConversationIDAndNameParams) (AgentCheckpoint, error)
+	//GetAgentConversation
+	//
+	//  SELECT id, title, created_at, updated_at FROM agent_conversations WHERE id = ? LIMIT 1
+	GetAgentConversation(ctx context.Context, arg GetAgentConversationParams) (AgentConversation, error)
+	//GetAgentConversationForkByChildConversationID
+	//
+	//  SELECT id, parent_conversation_id, child_conversation_id, checkpoint_id, metadata_json, created_at, updated_at FROM agent_conversation_forks
+	//  WHERE child_conversation_id = ?
+	//  LIMIT 1
+	GetAgentConversationForkByChildConversationID(ctx context.Context, arg GetAgentConversationForkByChildConversationIDParams) (AgentConversationFork, error)
+	//GetAgentRunStateByID
+	//
+	//  SELECT id, run_id, step_index, state, snapshot_json, created_at, updated_at FROM agent_run_states
+	//  WHERE id = ?
+	//  LIMIT 1
+	GetAgentRunStateByID(ctx context.Context, arg GetAgentRunStateByIDParams) (AgentRunState, error)
+	//GetAgentToolResultByRunIDAndToolCallID
+	//
+	//  SELECT id, conversation_id, run_id, step_index, tool_call_id, tool_name, full_key, preview, chunk_count, metadata_json, created_at, updated_at FROM agent_tool_results
+	//  WHERE run_id = ? AND tool_call_id = ?
+	//  LIMIT 1
+	GetAgentToolResultByRunIDAndToolCallID(ctx context.Context, arg GetAgentToolResultByRunIDAndToolCallIDParams) (AgentToolResult, error)
 	//GetArchivalChunk
 	//
-	//  SELECT id,
-	//      recall_id,
-	//      chunk_index,
-	//      content,
-	//      embedding,
-	//      source,
-	//      hash,
-	//      created_at
-	//  FROM archival_chunks
-	//  WHERE id = ?1
+	//  SELECT ac.id,
+	//      ac.recall_id,
+	//      ac.chunk_index,
+	//      ac.content,
+	//      ac.embedding,
+	//      ac.source,
+	//      ac.hash,
+	//      ac.created_at
+	//  FROM archival_chunks ac
+	//      JOIN recall_items ri ON ac.recall_id = ri.id
+	//  WHERE ac.id = ?1
+	//      AND ri.agent_id = ?2
+	//  LIMIT 1
 	GetArchivalChunk(ctx context.Context, arg GetArchivalChunkParams) (ArchivalChunk, error)
 	//GetArchivalChunksByIDs
 	//
-	//  SELECT id,
-	//      recall_id,
-	//      chunk_index,
-	//      content,
-	//      embedding,
-	//      source,
-	//      hash,
-	//      created_at
-	//  FROM archival_chunks
-	//  WHERE id IN (/*SLICE:ids*/?)
+	//  SELECT ac.id,
+	//      ac.recall_id,
+	//      ac.chunk_index,
+	//      ac.content,
+	//      ac.embedding,
+	//      ac.source,
+	//      ac.hash,
+	//      ac.created_at
+	//  FROM archival_chunks ac
+	//      JOIN recall_items ri ON ac.recall_id = ri.id
+	//  WHERE ac.id IN (/*SLICE:ids*/?)
+	//      AND ri.agent_id = ?2
 	GetArchivalChunksByIDs(ctx context.Context, arg GetArchivalChunksByIDsParams) ([]ArchivalChunk, error)
 	// Agent Documents queries
 	//
@@ -107,7 +289,12 @@ type Querier interface {
 	//  FROM agent_documents
 	//  WHERE agent_id = ?1
 	//      AND name = ?2
+	//  LIMIT 1
 	GetDocument(ctx context.Context, arg GetDocumentParams) (AgentDocument, error)
+	//GetJob
+	//
+	//  SELECT id, kind, status, run_at, attempts, max_attempts, locked_at, locked_by, payload_json, dedupe_key, last_error, created_at, updated_at, completed_at FROM jobs WHERE id = ?1 LIMIT 1
+	GetJob(ctx context.Context, arg GetJobParams) (Job, error)
 	// Agent KV Store queries
 	//
 	//  SELECT agent_id,
@@ -117,7 +304,22 @@ type Querier interface {
 	//  FROM agent_kv
 	//  WHERE agent_id = ?1
 	//      AND key = ?2
+	//  LIMIT 1
 	GetKV(ctx context.Context, arg GetKVParams) (AgentKv, error)
+	//GetLatestAgentRunByConversationID
+	//
+	//  SELECT id, conversation_id, status, metadata_json, created_at, updated_at FROM agent_runs
+	//  WHERE conversation_id = ?
+	//  ORDER BY created_at DESC
+	//  LIMIT 1
+	GetLatestAgentRunByConversationID(ctx context.Context, arg GetLatestAgentRunByConversationIDParams) (AgentRun, error)
+	//GetLatestAgentRunStateByRunID
+	//
+	//  SELECT id, run_id, step_index, state, snapshot_json, created_at, updated_at FROM agent_run_states
+	//  WHERE run_id = ?
+	//  ORDER BY step_index DESC
+	//  LIMIT 1
+	GetLatestAgentRunStateByRunID(ctx context.Context, arg GetLatestAgentRunStateByRunIDParams) (AgentRunState, error)
 	//GetRecallItem
 	//
 	//  SELECT id,
@@ -134,6 +336,8 @@ type Querier interface {
 	//      updated_at
 	//  FROM recall_items
 	//  WHERE id = ?1
+	//      AND agent_id = ?2
+	//  LIMIT 1
 	GetRecallItem(ctx context.Context, arg GetRecallItemParams) (RecallItem, error)
 	//GetRecallItemsByIDs
 	//
@@ -151,6 +355,7 @@ type Querier interface {
 	//      updated_at
 	//  FROM recall_items
 	//  WHERE id IN (/*SLICE:ids*/?)
+	//      AND agent_id = ?2
 	GetRecallItemsByIDs(ctx context.Context, arg GetRecallItemsByIDsParams) ([]RecallItem, error)
 	// Working Context queries
 	//
@@ -161,6 +366,7 @@ type Querier interface {
 	//  FROM working_context
 	//  WHERE agent_id = ?1
 	//      AND session_key = ?2
+	//  LIMIT 1
 	GetWorkingContext(ctx context.Context, arg GetWorkingContextParams) (WorkingContext, error)
 	// Archival Chunk queries
 	//
@@ -293,19 +499,127 @@ type Querier interface {
 	//          datetime('now')
 	//      )
 	InsertSummary(ctx context.Context, arg InsertSummaryParams) error
+	//ListAgentCheckpointsByConversationID
+	//
+	//  SELECT id, conversation_id, name, run_state_id, metadata_json, created_at, updated_at FROM agent_checkpoints
+	//  WHERE conversation_id = ?
+	//  ORDER BY created_at DESC
+	//  LIMIT ?2
+	ListAgentCheckpointsByConversationID(ctx context.Context, arg ListAgentCheckpointsByConversationIDParams) ([]AgentCheckpoint, error)
+	//ListAgentConversationForksByParentConversationID
+	//
+	//  SELECT id, parent_conversation_id, child_conversation_id, checkpoint_id, metadata_json, created_at, updated_at FROM agent_conversation_forks
+	//  WHERE parent_conversation_id = ?
+	//  ORDER BY created_at DESC
+	//  LIMIT ?2
+	ListAgentConversationForksByParentConversationID(ctx context.Context, arg ListAgentConversationForksByParentConversationIDParams) ([]AgentConversationFork, error)
+	//ListAgentConversationLinksByConversationID
+	//
+	//  SELECT id, conversation_id, linked_conversation_id, kind, metadata_json, created_at, updated_at FROM agent_conversation_links
+	//  WHERE conversation_id = ?
+	//  ORDER BY created_at DESC
+	//  LIMIT ?2
+	ListAgentConversationLinksByConversationID(ctx context.Context, arg ListAgentConversationLinksByConversationIDParams) ([]AgentConversationLink, error)
+	//ListAgentConversations
+	//
+	//  SELECT id, title, created_at, updated_at FROM agent_conversations ORDER BY created_at DESC LIMIT ?
+	ListAgentConversations(ctx context.Context, arg ListAgentConversationsParams) ([]AgentConversation, error)
+	//ListAgentMentionsByConversationID
+	//
+	//  SELECT id, conversation_id, message_id, kind, target_id, raw, metadata_json, created_at, updated_at FROM agent_mentions
+	//  WHERE conversation_id = ?
+	//  ORDER BY created_at DESC
+	//  LIMIT ?2
+	ListAgentMentionsByConversationID(ctx context.Context, arg ListAgentMentionsByConversationIDParams) ([]AgentMention, error)
+	//ListAgentMessageRevisionsByMessageID
+	//
+	//  SELECT id, message_id, editor, old_content, new_content, metadata_json, created_at, updated_at FROM agent_message_revisions
+	//  WHERE message_id = ?
+	//  ORDER BY created_at DESC
+	//  LIMIT ?2
+	ListAgentMessageRevisionsByMessageID(ctx context.Context, arg ListAgentMessageRevisionsByMessageIDParams) ([]AgentMessageRevision, error)
+	//ListAgentMessagesByConversationID
+	//
+	//  SELECT id, conversation_id, role, content, metadata_json, created_at, updated_at FROM agent_messages
+	//  WHERE conversation_id = ?
+	//  ORDER BY created_at ASC
+	ListAgentMessagesByConversationID(ctx context.Context, arg ListAgentMessagesByConversationIDParams) ([]AgentMessage, error)
+	//ListAgentMessagesByConversationIDLimit
+	//
+	//  SELECT id, conversation_id, role, content, metadata_json, created_at, updated_at FROM agent_messages
+	//  WHERE conversation_id = ?
+	//  ORDER BY created_at ASC
+	//  LIMIT ?
+	ListAgentMessagesByConversationIDLimit(ctx context.Context, arg ListAgentMessagesByConversationIDLimitParams) ([]AgentMessage, error)
+	//ListAgentRunStatesByRunID
+	//
+	//  SELECT id, run_id, step_index, state, snapshot_json, created_at, updated_at FROM agent_run_states
+	//  WHERE run_id = ?
+	//  ORDER BY step_index ASC
+	//  LIMIT ?2
+	ListAgentRunStatesByRunID(ctx context.Context, arg ListAgentRunStatesByRunIDParams) ([]AgentRunState, error)
+	//ListAgentStateTransitionsByRunID
+	//
+	//  SELECT id, run_id, step_index, from_state, to_state, "trigger", at, meta_json, error, created_at, updated_at FROM agent_state_transitions
+	//  WHERE run_id = ?
+	//  ORDER BY at ASC
+	//  LIMIT ?2
+	ListAgentStateTransitionsByRunID(ctx context.Context, arg ListAgentStateTransitionsByRunIDParams) ([]AgentStateTransition, error)
+	//ListAgentThreadMessagesByThreadID
+	//
+	//  SELECT id, thread_id, role, content, metadata_json, created_at, updated_at FROM agent_thread_messages
+	//  WHERE thread_id = ?
+	//  ORDER BY created_at ASC
+	ListAgentThreadMessagesByThreadID(ctx context.Context, arg ListAgentThreadMessagesByThreadIDParams) ([]AgentThreadMessage, error)
+	//ListAgentThreadMessagesByThreadIDDescLimit
+	//
+	//  SELECT id, thread_id, role, content, metadata_json, created_at, updated_at FROM agent_thread_messages
+	//  WHERE thread_id = ?
+	//  ORDER BY created_at DESC
+	//  LIMIT ?
+	ListAgentThreadMessagesByThreadIDDescLimit(ctx context.Context, arg ListAgentThreadMessagesByThreadIDDescLimitParams) ([]AgentThreadMessage, error)
+	//ListAgentThreadsByConversationID
+	//
+	//  SELECT id, conversation_id, title, metadata_json, created_at, updated_at FROM agent_threads
+	//  WHERE conversation_id = ?
+	//  ORDER BY created_at DESC
+	//  LIMIT ?2
+	ListAgentThreadsByConversationID(ctx context.Context, arg ListAgentThreadsByConversationIDParams) ([]AgentThread, error)
+	//ListAgentToolResultsByConversationID
+	//
+	//  SELECT id, conversation_id, run_id, step_index, tool_call_id, tool_name, full_key, preview, chunk_count, metadata_json, created_at, updated_at FROM agent_tool_results
+	//  WHERE conversation_id = ?
+	//  ORDER BY created_at DESC
+	ListAgentToolResultsByConversationID(ctx context.Context, arg ListAgentToolResultsByConversationIDParams) ([]AgentToolResult, error)
+	//ListAgentToolResultsByConversationIDLimit
+	//
+	//  SELECT id, conversation_id, run_id, step_index, tool_call_id, tool_name, full_key, preview, chunk_count, metadata_json, created_at, updated_at FROM agent_tool_results
+	//  WHERE conversation_id = ?
+	//  ORDER BY created_at DESC
+	//  LIMIT ?
+	ListAgentToolResultsByConversationIDLimit(ctx context.Context, arg ListAgentToolResultsByConversationIDLimitParams) ([]AgentToolResult, error)
+	//ListAgentToolResultsByRunID
+	//
+	//  SELECT id, conversation_id, run_id, step_index, tool_call_id, tool_name, full_key, preview, chunk_count, metadata_json, created_at, updated_at FROM agent_tool_results
+	//  WHERE run_id = ?
+	//  ORDER BY step_index ASC, created_at ASC
+	//  LIMIT ?2
+	ListAgentToolResultsByRunID(ctx context.Context, arg ListAgentToolResultsByRunIDParams) ([]AgentToolResult, error)
 	//ListAllArchivalChunks
 	//
-	//  SELECT id,
-	//      recall_id,
-	//      chunk_index,
-	//      content,
-	//      embedding,
-	//      source,
-	//      hash,
-	//      created_at
-	//  FROM archival_chunks
-	//  ORDER BY created_at DESC
-	//  LIMIT ?2 OFFSET ?1
+	//  SELECT ac.id,
+	//      ac.recall_id,
+	//      ac.chunk_index,
+	//      ac.content,
+	//      ac.embedding,
+	//      ac.source,
+	//      ac.hash,
+	//      ac.created_at
+	//  FROM archival_chunks ac
+	//      JOIN recall_items ri ON ac.recall_id = ri.id
+	//  WHERE ri.agent_id = ?1
+	//  ORDER BY ac.created_at DESC
+	//  LIMIT ?3 OFFSET ?2
 	ListAllArchivalChunks(ctx context.Context, arg ListAllArchivalChunksParams) ([]ArchivalChunk, error)
 	//ListAllDocuments
 	//
@@ -323,20 +637,24 @@ type Querier interface {
 	//      AND is_active = 1
 	//  ORDER BY category,
 	//      name
+	//  LIMIT ?2
 	ListAllDocuments(ctx context.Context, arg ListAllDocumentsParams) ([]AgentDocument, error)
 	//ListArchivalChunks
 	//
-	//  SELECT id,
-	//      recall_id,
-	//      chunk_index,
-	//      content,
-	//      embedding,
-	//      source,
-	//      hash,
-	//      created_at
-	//  FROM archival_chunks
-	//  WHERE recall_id = ?1
-	//  ORDER BY chunk_index
+	//  SELECT ac.id,
+	//      ac.recall_id,
+	//      ac.chunk_index,
+	//      ac.content,
+	//      ac.embedding,
+	//      ac.source,
+	//      ac.hash,
+	//      ac.created_at
+	//  FROM archival_chunks ac
+	//      JOIN recall_items ri ON ac.recall_id = ri.id
+	//  WHERE ac.recall_id = ?1
+	//      AND ri.agent_id = ?2
+	//  ORDER BY ac.chunk_index
+	//  LIMIT ?3
 	ListArchivalChunks(ctx context.Context, arg ListArchivalChunksParams) ([]ArchivalChunk, error)
 	//ListAuditEntries
 	//
@@ -404,7 +722,12 @@ type Querier interface {
 	//      AND category = ?2
 	//      AND is_active = 1
 	//  ORDER BY name
+	//  LIMIT ?3
 	ListDocumentsByCategory(ctx context.Context, arg ListDocumentsByCategoryParams) ([]AgentDocument, error)
+	//ListJobs
+	//
+	//  SELECT id, kind, status, run_at, attempts, max_attempts, locked_at, locked_by, payload_json, dedupe_key, last_error, created_at, updated_at, completed_at FROM jobs ORDER BY created_at DESC LIMIT ?2 OFFSET ?1
+	ListJobs(ctx context.Context, arg ListJobsParams) ([]Job, error)
 	//ListKVByPrefix
 	//
 	//  SELECT agent_id,
@@ -483,12 +806,45 @@ type Querier interface {
 	//  ORDER BY created_at DESC
 	//  LIMIT ?3
 	ListSummaries(ctx context.Context, arg ListSummariesParams) ([]MemorySummary, error)
+	//MarkJobFailed
+	//
+	//  UPDATE jobs
+	//  SET status = 'failed',
+	//      completed_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+	//      updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+	//      last_error = ?1
+	//  WHERE id = ?2
+	//  RETURNING id, kind, status, run_at, attempts, max_attempts, locked_at, locked_by, payload_json, dedupe_key, last_error, created_at, updated_at, completed_at
+	MarkJobFailed(ctx context.Context, arg MarkJobFailedParams) (Job, error)
+	//MarkJobSucceeded
+	//
+	//  UPDATE jobs
+	//  SET status = 'succeeded',
+	//      completed_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+	//      updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+	//      last_error = NULL
+	//  WHERE id = ?1
+	//  RETURNING id, kind, status, run_at, attempts, max_attempts, locked_at, locked_by, payload_json, dedupe_key, last_error, created_at, updated_at, completed_at
+	MarkJobSucceeded(ctx context.Context, arg MarkJobSucceededParams) (Job, error)
 	//PruneOldAuditEntries
 	//
 	//  DELETE FROM agent_audit_log
 	//  WHERE agent_id = ?1
 	//      AND created_at < ?2
 	PruneOldAuditEntries(ctx context.Context, arg PruneOldAuditEntriesParams) error
+	//RequeueJob
+	//
+	//  UPDATE jobs
+	//  SET status = 'queued',
+	//      run_at = coalesce(?1, strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+	//      updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+	//      last_error = ?2,
+	//      locked_at = NULL,
+	//      locked_by = NULL,
+	//      completed_at = NULL
+	//  WHERE id = ?3
+	//  RETURNING id, kind, status, run_at, attempts, max_attempts, locked_at, locked_by, payload_json, dedupe_key, last_error, created_at, updated_at, completed_at
+	RequeueJob(ctx context.Context, arg RequeueJobParams) (Job, error)
 	//SearchRecallByKeyword
 	//
 	//  SELECT ri.id,
@@ -509,6 +865,23 @@ type Querier interface {
 	//  ORDER BY ri.importance DESC
 	//  LIMIT ?3
 	SearchRecallByKeyword(ctx context.Context, arg SearchRecallByKeywordParams) ([]RecallItem, error)
+	//UpdateAgentConversationTitle
+	//
+	//  UPDATE agent_conversations
+	//  SET title = ?,
+	//      updated_at = (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+	//  WHERE id = ?
+	//  RETURNING id, title, created_at, updated_at
+	UpdateAgentConversationTitle(ctx context.Context, arg UpdateAgentConversationTitleParams) (AgentConversation, error)
+	//UpdateAgentRunStatus
+	//
+	//  UPDATE agent_runs
+	//  SET status = ?,
+	//      metadata_json = ?,
+	//      updated_at = (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+	//  WHERE id = ?
+	//  RETURNING id, conversation_id, status, metadata_json, created_at, updated_at
+	UpdateAgentRunStatus(ctx context.Context, arg UpdateAgentRunStatusParams) (AgentRun, error)
 	//UpdateRecallItem
 	//
 	//  UPDATE recall_items
@@ -521,6 +894,7 @@ type Querier interface {
 	//      tags = ?7,
 	//      updated_at = datetime('now')
 	//  WHERE id = ?8
+	//      AND agent_id = ?9
 	UpdateRecallItem(ctx context.Context, arg UpdateRecallItemParams) error
 	//UpsertDocument
 	//

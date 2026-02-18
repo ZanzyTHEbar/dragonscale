@@ -6,7 +6,8 @@ SELECT agent_id,
     updated_at
 FROM working_context
 WHERE agent_id = sqlc.arg(agent_id)
-    AND session_key = sqlc.arg(session_key);
+    AND session_key = sqlc.arg(session_key)
+LIMIT 1;
 -- name: UpsertWorkingContext :exec
 INSERT INTO working_context (agent_id, session_key, content, updated_at)
 VALUES (

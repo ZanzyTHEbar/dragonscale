@@ -19,7 +19,7 @@ WHERE agent_id = ?1
 `
 
 type CountAuditEntriesParams struct {
-	AgentID string `json:"agent_id"`
+	AgentID string `db:"agent_id" json:"agent_id"`
 }
 
 // CountAuditEntries
@@ -42,8 +42,8 @@ WHERE agent_id = ?1
 `
 
 type CountAuditEntriesByActionParams struct {
-	AgentID string `json:"agent_id"`
-	Action  string `json:"action"`
+	AgentID string `db:"agent_id" json:"agent_id"`
+	Action  string `db:"action" json:"action"`
 }
 
 // CountAuditEntriesByAction
@@ -85,14 +85,14 @@ VALUES (
 `
 
 type InsertAuditEntryParams struct {
-	ID         ids.UUID `json:"id"`
-	AgentID    string   `json:"agent_id"`
-	SessionKey string   `json:"session_key"`
-	Action     string   `json:"action"`
-	Target     string   `json:"target"`
-	Input      *string  `json:"input"`
-	Output     *string  `json:"output"`
-	DurationMs *int64   `json:"duration_ms"`
+	ID         ids.UUID `db:"id" json:"id"`
+	AgentID    string   `db:"agent_id" json:"agent_id"`
+	SessionKey string   `db:"session_key" json:"session_key"`
+	Action     string   `db:"action" json:"action"`
+	Target     string   `db:"target" json:"target"`
+	Input      *string  `db:"input" json:"input"`
+	Output     *string  `db:"output" json:"output"`
+	DurationMs *int64   `db:"duration_ms" json:"duration_ms"`
 }
 
 // Agent Audit Log queries
@@ -150,8 +150,8 @@ LIMIT ?2
 `
 
 type ListAuditEntriesParams struct {
-	AgentID string `json:"agent_id"`
-	Lim     int64  `json:"lim"`
+	AgentID string `db:"agent_id" json:"agent_id"`
+	Lim     int64  `db:"lim" json:"lim"`
 }
 
 // ListAuditEntries
@@ -220,9 +220,9 @@ LIMIT ?3
 `
 
 type ListAuditEntriesByActionParams struct {
-	AgentID string `json:"agent_id"`
-	Action  string `json:"action"`
-	Lim     int64  `json:"lim"`
+	AgentID string `db:"agent_id" json:"agent_id"`
+	Action  string `db:"action" json:"action"`
+	Lim     int64  `db:"lim" json:"lim"`
 }
 
 // ListAuditEntriesByAction
@@ -292,9 +292,9 @@ LIMIT ?3
 `
 
 type ListAuditEntriesBySessionParams struct {
-	AgentID    string `json:"agent_id"`
-	SessionKey string `json:"session_key"`
-	Lim        int64  `json:"lim"`
+	AgentID    string `db:"agent_id" json:"agent_id"`
+	SessionKey string `db:"session_key" json:"session_key"`
+	Lim        int64  `db:"lim" json:"lim"`
 }
 
 // ListAuditEntriesBySession
@@ -353,8 +353,8 @@ WHERE agent_id = ?1
 `
 
 type PruneOldAuditEntriesParams struct {
-	AgentID string    `json:"agent_id"`
-	Before  time.Time `json:"before"`
+	AgentID string    `db:"agent_id" json:"agent_id"`
+	Before  time.Time `db:"before" json:"before"`
 }
 
 // PruneOldAuditEntries

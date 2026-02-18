@@ -38,6 +38,9 @@ jobs:
       - name: Check sqlc generated code
         run: make sqlc-check
 
+      - name: Run sqlc vet rules
+        run: make sqlc-vet
+
   vet:
     runs-on: ubuntu-latest
     needs: fmt-check

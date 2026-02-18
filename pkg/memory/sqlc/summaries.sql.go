@@ -33,12 +33,12 @@ VALUES (
 `
 
 type InsertSummaryParams struct {
-	ID         ids.UUID `json:"id"`
-	AgentID    string   `json:"agent_id"`
-	SessionKey string   `json:"session_key"`
-	Content    string   `json:"content"`
-	FromMsgIdx int64    `json:"from_msg_idx"`
-	ToMsgIdx   int64    `json:"to_msg_idx"`
+	ID         ids.UUID `db:"id" json:"id"`
+	AgentID    string   `db:"agent_id" json:"agent_id"`
+	SessionKey string   `db:"session_key" json:"session_key"`
+	Content    string   `db:"content" json:"content"`
+	FromMsgIdx int64    `db:"from_msg_idx" json:"from_msg_idx"`
+	ToMsgIdx   int64    `db:"to_msg_idx" json:"to_msg_idx"`
 }
 
 // Memory Summary queries
@@ -92,9 +92,9 @@ LIMIT ?3
 `
 
 type ListSummariesParams struct {
-	AgentID    string `json:"agent_id"`
-	SessionKey string `json:"session_key"`
-	Lim        int64  `json:"lim"`
+	AgentID    string `db:"agent_id" json:"agent_id"`
+	SessionKey string `db:"session_key" json:"session_key"`
+	Lim        int64  `db:"lim" json:"lim"`
 }
 
 // ListSummaries

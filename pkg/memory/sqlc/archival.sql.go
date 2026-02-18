@@ -15,15 +15,23 @@ import (
 
 const CountArchivalChunks = `-- name: CountArchivalChunks :one
 SELECT COUNT(*)
-FROM archival_chunks
+FROM archival_chunks ac
+    JOIN recall_items ri ON ac.recall_id = ri.id
+WHERE ri.agent_id = ?1
 `
+
+type CountArchivalChunksParams struct {
+	AgentID string `db:"agent_id" json:"agent_id"`
+}
 
 // CountArchivalChunks
 //
 //	SELECT COUNT(*)
-//	FROM archival_chunks
-func (q *Queries) CountArchivalChunks(ctx context.Context) (int64, error) {
-	row := q.db.QueryRowContext(ctx, CountArchivalChunks)
+//	FROM archival_chunks ac
+//	    JOIN recall_items ri ON ac.recall_id = ri.id
+//	WHERE ri.agent_id = ?1
+func (q *Queries) CountArchivalChunks(ctx context.Context, arg CountArchivalChunksParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, CountArchivalChunks, arg.AgentID)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -35,7 +43,7 @@ WHERE recall_id = ?1
 `
 
 type DeleteArchivalChunksByRecallParams struct {
-	RecallID ids.UUID `json:"recall_id"`
+	RecallID ids.UUID `db:"recall_id" json:"recall_id"`
 }
 
 // DeleteArchivalChunksByRecall
@@ -48,36 +56,43 @@ func (q *Queries) DeleteArchivalChunksByRecall(ctx context.Context, arg DeleteAr
 }
 
 const GetArchivalChunk = `-- name: GetArchivalChunk :one
-SELECT id,
-    recall_id,
-    chunk_index,
-    content,
-    embedding,
-    source,
-    hash,
-    created_at
-FROM archival_chunks
-WHERE id = ?1
+SELECT ac.id,
+    ac.recall_id,
+    ac.chunk_index,
+    ac.content,
+    ac.embedding,
+    ac.source,
+    ac.hash,
+    ac.created_at
+FROM archival_chunks ac
+    JOIN recall_items ri ON ac.recall_id = ri.id
+WHERE ac.id = ?1
+    AND ri.agent_id = ?2
+LIMIT 1
 `
 
 type GetArchivalChunkParams struct {
-	ID ids.UUID `json:"id"`
+	ID      ids.UUID `db:"id" json:"id"`
+	AgentID string   `db:"agent_id" json:"agent_id"`
 }
 
 // GetArchivalChunk
 //
-//	SELECT id,
-//	    recall_id,
-//	    chunk_index,
-//	    content,
-//	    embedding,
-//	    source,
-//	    hash,
-//	    created_at
-//	FROM archival_chunks
-//	WHERE id = ?1
+//	SELECT ac.id,
+//	    ac.recall_id,
+//	    ac.chunk_index,
+//	    ac.content,
+//	    ac.embedding,
+//	    ac.source,
+//	    ac.hash,
+//	    ac.created_at
+//	FROM archival_chunks ac
+//	    JOIN recall_items ri ON ac.recall_id = ri.id
+//	WHERE ac.id = ?1
+//	    AND ri.agent_id = ?2
+//	LIMIT 1
 func (q *Queries) GetArchivalChunk(ctx context.Context, arg GetArchivalChunkParams) (ArchivalChunk, error) {
-	row := q.db.QueryRowContext(ctx, GetArchivalChunk, arg.ID)
+	row := q.db.QueryRowContext(ctx, GetArchivalChunk, arg.ID, arg.AgentID)
 	var i ArchivalChunk
 	err := row.Scan(
 		&i.ID,
@@ -93,34 +108,39 @@ func (q *Queries) GetArchivalChunk(ctx context.Context, arg GetArchivalChunkPara
 }
 
 const GetArchivalChunksByIDs = `-- name: GetArchivalChunksByIDs :many
-SELECT id,
-    recall_id,
-    chunk_index,
-    content,
-    embedding,
-    source,
-    hash,
-    created_at
-FROM archival_chunks
-WHERE id IN (/*SLICE:ids*/?)
+SELECT ac.id,
+    ac.recall_id,
+    ac.chunk_index,
+    ac.content,
+    ac.embedding,
+    ac.source,
+    ac.hash,
+    ac.created_at
+FROM archival_chunks ac
+    JOIN recall_items ri ON ac.recall_id = ri.id
+WHERE ac.id IN (/*SLICE:ids*/?)
+    AND ri.agent_id = ?2
 `
 
 type GetArchivalChunksByIDsParams struct {
-	Ids []ids.UUID `json:"ids"`
+	Ids     []ids.UUID `db:"ids" json:"ids"`
+	AgentID string     `db:"agent_id" json:"agent_id"`
 }
 
 // GetArchivalChunksByIDs
 //
-//	SELECT id,
-//	    recall_id,
-//	    chunk_index,
-//	    content,
-//	    embedding,
-//	    source,
-//	    hash,
-//	    created_at
-//	FROM archival_chunks
-//	WHERE id IN (/*SLICE:ids*/?)
+//	SELECT ac.id,
+//	    ac.recall_id,
+//	    ac.chunk_index,
+//	    ac.content,
+//	    ac.embedding,
+//	    ac.source,
+//	    ac.hash,
+//	    ac.created_at
+//	FROM archival_chunks ac
+//	    JOIN recall_items ri ON ac.recall_id = ri.id
+//	WHERE ac.id IN (/*SLICE:ids*/?)
+//	    AND ri.agent_id = ?2
 func (q *Queries) GetArchivalChunksByIDs(ctx context.Context, arg GetArchivalChunksByIDsParams) ([]ArchivalChunk, error) {
 	query := GetArchivalChunksByIDs
 	var queryParams []interface{}
@@ -132,6 +152,7 @@ func (q *Queries) GetArchivalChunksByIDs(ctx context.Context, arg GetArchivalChu
 	} else {
 		query = strings.Replace(query, "/*SLICE:ids*/?", "NULL", 1)
 	}
+	queryParams = append(queryParams, arg.AgentID)
 	rows, err := q.db.QueryContext(ctx, query, queryParams...)
 	if err != nil {
 		return nil, err
@@ -187,13 +208,13 @@ VALUES (
 `
 
 type InsertArchivalChunkParams struct {
-	ID         ids.UUID         `json:"id"`
-	RecallID   ids.UUID         `json:"recall_id"`
-	ChunkIndex int64            `json:"chunk_index"`
-	Content    string           `json:"content"`
-	Embedding  memory.Embedding `json:"embedding"`
-	Source     string           `json:"source"`
-	Hash       string           `json:"hash"`
+	ID         ids.UUID         `db:"id" json:"id"`
+	RecallID   ids.UUID         `db:"recall_id" json:"recall_id"`
+	ChunkIndex int64            `db:"chunk_index" json:"chunk_index"`
+	Content    string           `db:"content" json:"content"`
+	Embedding  memory.Embedding `db:"embedding" json:"embedding"`
+	Source     string           `db:"source" json:"source"`
+	Hash       string           `db:"hash" json:"hash"`
 }
 
 // Archival Chunk queries
@@ -232,39 +253,44 @@ func (q *Queries) InsertArchivalChunk(ctx context.Context, arg InsertArchivalChu
 }
 
 const ListAllArchivalChunks = `-- name: ListAllArchivalChunks :many
-SELECT id,
-    recall_id,
-    chunk_index,
-    content,
-    embedding,
-    source,
-    hash,
-    created_at
-FROM archival_chunks
-ORDER BY created_at DESC
-LIMIT ?2 OFFSET ?1
+SELECT ac.id,
+    ac.recall_id,
+    ac.chunk_index,
+    ac.content,
+    ac.embedding,
+    ac.source,
+    ac.hash,
+    ac.created_at
+FROM archival_chunks ac
+    JOIN recall_items ri ON ac.recall_id = ri.id
+WHERE ri.agent_id = ?1
+ORDER BY ac.created_at DESC
+LIMIT ?3 OFFSET ?2
 `
 
 type ListAllArchivalChunksParams struct {
-	Off int64 `json:"off"`
-	Lim int64 `json:"lim"`
+	AgentID string `db:"agent_id" json:"agent_id"`
+	Off     int64  `db:"off" json:"off"`
+	Lim     int64  `db:"lim" json:"lim"`
 }
 
 // ListAllArchivalChunks
 //
-//	SELECT id,
-//	    recall_id,
-//	    chunk_index,
-//	    content,
-//	    embedding,
-//	    source,
-//	    hash,
-//	    created_at
-//	FROM archival_chunks
-//	ORDER BY created_at DESC
-//	LIMIT ?2 OFFSET ?1
+//	SELECT ac.id,
+//	    ac.recall_id,
+//	    ac.chunk_index,
+//	    ac.content,
+//	    ac.embedding,
+//	    ac.source,
+//	    ac.hash,
+//	    ac.created_at
+//	FROM archival_chunks ac
+//	    JOIN recall_items ri ON ac.recall_id = ri.id
+//	WHERE ri.agent_id = ?1
+//	ORDER BY ac.created_at DESC
+//	LIMIT ?3 OFFSET ?2
 func (q *Queries) ListAllArchivalChunks(ctx context.Context, arg ListAllArchivalChunksParams) ([]ArchivalChunk, error) {
-	rows, err := q.db.QueryContext(ctx, ListAllArchivalChunks, arg.Off, arg.Lim)
+	rows, err := q.db.QueryContext(ctx, ListAllArchivalChunks, arg.AgentID, arg.Off, arg.Lim)
 	if err != nil {
 		return nil, err
 	}
@@ -296,38 +322,46 @@ func (q *Queries) ListAllArchivalChunks(ctx context.Context, arg ListAllArchival
 }
 
 const ListArchivalChunks = `-- name: ListArchivalChunks :many
-SELECT id,
-    recall_id,
-    chunk_index,
-    content,
-    embedding,
-    source,
-    hash,
-    created_at
-FROM archival_chunks
-WHERE recall_id = ?1
-ORDER BY chunk_index
+SELECT ac.id,
+    ac.recall_id,
+    ac.chunk_index,
+    ac.content,
+    ac.embedding,
+    ac.source,
+    ac.hash,
+    ac.created_at
+FROM archival_chunks ac
+    JOIN recall_items ri ON ac.recall_id = ri.id
+WHERE ac.recall_id = ?1
+    AND ri.agent_id = ?2
+ORDER BY ac.chunk_index
+LIMIT ?3
 `
 
 type ListArchivalChunksParams struct {
-	RecallID ids.UUID `json:"recall_id"`
+	RecallID ids.UUID `db:"recall_id" json:"recall_id"`
+	AgentID  string   `db:"agent_id" json:"agent_id"`
+	Lim      int64    `db:"lim" json:"lim"`
 }
 
 // ListArchivalChunks
 //
-//	SELECT id,
-//	    recall_id,
-//	    chunk_index,
-//	    content,
-//	    embedding,
-//	    source,
-//	    hash,
-//	    created_at
-//	FROM archival_chunks
-//	WHERE recall_id = ?1
-//	ORDER BY chunk_index
+//	SELECT ac.id,
+//	    ac.recall_id,
+//	    ac.chunk_index,
+//	    ac.content,
+//	    ac.embedding,
+//	    ac.source,
+//	    ac.hash,
+//	    ac.created_at
+//	FROM archival_chunks ac
+//	    JOIN recall_items ri ON ac.recall_id = ri.id
+//	WHERE ac.recall_id = ?1
+//	    AND ri.agent_id = ?2
+//	ORDER BY ac.chunk_index
+//	LIMIT ?3
 func (q *Queries) ListArchivalChunks(ctx context.Context, arg ListArchivalChunksParams) ([]ArchivalChunk, error) {
-	rows, err := q.db.QueryContext(ctx, ListArchivalChunks, arg.RecallID)
+	rows, err := q.db.QueryContext(ctx, ListArchivalChunks, arg.RecallID, arg.AgentID, arg.Lim)
 	if err != nil {
 		return nil, err
 	}

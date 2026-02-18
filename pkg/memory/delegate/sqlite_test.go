@@ -85,7 +85,7 @@ func TestLibSQLDelegate_RecallItemCRUD(t *testing.T) {
 	}
 
 	// Get
-	got, err := d.GetRecallItem(ctx, item.ID)
+	got, err := d.GetRecallItem(ctx, "agent-1", item.ID)
 	if err != nil {
 		t.Fatalf("GetRecallItem: %v", err)
 	}
@@ -109,7 +109,7 @@ func TestLibSQLDelegate_RecallItemCRUD(t *testing.T) {
 		t.Fatalf("UpdateRecallItem: %v", err)
 	}
 
-	got, err = d.GetRecallItem(ctx, item.ID)
+	got, err = d.GetRecallItem(ctx, "agent-1", item.ID)
 	if err != nil {
 		t.Fatalf("GetRecallItem after update: %v", err)
 	}
@@ -130,11 +130,11 @@ func TestLibSQLDelegate_RecallItemCRUD(t *testing.T) {
 	}
 
 	// Delete
-	if err := d.DeleteRecallItem(ctx, item.ID); err != nil {
+	if err := d.DeleteRecallItem(ctx, "agent-1", item.ID); err != nil {
 		t.Fatalf("DeleteRecallItem: %v", err)
 	}
 
-	got, err = d.GetRecallItem(ctx, item.ID)
+	got, err = d.GetRecallItem(ctx, "agent-1", item.ID)
 	if err != nil {
 		t.Fatalf("GetRecallItem after delete: %v", err)
 	}
@@ -159,11 +159,19 @@ func TestLibSQLDelegate_ArchivalChunkCRUD(t *testing.T) {
 	d := newTestDelegate(t)
 	ctx := context.Background()
 
+	parentRecall := &memory.RecallItem{
+		ID: ids.New(), AgentID: "agent-1", SessionKey: "sess-1",
+		Role: "system", Sector: memory.SectorSemantic, Content: "parent for archival",
+	}
+	if err := d.InsertRecallItem(ctx, parentRecall); err != nil {
+		t.Fatalf("InsertRecallItem (parent): %v", err)
+	}
+
 	embedding := testEmbedding768(0.1, 0.2, 0.3, -0.4, 0.5)
 
 	chunk := &memory.ArchivalChunk{
 		ID:         ids.New(),
-		RecallID:   ids.New(),
+		RecallID:   parentRecall.ID,
 		ChunkIndex: 0,
 		Content:    "This is chunk content for archival",
 		Embedding:  embedding,
@@ -171,13 +179,11 @@ func TestLibSQLDelegate_ArchivalChunkCRUD(t *testing.T) {
 		Hash:       "abc123",
 	}
 
-	// Insert
 	if err := d.InsertArchivalChunk(ctx, chunk); err != nil {
 		t.Fatalf("InsertArchivalChunk: %v", err)
 	}
 
-	// Get
-	got, err := d.GetArchivalChunk(ctx, chunk.ID)
+	got, err := d.GetArchivalChunk(ctx, "agent-1", chunk.ID)
 	if err != nil {
 		t.Fatalf("GetArchivalChunk: %v", err)
 	}
@@ -191,7 +197,6 @@ func TestLibSQLDelegate_ArchivalChunkCRUD(t *testing.T) {
 		t.Fatalf("source mismatch: %q", got.Source)
 	}
 
-	// Verify embedding round-trip (check first 5 seed values)
 	if len(got.Embedding) != 768 {
 		t.Fatalf("embedding length mismatch: %d vs 768", len(got.Embedding))
 	}
@@ -202,8 +207,16 @@ func TestLibSQLDelegate_ArchivalChunkCRUD(t *testing.T) {
 		}
 	}
 
-	// List by recall ID
-	chunks, err := d.ListArchivalChunks(ctx, chunk.RecallID)
+	// Verify cross-agent isolation: wrong agentID should not find chunk
+	wrongAgent, err := d.GetArchivalChunk(ctx, "agent-WRONG", chunk.ID)
+	if err != nil {
+		t.Fatalf("GetArchivalChunk wrong agent: %v", err)
+	}
+	if wrongAgent != nil {
+		t.Fatal("expected nil for wrong agentID")
+	}
+
+	chunks, err := d.ListArchivalChunks(ctx, "agent-1", chunk.RecallID)
 	if err != nil {
 		t.Fatalf("ListArchivalChunks: %v", err)
 	}
@@ -211,11 +224,10 @@ func TestLibSQLDelegate_ArchivalChunkCRUD(t *testing.T) {
 		t.Fatalf("expected 1 chunk, got %d", len(chunks))
 	}
 
-	// Delete
 	if err := d.DeleteArchivalChunks(ctx, chunk.RecallID); err != nil {
 		t.Fatalf("DeleteArchivalChunks: %v", err)
 	}
-	chunks, err = d.ListArchivalChunks(ctx, chunk.RecallID)
+	chunks, err = d.ListArchivalChunks(ctx, "agent-1", chunk.RecallID)
 	if err != nil {
 		t.Fatalf("ListArchivalChunks after delete: %v", err)
 	}
@@ -291,7 +303,7 @@ func TestLibSQLDelegate_Counts(t *testing.T) {
 		t.Fatalf("expected 0 recall items, got %d", rc)
 	}
 
-	ac, err := d.CountArchivalChunks(ctx)
+	ac, err := d.CountArchivalChunks(ctx, "agent-1")
 	if err != nil {
 		t.Fatalf("CountArchivalChunks: %v", err)
 	}

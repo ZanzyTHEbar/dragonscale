@@ -6,7 +6,8 @@ SELECT agent_id,
     updated_at
 FROM agent_kv
 WHERE agent_id = sqlc.arg(agent_id)
-    AND key = sqlc.arg(key);
+    AND key = sqlc.arg(key)
+LIMIT 1;
 -- name: UpsertKV :exec
 INSERT INTO agent_kv (agent_id, key, value, updated_at)
 VALUES (

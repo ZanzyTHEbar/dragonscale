@@ -42,7 +42,9 @@ SELECT id,
     created_at,
     updated_at
 FROM recall_items
-WHERE id = sqlc.arg(id);
+WHERE id = sqlc.arg(id)
+    AND agent_id = sqlc.arg(agent_id)
+LIMIT 1;
 -- name: UpdateRecallItem :exec
 UPDATE recall_items
 SET role = sqlc.arg(role),
@@ -53,10 +55,12 @@ SET role = sqlc.arg(role),
     content = sqlc.arg(content),
     tags = sqlc.arg(tags),
     updated_at = datetime('now')
-WHERE id = sqlc.arg(id);
+WHERE id = sqlc.arg(id)
+    AND agent_id = sqlc.arg(agent_id);
 -- name: DeleteRecallItem :exec
 DELETE FROM recall_items
-WHERE id = sqlc.arg(id);
+WHERE id = sqlc.arg(id)
+    AND agent_id = sqlc.arg(agent_id);
 -- name: ListRecallItems :many
 SELECT id,
     agent_id,
@@ -118,7 +122,8 @@ SELECT id,
     created_at,
     updated_at
 FROM recall_items
-WHERE id IN (sqlc.slice('ids'));
+WHERE id IN (sqlc.slice('ids'))
+    AND agent_id = sqlc.arg(agent_id);
 -- name: InsertSessionMessage :exec
 INSERT INTO recall_items (
         id,

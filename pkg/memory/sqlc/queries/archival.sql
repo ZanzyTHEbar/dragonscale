@@ -21,54 +21,66 @@ VALUES (
         datetime('now')
     );
 -- name: GetArchivalChunk :one
-SELECT id,
-    recall_id,
-    chunk_index,
-    content,
-    embedding,
-    source,
-    hash,
-    created_at
-FROM archival_chunks
-WHERE id = sqlc.arg(id);
+SELECT ac.id,
+    ac.recall_id,
+    ac.chunk_index,
+    ac.content,
+    ac.embedding,
+    ac.source,
+    ac.hash,
+    ac.created_at
+FROM archival_chunks ac
+    JOIN recall_items ri ON ac.recall_id = ri.id
+WHERE ac.id = sqlc.arg(id)
+    AND ri.agent_id = sqlc.arg(agent_id)
+LIMIT 1;
 -- name: ListArchivalChunks :many
-SELECT id,
-    recall_id,
-    chunk_index,
-    content,
-    embedding,
-    source,
-    hash,
-    created_at
-FROM archival_chunks
-WHERE recall_id = sqlc.arg(recall_id)
-ORDER BY chunk_index;
+SELECT ac.id,
+    ac.recall_id,
+    ac.chunk_index,
+    ac.content,
+    ac.embedding,
+    ac.source,
+    ac.hash,
+    ac.created_at
+FROM archival_chunks ac
+    JOIN recall_items ri ON ac.recall_id = ri.id
+WHERE ac.recall_id = sqlc.arg(recall_id)
+    AND ri.agent_id = sqlc.arg(agent_id)
+ORDER BY ac.chunk_index
+LIMIT sqlc.arg(lim);
 -- name: DeleteArchivalChunksByRecall :exec
 DELETE FROM archival_chunks
 WHERE recall_id = sqlc.arg(recall_id);
 -- name: CountArchivalChunks :one
 SELECT COUNT(*)
-FROM archival_chunks;
+FROM archival_chunks ac
+    JOIN recall_items ri ON ac.recall_id = ri.id
+WHERE ri.agent_id = sqlc.arg(agent_id);
 -- name: ListAllArchivalChunks :many
-SELECT id,
-    recall_id,
-    chunk_index,
-    content,
-    embedding,
-    source,
-    hash,
-    created_at
-FROM archival_chunks
-ORDER BY created_at DESC
+SELECT ac.id,
+    ac.recall_id,
+    ac.chunk_index,
+    ac.content,
+    ac.embedding,
+    ac.source,
+    ac.hash,
+    ac.created_at
+FROM archival_chunks ac
+    JOIN recall_items ri ON ac.recall_id = ri.id
+WHERE ri.agent_id = sqlc.arg(agent_id)
+ORDER BY ac.created_at DESC
 LIMIT sqlc.arg(lim) OFFSET sqlc.arg(off);
 -- name: GetArchivalChunksByIDs :many
-SELECT id,
-    recall_id,
-    chunk_index,
-    content,
-    embedding,
-    source,
-    hash,
-    created_at
-FROM archival_chunks
-WHERE id IN (sqlc.slice('ids'));
+SELECT ac.id,
+    ac.recall_id,
+    ac.chunk_index,
+    ac.content,
+    ac.embedding,
+    ac.source,
+    ac.hash,
+    ac.created_at
+FROM archival_chunks ac
+    JOIN recall_items ri ON ac.recall_id = ri.id
+WHERE ac.id IN (sqlc.slice('ids'))
+    AND ri.agent_id = sqlc.arg(agent_id);

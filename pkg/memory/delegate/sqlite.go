@@ -240,8 +240,8 @@ func (d *LibSQLDelegate) InsertRecallItem(ctx context.Context, item *memory.Reca
 	})
 }
 
-func (d *LibSQLDelegate) GetRecallItem(ctx context.Context, id ids.UUID) (*memory.RecallItem, error) {
-	row, err := d.queries.GetRecallItem(ctx, memsqlc.GetRecallItemParams{ID: id})
+func (d *LibSQLDelegate) GetRecallItem(ctx context.Context, agentID string, id ids.UUID) (*memory.RecallItem, error) {
+	row, err := d.queries.GetRecallItem(ctx, memsqlc.GetRecallItemParams{ID: id, AgentID: agentID})
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -254,6 +254,7 @@ func (d *LibSQLDelegate) GetRecallItem(ctx context.Context, id ids.UUID) (*memor
 func (d *LibSQLDelegate) UpdateRecallItem(ctx context.Context, item *memory.RecallItem) error {
 	return d.queries.UpdateRecallItem(ctx, memsqlc.UpdateRecallItemParams{
 		ID:         item.ID,
+		AgentID:    item.AgentID,
 		Role:       item.Role,
 		Sector:     item.Sector,
 		Importance: item.Importance,
@@ -264,8 +265,8 @@ func (d *LibSQLDelegate) UpdateRecallItem(ctx context.Context, item *memory.Reca
 	})
 }
 
-func (d *LibSQLDelegate) DeleteRecallItem(ctx context.Context, id ids.UUID) error {
-	return d.queries.DeleteRecallItem(ctx, memsqlc.DeleteRecallItemParams{ID: id})
+func (d *LibSQLDelegate) DeleteRecallItem(ctx context.Context, agentID string, id ids.UUID) error {
+	return d.queries.DeleteRecallItem(ctx, memsqlc.DeleteRecallItemParams{ID: id, AgentID: agentID})
 }
 
 func (d *LibSQLDelegate) ListRecallItems(ctx context.Context, agentID, sessionKey string, limit, offset int) ([]*memory.RecallItem, error) {
@@ -317,8 +318,8 @@ func (d *LibSQLDelegate) InsertArchivalChunk(ctx context.Context, chunk *memory.
 	})
 }
 
-func (d *LibSQLDelegate) GetArchivalChunk(ctx context.Context, id ids.UUID) (*memory.ArchivalChunk, error) {
-	row, err := d.queries.GetArchivalChunk(ctx, memsqlc.GetArchivalChunkParams{ID: id})
+func (d *LibSQLDelegate) GetArchivalChunk(ctx context.Context, agentID string, id ids.UUID) (*memory.ArchivalChunk, error) {
+	row, err := d.queries.GetArchivalChunk(ctx, memsqlc.GetArchivalChunkParams{ID: id, AgentID: agentID})
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -328,8 +329,8 @@ func (d *LibSQLDelegate) GetArchivalChunk(ctx context.Context, id ids.UUID) (*me
 	return sqlcChunkToMemory(row), nil
 }
 
-func (d *LibSQLDelegate) ListArchivalChunks(ctx context.Context, recallID ids.UUID) ([]*memory.ArchivalChunk, error) {
-	rows, err := d.queries.ListArchivalChunks(ctx, memsqlc.ListArchivalChunksParams{RecallID: recallID})
+func (d *LibSQLDelegate) ListArchivalChunks(ctx context.Context, agentID string, recallID ids.UUID) ([]*memory.ArchivalChunk, error) {
+	rows, err := d.queries.ListArchivalChunks(ctx, memsqlc.ListArchivalChunksParams{RecallID: recallID, AgentID: agentID, Lim: 10000})
 	if err != nil {
 		return nil, err
 	}
@@ -340,10 +341,11 @@ func (d *LibSQLDelegate) ListArchivalChunks(ctx context.Context, recallID ids.UU
 	return chunks, nil
 }
 
-func (d *LibSQLDelegate) ListAllArchivalChunks(ctx context.Context, limit, offset int) ([]*memory.ArchivalChunk, error) {
+func (d *LibSQLDelegate) ListAllArchivalChunks(ctx context.Context, agentID string, limit, offset int) ([]*memory.ArchivalChunk, error) {
 	rows, err := d.queries.ListAllArchivalChunks(ctx, memsqlc.ListAllArchivalChunksParams{
-		Lim: int64(limit),
-		Off: int64(offset),
+		AgentID: agentID,
+		Lim:     int64(limit),
+		Off:     int64(offset),
 	})
 	if err != nil {
 		return nil, err
@@ -406,8 +408,8 @@ func (d *LibSQLDelegate) CountRecallItems(ctx context.Context, agentID, sessionK
 	return int(count), err
 }
 
-func (d *LibSQLDelegate) CountArchivalChunks(ctx context.Context) (int, error) {
-	count, err := d.queries.CountArchivalChunks(ctx)
+func (d *LibSQLDelegate) CountArchivalChunks(ctx context.Context, agentID string) (int, error) {
+	count, err := d.queries.CountArchivalChunks(ctx, memsqlc.CountArchivalChunksParams{AgentID: agentID})
 	return int(count), err
 }
 
@@ -495,6 +497,7 @@ func (d *LibSQLDelegate) ListDocumentsByCategory(ctx context.Context, agentID, c
 	rows, err := d.queries.ListDocumentsByCategory(ctx, memsqlc.ListDocumentsByCategoryParams{
 		AgentID:  agentID,
 		Category: category,
+		Lim:      1000,
 	})
 	if err != nil {
 		return nil, err
@@ -509,6 +512,7 @@ func (d *LibSQLDelegate) ListDocumentsByCategory(ctx context.Context, agentID, c
 func (d *LibSQLDelegate) ListAllDocuments(ctx context.Context, agentID string) ([]*memory.AgentDocument, error) {
 	rows, err := d.queries.ListAllDocuments(ctx, memsqlc.ListAllDocumentsParams{
 		AgentID: agentID,
+		Lim:     1000,
 	})
 	if err != nil {
 		return nil, err

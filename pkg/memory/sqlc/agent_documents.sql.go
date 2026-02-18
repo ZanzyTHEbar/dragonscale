@@ -18,8 +18,8 @@ WHERE agent_id = ?1
 `
 
 type DeleteDocumentParams struct {
-	AgentID string `json:"agent_id"`
-	Name    string `json:"name"`
+	AgentID string `db:"agent_id" json:"agent_id"`
+	Name    string `db:"name" json:"name"`
 }
 
 // DeleteDocument
@@ -45,11 +45,12 @@ SELECT id,
 FROM agent_documents
 WHERE agent_id = ?1
     AND name = ?2
+LIMIT 1
 `
 
 type GetDocumentParams struct {
-	AgentID string `json:"agent_id"`
-	Name    string `json:"name"`
+	AgentID string `db:"agent_id" json:"agent_id"`
+	Name    string `db:"name" json:"name"`
 }
 
 // Agent Documents queries
@@ -66,6 +67,7 @@ type GetDocumentParams struct {
 //	FROM agent_documents
 //	WHERE agent_id = ?1
 //	    AND name = ?2
+//	LIMIT 1
 func (q *Queries) GetDocument(ctx context.Context, arg GetDocumentParams) (AgentDocument, error) {
 	row := q.db.QueryRowContext(ctx, GetDocument, arg.AgentID, arg.Name)
 	var i AgentDocument
@@ -98,10 +100,12 @@ WHERE agent_id = ?1
     AND is_active = 1
 ORDER BY category,
     name
+LIMIT ?2
 `
 
 type ListAllDocumentsParams struct {
-	AgentID string `json:"agent_id"`
+	AgentID string `db:"agent_id" json:"agent_id"`
+	Lim     int64  `db:"lim" json:"lim"`
 }
 
 // ListAllDocuments
@@ -120,8 +124,9 @@ type ListAllDocumentsParams struct {
 //	    AND is_active = 1
 //	ORDER BY category,
 //	    name
+//	LIMIT ?2
 func (q *Queries) ListAllDocuments(ctx context.Context, arg ListAllDocumentsParams) ([]AgentDocument, error) {
-	rows, err := q.db.QueryContext(ctx, ListAllDocuments, arg.AgentID)
+	rows, err := q.db.QueryContext(ctx, ListAllDocuments, arg.AgentID, arg.Lim)
 	if err != nil {
 		return nil, err
 	}
@@ -168,11 +173,13 @@ WHERE agent_id = ?1
     AND category = ?2
     AND is_active = 1
 ORDER BY name
+LIMIT ?3
 `
 
 type ListDocumentsByCategoryParams struct {
-	AgentID  string `json:"agent_id"`
-	Category string `json:"category"`
+	AgentID  string `db:"agent_id" json:"agent_id"`
+	Category string `db:"category" json:"category"`
+	Lim      int64  `db:"lim" json:"lim"`
 }
 
 // ListDocumentsByCategory
@@ -191,8 +198,9 @@ type ListDocumentsByCategoryParams struct {
 //	    AND category = ?2
 //	    AND is_active = 1
 //	ORDER BY name
+//	LIMIT ?3
 func (q *Queries) ListDocumentsByCategory(ctx context.Context, arg ListDocumentsByCategoryParams) ([]AgentDocument, error) {
-	rows, err := q.db.QueryContext(ctx, ListDocumentsByCategory, arg.AgentID, arg.Category)
+	rows, err := q.db.QueryContext(ctx, ListDocumentsByCategory, arg.AgentID, arg.Category, arg.Lim)
 	if err != nil {
 		return nil, err
 	}
@@ -256,11 +264,11 @@ SET content = excluded.content,
 `
 
 type UpsertDocumentParams struct {
-	ID       ids.UUID `json:"id"`
-	AgentID  string   `json:"agent_id"`
-	Name     string   `json:"name"`
-	Category string   `json:"category"`
-	Content  string   `json:"content"`
+	ID       ids.UUID `db:"id" json:"id"`
+	AgentID  string   `db:"agent_id" json:"agent_id"`
+	Name     string   `db:"name" json:"name"`
+	Category string   `db:"category" json:"category"`
+	Content  string   `db:"content" json:"content"`
 }
 
 // UpsertDocument

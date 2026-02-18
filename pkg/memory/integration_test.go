@@ -28,6 +28,7 @@ func setupFullStack(t *testing.T) (*memstore.MemoryStore, *delegate.LibSQLDelega
 
 	chunker := memstore.NewMarkdownChunker(memstore.DefaultMarkdownChunkerConfig())
 	store := memstore.New(del, chunker, nil, memstore.DefaultConfig())
+	store.SetAgentID(testAgent)
 	return store, del
 }
 
@@ -59,6 +60,7 @@ func TestIntegration_GooseMigration_DownUpRoundTrip(t *testing.T) {
 	}
 	chunker := memstore.NewMarkdownChunker(memstore.DefaultMarkdownChunkerConfig())
 	store := memstore.New(del, chunker, nil, memstore.DefaultConfig())
+	store.SetAgentID(testAgent)
 	require.NoError(t, store.StoreRecall(ctx, item))
 
 	require.NoError(t, del.MigrateDown(ctx), "down migration should succeed")
@@ -118,7 +120,7 @@ func TestIntegration_ArchivalChunking_EndToEnd(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, recallID.IsZero(), "StoreArchival should return a valid recall ID")
 
-	chunks, err := del.ListArchivalChunks(ctx, recallID)
+	chunks, err := del.ListArchivalChunks(ctx, testAgent, recallID)
 	require.NoError(t, err)
 	assert.NotEmpty(t, chunks, "should create at least one archival chunk")
 
@@ -179,14 +181,14 @@ func TestIntegration_CascadeDelete(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	chunks, err := del.ListArchivalChunks(ctx, recallID)
+	chunks, err := del.ListArchivalChunks(ctx, testAgent, recallID)
 	require.NoError(t, err)
 	assert.NotEmpty(t, chunks)
 
 	require.NoError(t, store.DeleteRecall(ctx, recallID))
 
 	for _, chunk := range chunks {
-		fetched, err := del.GetArchivalChunk(ctx, chunk.ID)
+		fetched, err := del.GetArchivalChunk(ctx, testAgent, chunk.ID)
 		require.NoError(t, err)
 		assert.Nil(t, fetched, "archival chunks should be cascade-deleted with parent recall item")
 	}

@@ -24,8 +24,8 @@ WHERE agent_id = ?1
 `
 
 type CountRecallItemsParams struct {
-	AgentID    string `json:"agent_id"`
-	SessionKey string `json:"session_key"`
+	AgentID    string `db:"agent_id" json:"agent_id"`
+	SessionKey string `db:"session_key" json:"session_key"`
 }
 
 // CountRecallItems
@@ -53,8 +53,8 @@ WHERE agent_id = ?1
 `
 
 type CountSessionMessagesParams struct {
-	AgentID    string `json:"agent_id"`
-	SessionKey string `json:"session_key"`
+	AgentID    string `db:"agent_id" json:"agent_id"`
+	SessionKey string `db:"session_key" json:"session_key"`
 }
 
 // CountSessionMessages
@@ -74,18 +74,21 @@ func (q *Queries) CountSessionMessages(ctx context.Context, arg CountSessionMess
 const DeleteRecallItem = `-- name: DeleteRecallItem :exec
 DELETE FROM recall_items
 WHERE id = ?1
+    AND agent_id = ?2
 `
 
 type DeleteRecallItemParams struct {
-	ID ids.UUID `json:"id"`
+	ID      ids.UUID `db:"id" json:"id"`
+	AgentID string   `db:"agent_id" json:"agent_id"`
 }
 
 // DeleteRecallItem
 //
 //	DELETE FROM recall_items
 //	WHERE id = ?1
+//	    AND agent_id = ?2
 func (q *Queries) DeleteRecallItem(ctx context.Context, arg DeleteRecallItemParams) error {
-	_, err := q.db.ExecContext(ctx, DeleteRecallItem, arg.ID)
+	_, err := q.db.ExecContext(ctx, DeleteRecallItem, arg.ID, arg.AgentID)
 	return err
 }
 
@@ -104,10 +107,13 @@ SELECT id,
     updated_at
 FROM recall_items
 WHERE id = ?1
+    AND agent_id = ?2
+LIMIT 1
 `
 
 type GetRecallItemParams struct {
-	ID ids.UUID `json:"id"`
+	ID      ids.UUID `db:"id" json:"id"`
+	AgentID string   `db:"agent_id" json:"agent_id"`
 }
 
 // GetRecallItem
@@ -126,8 +132,10 @@ type GetRecallItemParams struct {
 //	    updated_at
 //	FROM recall_items
 //	WHERE id = ?1
+//	    AND agent_id = ?2
+//	LIMIT 1
 func (q *Queries) GetRecallItem(ctx context.Context, arg GetRecallItemParams) (RecallItem, error) {
-	row := q.db.QueryRowContext(ctx, GetRecallItem, arg.ID)
+	row := q.db.QueryRowContext(ctx, GetRecallItem, arg.ID, arg.AgentID)
 	var i RecallItem
 	err := row.Scan(
 		&i.ID,
@@ -161,10 +169,12 @@ SELECT id,
     updated_at
 FROM recall_items
 WHERE id IN (/*SLICE:ids*/?)
+    AND agent_id = ?2
 `
 
 type GetRecallItemsByIDsParams struct {
-	Ids []ids.UUID `json:"ids"`
+	Ids     []ids.UUID `db:"ids" json:"ids"`
+	AgentID string     `db:"agent_id" json:"agent_id"`
 }
 
 // GetRecallItemsByIDs
@@ -183,6 +193,7 @@ type GetRecallItemsByIDsParams struct {
 //	    updated_at
 //	FROM recall_items
 //	WHERE id IN (/*SLICE:ids*/?)
+//	    AND agent_id = ?2
 func (q *Queries) GetRecallItemsByIDs(ctx context.Context, arg GetRecallItemsByIDsParams) ([]RecallItem, error) {
 	query := GetRecallItemsByIDs
 	var queryParams []interface{}
@@ -194,6 +205,7 @@ func (q *Queries) GetRecallItemsByIDs(ctx context.Context, arg GetRecallItemsByI
 	} else {
 		query = strings.Replace(query, "/*SLICE:ids*/?", "NULL", 1)
 	}
+	queryParams = append(queryParams, arg.AgentID)
 	rows, err := q.db.QueryContext(ctx, query, queryParams...)
 	if err != nil {
 		return nil, err
@@ -261,16 +273,16 @@ VALUES (
 `
 
 type InsertRecallItemParams struct {
-	ID         ids.UUID      `json:"id"`
-	AgentID    string        `json:"agent_id"`
-	SessionKey string        `json:"session_key"`
-	Role       string        `json:"role"`
-	Sector     memory.Sector `json:"sector"`
-	Importance float64       `json:"importance"`
-	Salience   float64       `json:"salience"`
-	DecayRate  float64       `json:"decay_rate"`
-	Content    string        `json:"content"`
-	Tags       string        `json:"tags"`
+	ID         ids.UUID      `db:"id" json:"id"`
+	AgentID    string        `db:"agent_id" json:"agent_id"`
+	SessionKey string        `db:"session_key" json:"session_key"`
+	Role       string        `db:"role" json:"role"`
+	Sector     memory.Sector `db:"sector" json:"sector"`
+	Importance float64       `db:"importance" json:"importance"`
+	Salience   float64       `db:"salience" json:"salience"`
+	DecayRate  float64       `db:"decay_rate" json:"decay_rate"`
+	Content    string        `db:"content" json:"content"`
+	Tags       string        `db:"tags" json:"tags"`
 }
 
 // Recall Item queries
@@ -351,11 +363,11 @@ VALUES (
 `
 
 type InsertSessionMessageParams struct {
-	ID         ids.UUID `json:"id"`
-	AgentID    string   `json:"agent_id"`
-	SessionKey string   `json:"session_key"`
-	Role       string   `json:"role"`
-	Content    string   `json:"content"`
+	ID         ids.UUID `db:"id" json:"id"`
+	AgentID    string   `db:"agent_id" json:"agent_id"`
+	SessionKey string   `db:"session_key" json:"session_key"`
+	Role       string   `db:"role" json:"role"`
+	Content    string   `db:"content" json:"content"`
 }
 
 // InsertSessionMessage
@@ -423,10 +435,10 @@ LIMIT ?4 OFFSET ?3
 `
 
 type ListRecallItemsParams struct {
-	AgentID    string `json:"agent_id"`
-	SessionKey string `json:"session_key"`
-	Off        int64  `json:"off"`
-	Lim        int64  `json:"lim"`
+	AgentID    string `db:"agent_id" json:"agent_id"`
+	SessionKey string `db:"session_key" json:"session_key"`
+	Off        int64  `db:"off" json:"off"`
+	Lim        int64  `db:"lim" json:"lim"`
 }
 
 // ListRecallItems
@@ -518,10 +530,10 @@ LIMIT ?4
 `
 
 type ListSessionMessagesParams struct {
-	AgentID    string `json:"agent_id"`
-	SessionKey string `json:"session_key"`
-	Role       string `json:"role"`
-	Lim        int64  `json:"lim"`
+	AgentID    string `db:"agent_id" json:"agent_id"`
+	SessionKey string `db:"session_key" json:"session_key"`
+	Role       string `db:"role" json:"role"`
+	Lim        int64  `db:"lim" json:"lim"`
 }
 
 // ListSessionMessages
@@ -610,9 +622,9 @@ LIMIT ?3
 `
 
 type SearchRecallByKeywordParams struct {
-	Keyword *string `json:"keyword"`
-	AgentID string  `json:"agent_id"`
-	Lim     int64   `json:"lim"`
+	Keyword *string `db:"keyword" json:"keyword"`
+	AgentID string  `db:"agent_id" json:"agent_id"`
+	Lim     int64   `db:"lim" json:"lim"`
 }
 
 // SearchRecallByKeyword
@@ -681,17 +693,19 @@ SET role = ?1,
     tags = ?7,
     updated_at = datetime('now')
 WHERE id = ?8
+    AND agent_id = ?9
 `
 
 type UpdateRecallItemParams struct {
-	Role       string        `json:"role"`
-	Sector     memory.Sector `json:"sector"`
-	Importance float64       `json:"importance"`
-	Salience   float64       `json:"salience"`
-	DecayRate  float64       `json:"decay_rate"`
-	Content    string        `json:"content"`
-	Tags       string        `json:"tags"`
-	ID         ids.UUID      `json:"id"`
+	Role       string        `db:"role" json:"role"`
+	Sector     memory.Sector `db:"sector" json:"sector"`
+	Importance float64       `db:"importance" json:"importance"`
+	Salience   float64       `db:"salience" json:"salience"`
+	DecayRate  float64       `db:"decay_rate" json:"decay_rate"`
+	Content    string        `db:"content" json:"content"`
+	Tags       string        `db:"tags" json:"tags"`
+	ID         ids.UUID      `db:"id" json:"id"`
+	AgentID    string        `db:"agent_id" json:"agent_id"`
 }
 
 // UpdateRecallItem
@@ -706,6 +720,7 @@ type UpdateRecallItemParams struct {
 //	    tags = ?7,
 //	    updated_at = datetime('now')
 //	WHERE id = ?8
+//	    AND agent_id = ?9
 func (q *Queries) UpdateRecallItem(ctx context.Context, arg UpdateRecallItemParams) error {
 	_, err := q.db.ExecContext(ctx, UpdateRecallItem,
 		arg.Role,
@@ -716,6 +731,7 @@ func (q *Queries) UpdateRecallItem(ctx context.Context, arg UpdateRecallItemPara
 		arg.Content,
 		arg.Tags,
 		arg.ID,
+		arg.AgentID,
 	)
 	return err
 }

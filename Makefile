@@ -152,6 +152,12 @@ sqlc-check:
 	@git diff --exit-code -- pkg/memory/sqlc/ || (echo "::error::sqlc generated code is stale. Run 'sqlc generate -f pkg/memory/sqlc/sqlc.yaml' and commit." && exit 1)
 	@echo "sqlc OK"
 
+## sqlc-vet: Run sqlc vet rules (no-unbounded-delete, one-select-requires-limit-1)
+sqlc-vet:
+	@echo "Running sqlc vet..."
+	@sqlc vet -f pkg/memory/sqlc/sqlc.yaml
+	@echo "sqlc vet OK"
+
 # ---------------------------------------------------------------------------
 # Fantasy SDK vendor management
 # Usage: make fantasy-diff FANTASY_VERSION=v0.9.0
@@ -181,8 +187,8 @@ test-integration:
 	@$(GO) test -tags integration -count=1 -timeout 120s -v ./pkg/memory/...
 	@echo "Integration tests OK"
 
-## check: Run vet, fmt, and verify dependencies
-check: deps fmt vet test
+## check: Run vet, fmt, sqlc vet, and verify dependencies
+check: deps fmt vet sqlc-vet test
 
 ## run: Build and run picoclaw
 run: build

@@ -16,8 +16,8 @@ WHERE agent_id = ?1
 `
 
 type DeleteKVParams struct {
-	AgentID string `json:"agent_id"`
-	Key     string `json:"key"`
+	AgentID string `db:"agent_id" json:"agent_id"`
+	Key     string `db:"key" json:"key"`
 }
 
 // DeleteKV
@@ -38,11 +38,12 @@ SELECT agent_id,
 FROM agent_kv
 WHERE agent_id = ?1
     AND key = ?2
+LIMIT 1
 `
 
 type GetKVParams struct {
-	AgentID string `json:"agent_id"`
-	Key     string `json:"key"`
+	AgentID string `db:"agent_id" json:"agent_id"`
+	Key     string `db:"key" json:"key"`
 }
 
 // Agent KV Store queries
@@ -54,6 +55,7 @@ type GetKVParams struct {
 //	FROM agent_kv
 //	WHERE agent_id = ?1
 //	    AND key = ?2
+//	LIMIT 1
 func (q *Queries) GetKV(ctx context.Context, arg GetKVParams) (AgentKv, error) {
 	row := q.db.QueryRowContext(ctx, GetKV, arg.AgentID, arg.Key)
 	var i AgentKv
@@ -79,9 +81,9 @@ LIMIT ?3
 `
 
 type ListKVByPrefixParams struct {
-	AgentID string  `json:"agent_id"`
-	Prefix  *string `json:"prefix"`
-	Lim     int64   `json:"lim"`
+	AgentID string  `db:"agent_id" json:"agent_id"`
+	Prefix  *string `db:"prefix" json:"prefix"`
+	Lim     int64   `db:"lim" json:"lim"`
 }
 
 // ListKVByPrefix
@@ -137,9 +139,9 @@ SET value = excluded.value,
 `
 
 type UpsertKVParams struct {
-	AgentID string `json:"agent_id"`
-	Key     string `json:"key"`
-	Value   string `json:"value"`
+	AgentID string `db:"agent_id" json:"agent_id"`
+	Key     string `db:"key" json:"key"`
+	Value   string `db:"value" json:"value"`
 }
 
 // UpsertKV

@@ -5,6 +5,7 @@
 package sqlc
 
 import (
+	"encoding/json"
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/ids"
@@ -12,75 +13,229 @@ import (
 )
 
 type AgentAuditLog struct {
-	ID         ids.UUID  `json:"id"`
-	AgentID    string    `json:"agent_id"`
-	SessionKey string    `json:"session_key"`
-	Action     string    `json:"action"`
-	Target     string    `json:"target"`
-	Input      *string   `json:"input"`
-	Output     *string   `json:"output"`
-	DurationMs *int64    `json:"duration_ms"`
-	CreatedAt  time.Time `json:"created_at"`
+	ID         ids.UUID  `db:"id" json:"id"`
+	AgentID    string    `db:"agent_id" json:"agent_id"`
+	SessionKey string    `db:"session_key" json:"session_key"`
+	Action     string    `db:"action" json:"action"`
+	Target     string    `db:"target" json:"target"`
+	Input      *string   `db:"input" json:"input"`
+	Output     *string   `db:"output" json:"output"`
+	DurationMs *int64    `db:"duration_ms" json:"duration_ms"`
+	CreatedAt  time.Time `db:"created_at" json:"created_at"`
+}
+
+type AgentCheckpoint struct {
+	ID             ids.UUID        `db:"id" json:"id"`
+	ConversationID ids.UUID        `db:"conversation_id" json:"conversation_id"`
+	Name           string          `db:"name" json:"name"`
+	RunStateID     ids.UUID        `db:"run_state_id" json:"run_state_id"`
+	MetadataJson   json.RawMessage `db:"metadata_json" json:"metadata_json"`
+	CreatedAt      time.Time       `db:"created_at" json:"created_at"`
+	UpdatedAt      time.Time       `db:"updated_at" json:"updated_at"`
+}
+
+type AgentConversation struct {
+	ID        ids.UUID  `db:"id" json:"id"`
+	Title     *string   `db:"title" json:"title"`
+	CreatedAt time.Time `db:"created_at" json:"created_at"`
+	UpdatedAt time.Time `db:"updated_at" json:"updated_at"`
+}
+
+type AgentConversationFork struct {
+	ID                   ids.UUID        `db:"id" json:"id"`
+	ParentConversationID ids.UUID        `db:"parent_conversation_id" json:"parent_conversation_id"`
+	ChildConversationID  ids.UUID        `db:"child_conversation_id" json:"child_conversation_id"`
+	CheckpointID         ids.UUID        `db:"checkpoint_id" json:"checkpoint_id"`
+	MetadataJson         json.RawMessage `db:"metadata_json" json:"metadata_json"`
+	CreatedAt            time.Time       `db:"created_at" json:"created_at"`
+	UpdatedAt            time.Time       `db:"updated_at" json:"updated_at"`
+}
+
+type AgentConversationLink struct {
+	ID                   ids.UUID        `db:"id" json:"id"`
+	ConversationID       ids.UUID        `db:"conversation_id" json:"conversation_id"`
+	LinkedConversationID ids.UUID        `db:"linked_conversation_id" json:"linked_conversation_id"`
+	Kind                 string          `db:"kind" json:"kind"`
+	MetadataJson         json.RawMessage `db:"metadata_json" json:"metadata_json"`
+	CreatedAt            time.Time       `db:"created_at" json:"created_at"`
+	UpdatedAt            time.Time       `db:"updated_at" json:"updated_at"`
 }
 
 type AgentDocument struct {
-	ID        ids.UUID  `json:"id"`
-	AgentID   string    `json:"agent_id"`
-	Name      string    `json:"name"`
-	Category  string    `json:"category"`
-	Content   string    `json:"content"`
-	Version   int64     `json:"version"`
-	IsActive  bool      `json:"is_active"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID        ids.UUID  `db:"id" json:"id"`
+	AgentID   string    `db:"agent_id" json:"agent_id"`
+	Name      string    `db:"name" json:"name"`
+	Category  string    `db:"category" json:"category"`
+	Content   string    `db:"content" json:"content"`
+	Version   int64     `db:"version" json:"version"`
+	IsActive  bool      `db:"is_active" json:"is_active"`
+	CreatedAt time.Time `db:"created_at" json:"created_at"`
+	UpdatedAt time.Time `db:"updated_at" json:"updated_at"`
 }
 
 type AgentKv struct {
-	AgentID   string    `json:"agent_id"`
-	Key       string    `json:"key"`
-	Value     string    `json:"value"`
-	UpdatedAt time.Time `json:"updated_at"`
+	AgentID   string    `db:"agent_id" json:"agent_id"`
+	Key       string    `db:"key" json:"key"`
+	Value     string    `db:"value" json:"value"`
+	UpdatedAt time.Time `db:"updated_at" json:"updated_at"`
+}
+
+type AgentMention struct {
+	ID             ids.UUID        `db:"id" json:"id"`
+	ConversationID ids.UUID        `db:"conversation_id" json:"conversation_id"`
+	MessageID      ids.UUID        `db:"message_id" json:"message_id"`
+	Kind           string          `db:"kind" json:"kind"`
+	TargetID       ids.UUID        `db:"target_id" json:"target_id"`
+	Raw            string          `db:"raw" json:"raw"`
+	MetadataJson   json.RawMessage `db:"metadata_json" json:"metadata_json"`
+	CreatedAt      time.Time       `db:"created_at" json:"created_at"`
+	UpdatedAt      time.Time       `db:"updated_at" json:"updated_at"`
+}
+
+type AgentMessage struct {
+	ID             ids.UUID        `db:"id" json:"id"`
+	ConversationID ids.UUID        `db:"conversation_id" json:"conversation_id"`
+	Role           string          `db:"role" json:"role"`
+	Content        string          `db:"content" json:"content"`
+	MetadataJson   json.RawMessage `db:"metadata_json" json:"metadata_json"`
+	CreatedAt      time.Time       `db:"created_at" json:"created_at"`
+	UpdatedAt      time.Time       `db:"updated_at" json:"updated_at"`
+}
+
+type AgentMessageRevision struct {
+	ID           ids.UUID        `db:"id" json:"id"`
+	MessageID    ids.UUID        `db:"message_id" json:"message_id"`
+	Editor       string          `db:"editor" json:"editor"`
+	OldContent   string          `db:"old_content" json:"old_content"`
+	NewContent   string          `db:"new_content" json:"new_content"`
+	MetadataJson json.RawMessage `db:"metadata_json" json:"metadata_json"`
+	CreatedAt    time.Time       `db:"created_at" json:"created_at"`
+	UpdatedAt    time.Time       `db:"updated_at" json:"updated_at"`
+}
+
+type AgentRun struct {
+	ID             ids.UUID        `db:"id" json:"id"`
+	ConversationID ids.UUID        `db:"conversation_id" json:"conversation_id"`
+	Status         string          `db:"status" json:"status"`
+	MetadataJson   json.RawMessage `db:"metadata_json" json:"metadata_json"`
+	CreatedAt      time.Time       `db:"created_at" json:"created_at"`
+	UpdatedAt      time.Time       `db:"updated_at" json:"updated_at"`
+}
+
+type AgentRunState struct {
+	ID           ids.UUID        `db:"id" json:"id"`
+	RunID        ids.UUID        `db:"run_id" json:"run_id"`
+	StepIndex    int64           `db:"step_index" json:"step_index"`
+	State        string          `db:"state" json:"state"`
+	SnapshotJson json.RawMessage `db:"snapshot_json" json:"snapshot_json"`
+	CreatedAt    time.Time       `db:"created_at" json:"created_at"`
+	UpdatedAt    time.Time       `db:"updated_at" json:"updated_at"`
+}
+
+type AgentStateTransition struct {
+	ID        ids.UUID        `db:"id" json:"id"`
+	RunID     ids.UUID        `db:"run_id" json:"run_id"`
+	StepIndex int64           `db:"step_index" json:"step_index"`
+	FromState string          `db:"from_state" json:"from_state"`
+	ToState   string          `db:"to_state" json:"to_state"`
+	Trigger   string          `db:"trigger" json:"trigger"`
+	At        time.Time       `db:"at" json:"at"`
+	MetaJson  json.RawMessage `db:"meta_json" json:"meta_json"`
+	Error     *string         `db:"error" json:"error"`
+	CreatedAt time.Time       `db:"created_at" json:"created_at"`
+	UpdatedAt time.Time       `db:"updated_at" json:"updated_at"`
+}
+
+type AgentThread struct {
+	ID             ids.UUID        `db:"id" json:"id"`
+	ConversationID ids.UUID        `db:"conversation_id" json:"conversation_id"`
+	Title          *string         `db:"title" json:"title"`
+	MetadataJson   json.RawMessage `db:"metadata_json" json:"metadata_json"`
+	CreatedAt      time.Time       `db:"created_at" json:"created_at"`
+	UpdatedAt      time.Time       `db:"updated_at" json:"updated_at"`
+}
+
+type AgentThreadMessage struct {
+	ID           ids.UUID        `db:"id" json:"id"`
+	ThreadID     ids.UUID        `db:"thread_id" json:"thread_id"`
+	Role         string          `db:"role" json:"role"`
+	Content      string          `db:"content" json:"content"`
+	MetadataJson json.RawMessage `db:"metadata_json" json:"metadata_json"`
+	CreatedAt    time.Time       `db:"created_at" json:"created_at"`
+	UpdatedAt    time.Time       `db:"updated_at" json:"updated_at"`
+}
+
+type AgentToolResult struct {
+	ID             ids.UUID        `db:"id" json:"id"`
+	ConversationID ids.UUID        `db:"conversation_id" json:"conversation_id"`
+	RunID          ids.UUID        `db:"run_id" json:"run_id"`
+	StepIndex      int64           `db:"step_index" json:"step_index"`
+	ToolCallID     string          `db:"tool_call_id" json:"tool_call_id"`
+	ToolName       string          `db:"tool_name" json:"tool_name"`
+	FullKey        string          `db:"full_key" json:"full_key"`
+	Preview        *string         `db:"preview" json:"preview"`
+	ChunkCount     int64           `db:"chunk_count" json:"chunk_count"`
+	MetadataJson   json.RawMessage `db:"metadata_json" json:"metadata_json"`
+	CreatedAt      time.Time       `db:"created_at" json:"created_at"`
+	UpdatedAt      time.Time       `db:"updated_at" json:"updated_at"`
 }
 
 type ArchivalChunk struct {
-	ID         ids.UUID         `json:"id"`
-	RecallID   ids.UUID         `json:"recall_id"`
-	ChunkIndex int64            `json:"chunk_index"`
-	Content    string           `json:"content"`
-	Embedding  memory.Embedding `json:"embedding"`
-	Source     string           `json:"source"`
-	Hash       string           `json:"hash"`
-	CreatedAt  time.Time        `json:"created_at"`
+	ID         ids.UUID         `db:"id" json:"id"`
+	RecallID   ids.UUID         `db:"recall_id" json:"recall_id"`
+	ChunkIndex int64            `db:"chunk_index" json:"chunk_index"`
+	Content    string           `db:"content" json:"content"`
+	Embedding  memory.Embedding `db:"embedding" json:"embedding"`
+	Source     string           `db:"source" json:"source"`
+	Hash       string           `db:"hash" json:"hash"`
+	CreatedAt  time.Time        `db:"created_at" json:"created_at"`
+}
+
+type Job struct {
+	ID          ids.UUID        `db:"id" json:"id"`
+	Kind        string          `db:"kind" json:"kind"`
+	Status      string          `db:"status" json:"status"`
+	RunAt       time.Time       `db:"run_at" json:"run_at"`
+	Attempts    int64           `db:"attempts" json:"attempts"`
+	MaxAttempts int64           `db:"max_attempts" json:"max_attempts"`
+	LockedAt    *time.Time      `db:"locked_at" json:"locked_at"`
+	LockedBy    *string         `db:"locked_by" json:"locked_by"`
+	PayloadJson json.RawMessage `db:"payload_json" json:"payload_json"`
+	DedupeKey   *string         `db:"dedupe_key" json:"dedupe_key"`
+	LastError   *string         `db:"last_error" json:"last_error"`
+	CreatedAt   time.Time       `db:"created_at" json:"created_at"`
+	UpdatedAt   time.Time       `db:"updated_at" json:"updated_at"`
+	CompletedAt *time.Time      `db:"completed_at" json:"completed_at"`
 }
 
 type MemorySummary struct {
-	ID         ids.UUID  `json:"id"`
-	AgentID    string    `json:"agent_id"`
-	SessionKey string    `json:"session_key"`
-	Content    string    `json:"content"`
-	FromMsgIdx int64     `json:"from_msg_idx"`
-	ToMsgIdx   int64     `json:"to_msg_idx"`
-	CreatedAt  time.Time `json:"created_at"`
+	ID         ids.UUID  `db:"id" json:"id"`
+	AgentID    string    `db:"agent_id" json:"agent_id"`
+	SessionKey string    `db:"session_key" json:"session_key"`
+	Content    string    `db:"content" json:"content"`
+	FromMsgIdx int64     `db:"from_msg_idx" json:"from_msg_idx"`
+	ToMsgIdx   int64     `db:"to_msg_idx" json:"to_msg_idx"`
+	CreatedAt  time.Time `db:"created_at" json:"created_at"`
 }
 
 type RecallItem struct {
-	ID         ids.UUID      `json:"id"`
-	AgentID    string        `json:"agent_id"`
-	SessionKey string        `json:"session_key"`
-	Role       string        `json:"role"`
-	Sector     memory.Sector `json:"sector"`
-	Importance float64       `json:"importance"`
-	Salience   float64       `json:"salience"`
-	DecayRate  float64       `json:"decay_rate"`
-	Content    string        `json:"content"`
-	Tags       string        `json:"tags"`
-	CreatedAt  time.Time     `json:"created_at"`
-	UpdatedAt  time.Time     `json:"updated_at"`
+	ID         ids.UUID      `db:"id" json:"id"`
+	AgentID    string        `db:"agent_id" json:"agent_id"`
+	SessionKey string        `db:"session_key" json:"session_key"`
+	Role       string        `db:"role" json:"role"`
+	Sector     memory.Sector `db:"sector" json:"sector"`
+	Importance float64       `db:"importance" json:"importance"`
+	Salience   float64       `db:"salience" json:"salience"`
+	DecayRate  float64       `db:"decay_rate" json:"decay_rate"`
+	Content    string        `db:"content" json:"content"`
+	Tags       string        `db:"tags" json:"tags"`
+	CreatedAt  time.Time     `db:"created_at" json:"created_at"`
+	UpdatedAt  time.Time     `db:"updated_at" json:"updated_at"`
 }
 
 type WorkingContext struct {
-	AgentID    string    `json:"agent_id"`
-	SessionKey string    `json:"session_key"`
-	Content    string    `json:"content"`
-	UpdatedAt  time.Time `json:"updated_at"`
+	AgentID    string    `db:"agent_id" json:"agent_id"`
+	SessionKey string    `db:"session_key" json:"session_key"`
+	Content    string    `db:"content" json:"content"`
+	UpdatedAt  time.Time `db:"updated_at" json:"updated_at"`
 }

@@ -11,7 +11,8 @@ SELECT id,
     updated_at
 FROM agent_documents
 WHERE agent_id = sqlc.arg(agent_id)
-    AND name = sqlc.arg(name);
+    AND name = sqlc.arg(name)
+LIMIT 1;
 -- name: UpsertDocument :exec
 INSERT INTO agent_documents (
         id,
@@ -55,7 +56,8 @@ FROM agent_documents
 WHERE agent_id = sqlc.arg(agent_id)
     AND category = sqlc.arg(category)
     AND is_active = 1
-ORDER BY name;
+ORDER BY name
+LIMIT sqlc.arg(lim);
 -- name: DeleteDocument :exec
 DELETE FROM agent_documents
 WHERE agent_id = sqlc.arg(agent_id)
@@ -74,4 +76,5 @@ FROM agent_documents
 WHERE agent_id = sqlc.arg(agent_id)
     AND is_active = 1
 ORDER BY category,
-    name;
+    name
+LIMIT sqlc.arg(lim);

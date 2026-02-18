@@ -178,7 +178,7 @@ func TestNewFromConfig_LocalFullRoundTrip(t *testing.T) {
 		t.Fatalf("InsertRecallItem: %v", err)
 	}
 
-	got, err := d.GetRecallItem(ctx, item.ID)
+	got, err := d.GetRecallItem(ctx, "a1", item.ID)
 	if err != nil {
 		t.Fatalf("GetRecallItem: %v", err)
 	}
