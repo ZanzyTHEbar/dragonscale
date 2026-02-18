@@ -175,6 +175,12 @@ fantasy-sync:
 fantasy-patch:
 	@./scripts/sync-fantasy.sh --save-patch $(NAME)
 
+## test-integration: Run integration tests (requires build tags)
+test-integration:
+	@echo "Running integration tests..."
+	@$(GO) test -tags integration -count=1 -timeout 120s -v ./pkg/memory/...
+	@echo "Integration tests OK"
+
 ## check: Run vet, fmt, and verify dependencies
 check: deps fmt vet test
 
