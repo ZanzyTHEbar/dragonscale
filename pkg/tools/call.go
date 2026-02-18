@@ -4,7 +4,19 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+
+	"github.com/sipeed/picoclaw/pkg/logger"
 )
+
+type ctxKeyResources struct{}
+
+// ResourcesFromContext extracts loaded resources injected by tool_call before dispatch.
+func ResourcesFromContext(ctx context.Context) map[string]string {
+	if v, ok := ctx.Value(ctxKeyResources{}).(map[string]string); ok {
+		return v
+	}
+	return nil
+}
 
 // ToolCallTool is a meta-tool that dispatches to any registered tool by name.
 // This enables progressive disclosure: instead of exposing all tools to the LLM,
@@ -77,6 +89,18 @@ func (t *ToolCallTool) Execute(ctx context.Context, args map[string]interface{})
 		return ErrorResult(fmt.Sprintf("arguments must be a JSON object, got %T", v))
 	}
 
-	// Dispatch to the target tool via the registry
+	// If the target tool declares resources, load them before dispatch.
+	if tool, found := t.registry.Get(toolName); found {
+		if rp, ok := tool.(ResourceProvider); ok {
+			resources, err := rp.LoadResources(ctx)
+			if err != nil {
+				logger.WarnCF("tool_call", "Failed to load resources for tool",
+					map[string]interface{}{"tool": toolName, "error": err.Error()})
+			} else if len(resources) > 0 {
+				ctx = context.WithValue(ctx, ctxKeyResources{}, resources)
+			}
+		}
+	}
+
 	return t.registry.ExecuteWithContext(ctx, toolName, toolArgs, t.channel, t.chatID, nil)
 }

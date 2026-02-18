@@ -69,6 +69,27 @@ type AsyncTool interface {
 	SetCallback(cb AsyncCallback)
 }
 
+// ResourceProvider is an optional interface that tools can implement to declare
+// resources they need loaded before execution (schemas, examples, docs, configs).
+//
+// When a tool implements this interface, the tool_call meta-tool will call
+// LoadResources before dispatching the tool execution, injecting the loaded
+// resources into the execution context.
+//
+// This enables lazy loading: resources are only fetched when the tool is
+// actually invoked, not when it's registered, saving memory and startup time.
+type ResourceProvider interface {
+	// ResourceKeys returns identifiers for resources this tool needs.
+	// Keys are opaque strings meaningful to the tool (e.g., "schema:users",
+	// "example:basic", "config:limits").
+	ResourceKeys() []string
+
+	// LoadResources fetches the declared resources and returns them as a map
+	// of key -> content. Called once per tool_call dispatch. The tool can
+	// cache internally if needed.
+	LoadResources(ctx context.Context) (map[string]string, error)
+}
+
 func ToolToSchema(tool Tool) map[string]interface{} {
 	return map[string]interface{}{
 		"type": "function",

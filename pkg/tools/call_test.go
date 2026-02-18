@@ -172,7 +172,83 @@ func TestToolCallTool_ContextPropagation(t *testing.T) {
 	}
 }
 
+func TestToolCallTool_ResourceProvider_LoadsResources(t *testing.T) {
+	r := NewToolRegistry()
+	rt := &resourceAwareTool{
+		resources: map[string]string{
+			"schema:users": `{"name": "string", "age": "int"}`,
+		},
+	}
+	r.Register(rt)
+	tc := NewToolCallTool(r)
+
+	result := tc.Execute(context.Background(), map[string]interface{}{
+		"tool_name": "resource_tool",
+		"arguments": map[string]interface{}{},
+	})
+
+	if result.IsError {
+		t.Fatalf("unexpected error: %s", result.ForLLM)
+	}
+
+	// The tool should have received resources via context
+	if rt.receivedResources == nil {
+		t.Fatal("expected resources to be injected via context")
+	}
+	if rt.receivedResources["schema:users"] == "" {
+		t.Error("expected 'schema:users' resource")
+	}
+}
+
+func TestToolCallTool_NoResourceProvider_StillWorks(t *testing.T) {
+	r := NewToolRegistry()
+	r.Register(&stubTool{name: "plain", desc: "No resources"})
+	tc := NewToolCallTool(r)
+
+	result := tc.Execute(context.Background(), map[string]interface{}{
+		"tool_name": "plain",
+		"arguments": map[string]interface{}{},
+	})
+
+	if result.IsError {
+		t.Errorf("unexpected error: %s", result.ForLLM)
+	}
+}
+
+func TestResourcesFromContext_Empty(t *testing.T) {
+	res := ResourcesFromContext(context.Background())
+	if res != nil {
+		t.Error("expected nil for empty context")
+	}
+}
+
 // --- test helpers ---
+
+// resourceAwareTool implements both Tool and ResourceProvider
+type resourceAwareTool struct {
+	resources         map[string]string
+	receivedResources map[string]string
+}
+
+func (r *resourceAwareTool) Name() string        { return "resource_tool" }
+func (r *resourceAwareTool) Description() string { return "Tool with resources" }
+func (r *resourceAwareTool) Parameters() map[string]interface{} {
+	return map[string]interface{}{}
+}
+func (r *resourceAwareTool) ResourceKeys() []string {
+	keys := make([]string, 0, len(r.resources))
+	for k := range r.resources {
+		keys = append(keys, k)
+	}
+	return keys
+}
+func (r *resourceAwareTool) LoadResources(_ context.Context) (map[string]string, error) {
+	return r.resources, nil
+}
+func (r *resourceAwareTool) Execute(ctx context.Context, _ map[string]interface{}) *ToolResult {
+	r.receivedResources = ResourcesFromContext(ctx)
+	return &ToolResult{ForLLM: "ok"}
+}
 
 type echoTool struct{}
 
