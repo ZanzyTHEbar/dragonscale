@@ -164,7 +164,7 @@ make build
 
 ```bash
 # Initialize config and workspace
-./build/picoclaw onboard
+./bin/picoclaw onboard
 ```
 
 Edit `~/.picoclaw/config.json`:

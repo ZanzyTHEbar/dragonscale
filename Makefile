@@ -3,7 +3,7 @@
 
 # Build variables
 BINARY_NAME=picoclaw
-BUILD_DIR=build
+BUILD_DIR=bin
 CMD_DIR=cmd/$(BINARY_NAME)
 MAIN_GO=$(CMD_DIR)/main.go
 

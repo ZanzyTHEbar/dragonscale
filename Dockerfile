@@ -27,7 +27,7 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
   CMD wget -q --spider http://localhost:18790/health || exit 1
 
 # Copy binary
-COPY --from=builder /src/build/picoclaw /usr/local/bin/picoclaw
+COPY --from=builder /src/bin/picoclaw /usr/local/bin/picoclaw
 
 # Create non-root user and group
 RUN addgroup -g 1000 picoclaw && \
