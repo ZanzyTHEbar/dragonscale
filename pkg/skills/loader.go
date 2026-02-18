@@ -19,15 +19,21 @@ const (
 )
 
 type SkillMetadata struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
+	Name        string   `json:"name"`
+	Description string   `json:"description"`
+	Tags        []string `json:"tags,omitempty"`
+	Links       []string `json:"links,omitempty"`
+	Domain      string   `json:"domain,omitempty"`
+	IsMOC       bool     `json:"is_moc,omitempty"`
 }
 
 type SkillInfo struct {
-	Name        string `json:"name"`
-	Path        string `json:"path"`
-	Source      string `json:"source"`
-	Description string `json:"description"`
+	Name        string   `json:"name"`
+	Path        string   `json:"path"`
+	Source      string   `json:"source"`
+	Description string   `json:"description"`
+	Tags        []string `json:"tags,omitempty"`
+	Domain      string   `json:"domain,omitempty"`
 }
 
 func (info SkillInfo) validate() error {
@@ -85,6 +91,8 @@ func (sl *SkillsLoader) ListSkills() []SkillInfo {
 						if metadata != nil {
 							info.Description = metadata.Description
 							info.Name = metadata.Name
+							info.Tags = metadata.Tags
+							info.Domain = metadata.Domain
 						}
 						if err := info.validate(); err != nil {
 							slog.Warn("invalid skill from workspace", "name", info.Name, "error", err)
@@ -116,16 +124,18 @@ func (sl *SkillsLoader) ListSkills() []SkillInfo {
 							continue
 						}
 
-						info := SkillInfo{
-							Name:   dir.Name(),
-							Path:   skillFile,
-							Source: "global",
-						}
-						metadata := sl.getSkillMetadata(skillFile)
-						if metadata != nil {
-							info.Description = metadata.Description
-							info.Name = metadata.Name
-						}
+					info := SkillInfo{
+						Name:   dir.Name(),
+						Path:   skillFile,
+						Source: "global",
+					}
+					metadata := sl.getSkillMetadata(skillFile)
+					if metadata != nil {
+						info.Description = metadata.Description
+						info.Name = metadata.Name
+						info.Tags = metadata.Tags
+						info.Domain = metadata.Domain
+					}
 						if err := info.validate(); err != nil {
 							slog.Warn("invalid skill from global", "name", info.Name, "error", err)
 							continue
@@ -155,16 +165,18 @@ func (sl *SkillsLoader) ListSkills() []SkillInfo {
 							continue
 						}
 
-						info := SkillInfo{
-							Name:   dir.Name(),
-							Path:   skillFile,
-							Source: "builtin",
-						}
-						metadata := sl.getSkillMetadata(skillFile)
-						if metadata != nil {
-							info.Description = metadata.Description
-							info.Name = metadata.Name
-						}
+					info := SkillInfo{
+						Name:   dir.Name(),
+						Path:   skillFile,
+						Source: "builtin",
+					}
+					metadata := sl.getSkillMetadata(skillFile)
+					if metadata != nil {
+						info.Description = metadata.Description
+						info.Name = metadata.Name
+						info.Tags = metadata.Tags
+						info.Domain = metadata.Domain
+					}
 						if err := info.validate(); err != nil {
 							slog.Warn("invalid skill from builtin", "name", info.Name, "error", err)
 							continue
@@ -236,11 +248,17 @@ func (sl *SkillsLoader) BuildSkillsSummary() string {
 		escapedDesc := escapeXML(s.Description)
 		escapedPath := escapeXML(s.Path)
 
-		lines = append(lines, fmt.Sprintf("  <skill>"))
+		lines = append(lines, "  <skill>")
 		lines = append(lines, fmt.Sprintf("    <name>%s</name>", escapedName))
 		lines = append(lines, fmt.Sprintf("    <description>%s</description>", escapedDesc))
 		lines = append(lines, fmt.Sprintf("    <location>%s</location>", escapedPath))
 		lines = append(lines, fmt.Sprintf("    <source>%s</source>", s.Source))
+		if len(s.Tags) > 0 {
+			lines = append(lines, fmt.Sprintf("    <tags>%s</tags>", escapeXML(strings.Join(s.Tags, ", "))))
+		}
+		if s.Domain != "" {
+			lines = append(lines, fmt.Sprintf("    <domain>%s</domain>", escapeXML(s.Domain)))
+		}
 		lines = append(lines, "  </skill>")
 	}
 	lines = append(lines, "</skills>")
@@ -262,23 +280,28 @@ func (sl *SkillsLoader) getSkillMetadata(skillPath string) *SkillMetadata {
 	}
 
 	// Try JSON first (for backward compatibility)
-	var jsonMeta struct {
-		Name        string `json:"name"`
-		Description string `json:"description"`
-	}
-	if err := json.Unmarshal([]byte(frontmatter), &jsonMeta); err == nil {
-		return &SkillMetadata{
-			Name:        jsonMeta.Name,
-			Description: jsonMeta.Description,
-		}
+	var jsonMeta SkillMetadata
+	if err := json.Unmarshal([]byte(frontmatter), &jsonMeta); err == nil && jsonMeta.Name != "" {
+		return &jsonMeta
 	}
 
 	// Fall back to simple YAML parsing
 	yamlMeta := sl.parseSimpleYAML(frontmatter)
-	return &SkillMetadata{
+	meta := &SkillMetadata{
 		Name:        yamlMeta["name"],
 		Description: yamlMeta["description"],
+		Domain:      yamlMeta["domain"],
 	}
+	if tags := yamlMeta["tags"]; tags != "" {
+		meta.Tags = splitCSV(tags)
+	}
+	if links := yamlMeta["links"]; links != "" {
+		meta.Links = splitCSV(links)
+	}
+	if yamlMeta["is_moc"] == "true" {
+		meta.IsMOC = true
+	}
+	return meta
 }
 
 // parseSimpleYAML parses simple key: value YAML format
@@ -319,6 +342,17 @@ func (sl *SkillsLoader) extractFrontmatter(content string) string {
 func (sl *SkillsLoader) stripFrontmatter(content string) string {
 	re := regexp.MustCompile(`^---\n.*?\n---\n`)
 	return re.ReplaceAllString(content, "")
+}
+
+func splitCSV(s string) []string {
+	var result []string
+	for _, item := range strings.Split(s, ",") {
+		item = strings.TrimSpace(item)
+		if item != "" {
+			result = append(result, item)
+		}
+	}
+	return result
 }
 
 func escapeXML(s string) string {
