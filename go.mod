@@ -16,6 +16,7 @@ require (
 	github.com/mymmrac/telego v1.6.0
 	github.com/open-dingtalk/dingtalk-stream-sdk-go v0.9.1
 	github.com/openai/openai-go/v2 v2.7.1
+	github.com/pkoukk/tiktoken-go v0.1.6
 	github.com/pressly/goose/v3 v3.26.0
 	github.com/slack-go/slack v0.17.3
 	github.com/stretchr/testify v1.11.1
@@ -55,7 +56,6 @@ require (
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
 	github.com/libsql/sqlite-antlr4-parser v0.0.0-20240327125255-dbf53b6cbf06 // indirect
 	github.com/mfridman/interpolate v0.0.2 // indirect
-	github.com/pkoukk/tiktoken-go v0.1.6 // indirect
 	github.com/sethvargo/go-retry v0.3.0 // indirect
 	github.com/tidwall/gjson v1.18.0 // indirect
 	github.com/tidwall/match v1.2.0 // indirect
