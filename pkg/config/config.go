@@ -497,6 +497,24 @@ func (c *Config) Validate() []string {
 		warnings = append(warnings, fmt.Sprintf("heartbeat.interval=%d: must be >= 0", c.Heartbeat.Interval))
 	}
 
+	// Memory config validation
+	if c.Memory.Enabled {
+		if c.Memory.Sync.SyncURL != "" && c.Memory.Sync.AuthToken == "" {
+			warnings = append(warnings, "memory.sync.sync_url is set but auth_token is empty: Turso replication will likely fail")
+		}
+		dims := c.Memory.EmbeddingDims
+		if dims != 0 && (dims < 64 || dims > 4096) {
+			warnings = append(warnings, fmt.Sprintf("memory.embedding_dims=%d: expected 64-4096 (common: 384, 768, 1536)", dims))
+		}
+		embProvider := c.Memory.Embedding.Provider
+		if embProvider != "" && embProvider != "ollama" && embProvider != "openai" {
+			warnings = append(warnings, fmt.Sprintf("memory.embedding.provider=%q: unknown (supported: ollama, openai)", embProvider))
+		}
+		if embProvider == "openai" && c.Memory.Embedding.APIKey == "" && c.Providers.OpenAI.APIKey == "" {
+			warnings = append(warnings, "memory.embedding.provider=openai but no API key found in memory.embedding.api_key or providers.openai.api_key")
+		}
+	}
+
 	return warnings
 }
 
