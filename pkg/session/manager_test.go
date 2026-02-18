@@ -1,11 +1,13 @@
 package session
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
+	"github.com/sipeed/picoclaw/pkg/memory/delegate"
 	"github.com/sipeed/picoclaw/pkg/messages"
 )
 
@@ -187,5 +189,66 @@ func TestCleanupStale(t *testing.T) {
 	history = sm.GetHistory("active")
 	if len(history) != 1 {
 		t.Errorf("expected active session to remain")
+	}
+}
+
+func TestSessionManager_DelegatePersistence(t *testing.T) {
+	del, err := delegate.NewLibSQLInMemory()
+	if err != nil {
+		t.Fatalf("NewLibSQLInMemory: %v", err)
+	}
+	if err := del.Init(context.Background()); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	defer del.Close()
+
+	sm := NewSessionManager("", WithSessionDelegate(del, "test-agent"))
+
+	key := "delegate-session"
+	sm.AddMessage(key, "user", "hello from delegate")
+	sm.AddMessage(key, "assistant", "hi back")
+
+	history := sm.GetHistory(key)
+	if len(history) != 2 {
+		t.Fatalf("expected 2 messages in-memory, got %d", len(history))
+	}
+
+	items, err := del.ListRecallItems(context.Background(), "test-agent", key, 100, 0)
+	if err != nil {
+		t.Fatalf("ListRecallItems: %v", err)
+	}
+	if len(items) != 2 {
+		t.Fatalf("expected 2 recall items in DB, got %d", len(items))
+	}
+	if items[0].Content != "hello from delegate" {
+		t.Errorf("expected first item content 'hello from delegate', got %q", items[0].Content)
+	}
+}
+
+func TestSessionManager_DelegateSaveIsNoop(t *testing.T) {
+	del, err := delegate.NewLibSQLInMemory()
+	if err != nil {
+		t.Fatalf("NewLibSQLInMemory: %v", err)
+	}
+	if err := del.Init(context.Background()); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	defer del.Close()
+
+	tmpDir := t.TempDir()
+	sm := NewSessionManager(tmpDir, WithSessionDelegate(del, "test-agent"))
+
+	key := "telegram:999"
+	sm.AddMessage(key, "user", "test")
+
+	if err := sm.Save(key); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	entries, _ := os.ReadDir(tmpDir)
+	for _, e := range entries {
+		if filepath.Ext(e.Name()) == ".json" {
+			t.Errorf("delegate mode should not write JSON files, found %s", e.Name())
+		}
 	}
 }

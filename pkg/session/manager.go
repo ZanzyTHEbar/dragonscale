@@ -1,6 +1,7 @@
 package session
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -9,7 +10,9 @@ import (
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/cache"
+	"github.com/sipeed/picoclaw/pkg/ids"
 	"github.com/sipeed/picoclaw/pkg/logger"
+	"github.com/sipeed/picoclaw/pkg/memory"
 	"github.com/sipeed/picoclaw/pkg/messages"
 )
 
@@ -33,24 +36,42 @@ type SessionManagerConfig struct {
 	SessionTTL time.Duration
 }
 
+// SessionOption configures a SessionManager.
+type SessionOption func(*SessionManager)
+
+// WithSessionDelegate injects a memory delegate for DB-backed session persistence.
+// When set, sessions persist through recall_items instead of JSON files.
+func WithSessionDelegate(del memory.MemoryDelegate, agentID string) SessionOption {
+	return func(sm *SessionManager) {
+		sm.delegate = del
+		sm.agentID = agentID
+	}
+}
+
 type SessionManager struct {
 	sessions map[string]*Session      // primary store (always authoritative)
 	lru      *cache.LRU[string, bool] // tracks access order; value is just a presence flag
 	mu       sync.RWMutex
 	storage  string
 	cfg      SessionManagerConfig
+	delegate memory.MemoryDelegate
+	agentID  string
 }
 
-func NewSessionManager(storage string) *SessionManager {
-	return NewSessionManagerWithConfig(storage, SessionManagerConfig{})
+func NewSessionManager(storage string, opts ...SessionOption) *SessionManager {
+	return NewSessionManagerWithConfig(storage, SessionManagerConfig{}, opts...)
 }
 
 // NewSessionManagerWithConfig creates a SessionManager with LRU cache settings.
-func NewSessionManagerWithConfig(storage string, cfg SessionManagerConfig) *SessionManager {
+func NewSessionManagerWithConfig(storage string, cfg SessionManagerConfig, opts ...SessionOption) *SessionManager {
 	sm := &SessionManager{
 		sessions: make(map[string]*Session),
 		storage:  storage,
 		cfg:      cfg,
+	}
+
+	for _, opt := range opts {
+		opt(sm)
 	}
 
 	if cfg.MaxCachedSessions > 0 {
@@ -63,12 +84,49 @@ func NewSessionManagerWithConfig(storage string, cfg SessionManagerConfig) *Sess
 		})
 	}
 
-	if storage != "" {
+	if sm.delegate != nil {
+		sm.loadSessionsFromDelegate()
+	} else if storage != "" {
 		os.MkdirAll(storage, 0755)
 		sm.loadSessions()
 	}
 
 	return sm
+}
+
+func (sm *SessionManager) loadSessionsFromDelegate() {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	items, err := sm.delegate.ListRecallItems(ctx, sm.agentID, "", 500, 0)
+	if err != nil {
+		logger.WarnCF("session", "Failed to load sessions from delegate",
+			map[string]interface{}{"error": err.Error()})
+		return
+	}
+
+	for _, item := range items {
+		if !strings.Contains(item.Tags, "session-message") {
+			continue
+		}
+		session := sm.sessions[item.SessionKey]
+		if session == nil {
+			session = &Session{
+				Key:      item.SessionKey,
+				Messages: []messages.Message{},
+				Created:  item.CreatedAt,
+				Updated:  item.CreatedAt,
+			}
+			sm.sessions[item.SessionKey] = session
+		}
+		session.Messages = append(session.Messages, messages.Message{
+			Role:    item.Role,
+			Content: item.Content,
+		})
+		if item.CreatedAt.After(session.Updated) {
+			session.Updated = item.CreatedAt
+		}
+	}
 }
 
 // touchLRU records an access in the LRU tracker, which may evict cold sessions.
@@ -181,6 +239,10 @@ func (sm *SessionManager) AddFullMessage(sessionKey string, msg messages.Message
 	session.Updated = time.Now()
 	sm.touchLRU(sessionKey)
 
+	if sm.delegate != nil {
+		sm.persistMessageToDelegate(sessionKey, msg)
+	}
+
 	// Hard cap: prevent unbounded growth if summarization keeps failing.
 	// Keep last 50 messages when we exceed 200.
 	const hardCap = 200
@@ -193,6 +255,31 @@ func (sm *SessionManager) AddFullMessage(sessionKey string, msg messages.Message
 				"keep":     keepOnOverflow,
 			})
 		session.Messages = session.Messages[len(session.Messages)-keepOnOverflow:]
+	}
+}
+
+func (sm *SessionManager) persistMessageToDelegate(sessionKey string, msg messages.Message) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	now := time.Now()
+	item := &memory.RecallItem{
+		ID:         ids.New(),
+		AgentID:    sm.agentID,
+		SessionKey: sessionKey,
+		Role:       msg.Role,
+		Sector:     memory.SectorEpisodic,
+		Importance: 0.5,
+		Salience:   0.5,
+		DecayRate:  0.01,
+		Content:    msg.Content,
+		Tags:       "session-message",
+		CreatedAt:  now,
+		UpdatedAt:  now,
+	}
+	if err := sm.delegate.InsertRecallItem(ctx, item); err != nil {
+		logger.WarnCF("session", "Failed to persist message to delegate",
+			map[string]interface{}{"session": sessionKey, "error": err.Error()})
 	}
 }
 
@@ -340,6 +427,9 @@ func sanitizeFilename(key string) string {
 	return strings.ReplaceAll(key, ":", "_")
 }
 func (sm *SessionManager) Save(key string) error {
+	if sm.delegate != nil {
+		return nil
+	}
 	if sm.storage == "" {
 		return nil
 	}

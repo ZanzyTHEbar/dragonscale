@@ -17,11 +17,14 @@ import (
 )
 
 type ContextBuilder struct {
-	workspace    string
-	skillsLoader *skills.SkillsLoader
-	memory       *MemoryStore        // Legacy file-based memory
-	memoryStore  memory.Memory       // New 3-tier MemGPT memory (may be nil)
-	tools        *tools.ToolRegistry // Direct reference to tool registry
+	workspace       string
+	skillsLoader    *skills.SkillsLoader
+	memoryStore     memory.Memory         // 3-tier MemGPT memory (may be nil)
+	delegate        memory.MemoryDelegate // Direct delegate for document loading (may be nil)
+	tools           *tools.ToolRegistry   // Direct reference to tool registry
+	observationBlock string               // Pre-rendered observation block for prompt injection
+	knowledgeBlock   string               // Pre-rendered knowledge block from Focus completions
+	dagBlock         string               // Pre-rendered DAG compressed history
 }
 
 func getGlobalConfigDir() string {
@@ -42,7 +45,6 @@ func NewContextBuilder(workspace string) *ContextBuilder {
 	return &ContextBuilder{
 		workspace:    workspace,
 		skillsLoader: skills.NewSkillsLoader(workspace, globalSkillsDir, builtinSkillsDir),
-		memory:       NewMemoryStore(workspace),
 	}
 }
 
@@ -54,6 +56,29 @@ func (cb *ContextBuilder) SetToolsRegistry(registry *tools.ToolRegistry) {
 // SetMemoryStore sets the 3-tier MemGPT memory store for working context injection.
 func (cb *ContextBuilder) SetMemoryStore(ms memory.Memory) {
 	cb.memoryStore = ms
+}
+
+// SetDelegate sets the memory delegate for document loading.
+func (cb *ContextBuilder) SetDelegate(del memory.MemoryDelegate) {
+	cb.delegate = del
+}
+
+func (cb *ContextBuilder) SkillsLoader() *skills.SkillsLoader {
+	return cb.skillsLoader
+}
+
+func (cb *ContextBuilder) SetObservationBlock(block string) {
+	cb.observationBlock = block
+}
+
+// SetKnowledgeBlock sets the pre-rendered knowledge block from completed Focus sessions.
+func (cb *ContextBuilder) SetKnowledgeBlock(block string) {
+	cb.knowledgeBlock = block
+}
+
+// SetDAGBlock sets the pre-rendered DAG compressed history for prompt injection.
+func (cb *ContextBuilder) SetDAGBlock(block string) {
+	cb.dagBlock = block
 }
 
 func (cb *ContextBuilder) getIdentity() string {
@@ -76,8 +101,6 @@ You are picoclaw, a helpful AI assistant.
 
 ## Workspace
 Your workspace is at: %s
-- Memory: %s/memory/MEMORY.md
-- Daily Notes: %s/memory/YYYYMM/YYYYMMDD.md
 - Skills: %s/skills/{skill-name}/SKILL.md
 
 %s
@@ -88,8 +111,10 @@ Your workspace is at: %s
 
 2. **Be helpful and accurate** - When using tools, briefly explain what you're doing.
 
-3. **Memory** - When remembering something, write to %s/memory/MEMORY.md`,
-		now, runtime, workspacePath, workspacePath, workspacePath, workspacePath, toolsSection, workspacePath)
+3. **Memory** - Use the memory tool to store important facts, preferences, and decisions.
+
+4. **Context Management** - You MUST consolidate your context to stay effective during long tasks. Use start_focus at the beginning of any investigation or multi-step task. After 10-15 tool calls, call complete_focus with a summary of what you learned and accomplished. This compresses your working context and persists knowledge for future reference. Failing to consolidate will degrade your performance as context grows.`,
+		now, runtime, workspacePath, workspacePath, toolsSection)
 }
 
 func (cb *ContextBuilder) buildToolsSection() string {
@@ -136,10 +161,17 @@ The following skills extend your capabilities. To use a skill, read its SKILL.md
 %s`, skillsSummary))
 	}
 
-	// Legacy file-based memory context
-	memoryContext := cb.memory.GetMemoryContext()
-	if memoryContext != "" {
-		parts = append(parts, "# Memory\n\n"+memoryContext)
+	// Observation block (stable prefix for prompt cache alignment)
+	if cb.observationBlock != "" {
+		parts = append(parts, "# Observations\n\n"+cb.observationBlock)
+	}
+
+	if cb.knowledgeBlock != "" {
+		parts = append(parts, cb.knowledgeBlock)
+	}
+
+	if cb.dagBlock != "" {
+		parts = append(parts, "# Conversation History (Compressed)\n\n"+cb.dagBlock)
 	}
 
 	// 3-tier MemGPT working context injection
@@ -155,6 +187,20 @@ The following skills extend your capabilities. To use a skill, read its SKILL.md
 }
 
 func (cb *ContextBuilder) LoadBootstrapFiles() string {
+	if cb.delegate != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+
+		docs, err := cb.delegate.ListDocumentsByCategory(ctx, "picoclaw", "bootstrap")
+		if err == nil && len(docs) > 0 {
+			var result string
+			for _, doc := range docs {
+				result += fmt.Sprintf("## %s\n\n%s\n\n", doc.Name, doc.Content)
+			}
+			return result
+		}
+	}
+
 	bootstrapFiles := []string{
 		"AGENTS.md",
 		"SOUL.md",

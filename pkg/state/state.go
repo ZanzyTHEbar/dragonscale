@@ -1,6 +1,7 @@
 package state
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -8,7 +9,11 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
+
+	"github.com/sipeed/picoclaw/pkg/memory"
 )
+
+const kvAgentID = "picoclaw"
 
 // State represents the persistent state for a workspace.
 // It includes information about the last active channel/chat.
@@ -23,64 +28,87 @@ type State struct {
 	Timestamp time.Time `json:"timestamp"`
 }
 
+// Option configures a Manager.
+type Option func(*Manager)
+
+// WithDelegate injects a memory delegate for KV-backed persistence.
+// When set, state is stored in the agent_kv table instead of on disk.
+func WithDelegate(del memory.MemoryDelegate) Option {
+	return func(m *Manager) { m.delegate = del }
+}
+
 // Manager manages persistent state with atomic saves.
+// When a delegate is present, state persists through agent_kv.
+// Otherwise, it falls back to file-based atomic JSON writes.
 type Manager struct {
 	workspace string
 	state     *State
 	mu        sync.RWMutex
 	stateFile string
+	delegate  memory.MemoryDelegate
 }
 
 // NewManager creates a new state manager for the given workspace.
-func NewManager(workspace string) *Manager {
+func NewManager(workspace string, opts ...Option) *Manager {
+	sm := &Manager{
+		workspace: workspace,
+		state:     &State{},
+	}
+
+	for _, opt := range opts {
+		opt(sm)
+	}
+
+	if sm.delegate != nil {
+		sm.loadFromDelegate()
+		return sm
+	}
+
 	stateDir := filepath.Join(workspace, "state")
 	stateFile := filepath.Join(stateDir, "state.json")
 	oldStateFile := filepath.Join(workspace, "state.json")
 
-	// Create state directory if it doesn't exist
 	os.MkdirAll(stateDir, 0755)
+	sm.stateFile = stateFile
 
-	sm := &Manager{
-		workspace: workspace,
-		stateFile: stateFile,
-		state:     &State{},
-	}
-
-	// Try to load from new location first
 	if _, err := os.Stat(stateFile); os.IsNotExist(err) {
-		// New file doesn't exist, try migrating from old location
 		if data, err := os.ReadFile(oldStateFile); err == nil {
 			if err := json.Unmarshal(data, sm.state); err == nil {
-				// Migrate to new location
 				sm.saveAtomic()
 				log.Printf("[INFO] state: migrated state from %s to %s", oldStateFile, stateFile)
 			}
 		}
 	} else {
-		// Load from new location
 		sm.load()
 	}
 
 	return sm
 }
 
+func (sm *Manager) loadFromDelegate() {
+	ctx := context.Background()
+	if v, err := sm.delegate.GetKV(ctx, kvAgentID, "state:last_channel"); err == nil && v != "" {
+		sm.state.LastChannel = v
+	}
+	if v, err := sm.delegate.GetKV(ctx, kvAgentID, "state:last_chat_id"); err == nil && v != "" {
+		sm.state.LastChatID = v
+	}
+	if v, err := sm.delegate.GetKV(ctx, kvAgentID, "state:timestamp"); err == nil && v != "" {
+		if t, err := time.Parse(time.RFC3339Nano, v); err == nil {
+			sm.state.Timestamp = t
+		}
+	}
+}
+
 // SetLastChannel atomically updates the last channel and saves the state.
-// This method uses a temp file + rename pattern for atomic writes,
-// ensuring that the state file is never corrupted even if the process crashes.
 func (sm *Manager) SetLastChannel(channel string) error {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 
-	// Update state
 	sm.state.LastChannel = channel
 	sm.state.Timestamp = time.Now()
 
-	// Atomic save using temp file + rename
-	if err := sm.saveAtomic(); err != nil {
-		return fmt.Errorf("failed to save state atomically: %w", err)
-	}
-
-	return nil
+	return sm.persist()
 }
 
 // SetLastChatID atomically updates the last chat ID and saves the state.
@@ -88,15 +116,34 @@ func (sm *Manager) SetLastChatID(chatID string) error {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 
-	// Update state
 	sm.state.LastChatID = chatID
 	sm.state.Timestamp = time.Now()
 
-	// Atomic save using temp file + rename
-	if err := sm.saveAtomic(); err != nil {
-		return fmt.Errorf("failed to save state atomically: %w", err)
-	}
+	return sm.persist()
+}
 
+// persist writes the current state to the delegate (KV) or file.
+// Must be called with the lock held.
+func (sm *Manager) persist() error {
+	if sm.delegate != nil {
+		return sm.persistToDelegate()
+	}
+	return sm.saveAtomic()
+}
+
+func (sm *Manager) persistToDelegate() error {
+	ctx := context.Background()
+	ts := sm.state.Timestamp.Format(time.RFC3339Nano)
+
+	if err := sm.delegate.UpsertKV(ctx, kvAgentID, "state:last_channel", sm.state.LastChannel); err != nil {
+		return fmt.Errorf("upsert last_channel: %w", err)
+	}
+	if err := sm.delegate.UpsertKV(ctx, kvAgentID, "state:last_chat_id", sm.state.LastChatID); err != nil {
+		return fmt.Errorf("upsert last_chat_id: %w", err)
+	}
+	if err := sm.delegate.UpsertKV(ctx, kvAgentID, "state:timestamp", ts); err != nil {
+		return fmt.Errorf("upsert timestamp: %w", err)
+	}
 	return nil
 }
 

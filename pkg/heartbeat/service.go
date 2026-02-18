@@ -43,9 +43,9 @@ type HeartbeatService struct {
 	stopChan  chan struct{}
 }
 
-// NewHeartbeatService creates a new heartbeat service
-func NewHeartbeatService(workspace string, intervalMinutes int, enabled bool) *HeartbeatService {
-	// Apply minimum interval
+// NewHeartbeatService creates a new heartbeat service.
+// stateOpts are forwarded to the internal state.Manager.
+func NewHeartbeatService(workspace string, intervalMinutes int, enabled bool, stateOpts ...state.Option) *HeartbeatService {
 	if intervalMinutes < minIntervalMinutes && intervalMinutes != 0 {
 		intervalMinutes = minIntervalMinutes
 	}
@@ -58,7 +58,7 @@ func NewHeartbeatService(workspace string, intervalMinutes int, enabled bool) *H
 		workspace: workspace,
 		interval:  time.Duration(intervalMinutes) * time.Minute,
 		enabled:   enabled,
-		state:     state.NewManager(workspace),
+		state:     state.NewManager(workspace, stateOpts...),
 	}
 }
 

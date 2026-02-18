@@ -1,6 +1,7 @@
 package cron
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/adhocore/gronx"
+	"github.com/sipeed/picoclaw/pkg/memory"
 )
 
 type CronSchedule struct {
@@ -57,6 +59,19 @@ type CronStore struct {
 
 type JobHandler func(job *CronJob) (string, error)
 
+// CronOption configures a CronService.
+type CronOption func(*CronService)
+
+// WithCronDelegate injects a memory delegate for KV-backed cron store persistence.
+func WithCronDelegate(del memory.MemoryDelegate, agentID string) CronOption {
+	return func(cs *CronService) {
+		cs.delegate = del
+		cs.agentID = agentID
+	}
+}
+
+const cronStoreKVKey = "cron:store"
+
 type CronService struct {
 	storePath string
 	store     *CronStore
@@ -65,15 +80,19 @@ type CronService struct {
 	running   bool
 	stopChan  chan struct{}
 	gronx     *gronx.Gronx
+	delegate  memory.MemoryDelegate
+	agentID   string
 }
 
-func NewCronService(storePath string, onJob JobHandler) *CronService {
+func NewCronService(storePath string, onJob JobHandler, opts ...CronOption) *CronService {
 	cs := &CronService{
 		storePath: storePath,
 		onJob:     onJob,
 		gronx:     gronx.New(),
 	}
-	// Initialize and load store on creation
+	for _, opt := range opts {
+		opt(cs)
+	}
 	cs.loadStore()
 	return cs
 }
@@ -318,6 +337,10 @@ func (cs *CronService) loadStore() error {
 		Jobs:    []CronJob{},
 	}
 
+	if cs.delegate != nil {
+		return cs.loadStoreFromDelegate()
+	}
+
 	data, err := os.ReadFile(cs.storePath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -329,7 +352,22 @@ func (cs *CronService) loadStore() error {
 	return json.Unmarshal(data, cs.store)
 }
 
+func (cs *CronService) loadStoreFromDelegate() error {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	val, err := cs.delegate.GetKV(ctx, cs.agentID, cronStoreKVKey)
+	if err != nil || val == "" {
+		return nil
+	}
+	return json.Unmarshal([]byte(val), cs.store)
+}
+
 func (cs *CronService) saveStoreUnsafe() error {
+	if cs.delegate != nil {
+		return cs.saveStoreToDelegate()
+	}
+
 	dir := filepath.Dir(cs.storePath)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return err
@@ -341,6 +379,16 @@ func (cs *CronService) saveStoreUnsafe() error {
 	}
 
 	return os.WriteFile(cs.storePath, data, 0600)
+}
+
+func (cs *CronService) saveStoreToDelegate() error {
+	data, err := json.Marshal(cs.store)
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	return cs.delegate.UpsertKV(ctx, cs.agentID, cronStoreKVKey, string(data))
 }
 
 func (cs *CronService) AddJob(name string, schedule CronSchedule, message string, deliver bool, channel, to string) (*CronJob, error) {
