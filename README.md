@@ -4,6 +4,8 @@ A managed fork of [sipeed/picoclaw](https://github.com/sipeed/picoclaw) — an u
 
 This fork diverges from upstream with its own architectural decisions: vendored LLM SDK, MemGPT-style tiered memory, progressive tool disclosure, and libSQL-native storage with vector search.
 
+Where it makes sense, I will do my best to merge upstream changes back into this fork.
+
 ---
 
 ## Why This Fork Exists
