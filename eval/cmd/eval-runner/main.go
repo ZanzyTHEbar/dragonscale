@@ -38,14 +38,14 @@ type TraceStep struct {
 }
 
 type Metrics struct {
-	TotalDurationMs  int64 `json:"total_duration_ms"`
-	StepCount        int   `json:"step_count"`
-	ToolCallCount    int   `json:"tool_call_count"`
-	InputTokens      int64 `json:"input_tokens"`
-	OutputTokens     int64 `json:"output_tokens"`
-	TotalTokens      int64 `json:"total_tokens"`
-	ReasoningTokens  int64 `json:"reasoning_tokens"`
-	CacheReadTokens  int64 `json:"cache_read_tokens"`
+	TotalDurationMs int64 `json:"total_duration_ms"`
+	StepCount       int   `json:"step_count"`
+	ToolCallCount   int   `json:"tool_call_count"`
+	InputTokens     int64 `json:"input_tokens"`
+	OutputTokens    int64 `json:"output_tokens"`
+	TotalTokens     int64 `json:"total_tokens"`
+	ReasoningTokens int64 `json:"reasoning_tokens"`
+	CacheReadTokens int64 `json:"cache_read_tokens"`
 }
 
 func main() {
@@ -78,19 +78,35 @@ func readPrompt() (string, error) {
 		return os.Args[2], nil
 	}
 
-	data, err := io.ReadAll(os.Stdin)
-	if err != nil {
-		return "", err
+	// promptfoo exec: provider passes the prompt as the first positional argument
+	if len(os.Args) > 1 && !strings.HasPrefix(os.Args[1], "-") {
+		raw := os.Args[1]
+		var promptData struct {
+			Prompt string `json:"prompt"`
+		}
+		if json.Unmarshal([]byte(raw), &promptData) == nil && promptData.Prompt != "" {
+			return promptData.Prompt, nil
+		}
+		return strings.TrimSpace(raw), nil
 	}
 
-	var promptData struct {
-		Prompt string `json:"prompt"`
-	}
-	if json.Unmarshal(data, &promptData) == nil && promptData.Prompt != "" {
-		return promptData.Prompt, nil
+	// Fallback: read from stdin (for manual testing / piping)
+	stat, _ := os.Stdin.Stat()
+	if (stat.Mode() & os.ModeCharDevice) == 0 {
+		data, err := io.ReadAll(os.Stdin)
+		if err != nil {
+			return "", err
+		}
+		var promptData struct {
+			Prompt string `json:"prompt"`
+		}
+		if json.Unmarshal(data, &promptData) == nil && promptData.Prompt != "" {
+			return promptData.Prompt, nil
+		}
+		return strings.TrimSpace(string(data)), nil
 	}
 
-	return strings.TrimSpace(string(data)), nil
+	return "", fmt.Errorf("no prompt provided (use positional arg, --prompt, or pipe to stdin)")
 }
 
 func loadEvalConfig() (*config.Config, error) {
@@ -217,7 +233,6 @@ func emitError(msg string) {
 	trace := Trace{Error: msg}
 	out, _ := json.Marshal(trace)
 	fmt.Println(string(out))
-	os.Exit(1)
 }
 
 type instrumentedCall struct {
