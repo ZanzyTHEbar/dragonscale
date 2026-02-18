@@ -227,7 +227,17 @@ func (d *LibSQLDelegate) UpsertWorkingContext(ctx context.Context, agentID, sess
 // --- Recall Items ---
 
 func (d *LibSQLDelegate) InsertRecallItem(ctx context.Context, item *memory.RecallItem) error {
-	row, err := d.queries.InsertRecallItem(ctx, memsqlc.InsertRecallItemParams{
+	row, err := d.queries.InsertRecallItem(ctx, recallItemToParams(item))
+	if err != nil {
+		return err
+	}
+	item.CreatedAt = row.CreatedAt
+	item.UpdatedAt = row.UpdatedAt
+	return nil
+}
+
+func recallItemToParams(item *memory.RecallItem) memsqlc.InsertRecallItemParams {
+	return memsqlc.InsertRecallItemParams{
 		ID:         item.ID,
 		AgentID:    item.AgentID,
 		SessionKey: item.SessionKey,
@@ -238,13 +248,7 @@ func (d *LibSQLDelegate) InsertRecallItem(ctx context.Context, item *memory.Reca
 		DecayRate:  item.DecayRate,
 		Content:    item.Content,
 		Tags:       item.Tags,
-	})
-	if err != nil {
-		return err
 	}
-	item.CreatedAt = row.CreatedAt
-	item.UpdatedAt = row.UpdatedAt
-	return nil
 }
 
 func (d *LibSQLDelegate) GetRecallItem(ctx context.Context, agentID string, id ids.UUID) (*memory.RecallItem, error) {
@@ -314,7 +318,16 @@ func (d *LibSQLDelegate) SearchRecallByKeyword(ctx context.Context, query, agent
 func (d *LibSQLDelegate) InsertArchivalChunk(ctx context.Context, chunk *memory.ArchivalChunk) error {
 	// Embedding.Value() returns nil (SQL NULL) for empty embeddings,
 	// and F32_BLOB bytes for populated ones — no manual conversion needed.
-	row, err := d.queries.InsertArchivalChunk(ctx, memsqlc.InsertArchivalChunkParams{
+	row, err := d.queries.InsertArchivalChunk(ctx, archivalChunkToParams(chunk))
+	if err != nil {
+		return err
+	}
+	chunk.CreatedAt = row.CreatedAt
+	return nil
+}
+
+func archivalChunkToParams(chunk *memory.ArchivalChunk) memsqlc.InsertArchivalChunkParams {
+	return memsqlc.InsertArchivalChunkParams{
 		ID:         chunk.ID,
 		RecallID:   chunk.RecallID,
 		ChunkIndex: int64(chunk.ChunkIndex),
@@ -322,12 +335,7 @@ func (d *LibSQLDelegate) InsertArchivalChunk(ctx context.Context, chunk *memory.
 		Embedding:  chunk.Embedding,
 		Source:     chunk.Source,
 		Hash:       chunk.Hash,
-	})
-	if err != nil {
-		return err
 	}
-	chunk.CreatedAt = row.CreatedAt
-	return nil
 }
 
 func (d *LibSQLDelegate) GetArchivalChunk(ctx context.Context, agentID string, id ids.UUID) (*memory.ArchivalChunk, error) {
