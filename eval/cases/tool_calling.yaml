@@ -1,0 +1,53 @@
+# Tool Calling Evaluation Cases
+# Tests that the agent correctly selects and invokes the right tools.
+
+- description: "file read: agent reads a file when asked about its contents"
+  vars:
+    prompt: "Read the file SYSTEM_PROMPT.md in the workspace and tell me the first line."
+  assert:
+    - type: javascript
+      value: |
+        const trace = JSON.parse(output);
+        if (trace.error) return { pass: false, score: 0, reason: trace.error };
+        const toolCalls = trace.steps.filter(s => s.type === 'tool_call');
+        const hasRead = toolCalls.some(t => t.tool === 'read_file' || t.tool === 'tool_call');
+        return { pass: hasRead, score: hasRead ? 1.0 : 0.0, reason: hasRead ? 'correctly used file read' : 'did not read the file' };
+    - type: javascript
+      value: |
+        const trace = JSON.parse(output);
+        return { pass: trace.output.length > 0, score: trace.output.length > 0 ? 1.0 : 0.0, reason: 'non-empty output' };
+
+- description: "file write: agent creates a new file when asked"
+  vars:
+    prompt: "Create a file called eval_test_output.txt in the workspace with the text 'hello from eval'."
+  assert:
+    - type: javascript
+      value: |
+        const trace = JSON.parse(output);
+        if (trace.error) return { pass: false, score: 0, reason: trace.error };
+        const toolCalls = trace.steps.filter(s => s.type === 'tool_call');
+        const hasWrite = toolCalls.some(t => t.tool === 'write_file' || (t.tool === 'tool_call' && t.args && JSON.parse(t.args).tool_name === 'write_file'));
+        return { pass: hasWrite, score: hasWrite ? 1.0 : 0.0, reason: hasWrite ? 'correctly used file write' : 'did not write the file' };
+
+- description: "shell exec: agent runs a shell command"
+  vars:
+    prompt: "Run the command 'echo picoclaw-eval-test' and tell me the output."
+  assert:
+    - type: javascript
+      value: |
+        const trace = JSON.parse(output);
+        if (trace.error) return { pass: false, score: 0, reason: trace.error };
+        const hasExec = trace.steps.some(s => s.tool === 'exec' || (s.tool === 'tool_call' && s.args && JSON.parse(s.args).tool_name === 'exec'));
+        const outputContains = trace.output.includes('picoclaw-eval-test');
+        return { pass: hasExec && outputContains, score: (hasExec ? 0.5 : 0) + (outputContains ? 0.5 : 0), reason: `exec=${hasExec}, output_correct=${outputContains}` };
+
+- description: "list directory: agent lists workspace contents"
+  vars:
+    prompt: "List the files and directories in my workspace root."
+  assert:
+    - type: javascript
+      value: |
+        const trace = JSON.parse(output);
+        if (trace.error) return { pass: false, score: 0, reason: trace.error };
+        const hasListDir = trace.steps.some(s => s.tool === 'list_dir' || (s.tool === 'tool_call' && s.args && JSON.parse(s.args).tool_name === 'list_dir'));
+        return { pass: hasListDir, score: hasListDir ? 1.0 : 0.0, reason: hasListDir ? 'used list_dir' : 'did not list directory' };

@@ -1,0 +1,47 @@
+# PicoClaw Eval Harness - promptfoo configuration
+# Run: cd eval && promptfoo eval
+# Compare: cd eval && promptfoo eval --output results/latest.json && promptfoo view
+
+description: "PicoClaw agent end-to-end evaluation"
+
+providers:
+  - id: "exec:./bin/eval-runner"
+    label: "picoclaw-current"
+    config:
+      # Timeout per test case (ms)
+      timeout: 120000
+
+# To run A/B comparison against main branch, uncomment:
+# - id: "exec:./bin/eval-runner-main"
+#   label: "picoclaw-main"
+#   config:
+#     timeout: 120000
+
+# Default assertions applied to every test case
+defaultTest:
+  assert:
+    # Every response must parse as valid JSON trace
+    - type: javascript
+      value: |
+        try {
+          const trace = JSON.parse(output);
+          const valid = trace.hasOwnProperty('output') && trace.hasOwnProperty('metrics');
+          return { pass: valid, score: valid ? 1.0 : 0.0, reason: valid ? 'valid trace JSON' : 'invalid trace structure' };
+        } catch(e) {
+          return { pass: false, score: 0, reason: 'output is not valid JSON: ' + e.message };
+        }
+    # Latency gate: no single test should exceed 60s
+    - type: javascript
+      value: |
+        const trace = JSON.parse(output);
+        const dur = trace.metrics.total_duration_ms;
+        const ok = dur < 60000;
+        return { pass: ok, score: ok ? 1.0 : 0.0, reason: `duration: ${dur}ms (limit: 60000ms)` };
+
+# Transform prompt var into the JSON format eval-runner expects on stdin
+transform: "JSON.stringify({ prompt: vars.prompt })"
+
+tests: "cases/*.yaml"
+
+# Output settings
+outputPath: "results/latest.json"

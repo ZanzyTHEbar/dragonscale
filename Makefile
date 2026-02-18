@@ -182,6 +182,39 @@ check: deps fmt vet test
 run: build
 	@$(BUILD_DIR)/$(BINARY_NAME) $(ARGS)
 
+# ---------------------------------------------------------------------------
+# Evaluation Harness
+# Usage: make eval-build && make eval
+#        make eval-compare       (A/B: branch vs main)
+# ---------------------------------------------------------------------------
+
+## eval-build: Build the eval runner from the current branch
+eval-build: generate
+	@echo "Building eval runner..."
+	@mkdir -p eval/bin
+	@$(GO) build $(GOFLAGS) $(LDFLAGS) -o eval/bin/eval-runner ./eval/cmd/eval-runner
+	@echo "Eval runner built: eval/bin/eval-runner"
+
+## eval: Run the eval suite against the current build
+eval: eval-build
+	@echo "Running eval suite..."
+	@cd eval && npx promptfoo eval --no-progress-bar
+	@echo "Results: eval/results/latest.json"
+	@echo "View: cd eval && npx promptfoo view"
+
+## eval-view: Open the promptfoo results viewer
+eval-view:
+	@cd eval && npx promptfoo view
+
+## eval-compare: A/B comparison of current branch vs main
+eval-compare:
+	@./eval/scripts/compare.sh --repeat 3
+
+## eval-test: Run Go-native component evals
+eval-test:
+	@echo "Running Go-native evals..."
+	@$(GO) test -v ./eval/go_evals/...
+
 ## help: Show this help message
 help:
 	@echo "picoclaw Makefile"

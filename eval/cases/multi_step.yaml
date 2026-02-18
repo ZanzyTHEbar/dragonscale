@@ -1,0 +1,37 @@
+# Multi-Step Task Evaluation Cases
+# Tests that the agent can complete tasks requiring multiple tool invocations.
+
+- description: "create and verify: write a file then read it back"
+  vars:
+    prompt: "Write the text 'picoclaw eval checkpoint' to a file called eval_checkpoint.txt, then read it back and confirm the contents match."
+  assert:
+    - type: javascript
+      value: |
+        const trace = JSON.parse(output);
+        if (trace.error) return { pass: false, score: 0, reason: trace.error };
+        const tools = trace.steps.filter(s => s.type === 'tool_call').map(s => s.tool);
+        const hasWrite = tools.includes('write_file') || tools.includes('tool_call');
+        const hasRead = tools.filter(t => t === 'read_file' || t === 'tool_call').length >= 1;
+        const bothOps = hasWrite && hasRead;
+        return { pass: bothOps, score: bothOps ? 1.0 : 0.5, reason: `write=${hasWrite}, read=${hasRead}` };
+    - type: javascript
+      value: |
+        const trace = JSON.parse(output);
+        const mentions = trace.output.toLowerCase().includes('checkpoint') || trace.output.toLowerCase().includes('match') || trace.output.toLowerCase().includes('confirm');
+        return { pass: mentions, score: mentions ? 1.0 : 0.0, reason: mentions ? 'confirmed contents' : 'did not confirm' };
+
+- description: "explore and summarize: list dir then describe contents"
+  vars:
+    prompt: "List the workspace directory, then give me a brief summary of what files are there and what the workspace is used for."
+  assert:
+    - type: javascript
+      value: |
+        const trace = JSON.parse(output);
+        if (trace.error) return { pass: false, score: 0, reason: trace.error };
+        const hasListDir = trace.steps.some(s => s.tool === 'list_dir' || (s.tool === 'tool_call'));
+        return { pass: hasListDir, score: hasListDir ? 1.0 : 0.0, reason: hasListDir ? 'explored workspace' : 'did not explore' };
+    - type: javascript
+      value: |
+        const trace = JSON.parse(output);
+        const hasSummary = trace.output.length > 50;
+        return { pass: hasSummary, score: hasSummary ? 1.0 : 0.0, reason: `output length: ${trace.output.length}` };

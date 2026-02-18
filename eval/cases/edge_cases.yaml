@@ -1,0 +1,38 @@
+# Edge Case Evaluation
+# Tests error handling, ambiguous inputs, and boundary conditions.
+
+- description: "missing file: graceful handling of non-existent file"
+  vars:
+    prompt: "Read the file /tmp/picoclaw_eval_nonexistent_file_abc123.txt"
+  assert:
+    - type: javascript
+      value: |
+        const trace = JSON.parse(output);
+        if (trace.error && !trace.output) return { pass: false, score: 0, reason: 'crashed: ' + trace.error };
+        const mentionsError = trace.output.toLowerCase().includes('not found') ||
+                              trace.output.toLowerCase().includes('error') ||
+                              trace.output.toLowerCase().includes('does not exist') ||
+                              trace.output.toLowerCase().includes("doesn't exist") ||
+                              trace.output.toLowerCase().includes('no such file');
+        return { pass: mentionsError, score: mentionsError ? 1.0 : 0.0, reason: mentionsError ? 'gracefully reported error' : 'did not report file missing' };
+
+- description: "empty prompt resilience"
+  vars:
+    prompt: "   "
+  assert:
+    - type: javascript
+      value: |
+        const trace = JSON.parse(output);
+        const noFatalError = !trace.error || trace.output.length > 0;
+        return { pass: noFatalError, score: noFatalError ? 1.0 : 0.0, reason: noFatalError ? 'handled gracefully' : 'fatal error on empty input' };
+
+- description: "ambiguous request: agent asks for clarification or makes reasonable assumption"
+  vars:
+    prompt: "Do the thing with the file."
+  assert:
+    - type: javascript
+      value: |
+        const trace = JSON.parse(output);
+        if (trace.error && !trace.output) return { pass: false, score: 0, reason: 'crashed' };
+        const responded = trace.output.length > 10;
+        return { pass: responded, score: responded ? 1.0 : 0.0, reason: responded ? 'provided a response' : 'no meaningful response' };
