@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -226,6 +227,97 @@ func TestLoadConfig_OpenAIWebSearchDefaultsTrueWhenUnset(t *testing.T) {
 	if !cfg.Providers.OpenAI.WebSearch {
 		t.Fatal("OpenAI codex web search should remain true when unset in config file")
 	}
+}
+
+func TestValidate_MemoryConfig(t *testing.T) {
+	tests := []struct {
+		name     string
+		mutate   func(*Config)
+		wantWarn string
+	}{
+		{
+			name: "sync_url without auth_token",
+			mutate: func(c *Config) {
+				c.Memory.Enabled = true
+				c.Memory.Sync.SyncURL = "libsql://test.turso.io"
+			},
+			wantWarn: "auth_token is empty",
+		},
+		{
+			name: "invalid embedding dims",
+			mutate: func(c *Config) {
+				c.Memory.Enabled = true
+				c.Memory.EmbeddingDims = 10
+			},
+			wantWarn: "expected 64-4096",
+		},
+		{
+			name: "unknown embedding provider",
+			mutate: func(c *Config) {
+				c.Memory.Enabled = true
+				c.Memory.Embedding.Provider = "nonexistent"
+			},
+			wantWarn: "unknown",
+		},
+		{
+			name: "openai without key",
+			mutate: func(c *Config) {
+				c.Memory.Enabled = true
+				c.Memory.Embedding.Provider = "openai"
+			},
+			wantWarn: "no API key found",
+		},
+		{
+			name: "valid openai with fallback key",
+			mutate: func(c *Config) {
+				c.Memory.Enabled = true
+				c.Memory.Embedding.Provider = "openai"
+				c.Providers.OpenAI.APIKey = "sk-test"
+			},
+			wantWarn: "",
+		},
+		{
+			name: "disabled memory skips all checks",
+			mutate: func(c *Config) {
+				c.Memory.Enabled = false
+				c.Memory.EmbeddingDims = -999
+				c.Memory.Sync.SyncURL = "bad"
+			},
+			wantWarn: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := DefaultConfig()
+			tt.mutate(cfg)
+			warnings := cfg.Validate()
+
+			if tt.wantWarn == "" {
+				for _, w := range warnings {
+					if containsMemoryWarning(w) {
+						t.Errorf("expected no memory warnings, got: %s", w)
+					}
+				}
+				return
+			}
+
+			found := false
+			for _, w := range warnings {
+				if strings.Contains(w, tt.wantWarn) {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Errorf("expected warning containing %q, got: %v", tt.wantWarn, warnings)
+			}
+		})
+	}
+}
+
+func containsMemoryWarning(s string) bool {
+	return strings.Contains(s, "memory.")
 }
 
 func TestLoadConfig_OpenAIWebSearchCanBeDisabled(t *testing.T) {
