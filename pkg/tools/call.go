@@ -80,6 +80,10 @@ func (t *ToolCallTool) Execute(ctx context.Context, args map[string]interface{})
 	case map[string]interface{}:
 		toolArgs = v
 	case string:
+		const maxArgsJSON = 64 * 1024
+		if len(v) > maxArgsJSON {
+			return ErrorResult(fmt.Sprintf("arguments JSON too large: %d bytes (max %d)", len(v), maxArgsJSON))
+		}
 		if err := json.Unmarshal([]byte(v), &toolArgs); err != nil {
 			return ErrorResult(fmt.Sprintf("invalid arguments JSON: %v", err))
 		}
@@ -87,6 +91,10 @@ func (t *ToolCallTool) Execute(ctx context.Context, args map[string]interface{})
 		toolArgs = map[string]interface{}{}
 	default:
 		return ErrorResult(fmt.Sprintf("arguments must be a JSON object, got %T", v))
+	}
+
+	if len(toolArgs) > 50 {
+		return ErrorResult(fmt.Sprintf("too many arguments: %d (max 50)", len(toolArgs)))
 	}
 
 	// If the target tool declares resources, load them before dispatch.

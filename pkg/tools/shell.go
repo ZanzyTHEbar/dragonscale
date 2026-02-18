@@ -15,7 +15,10 @@ import (
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/logger"
+	"github.com/sipeed/picoclaw/pkg/security"
 )
+
+var shellRedactor = security.NewRedactor()
 
 // ShellMode controls how command filtering works.
 type ShellMode string
@@ -31,6 +34,10 @@ const (
 
 	// maxOutputDisplay is the max characters shown to the LLM.
 	maxOutputDisplay = 10000
+
+	// maxCommandLength is the maximum allowed command string length.
+	// Prevents abuse via excessively long commands that could hide payloads.
+	maxCommandLength = 8192
 )
 
 type ExecTool struct {
@@ -103,6 +110,27 @@ func buildDenyPatterns() []*regexp.Regexp {
 
 		// sudo escalation
 		`\bsudo\s+(su|bash|sh|zsh|chmod|chown)\b`,
+
+		// Hex/octal escape exec bypass (e.g. $'\x72\x6d' for "rm")
+		`\$'\\x[0-9a-f]`,
+
+		// Process substitution into shell
+		`<\(.*\)\s*\|\s*(sh|bash|zsh)`,
+
+		// Environment variable overrides hiding commands
+		`\bLD_PRELOAD\s*=`,
+		`\bLD_LIBRARY_PATH\s*=`,
+
+		// Docker container escape
+		`\bdocker\s+run.*--privileged`,
+		`\bdocker\s+run.*-v\s+/:/`,
+
+		// Reverse shell patterns
+		`\b(bash|sh|zsh)\s+.*-i\s+.*>&\s*/dev/tcp/`,
+		`\bmkfifo\s+.*\bcat\b.*\b(sh|bash)\b`,
+
+		// Command obfuscation via eval
+		`\beval\s+.*\$\(`,
 	}
 
 	compiled := make([]*regexp.Regexp, 0, len(patterns))
@@ -143,9 +171,25 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]interface{}) *To
 		return ErrorResult("command is required")
 	}
 
+	if len(command) > maxCommandLength {
+		return ErrorResult(fmt.Sprintf("command too long: %d bytes (max %d)", len(command), maxCommandLength))
+	}
+
+	if strings.TrimSpace(command) == "" {
+		return ErrorResult("command cannot be empty")
+	}
+
 	cwd := t.workingDir
 	if wd, ok := args["working_dir"].(string); ok && wd != "" {
-		cwd = wd
+		if t.restrictToWorkspace && t.workspace != "" {
+			resolved, err := validatePath(wd, t.workspace, true)
+			if err != nil {
+				return ErrorResult(fmt.Sprintf("working_dir blocked: %v", err))
+			}
+			cwd = resolved
+		} else {
+			cwd = wd
+		}
 	}
 
 	if cwd == "" {
@@ -157,7 +201,6 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]interface{}) *To
 
 	startTime := time.Now()
 
-	// Check if shell is disabled
 	if t.mode == ShellModeDisabled {
 		t.auditLog(command, cwd, -1, 0, true, time.Since(startTime))
 		return ErrorResult("Shell execution is disabled")
@@ -371,7 +414,7 @@ func (t *ExecTool) auditLog(command, cwd string, exitCode, outputLen int, blocke
 
 	logger.InfoCF("shell", "Command execution",
 		map[string]interface{}{
-			"command":    command,
+			"command":    shellRedactor.Redact(command),
 			"cwd":        cwd,
 			"exit_code":  exitCode,
 			"output_len": outputLen,

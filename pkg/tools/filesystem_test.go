@@ -250,7 +250,6 @@ func TestFilesystemTool_ListDir_DefaultPath(t *testing.T) {
 
 // Block paths that look inside workspace but point outside via symlink.
 func TestFilesystemTool_ReadFile_RejectsSymlinkEscape(t *testing.T) {
-
 	root := t.TempDir()
 	workspace := filepath.Join(root, "workspace")
 	if err := os.MkdirAll(workspace, 0755); err != nil {
@@ -277,5 +276,139 @@ func TestFilesystemTool_ReadFile_RejectsSymlinkEscape(t *testing.T) {
 	}
 	if !strings.Contains(result.ForLLM, "symlink resolves outside workspace") {
 		t.Fatalf("expected symlink escape error, got: %s", result.ForLLM)
+	}
+}
+
+func TestValidatePath_NullByteRejection(t *testing.T) {
+	workspace := t.TempDir()
+	tests := []struct {
+		name string
+		path string
+	}{
+		{"null in middle", "foo\x00bar.txt"},
+		{"null at start", "\x00secret"},
+		{"null at end", "file.txt\x00"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := validatePath(tc.path, workspace, true)
+			if err == nil {
+				t.Fatal("expected error for null byte in path")
+			}
+			if !strings.Contains(err.Error(), "null byte") {
+				t.Fatalf("expected null byte error, got: %v", err)
+			}
+		})
+	}
+}
+
+func TestValidatePath_SensitiveFileBlocking(t *testing.T) {
+	workspace := t.TempDir()
+	tests := []struct {
+		name      string
+		path      string
+		wantBlock bool
+	}{
+		{"env file", ".env", true},
+		{"env local", ".env.local", true},
+		{"env production", ".env.production", true},
+		{"ssh private key rsa", "id_rsa", true},
+		{"ssh private key ed25519", "id_ed25519", true},
+		{"credentials json", "credentials.json", true},
+		{"service account", "service-account.json", true},
+		{"secrets yaml", "secrets.yaml", true},
+		{"npmrc", ".npmrc", true},
+		{"pypirc", ".pypirc", true},
+		{"netrc", ".netrc", true},
+		{"nested sensitive", "subdir/deep/.env", true},
+		{"normal file", "main.go", false},
+		{"readme", "README.md", false},
+		{"config toml", "config.toml", false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := validatePath(tc.path, workspace, true)
+			if tc.wantBlock {
+				if err == nil {
+					t.Fatalf("expected sensitive file to be blocked: %s", tc.path)
+				}
+				if !strings.Contains(err.Error(), "sensitive file") {
+					t.Fatalf("expected sensitive file error, got: %v", err)
+				}
+			} else {
+				if err != nil {
+					t.Fatalf("unexpected error for %s: %v", tc.path, err)
+				}
+			}
+		})
+	}
+}
+
+func TestValidatePath_SensitiveFileAllowedWithoutRestrict(t *testing.T) {
+	workspace := t.TempDir()
+	_, err := validatePath(".env", workspace, false)
+	if err != nil {
+		t.Fatalf("expected sensitive file to be allowed when restrict=false, got: %v", err)
+	}
+}
+
+func TestWriteFileTool_RejectsOversizedContent(t *testing.T) {
+	workspace := t.TempDir()
+	tool := NewWriteFileTool(workspace, false)
+	oversized := strings.Repeat("x", maxWriteBytes+1)
+	result := tool.Execute(context.Background(), map[string]interface{}{
+		"path":    filepath.Join(workspace, "big.txt"),
+		"content": oversized,
+	})
+	if !result.IsError {
+		t.Fatal("expected error for oversized content")
+	}
+	if !strings.Contains(result.ForLLM, "content too large") {
+		t.Fatalf("expected 'content too large' error, got: %s", result.ForLLM)
+	}
+}
+
+func TestValidatePath_TraversalBlocked(t *testing.T) {
+	workspace := t.TempDir()
+	tests := []struct {
+		name string
+		path string
+	}{
+		{"simple traversal", "../../../etc/passwd"},
+		{"encoded traversal", "subdir/../../.."},
+		{"absolute outside", "/etc/passwd"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := validatePath(tc.path, workspace, true)
+			if err == nil {
+				t.Fatalf("expected traversal to be blocked: %s", tc.path)
+			}
+		})
+	}
+}
+
+func TestValidatePath_ValidPathsAllowed(t *testing.T) {
+	workspace := t.TempDir()
+	os.MkdirAll(filepath.Join(workspace, "src", "pkg"), 0755)
+
+	tests := []struct {
+		name string
+		path string
+	}{
+		{"relative file", "main.go"},
+		{"nested relative", "src/pkg/util.go"},
+		{"absolute inside", filepath.Join(workspace, "data.json")},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			resolved, err := validatePath(tc.path, workspace, true)
+			if err != nil {
+				t.Fatalf("expected path to be allowed, got error: %v", err)
+			}
+			if !strings.HasPrefix(resolved, workspace) {
+				t.Fatalf("resolved path %s not inside workspace %s", resolved, workspace)
+			}
+		})
 	}
 }

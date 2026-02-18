@@ -8,8 +8,45 @@ import (
 	"strings"
 )
 
+// maxWriteBytes is the maximum file size the write tool will accept.
+const maxWriteBytes = 10 * 1024 * 1024 // 10 MiB
+
+// sensitivePatterns are filename patterns that should never be read or written
+// by the agent. The check is case-insensitive on the base filename.
+var sensitivePatterns = []string{
+	".env",
+	".env.local",
+	".env.production",
+	"id_rsa",
+	"id_ed25519",
+	"id_ecdsa",
+	"id_dsa",
+	"credentials.json",
+	"service-account.json",
+	"secrets.yaml",
+	"secrets.yml",
+	".npmrc",
+	".pypirc",
+	".netrc",
+}
+
+func isSensitiveFile(path string) bool {
+	base := strings.ToLower(filepath.Base(path))
+	for _, pat := range sensitivePatterns {
+		if base == pat {
+			return true
+		}
+	}
+	return false
+}
+
 // validatePath ensures the given path is within the workspace if restrict is true.
+// It rejects paths containing null bytes and blocks access to sensitive credential files.
 func validatePath(path, workspace string, restrict bool) (string, error) {
+	if strings.ContainsRune(path, 0) {
+		return "", fmt.Errorf("access denied: path contains null byte")
+	}
+
 	if workspace == "" {
 		return path, nil
 	}
@@ -27,6 +64,10 @@ func validatePath(path, workspace string, restrict bool) (string, error) {
 		if err != nil {
 			return "", fmt.Errorf("failed to resolve file path: %w", err)
 		}
+	}
+
+	if restrict && isSensitiveFile(absPath) {
+		return "", fmt.Errorf("access denied: path targets a sensitive file")
 	}
 
 	if restrict {
@@ -169,6 +210,10 @@ func (t *WriteFileTool) Execute(ctx context.Context, args map[string]interface{}
 	content, ok := args["content"].(string)
 	if !ok {
 		return ErrorResult("content is required")
+	}
+
+	if len(content) > maxWriteBytes {
+		return ErrorResult(fmt.Sprintf("content too large: %d bytes (max %d)", len(content), maxWriteBytes))
 	}
 
 	resolvedPath, err := validatePath(path, t.workspace, t.restrict)
