@@ -4,22 +4,17 @@ package delegate
 import (
 	"context"
 	"database/sql"
-	_ "embed"
 	"fmt"
-	"strings"
+	"time"
 
+	"github.com/pressly/goose/v3"
 	"github.com/sipeed/picoclaw/pkg/ids"
 	"github.com/sipeed/picoclaw/pkg/memory"
+	"github.com/sipeed/picoclaw/pkg/memory/migrations"
 	memsqlc "github.com/sipeed/picoclaw/pkg/memory/sqlc"
 
-	_ "github.com/tursodatabase/go-libsql" // register "libsql" driver
+	libsql "github.com/tursodatabase/go-libsql"
 )
-
-//go:embed fts5.sql
-var fts5DDL string
-
-//go:embed vector.sql
-var vectorDDL string
 
 // DefaultEmbeddingDims is the default number of dimensions for embedding vectors.
 // This matches common models like sentence-transformers (768-dim).
@@ -30,10 +25,26 @@ const DefaultEmbeddingDims = 768
 // Hand-written SQL (FTS5, vector search) uses a prepared statement cache.
 type LibSQLDelegate struct {
 	db            *sql.DB
+	connector     *libsql.Connector // non-nil when using embedded replica mode
 	queries       *memsqlc.Queries
 	stmts         *stmtCache
 	caps          capFlags
 	embeddingDims int
+}
+
+// SyncConfig configures Turso embedded replica synchronization.
+type SyncConfig struct {
+	// SyncURL is the remote primary database URL (e.g., "libsql://mydb.turso.io").
+	SyncURL string
+
+	// AuthToken for the remote database.
+	AuthToken string
+
+	// SyncInterval is how often to auto-sync. Zero means manual sync only.
+	SyncInterval time.Duration
+
+	// EncryptionKey enables encryption-at-rest. Empty means no encryption.
+	EncryptionKey string
 }
 
 // NewLibSQLDelegate opens a libSQL database at the given path and returns
@@ -44,11 +55,56 @@ func NewLibSQLDelegate(dbPath string) (*LibSQLDelegate, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open libsql: %w", err)
 	}
-	// Single writer for WAL mode safety
+
+	return newDelegateFromDB(db, nil)
+}
+
+// NewLibSQLDelegateWithSync opens a libSQL database as an embedded replica
+// that syncs with a remote Turso primary. Reads are served from the local file;
+// writes propagate to the remote primary and sync back.
+func NewLibSQLDelegateWithSync(dbPath string, cfg SyncConfig) (*LibSQLDelegate, error) {
+	opts := []libsql.Option{
+		libsql.WithAuthToken(cfg.AuthToken),
+	}
+	if cfg.SyncInterval > 0 {
+		opts = append(opts, libsql.WithSyncInterval(cfg.SyncInterval))
+	}
+	if cfg.EncryptionKey != "" {
+		opts = append(opts, libsql.WithEncryption(cfg.EncryptionKey))
+	}
+
+	connector, err := libsql.NewEmbeddedReplicaConnector(dbPath, cfg.SyncURL, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("create embedded replica connector: %w", err)
+	}
+
+	db := sql.OpenDB(connector)
+	d, err := newDelegateFromDB(db, connector)
+	if err != nil {
+		connector.Close()
+		return nil, err
+	}
+	return d, nil
+}
+
+// Sync manually syncs the embedded replica with the remote primary.
+// Returns nil if not in replica mode.
+func (d *LibSQLDelegate) Sync() error {
+	if d.connector == nil {
+		return nil
+	}
+	_, err := d.connector.Sync()
+	return err
+}
+
+// IsReplica returns true if this delegate is operating as an embedded replica.
+func (d *LibSQLDelegate) IsReplica() bool {
+	return d.connector != nil
+}
+
+func newDelegateFromDB(db *sql.DB, connector *libsql.Connector) (*LibSQLDelegate, error) {
 	db.SetMaxOpenConns(1)
 
-	// Set pragmas — journal_mode returns a row, so use QueryRowContext for it.
-	// go-libsql doesn't support query-string pragmas.
 	ctx := context.Background()
 	var walMode string
 	if err := db.QueryRowContext(ctx, "PRAGMA journal_mode=WAL").Scan(&walMode); err != nil {
@@ -62,6 +118,7 @@ func NewLibSQLDelegate(dbPath string) (*LibSQLDelegate, error) {
 
 	return &LibSQLDelegate{
 		db:            db,
+		connector:     connector,
 		queries:       memsqlc.New(db),
 		stmts:         newStmtCache(db),
 		embeddingDims: DefaultEmbeddingDims,
@@ -87,194 +144,19 @@ func NewLibSQLInMemory() (*LibSQLDelegate, error) {
 	return NewLibSQLDelegate(":memory:")
 }
 
-// fts5FallbackDDL is a simplified standalone FTS5 DDL without advanced tokenizer.
-// Used when the primary FTS5 DDL fails (e.g., tokenchars not supported).
-const fts5FallbackDDL = `
-CREATE VIRTUAL TABLE IF NOT EXISTS recall_items_fts USING fts5(
-    content,
-    tags
-);
-
-CREATE TRIGGER IF NOT EXISTS recall_items_ai
-AFTER INSERT ON recall_items BEGIN
-    INSERT INTO recall_items_fts(rowid, content, tags)
-    VALUES (new.rowid, new.content, new.tags);
-END;
-
-CREATE TRIGGER IF NOT EXISTS recall_items_ad
-AFTER DELETE ON recall_items BEGIN
-    DELETE FROM recall_items_fts WHERE rowid = old.rowid;
-END;
-
-CREATE TRIGGER IF NOT EXISTS recall_items_au
-AFTER UPDATE ON recall_items BEGIN
-    DELETE FROM recall_items_fts WHERE rowid = old.rowid;
-    INSERT INTO recall_items_fts(rowid, content, tags)
-    VALUES (new.rowid, new.content, new.tags);
-END;
-`
-
-// execMultiStatement splits a SQL string into individual statements and
-// executes each one. The go-libsql driver only handles one statement per
-// ExecContext call. This function handles triggers with BEGIN...END blocks
-// by tracking nesting depth.
-func execMultiStatement(ctx context.Context, db *sql.DB, ddl string) error {
-	stmts := splitSQL(ddl)
-	for _, s := range stmts {
-		if _, err := db.ExecContext(ctx, s); err != nil {
-			return fmt.Errorf("failed to execute query %s\n%w", s, err)
-		}
-	}
-	return nil
-}
-
-// splitSQL splits multi-statement SQL into individual statements,
-// correctly handling BEGIN...END blocks (triggers) that contain semicolons.
-func splitSQL(ddl string) []string {
-	var result []string
-	var current strings.Builder
-	depth := 0 // tracks BEGIN...END nesting
-
-	for _, line := range strings.Split(ddl, "\n") {
-		trimmed := strings.TrimSpace(line)
-
-		// Skip comment-only and empty lines
-		if trimmed == "" || strings.HasPrefix(trimmed, "--") {
-			current.WriteString(line)
-			current.WriteByte('\n')
-			continue
-		}
-
-		upper := strings.ToUpper(trimmed)
-
-		// Track BEGIN...END nesting for triggers.
-		// BEGIN can appear at start ("BEGIN") or end of a line ("... BEGIN").
-		if upper == "BEGIN" || strings.HasSuffix(upper, " BEGIN") || strings.HasSuffix(upper, "\tBEGIN") {
-			depth++
-		}
-		if upper == "END;" || strings.HasSuffix(upper, "END;") {
-			depth--
-			current.WriteString(line)
-			current.WriteByte('\n')
-			if depth <= 0 {
-				stmt := strings.TrimSpace(current.String())
-				if stmt != "" {
-					result = append(result, stmt)
-				}
-				current.Reset()
-				depth = 0
-			}
-			continue
-		}
-
-		current.WriteString(line)
-		current.WriteByte('\n')
-
-		// If we're outside a BEGIN...END block and the line ends with ';',
-		// treat it as a statement boundary.
-		if depth == 0 && strings.HasSuffix(trimmed, ";") {
-			stmt := strings.TrimSpace(current.String())
-			if stmt != "" {
-				result = append(result, stmt)
-			}
-			current.Reset()
-		}
-	}
-
-	// Capture any trailing statement without a final semicolon
-	if s := strings.TrimSpace(current.String()); s != "" {
-		result = append(result, s)
-	}
-
-	return result
-}
-
-// schemaDDL generates the core DDL with the configured embedding dimensions.
-// Entity IDs use BLOB PRIMARY KEY (16-byte UUIDv7). External identifiers remain TEXT.
-func (d *LibSQLDelegate) schemaDDL() string {
-	return fmt.Sprintf(`-- PicoClaw Memory System Schema (libSQL)
--- Entity IDs: BLOB PRIMARY KEY (16-byte UUIDv7 RFC 9562)
--- External identifiers (agent_id, session_key): TEXT
-CREATE TABLE IF NOT EXISTS working_context (
-    agent_id TEXT NOT NULL,
-    session_key TEXT NOT NULL DEFAULT '',
-    content TEXT NOT NULL DEFAULT '',
-    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (agent_id, session_key)
-);
-CREATE TABLE IF NOT EXISTS recall_items (
-    id BLOB PRIMARY KEY,
-    agent_id TEXT NOT NULL,
-    session_key TEXT NOT NULL DEFAULT '',
-    role TEXT NOT NULL DEFAULT 'system',
-    sector TEXT NOT NULL DEFAULT 'episodic',
-    importance REAL NOT NULL DEFAULT 0.5,
-    salience REAL NOT NULL DEFAULT 0.5,
-    decay_rate REAL NOT NULL DEFAULT 0.01,
-    content TEXT NOT NULL,
-    tags TEXT NOT NULL DEFAULT '',
-    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-CREATE INDEX IF NOT EXISTS idx_recall_agent_session ON recall_items(agent_id, session_key);
-CREATE INDEX IF NOT EXISTS idx_recall_sector ON recall_items(sector);
-CREATE INDEX IF NOT EXISTS idx_recall_importance ON recall_items(importance DESC);
-CREATE INDEX IF NOT EXISTS idx_recall_created ON recall_items(created_at DESC);
-CREATE TABLE IF NOT EXISTS archival_chunks (
-    id BLOB PRIMARY KEY,
-    recall_id BLOB NOT NULL,
-    chunk_index INTEGER NOT NULL DEFAULT 0,
-    content TEXT NOT NULL,
-    embedding F32_BLOB(%d),
-    source TEXT NOT NULL DEFAULT '',
-    hash TEXT NOT NULL DEFAULT '',
-    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-CREATE INDEX IF NOT EXISTS idx_chunks_recall ON archival_chunks(recall_id);
-CREATE INDEX IF NOT EXISTS idx_chunks_source ON archival_chunks(source);
-CREATE TABLE IF NOT EXISTS memory_summaries (
-    id BLOB PRIMARY KEY,
-    agent_id TEXT NOT NULL,
-    session_key TEXT NOT NULL DEFAULT '',
-    content TEXT NOT NULL,
-    from_msg_idx INTEGER NOT NULL DEFAULT 0,
-    to_msg_idx INTEGER NOT NULL DEFAULT 0,
-    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-CREATE INDEX IF NOT EXISTS idx_summaries_agent_session ON memory_summaries(agent_id, session_key);
-CREATE TRIGGER IF NOT EXISTS recall_cascade_delete
-AFTER DELETE ON recall_items BEGIN
-    DELETE FROM archival_chunks WHERE recall_id = old.id;
-END;`, d.embeddingDims)
-}
-
 func (d *LibSQLDelegate) Init(ctx context.Context) error {
-	if err := execMultiStatement(ctx, d.db, d.schemaDDL()); err != nil {
-		return fmt.Errorf("create schema: %w", err)
+	// Pass embedding dimensions into goose migration context so the Go-based
+	// schema migration can create F32_BLOB(N) with the configured dimension.
+	mctx := migrations.WithEmbeddingDims(ctx, d.embeddingDims)
+
+	// Go-only migrations registered via init() in the migrations package.
+	// nil filesystem — no SQL files, all logic is in Go migration functions.
+	provider, err := goose.NewProvider(goose.DialectSQLite3, d.db, nil)
+	if err != nil {
+		return fmt.Errorf("create migration provider: %w", err)
 	}
-
-	// FTS5 virtual tables and triggers — try advanced tokenizer first,
-	// fall back to basic FTS5, then skip entirely if unavailable.
-	if err := execMultiStatement(ctx, d.db, fts5DDL); err != nil {
-		// Advanced tokenizer failed — try simplified FTS5
-		if err2 := execMultiStatement(ctx, d.db, fts5FallbackDDL); err2 != nil {
-			// FTS5 not available at all — LIKE-based search will be used
-			_ = err2
-		}
-	}
-
-	// Backfill: ensure any existing recall_items are indexed in FTS5.
-	// This is idempotent — only inserts rows not already present.
-	_, _ = d.db.ExecContext(ctx,
-		`INSERT INTO recall_items_fts(rowid, content, tags)
-		 SELECT ri.rowid, ri.content, ri.tags
-		 FROM recall_items ri
-		 WHERE NOT EXISTS (SELECT 1 FROM recall_items_fts f WHERE f.rowid = ri.rowid)`)
-
-	// Vector index -- gracefully skip if libSQL vector extension not available
-	if err := execMultiStatement(ctx, d.db, vectorDDL); err != nil {
-		// Not fatal: vector search will fall back to Go-side brute-force
-		_ = err
+	if _, err := provider.Up(mctx); err != nil {
+		return fmt.Errorf("run migrations: %w", err)
 	}
 
 	// Detect runtime capabilities (FTS5, BM25, vector_top_k)
@@ -290,7 +172,13 @@ func (d *LibSQLDelegate) Close() error {
 	if d.stmts != nil {
 		d.stmts.close()
 	}
-	return d.db.Close()
+	dbErr := d.db.Close()
+	if d.connector != nil {
+		if err := d.connector.Close(); err != nil && dbErr == nil {
+			dbErr = err
+		}
+	}
+	return dbErr
 }
 
 // --- Working Context ---
