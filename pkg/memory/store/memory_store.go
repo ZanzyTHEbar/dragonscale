@@ -500,6 +500,16 @@ func (m *MemoryStore) OffloadToolResult(ctx context.Context, toolName, content, 
 
 // --- Lifecycle ---
 
+// Sync flushes pending writes to the remote replica (Turso).
+// No-op if the underlying delegate doesn't support replication.
+func (m *MemoryStore) Sync() error {
+	type syncer interface{ Sync() error }
+	if s, ok := m.delegate.(syncer); ok {
+		return s.Sync()
+	}
+	return nil
+}
+
 func (m *MemoryStore) Close() error {
 	return m.delegate.Close()
 }

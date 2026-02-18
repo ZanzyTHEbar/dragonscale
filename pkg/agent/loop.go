@@ -274,6 +274,10 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 func (al *AgentLoop) Stop() {
 	al.running.Store(false)
 	if al.memoryStore != nil {
+		if err := al.memoryStore.Sync(); err != nil {
+			logger.WarnCF("agent", "Failed to sync memory before shutdown",
+				map[string]interface{}{"error": err.Error()})
+		}
 		al.memoryStore.Close()
 	}
 }
