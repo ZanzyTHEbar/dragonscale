@@ -19,25 +19,28 @@ echo ""
 
 cd "$PROJECT_ROOT"
 
-# 1. Build current branch
-echo "[1/4] Building current branch..."
-make build 2>&1 | tail -1
-cp build/picoclaw "$EVAL_DIR/bin/eval-runner"
+# 1. Build current branch eval-runner (instrumented wrapper)
+echo "[1/4] Building eval-runner from current branch..."
+make eval-build 2>&1 | tail -1
+cp "$EVAL_DIR/bin/eval-runner" "$EVAL_DIR/bin/eval-runner-branch"
 
-# 2. Build main branch
+# 2. Build main branch eval-runner
 CURRENT_BRANCH=$(git branch --show-current)
 STASH_RESULT=$(git stash 2>&1)
 
-echo "[2/4] Building main branch..."
+echo "[2/4] Building eval-runner from main branch..."
 git checkout main 2>/dev/null
-make build 2>&1 | tail -1
-cp build/picoclaw "$EVAL_DIR/bin/eval-runner-main"
+make eval-build 2>&1 | tail -1
+cp "$EVAL_DIR/bin/eval-runner" "$EVAL_DIR/bin/eval-runner-main"
 
-# Restore
+# Restore working branch
 git checkout "$CURRENT_BRANCH" 2>/dev/null
 if [[ "$STASH_RESULT" != "No local changes to save" ]]; then
   git stash pop 2>/dev/null || true
 fi
+
+# Put branch binary back as the default eval-runner
+cp "$EVAL_DIR/bin/eval-runner-branch" "$EVAL_DIR/bin/eval-runner"
 
 # 3. Update promptfoo config to enable comparison
 cd "$EVAL_DIR"
