@@ -1,0 +1,138 @@
+package store
+
+import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+
+	"github.com/sipeed/picoclaw/pkg/config"
+)
+
+func TestNewEmbedderFromConfig_EmptyProvider(t *testing.T) {
+	emb, err := NewEmbedderFromConfig(config.EmbeddingConfig{}, config.ProvidersConfig{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if emb != nil {
+		t.Error("expected nil embedder for empty provider")
+	}
+}
+
+func TestNewEmbedderFromConfig_UnknownProvider(t *testing.T) {
+	_, err := NewEmbedderFromConfig(config.EmbeddingConfig{Provider: "nonexistent"}, config.ProvidersConfig{})
+	if err == nil {
+		t.Error("expected error for unknown provider")
+	}
+}
+
+func TestNewEmbedderFromConfig_OpenAI_NoKey(t *testing.T) {
+	_, err := NewEmbedderFromConfig(
+		config.EmbeddingConfig{Provider: "openai"},
+		config.ProvidersConfig{},
+	)
+	if err == nil {
+		t.Error("expected error when OpenAI has no API key")
+	}
+}
+
+func TestNewEmbedderFromConfig_OpenAI_FallbackKey(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"data": []map[string]interface{}{
+				{"index": 0, "embedding": []float32{0.1, 0.2, 0.3}},
+			},
+		})
+	}))
+	defer srv.Close()
+
+	emb, err := NewEmbedderFromConfig(
+		config.EmbeddingConfig{
+			Provider: "openai",
+			APIBase:  srv.URL,
+		},
+		config.ProvidersConfig{
+			OpenAI: config.OpenAIProviderConfig{
+				ProviderConfig: config.ProviderConfig{APIKey: "test-key"},
+			},
+		},
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if emb == nil {
+		t.Fatal("expected non-nil embedder")
+	}
+	if emb.Model() != defaultOpenAIModel {
+		t.Errorf("expected default model %q, got %q", defaultOpenAIModel, emb.Model())
+	}
+}
+
+func TestNewEmbedderFromConfig_Ollama(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"embeddings": [][]float32{{0.1, 0.2, 0.3}},
+		})
+	}))
+	defer srv.Close()
+
+	emb, err := NewEmbedderFromConfig(
+		config.EmbeddingConfig{
+			Provider: "ollama",
+			APIBase:  srv.URL,
+			Model:    "test-embed",
+		},
+		config.ProvidersConfig{},
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if emb == nil {
+		t.Fatal("expected non-nil embedder")
+	}
+	if emb.Model() != "test-embed" {
+		t.Errorf("expected 'test-embed', got %q", emb.Model())
+	}
+}
+
+func TestNewEmbedderFromConfig_Ollama_FallbackBase(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"embeddings": [][]float32{{0.5}},
+		})
+	}))
+	defer srv.Close()
+
+	emb, err := NewEmbedderFromConfig(
+		config.EmbeddingConfig{Provider: "ollama"},
+		config.ProvidersConfig{
+			Ollama: config.ProviderConfig{APIBase: srv.URL},
+		},
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if emb == nil {
+		t.Fatal("expected non-nil embedder")
+	}
+}
+
+func TestNewEmbedderFromConfig_CaseInsensitive(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"embeddings": [][]float32{{0.1}},
+		})
+	}))
+	defer srv.Close()
+
+	emb, err := NewEmbedderFromConfig(
+		config.EmbeddingConfig{Provider: "  Ollama  ", APIBase: srv.URL},
+		config.ProvidersConfig{},
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if emb == nil {
+		t.Fatal("expected non-nil embedder for case-insensitive 'Ollama'")
+	}
+}
