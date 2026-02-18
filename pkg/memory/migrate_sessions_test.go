@@ -72,9 +72,34 @@ func (m *mockDelegate) ListSummaries(_ context.Context, _, _ string, _ int) ([]*
 func (m *mockDelegate) CountRecallItems(_ context.Context, _, _ string) (int, error) {
 	return len(m.recallItems), nil
 }
-func (m *mockDelegate) CountArchivalChunks(_ context.Context) (int, error) { return 0, nil }
-func (m *mockDelegate) HasVectorSearch() bool                              { return false }
-func (m *mockDelegate) HasFTS() bool                                       { return false }
+func (m *mockDelegate) CountArchivalChunks(_ context.Context) (int, error)   { return 0, nil }
+func (m *mockDelegate) HasVectorSearch() bool                                { return false }
+func (m *mockDelegate) HasFTS() bool                                         { return false }
+func (m *mockDelegate) GetKV(_ context.Context, _, _ string) (string, error) { return "", nil }
+func (m *mockDelegate) UpsertKV(_ context.Context, _, _, _ string) error     { return nil }
+func (m *mockDelegate) DeleteKV(_ context.Context, _, _ string) error        { return nil }
+func (m *mockDelegate) ListKVByPrefix(_ context.Context, _, _ string, _ int) (map[string]string, error) {
+	return nil, nil
+}
+func (m *mockDelegate) GetDocument(_ context.Context, _, _ string) (*AgentDocument, error) {
+	return nil, nil
+}
+func (m *mockDelegate) UpsertDocument(_ context.Context, _ *AgentDocument) error { return nil }
+func (m *mockDelegate) DeleteDocument(_ context.Context, _, _ string) error      { return nil }
+func (m *mockDelegate) ListDocumentsByCategory(_ context.Context, _, _ string) ([]*AgentDocument, error) {
+	return nil, nil
+}
+func (m *mockDelegate) ListAllDocuments(_ context.Context, _ string) ([]*AgentDocument, error) {
+	return nil, nil
+}
+func (m *mockDelegate) InsertAuditEntry(_ context.Context, _ *AuditEntry) error { return nil }
+func (m *mockDelegate) ListAuditEntries(_ context.Context, _ string, _ int) ([]*AuditEntry, error) {
+	return nil, nil
+}
+func (m *mockDelegate) ListAuditEntriesByAction(_ context.Context, _, _ string, _ int) ([]*AuditEntry, error) {
+	return nil, nil
+}
+func (m *mockDelegate) CountAuditEntries(_ context.Context, _ string) (int, error) { return 0, nil }
 
 func writeSessionFile(t *testing.T, dir, name string, sess SessionFile) {
 	t.Helper()
