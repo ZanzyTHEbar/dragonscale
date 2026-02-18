@@ -45,3 +45,4 @@ tasks/
 
 # Added by goreleaser init:
 dist/
+eval-runner

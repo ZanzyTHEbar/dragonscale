@@ -773,6 +773,36 @@ func statusCmd() {
 				fmt.Printf("  %s (%s): %s\n", provider, cred.AuthMethod, status)
 			}
 		}
+
+		// Memory system status
+		fmt.Println("\nMemory System:")
+		if cfg.Memory.Enabled {
+			fmt.Println("  Enabled: ✓")
+			fmt.Printf("  Embedding dims: %d\n", cfg.Memory.EmbeddingDims)
+			if cfg.Memory.Embedding.Provider != "" {
+				fmt.Printf("  Embedding provider: %s\n", cfg.Memory.Embedding.Provider)
+				if cfg.Memory.Embedding.Model != "" {
+					fmt.Printf("  Embedding model: %s\n", cfg.Memory.Embedding.Model)
+				}
+			} else {
+				fmt.Println("  Embedding provider: none (FTS5-only)")
+			}
+			if cfg.Memory.Sync.SyncURL != "" {
+				fmt.Printf("  Turso replica: ✓ %s\n", cfg.Memory.Sync.SyncURL)
+				fmt.Printf("  Sync interval: %ds\n", cfg.Memory.Sync.SyncIntervalSeconds)
+			} else {
+				fmt.Println("  Turso replica: local-only")
+			}
+			memDBPath := cfg.Memory.DBPath
+			if memDBPath == "" {
+				memDBPath = filepath.Join(workspace, "memory", "picoclaw.db")
+			}
+			if fi, err := os.Stat(memDBPath); err == nil {
+				fmt.Printf("  DB size: %.1f KB\n", float64(fi.Size())/1024)
+			}
+		} else {
+			fmt.Println("  Enabled: ✗")
+		}
 	}
 }
 
