@@ -225,3 +225,16 @@ flowchart LR
 - Focus Primitives: [arxiv 2601.07190](https://arxiv.org/abs/2601.07190) — Physarum-inspired autonomous context pruning
 - Agentic RAG: [arxiv 2602.03442](https://arxiv.org/abs/2602.03442) — 94.5% HotpotQA, hierarchical retrieval
 - Intelligent Delegation: [Google DeepMind](https://arxiv.org/abs/2510.26493) — delegation as protocol, not prompt
+
+## Ideas and improvements
+
+- [ ] Add a new tool for the agent to use: `focus_search`
+- [ ] Add LLMCompiler runtime features to the DAG task executure
+- [ ] Isolated tool runtime features
+  - [ ] ZKP
+  - [ ] daemon-based zero-trust tool runtime
+  - [ ] capability-based tool runtime
+  - [ ] tools own their own secrets
+  - [ ] tools own their own context
+  - [ ] keyring-based secret management
+  - [ ] 
