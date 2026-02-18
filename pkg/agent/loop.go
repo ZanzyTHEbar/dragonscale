@@ -24,6 +24,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/constants"
 	picofantasy "github.com/sipeed/picoclaw/pkg/fantasy"
 	"github.com/sipeed/picoclaw/pkg/logger"
+	"github.com/sipeed/picoclaw/pkg/memory"
 	"github.com/sipeed/picoclaw/pkg/memory/delegate"
 	memstore "github.com/sipeed/picoclaw/pkg/memory/store"
 	"github.com/sipeed/picoclaw/pkg/messages"
@@ -148,33 +149,52 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, model fantasy.Lang
 
 	// Initialize 3-tier MemGPT memory system
 	var ms *memstore.MemoryStore
-	memDBPath := filepath.Join(workspace, "memory", "picoclaw.db")
-	os.MkdirAll(filepath.Dir(memDBPath), 0755)
+	if cfg.Memory.Enabled {
+		memDBPath := filepath.Join(workspace, "memory", "picoclaw.db")
+		os.MkdirAll(filepath.Dir(memDBPath), 0755)
 
-	del, err := delegate.NewLibSQLDelegate(memDBPath)
-	if err != nil {
-		logger.WarnCF("agent", "Failed to create memory delegate, memory system disabled",
-			map[string]interface{}{"error": err.Error()})
-	} else {
-		if err := del.Init(context.Background()); err != nil {
-			logger.WarnCF("agent", "Failed to init memory schema, memory system disabled",
+		del, err := delegate.NewFromConfig(cfg.Memory, memDBPath)
+		if err != nil {
+			logger.WarnCF("agent", "Failed to create memory delegate, memory system disabled",
 				map[string]interface{}{"error": err.Error()})
-			del.Close()
 		} else {
-			chunker := memstore.NewMarkdownChunker(memstore.DefaultMarkdownChunkerConfig())
-			ms = memstore.New(del, chunker, nil, memstore.Config{
-				ContextWindowTokens:    cfg.Agents.Defaults.MaxTokens,
-				OffloadThresholdTokens: 4000,
-			})
-			contextBuilder.SetMemoryStore(ms)
+			if err := del.Init(context.Background()); err != nil {
+				logger.WarnCF("agent", "Failed to init memory schema, memory system disabled",
+					map[string]interface{}{"error": err.Error()})
+				del.Close()
+			} else {
+				offloadThreshold := cfg.Memory.OffloadThresholdTokens
+				if offloadThreshold <= 0 {
+					offloadThreshold = 4000
+				}
+				chunker := memstore.NewMarkdownChunker(memstore.DefaultMarkdownChunkerConfig())
 
-			// Register the memory tool
-			memTool := NewMemGPTTool(ms, "picoclaw", "default")
-			toolsRegistry.Register(memTool)
+				// Create embedding provider from config (nil = FTS5-only search)
+				embedder, embErr := memstore.NewEmbedderFromConfig(cfg.Memory.Embedding, cfg.Providers)
+				if embErr != nil {
+					logger.WarnCF("agent", "Failed to create embedding provider, archival search will use FTS5 only",
+						map[string]interface{}{"error": embErr.Error()})
+				}
 
-			logger.InfoCF("agent", "3-tier memory system initialized",
-				map[string]interface{}{"db_path": memDBPath})
+				ms = memstore.New(del, chunker, embedder, memstore.Config{
+					ContextWindowTokens:    cfg.Agents.Defaults.MaxTokens,
+					OffloadThresholdTokens: offloadThreshold,
+				})
+				contextBuilder.SetMemoryStore(ms)
+
+				memTool := NewMemGPTTool(ms, "picoclaw", "default")
+				toolsRegistry.Register(memTool)
+
+				// One-time migration of file-based sessions into recall memory
+				sessionsDir := filepath.Join(workspace, "sessions")
+				if _, migErr := memory.MigrateFileSessions(context.Background(), del, "picoclaw", sessionsDir); migErr != nil {
+					logger.WarnCF("agent", "Session migration failed (non-fatal)",
+						map[string]interface{}{"error": migErr.Error()})
+				}
+			}
 		}
+	} else {
+		logger.InfoCF("agent", "Memory system disabled by config", nil)
 	}
 
 	// Register meta-tools for progressive disclosure (tool_search + tool_call)
