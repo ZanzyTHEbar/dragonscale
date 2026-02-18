@@ -1,4 +1,5 @@
-.PHONY: all build install uninstall clean help test
+.PHONY: all build install uninstall clean help test \
+	fantasy-check fantasy-diff fantasy-sync fantasy-patch
 
 # Build variables
 BINARY_NAME=picoclaw
@@ -143,6 +144,36 @@ deps:
 update-deps:
 	@$(GO) get -u ./...
 	@$(GO) mod tidy
+
+## sqlc-check: Verify sqlc-generated code is up to date
+sqlc-check:
+	@echo "Checking sqlc generation..."
+	@sqlc generate -f pkg/memory/sqlc/sqlc.yaml
+	@git diff --exit-code -- pkg/memory/sqlc/ || (echo "::error::sqlc generated code is stale. Run 'sqlc generate -f pkg/memory/sqlc/sqlc.yaml' and commit." && exit 1)
+	@echo "sqlc OK"
+
+# ---------------------------------------------------------------------------
+# Fantasy SDK vendor management
+# Usage: make fantasy-diff FANTASY_VERSION=v0.9.0
+#        make fantasy-sync FANTASY_VERSION=v0.9.0
+# ---------------------------------------------------------------------------
+FANTASY_VERSION ?=
+
+## fantasy-check: Compare vendored Fantasy SDK against latest upstream
+fantasy-check:
+	@./scripts/sync-fantasy.sh --check
+
+## fantasy-diff: Show diff between vendored and upstream (optional FANTASY_VERSION=vX.Y.Z)
+fantasy-diff:
+	@./scripts/sync-fantasy.sh --diff $(FANTASY_VERSION)
+
+## fantasy-sync: Full sync of vendored Fantasy SDK (optional FANTASY_VERSION=vX.Y.Z)
+fantasy-sync:
+	@./scripts/sync-fantasy.sh --sync $(FANTASY_VERSION)
+
+## fantasy-patch: Save local modifications as a patch (requires NAME=description)
+fantasy-patch:
+	@./scripts/sync-fantasy.sh --save-patch $(NAME)
 
 ## check: Run vet, fmt, and verify dependencies
 check: deps fmt vet test
