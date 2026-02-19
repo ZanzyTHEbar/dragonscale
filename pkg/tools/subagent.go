@@ -21,6 +21,10 @@ type SubagentTask struct {
 	Created       int64
 }
 
+// RunLoopFunc executes an agent tool loop. Injected from pkg/agent to break
+// the import cycle between pkg/tools and pkg/fantasy.
+type RunLoopFunc func(ctx context.Context, config ToolLoopConfig, systemPrompt, userPrompt, channel, chatID string) (*ToolLoopResult, error)
+
 type SubagentManager struct {
 	tasks         map[string]*SubagentTask
 	mu            sync.RWMutex
@@ -31,6 +35,7 @@ type SubagentManager struct {
 	tools         *ToolRegistry
 	maxIterations int
 	nextID        int
+	runLoop       RunLoopFunc
 }
 
 func NewSubagentManager(model fantasy.LanguageModel, defaultModel, workspace string, bus *bus.MessageBus) *SubagentManager {
@@ -44,6 +49,23 @@ func NewSubagentManager(model fantasy.LanguageModel, defaultModel, workspace str
 		maxIterations: 10,
 		nextID:        1,
 	}
+}
+
+// SetRunLoop injects the loop runner function. Must be called before any
+// subagent execution. When nil, falls back to the local RunToolLoop.
+func (sm *SubagentManager) SetRunLoop(fn RunLoopFunc) {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	sm.runLoop = fn
+}
+
+func (sm *SubagentManager) getRunLoop() RunLoopFunc {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+	if sm.runLoop != nil {
+		return sm.runLoop
+	}
+	return RunToolLoop
 }
 
 // SetTools sets the tool registry for subagent execution.
@@ -112,7 +134,8 @@ After completing the task, provide a clear summary of what was done.`
 	maxIter := sm.maxIterations
 	sm.mu.RUnlock()
 
-	loopResult, err := RunToolLoop(ctx, ToolLoopConfig{
+	runLoop := sm.getRunLoop()
+	loopResult, err := runLoop(ctx, ToolLoopConfig{
 		Model:         sm.model,
 		ModelID:       sm.defaultModel,
 		Tools:         tools,
@@ -251,7 +274,8 @@ func (t *SubagentTool) Execute(ctx context.Context, args map[string]interface{})
 	maxIter := sm.maxIterations
 	sm.mu.RUnlock()
 
-	loopResult, err := RunToolLoop(ctx, ToolLoopConfig{
+	runLoop := sm.getRunLoop()
+	loopResult, err := runLoop(ctx, ToolLoopConfig{
 		Model:         sm.model,
 		ModelID:       sm.defaultModel,
 		Tools:         tools,

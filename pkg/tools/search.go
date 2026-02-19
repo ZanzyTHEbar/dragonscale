@@ -7,12 +7,15 @@ import (
 	"strings"
 
 	jsonv2 "github.com/go-json-experiment/json"
+	"github.com/sipeed/picoclaw/pkg/skills"
 )
 
-// ToolSearchTool implements tool discovery via fuzzy search over the registry.
-// The agent can query for tools by keyword and get back ranked summaries.
+// ToolSearchTool implements unified discovery via fuzzy search over the registry
+// and (optionally) the skills library. Returns ranked results for both tools
+// and skills so the agent has a single entry point for capability discovery.
 type ToolSearchTool struct {
-	registry *ToolRegistry
+	registry     *ToolRegistry
+	skillsLoader *skills.SkillsLoader
 }
 
 // NewToolSearchTool creates a tool that searches the registry.
@@ -20,10 +23,15 @@ func NewToolSearchTool(registry *ToolRegistry) *ToolSearchTool {
 	return &ToolSearchTool{registry: registry}
 }
 
+// SetSkillsLoader enables unified search across tools and skills.
+func (t *ToolSearchTool) SetSkillsLoader(sl *skills.SkillsLoader) {
+	t.skillsLoader = sl
+}
+
 func (t *ToolSearchTool) Name() string { return "tool_search" }
 
 func (t *ToolSearchTool) Description() string {
-	return "Search for available tools by keyword. Returns tool names, descriptions, and parameter summaries. Use this to discover what tools are available before calling them with tool_call."
+	return "Search for available tools and skills by keyword. Returns names, descriptions, and kind (tool or skill). Use this to discover capabilities before invoking them with tool_call (tools) or skill_read (skills)."
 }
 
 func (t *ToolSearchTool) Parameters() map[string]interface{} {
@@ -40,9 +48,12 @@ func (t *ToolSearchTool) Parameters() map[string]interface{} {
 }
 
 type toolSearchResult struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	Score       int    `json:"score"`
+	Name        string   `json:"name"`
+	Description string   `json:"description"`
+	Kind        string   `json:"kind"`
+	Score       int      `json:"score,omitempty"`
+	Tags        []string `json:"tags,omitempty"`
+	Domain      string   `json:"domain,omitempty"`
 }
 
 func (t *ToolSearchTool) Execute(_ context.Context, args map[string]interface{}) *ToolResult {
@@ -54,39 +65,54 @@ func (t *ToolSearchTool) Execute(_ context.Context, args map[string]interface{})
 	queryLower := strings.ToLower(query)
 	queryTerms := strings.Fields(queryLower)
 
-	t.registry.mu.RLock()
-	defer t.registry.mu.RUnlock()
-
 	var results []toolSearchResult
 
+	// Search tools
+	t.registry.mu.RLock()
 	for _, tool := range t.registry.tools {
-		// Skip meta-tools from results
 		if tool.Name() == "tool_search" || tool.Name() == "tool_call" {
 			continue
 		}
-
 		score := fuzzyScore(tool.Name(), tool.Description(), queryTerms)
 		if score > 0 {
 			results = append(results, toolSearchResult{
 				Name:        tool.Name(),
 				Description: tool.Description(),
+				Kind:        "tool",
 				Score:       score,
 			})
 		}
 	}
+	t.registry.mu.RUnlock()
 
-	// Sort by score descending
+	// Search skills (unified discovery)
+	if t.skillsLoader != nil {
+		for _, si := range t.skillsLoader.ListSkills() {
+			combined := si.Name + " " + si.Description + " " + si.Domain + " " + strings.Join(si.Tags, " ")
+			score := fuzzyScore(si.Name, combined, queryTerms)
+			if score > 0 {
+				results = append(results, toolSearchResult{
+					Name:        si.Name,
+					Description: si.Description,
+					Kind:        "skill",
+					Score:       score,
+					Tags:        si.Tags,
+					Domain:      si.Domain,
+				})
+			}
+		}
+	}
+
 	sort.Slice(results, func(i, j int) bool {
 		return results[i].Score > results[j].Score
 	})
 
-	// Limit to top 10
-	if len(results) > 10 {
-		results = results[:10]
+	if len(results) > 15 {
+		results = results[:15]
 	}
 
 	if len(results) == 0 {
-		return &ToolResult{ForLLM: fmt.Sprintf("No tools match query: %q. Try a broader search or use tool_search with no query to list all.", query)}
+		return &ToolResult{ForLLM: fmt.Sprintf("No tools or skills match query: %q. Try a broader search or use tool_search with no query to list all.", query)}
 	}
 
 	b, _ := jsonv2.Marshal(results)
@@ -94,10 +120,9 @@ func (t *ToolSearchTool) Execute(_ context.Context, args map[string]interface{})
 }
 
 func (t *ToolSearchTool) listAll() *ToolResult {
-	t.registry.mu.RLock()
-	defer t.registry.mu.RUnlock()
-
 	var results []toolSearchResult
+
+	t.registry.mu.RLock()
 	for _, tool := range t.registry.tools {
 		if tool.Name() == "tool_search" || tool.Name() == "tool_call" {
 			continue
@@ -105,7 +130,21 @@ func (t *ToolSearchTool) listAll() *ToolResult {
 		results = append(results, toolSearchResult{
 			Name:        tool.Name(),
 			Description: tool.Description(),
+			Kind:        "tool",
 		})
+	}
+	t.registry.mu.RUnlock()
+
+	if t.skillsLoader != nil {
+		for _, si := range t.skillsLoader.ListSkills() {
+			results = append(results, toolSearchResult{
+				Name:        si.Name,
+				Description: si.Description,
+				Kind:        "skill",
+				Tags:        si.Tags,
+				Domain:      si.Domain,
+			})
+		}
 	}
 
 	sort.Slice(results, func(i, j int) bool {

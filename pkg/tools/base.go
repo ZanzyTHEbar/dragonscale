@@ -167,6 +167,14 @@ type AsyncTool interface {
 	SetCallback(cb AsyncCallback)
 }
 
+// ExampleProvider is an optional interface for tools that want to include
+// input examples in their schema definition. This follows Anthropic's Tool Use
+// Examples pattern — concrete usage samples that teach the LLM when to include
+// optional parameters, which combinations make sense, and API conventions.
+type ExampleProvider interface {
+	InputExamples() []map[string]interface{}
+}
+
 // ResourceProvider is an optional interface that tools can implement to declare
 // resources they need loaded before execution (schemas, examples, docs, configs).
 //
@@ -189,12 +197,18 @@ type ResourceProvider interface {
 }
 
 func ToolToSchema(tool Tool) map[string]interface{} {
+	fn := map[string]interface{}{
+		"name":        tool.Name(),
+		"description": tool.Description(),
+		"parameters":  tool.Parameters(),
+	}
+	if ep, ok := tool.(ExampleProvider); ok {
+		if examples := ep.InputExamples(); len(examples) > 0 {
+			fn["input_examples"] = examples
+		}
+	}
 	return map[string]interface{}{
-		"type": "function",
-		"function": map[string]interface{}{
-			"name":        tool.Name(),
-			"description": tool.Description(),
-			"parameters":  tool.Parameters(),
-		},
+		"type":     "function",
+		"function": fn,
 	}
 }

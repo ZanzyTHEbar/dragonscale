@@ -151,6 +151,12 @@ func TestSubagentTool_Execute_Success(t *testing.T) {
 	provider := &MockLanguageModel{}
 	msgBus := bus.NewMessageBus()
 	manager := NewSubagentManager(provider, "test-model", "/tmp/test", msgBus)
+	manager.SetRunLoop(func(_ context.Context, _ ToolLoopConfig, _, userPrompt, _, _ string) (*ToolLoopResult, error) {
+		return &ToolLoopResult{
+			Content:    "Task completed: " + userPrompt,
+			Iterations: 1,
+		}, nil
+	})
 	tool := NewSubagentTool(manager)
 	tool.SetContext("telegram", "chat-123")
 
@@ -207,6 +213,9 @@ func TestSubagentTool_Execute_NoLabel(t *testing.T) {
 	provider := &MockLanguageModel{}
 	msgBus := bus.NewMessageBus()
 	manager := NewSubagentManager(provider, "test-model", "/tmp/test", msgBus)
+	manager.SetRunLoop(func(_ context.Context, _ ToolLoopConfig, _, userPrompt, _, _ string) (*ToolLoopResult, error) {
+		return &ToolLoopResult{Content: "Task completed: " + userPrompt, Iterations: 1}, nil
+	})
 	tool := NewSubagentTool(manager)
 
 	ctx := context.Background()
@@ -281,6 +290,9 @@ func TestSubagentTool_Execute_ContextPassing(t *testing.T) {
 	provider := &MockLanguageModel{}
 	msgBus := bus.NewMessageBus()
 	manager := NewSubagentManager(provider, "test-model", "/tmp/test", msgBus)
+	manager.SetRunLoop(func(_ context.Context, _ ToolLoopConfig, _, userPrompt, _, _ string) (*ToolLoopResult, error) {
+		return &ToolLoopResult{Content: "Task completed: " + userPrompt, Iterations: 1}, nil
+	})
 	tool := NewSubagentTool(manager)
 
 	// Set context
@@ -306,10 +318,12 @@ func TestSubagentTool_Execute_ContextPassing(t *testing.T) {
 
 // TestSubagentTool_ForUserTruncation verifies long content is truncated for user
 func TestSubagentTool_ForUserTruncation(t *testing.T) {
-	// Create a mock provider that returns very long content
 	provider := &MockLanguageModel{}
 	msgBus := bus.NewMessageBus()
 	manager := NewSubagentManager(provider, "test-model", "/tmp/test", msgBus)
+	manager.SetRunLoop(func(_ context.Context, _ ToolLoopConfig, _, userPrompt, _, _ string) (*ToolLoopResult, error) {
+		return &ToolLoopResult{Content: "Task completed: " + userPrompt, Iterations: 1}, nil
+	})
 	tool := NewSubagentTool(manager)
 
 	ctx := context.Background()

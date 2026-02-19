@@ -440,7 +440,12 @@ func (t *ExecTool) SetTimeout(timeout time.Duration) {
 	t.timeout = timeout
 }
 
+// SetRestrictToWorkspace is the legacy name. Use SetRestrictToSandbox for new code.
 func (t *ExecTool) SetRestrictToWorkspace(restrict bool) {
+	t.restrictToWorkspace = restrict
+}
+
+func (t *ExecTool) SetRestrictToSandbox(restrict bool) {
 	t.restrictToWorkspace = restrict
 }
 

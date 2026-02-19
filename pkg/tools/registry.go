@@ -10,10 +10,10 @@ import (
 )
 
 type ToolRegistry struct {
-	tools                 map[string]Tool
-	mu                    sync.RWMutex
-	progressiveDisclosure bool
-	// gatewayTools are always visible even in progressive mode
+	tools map[string]Tool
+	mu    sync.RWMutex
+	// gatewayTools are always visible to the LLM; all other tools are
+	// discovered via tool_search + tool_call (progressive disclosure).
 	gatewayTools map[string]bool
 }
 
@@ -24,14 +24,9 @@ func NewToolRegistry() *ToolRegistry {
 	}
 }
 
-// SetProgressiveDisclosure enables or disables progressive disclosure mode.
-// When enabled, GetVisibleDefinitions returns only gateway tools (tool_search,
-// tool_call, and any explicitly marked tools). The agent discovers others via tool_search.
-func (r *ToolRegistry) SetProgressiveDisclosure(enabled bool) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.progressiveDisclosure = enabled
-}
+// SetProgressiveDisclosure is a no-op retained for backward compatibility.
+// Progressive disclosure is always enabled.
+func (r *ToolRegistry) SetProgressiveDisclosure(_ bool) {}
 
 // MarkGateway marks a tool name as always visible in progressive disclosure mode.
 func (r *ToolRegistry) MarkGateway(name string) {
@@ -52,29 +47,16 @@ func (r *ToolRegistry) RegisterMetaTools() {
 }
 
 // GetVisibleDefinitions returns tool definitions visible to the LLM.
-// In progressive disclosure mode, only gateway tools are returned.
-// In full mode, all tools are returned (same as GetDefinitions).
+// Only gateway tools are returned; the agent discovers others via tool_search.
 func (r *ToolRegistry) GetVisibleDefinitions() []map[string]interface{} {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-
-	if !r.progressiveDisclosure {
-		return r.getDefinitionsLocked()
-	}
 
 	definitions := make([]map[string]interface{}, 0)
 	for _, tool := range r.tools {
 		if r.gatewayTools[tool.Name()] {
 			definitions = append(definitions, ToolToSchema(tool))
 		}
-	}
-	return definitions
-}
-
-func (r *ToolRegistry) getDefinitionsLocked() []map[string]interface{} {
-	definitions := make([]map[string]interface{}, 0, len(r.tools))
-	for _, tool := range r.tools {
-		definitions = append(definitions, ToolToSchema(tool))
 	}
 	return definitions
 }
@@ -182,20 +164,10 @@ func (r *ToolRegistry) List() []string {
 	return names
 }
 
-// ListVisible returns tool names visible to the LLM.
-// In progressive disclosure mode, only gateway tools are returned.
-// In full mode, all tools are returned.
+// ListVisible returns tool names visible to the LLM (gateway tools only).
 func (r *ToolRegistry) ListVisible() []string {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-
-	if !r.progressiveDisclosure {
-		names := make([]string, 0, len(r.tools))
-		for name := range r.tools {
-			names = append(names, name)
-		}
-		return names
-	}
 
 	names := make([]string, 0, len(r.gatewayTools))
 	for name := range r.gatewayTools {

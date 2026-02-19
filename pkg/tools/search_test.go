@@ -2,9 +2,11 @@ package tools
 
 import (
 	"context"
+	"os"
 	"testing"
 
 	jsonv2 "github.com/go-json-experiment/json"
+	"github.com/sipeed/picoclaw/pkg/skills"
 )
 
 func TestToolSearchTool_Name(t *testing.T) {
@@ -199,6 +201,106 @@ func TestToolSearchTool_ExcludesMetaTools(t *testing.T) {
 	}
 }
 
+func TestToolSearchTool_UnifiedSearch_IncludesSkills(t *testing.T) {
+	r := NewToolRegistry()
+	r.Register(&stubTool{name: "read_file", desc: "Read a file"})
+	r.Register(&stubTool{name: "web_search", desc: "Search the web"})
+
+	tmpDir := t.TempDir()
+	sl := createTestSkillsDir(t, tmpDir, map[string]string{
+		"git-commit": "---\nname: git-commit\ndescription: Git commit conventions\ntags: [git, workflow]\n---\n# Git Commit Skill",
+		"trading":    "---\nname: trading\ndescription: Algorithmic trading strategies\ntags: [finance]\ndomain: quantitative\n---\n# Trading Skill",
+	})
+
+	s := NewToolSearchTool(r)
+	s.SetSkillsLoader(sl)
+
+	// Search for "git" — should find the skill but not the tools
+	result := s.Execute(context.Background(), map[string]interface{}{"query": "git"})
+
+	var results []toolSearchResult
+	jsonv2.Unmarshal([]byte(result.ForLLM), &results)
+
+	foundSkill := false
+	for _, res := range results {
+		if res.Name == "git-commit" && res.Kind == "skill" {
+			foundSkill = true
+		}
+	}
+	if !foundSkill {
+		t.Errorf("expected git-commit skill in results, got: %v", results)
+	}
+}
+
+func TestToolSearchTool_UnifiedSearch_MixesToolsAndSkills(t *testing.T) {
+	r := NewToolRegistry()
+	r.Register(&stubTool{name: "web_search", desc: "Search the web for information"})
+
+	tmpDir := t.TempDir()
+	sl := createTestSkillsDir(t, tmpDir, map[string]string{
+		"web-scraper": "---\nname: web-scraper\ndescription: Web scraping techniques\ntags: [web]\n---\n# Web Scraper",
+	})
+
+	s := NewToolSearchTool(r)
+	s.SetSkillsLoader(sl)
+
+	result := s.Execute(context.Background(), map[string]interface{}{"query": "web"})
+
+	var results []toolSearchResult
+	jsonv2.Unmarshal([]byte(result.ForLLM), &results)
+
+	hasToolKind := false
+	hasSkillKind := false
+	for _, res := range results {
+		if res.Kind == "tool" {
+			hasToolKind = true
+		}
+		if res.Kind == "skill" {
+			hasSkillKind = true
+		}
+	}
+	if !hasToolKind || !hasSkillKind {
+		t.Errorf("expected both tool and skill results, got: %v", results)
+	}
+}
+
+func TestToolSearchTool_ListAll_IncludesSkills(t *testing.T) {
+	r := NewToolRegistry()
+	r.Register(&stubTool{name: "alpha", desc: "First tool"})
+
+	tmpDir := t.TempDir()
+	sl := createTestSkillsDir(t, tmpDir, map[string]string{
+		"beta-skill": "---\nname: beta-skill\ndescription: A skill\n---\n# Skill",
+	})
+
+	s := NewToolSearchTool(r)
+	s.SetSkillsLoader(sl)
+
+	result := s.Execute(context.Background(), map[string]interface{}{})
+
+	var results []toolSearchResult
+	jsonv2.Unmarshal([]byte(result.ForLLM), &results)
+
+	if len(results) != 2 {
+		t.Errorf("expected 2 results (1 tool + 1 skill), got %d: %v", len(results), results)
+	}
+}
+
+// createTestSkillsDir sets up a temp skills directory with SKILL.md files
+func createTestSkillsDir(t *testing.T, baseDir string, skillContents map[string]string) *skills.SkillsLoader {
+	t.Helper()
+	for name, content := range skillContents {
+		skillDir := baseDir + "/" + name
+		if err := os.MkdirAll(skillDir, 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(skillDir+"/SKILL.md", []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return skills.NewSkillsLoader(baseDir, "", "")
+}
+
 // --- fuzzyScore tests ---
 
 func TestFuzzyScore_ExactMatch(t *testing.T) {
@@ -265,6 +367,36 @@ func TestSubsequenceMatch_False(t *testing.T) {
 	}
 }
 
+func TestToolToSchema_WithExamples(t *testing.T) {
+	tool := &stubToolWithExamples{
+		stubTool: stubTool{name: "create_ticket", desc: "Create a support ticket"},
+		examples: []map[string]interface{}{
+			{"title": "Login page 500 error", "priority": "critical"},
+			{"title": "Add dark mode"},
+		},
+	}
+
+	schema := ToolToSchema(tool)
+	fn := schema["function"].(map[string]interface{})
+
+	examples, ok := fn["input_examples"].([]map[string]interface{})
+	if !ok || len(examples) != 2 {
+		t.Fatalf("expected 2 input_examples, got: %v", fn["input_examples"])
+	}
+	if examples[0]["priority"] != "critical" {
+		t.Errorf("expected critical priority in first example, got: %v", examples[0])
+	}
+}
+
+func TestToolToSchema_WithoutExamples(t *testing.T) {
+	tool := &stubTool{name: "read_file", desc: "Read a file"}
+	schema := ToolToSchema(tool)
+	fn := schema["function"].(map[string]interface{})
+	if _, exists := fn["input_examples"]; exists {
+		t.Error("expected no input_examples for tool without ExampleProvider")
+	}
+}
+
 // --- stubTool for testing ---
 type stubTool struct {
 	name string
@@ -276,4 +408,13 @@ func (s *stubTool) Description() string                { return s.desc }
 func (s *stubTool) Parameters() map[string]interface{} { return map[string]interface{}{} }
 func (s *stubTool) Execute(_ context.Context, args map[string]interface{}) *ToolResult {
 	return &ToolResult{ForLLM: "executed " + s.name}
+}
+
+type stubToolWithExamples struct {
+	stubTool
+	examples []map[string]interface{}
+}
+
+func (s *stubToolWithExamples) InputExamples() []map[string]interface{} {
+	return s.examples
 }
