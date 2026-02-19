@@ -1,4 +1,4 @@
-.PHONY: all build install uninstall clean help test \
+.PHONY: all build install uninstall clean help test lint hooks \
 	fantasy-check fantasy-diff fantasy-sync fantasy-patch
 
 # Build variables
@@ -127,13 +127,28 @@ clean:
 vet:
 	@$(GO) vet ./...
 
-## fmt: Format Go code
+## test: Run tests
 test:
 	@$(GO) test ./...
 
 ## fmt: Format Go code
 fmt:
 	@$(GO) fmt ./...
+
+## lint: Run all linting checks (format + vet + build)
+lint: fmt vet
+	@$(GO) build ./...
+	@echo "Lint OK"
+
+## hooks: Install git pre-commit and commit-msg hooks
+hooks:
+	@echo "Installing git hooks..."
+	@ln -sf ../../scripts/hooks/pre-commit .git/hooks/pre-commit
+	@ln -sf ../../scripts/hooks/commit-msg .git/hooks/commit-msg
+	@chmod +x .git/hooks/pre-commit .git/hooks/commit-msg
+	@echo "  ✓ pre-commit  → scripts/hooks/pre-commit"
+	@echo "  ✓ commit-msg  → scripts/hooks/commit-msg"
+	@echo "Hooks installed. Skip with: git commit --no-verify"
 
 ## deps: Download dependencies
 deps:

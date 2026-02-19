@@ -34,12 +34,12 @@ func (l Level) String() string {
 // extractive summary and retains lossless pointers back to the
 // original message range it covers.
 type Node struct {
-	ID       string `json:"id"`
-	Level    Level  `json:"level"`
-	Summary  string `json:"summary"`
-	Tokens   int    `json:"tokens"`
-	StartIdx int    `json:"start_idx"` // Inclusive index into original message slice
-	EndIdx   int    `json:"end_idx"`   // Exclusive index into original message slice
+	ID       string   `json:"id"`
+	Level    Level    `json:"level"`
+	Summary  string   `json:"summary"`
+	Tokens   int      `json:"tokens"`
+	StartIdx int      `json:"start_idx"`          // Inclusive index into original message slice
+	EndIdx   int      `json:"end_idx"`            // Exclusive index into original message slice
 	Children []string `json:"children,omitempty"` // Child node IDs (lower level)
 }
 
