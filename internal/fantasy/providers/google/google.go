@@ -310,11 +310,14 @@ func (g languageModel) prepareParams(call fantasy.Call) (*genai.GenerateContentC
 	}
 
 	if len(call.Tools) > 0 {
-		tools, toolChoice, toolWarnings := toGoogleTools(call.Tools, call.ToolChoice)
+		functionDecls, providerToolsList, toolChoice, toolWarnings := toGoogleTools(call.Tools, call.ToolChoice)
 		config.ToolConfig = toolChoice
-		config.Tools = append(config.Tools, &genai.Tool{
-			FunctionDeclarations: tools,
-		})
+		if len(functionDecls) > 0 {
+			config.Tools = append(config.Tools, &genai.Tool{
+				FunctionDeclarations: functionDecls,
+			})
+		}
+		config.Tools = append(config.Tools, providerToolsList...)
 		warnings = append(warnings, toolWarnings...)
 	}
 
@@ -1119,9 +1122,10 @@ func (g *languageModel) streamObjectWithJSONMode(ctx context.Context, call fanta
 	}, nil
 }
 
-func toGoogleTools(tools []fantasy.Tool, toolChoice *fantasy.ToolChoice) (googleTools []*genai.FunctionDeclaration, googleToolChoice *genai.ToolConfig, warnings []fantasy.CallWarning) {
+func toGoogleTools(tools []fantasy.Tool, toolChoice *fantasy.ToolChoice) (functionDecls []*genai.FunctionDeclaration, providerTools []*genai.Tool, googleToolChoice *genai.ToolConfig, warnings []fantasy.CallWarning) {
 	for _, tool := range tools {
-		if tool.GetType() == fantasy.ToolTypeFunction {
+		switch tool.GetType() {
+		case fantasy.ToolTypeFunction:
 			ft, ok := tool.(fantasy.FunctionTool)
 			if !ok {
 				continue
@@ -1146,18 +1150,34 @@ func toGoogleTools(tools []fantasy.Tool, toolChoice *fantasy.ToolChoice) (google
 					Required:   required,
 				},
 			}
-			googleTools = append(googleTools, declaration)
-			continue
+			functionDecls = append(functionDecls, declaration)
+
+		case fantasy.ToolTypeProviderDefined:
+			pt, ok := tool.(fantasy.ProviderDefinedTool)
+			if !ok {
+				continue
+			}
+			t := toGoogleProviderTool(pt)
+			if t != nil {
+				providerTools = append(providerTools, t)
+			} else {
+				warnings = append(warnings, fantasy.CallWarning{
+					Type:    fantasy.CallWarningTypeUnsupportedTool,
+					Tool:    tool,
+					Message: "provider-defined tool ID not recognised by Google provider: " + pt.ID,
+				})
+			}
+
+		default:
+			warnings = append(warnings, fantasy.CallWarning{
+				Type:    fantasy.CallWarningTypeUnsupportedTool,
+				Tool:    tool,
+				Message: "tool type not supported by Google provider",
+			})
 		}
-		// TODO: handle provider tool calls
-		warnings = append(warnings, fantasy.CallWarning{
-			Type:    fantasy.CallWarningTypeUnsupportedTool,
-			Tool:    tool,
-			Message: "tool is not supported",
-		})
 	}
 	if toolChoice == nil {
-		return googleTools, googleToolChoice, warnings
+		return functionDecls, providerTools, googleToolChoice, warnings
 	}
 	switch *toolChoice {
 	case fantasy.ToolChoiceAuto:
@@ -1188,7 +1208,43 @@ func toGoogleTools(tools []fantasy.Tool, toolChoice *fantasy.ToolChoice) (google
 			},
 		}
 	}
-	return googleTools, googleToolChoice, warnings
+	return functionDecls, providerTools, googleToolChoice, warnings
+}
+
+// toGoogleProviderTool maps a ProviderDefinedTool ID to the corresponding genai.Tool.
+// IDs follow the convention "google.<tool-name>".  Returns nil for unknown IDs.
+func toGoogleProviderTool(pt fantasy.ProviderDefinedTool) *genai.Tool {
+	switch pt.ID {
+	case "google.google_search":
+		t := &genai.Tool{GoogleSearch: &genai.GoogleSearch{}}
+		if domains, ok := pt.Args["exclude_domains"].([]string); ok {
+			t.GoogleSearch.ExcludeDomains = domains
+		}
+		return t
+
+	case "google.google_search_retrieval":
+		t := &genai.Tool{GoogleSearchRetrieval: &genai.GoogleSearchRetrieval{}}
+		if cfg, ok := pt.Args["dynamic_retrieval_config"].(map[string]any); ok {
+			t.GoogleSearchRetrieval.DynamicRetrievalConfig = &genai.DynamicRetrievalConfig{}
+			if mode, ok := cfg["mode"].(string); ok {
+				t.GoogleSearchRetrieval.DynamicRetrievalConfig.Mode = genai.DynamicRetrievalConfigMode(mode)
+			}
+			if threshold, ok := cfg["dynamic_threshold"].(float64); ok {
+				f32 := float32(threshold)
+				t.GoogleSearchRetrieval.DynamicRetrievalConfig.DynamicThreshold = &f32
+			}
+		}
+		return t
+
+	case "google.code_execution":
+		return &genai.Tool{CodeExecution: &genai.ToolCodeExecution{}}
+
+	case "google.url_context":
+		return &genai.Tool{URLContext: &genai.URLContext{}}
+
+	default:
+		return nil
+	}
 }
 
 func convertSchemaProperties(parameters map[string]any) map[string]*genai.Schema {

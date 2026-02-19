@@ -168,6 +168,7 @@ func loadToolResultRows(ctx context.Context, q *sqlc.Queries, input ToolResultSe
 		}
 		return q.ListAgentToolResultsByRunID(ctx, sqlc.ListAgentToolResultsByRunIDParams{
 			RunID: runID,
+			Lim:   1000,
 		})
 	}
 

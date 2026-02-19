@@ -312,6 +312,34 @@ func ValidateAgainstSchema(obj any, schema Schema) error {
 	return validateAgainstSchema(obj, schema)
 }
 
+// ValidateAgainstSchemaMap validates obj against a JSON Schema expressed as a raw
+// map[string]any (e.g. {"type":"object","properties":{...},"required":[...]}).
+// This is a convenience wrapper for use sites that hold the schema as a map rather
+// than the typed Schema struct.
+func ValidateAgainstSchemaMap(obj any, schemaMap map[string]any) error {
+	schemaBytes, err := json.Marshal(schemaMap)
+	if err != nil {
+		return fmt.Errorf("failed to marshal schema map: %w", err)
+	}
+
+	compiler := jsonschema.NewCompiler()
+	validator, err := compiler.Compile(schemaBytes)
+	if err != nil {
+		return fmt.Errorf("invalid schema: %w", err)
+	}
+
+	result := validator.Validate(obj)
+	if !result.IsValid() {
+		var errMsgs []string
+		for field, validationErr := range result.Errors {
+			errMsgs = append(errMsgs, fmt.Sprintf("%s: %s", field, validationErr.Message))
+		}
+		return fmt.Errorf("validation failed: %s", strings.Join(errMsgs, "; "))
+	}
+
+	return nil
+}
+
 func validateAgainstSchema(obj any, schema Schema) error {
 	jsonSchemaBytes, err := json.Marshal(schema)
 	if err != nil {

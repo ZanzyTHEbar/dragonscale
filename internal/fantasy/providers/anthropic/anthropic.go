@@ -426,11 +426,23 @@ func (a languageModel) toTools(tools []fantasy.Tool, toolChoice *fantasy.ToolCho
 			anthropicTools = append(anthropicTools, anthropic.ToolUnionParam{OfTool: &anthropicTool})
 			continue
 		}
-		// TODO: handle provider tool calls
+
+		if tool.GetType() == fantasy.ToolTypeProviderDefined {
+			pt, ok := tool.(fantasy.ProviderDefinedTool)
+			if !ok {
+				continue
+			}
+			t := toAnthropicProviderTool(pt)
+			if t != nil {
+				anthropicTools = append(anthropicTools, *t)
+				continue
+			}
+		}
+
 		warnings = append(warnings, fantasy.CallWarning{
 			Type:    fantasy.CallWarningTypeUnsupportedTool,
 			Tool:    tool,
-			Message: "tool is not supported",
+			Message: "tool is not supported by Anthropic provider: " + tool.GetName(),
 		})
 	}
 
@@ -479,6 +491,44 @@ func (a languageModel) toTools(tools []fantasy.Tool, toolChoice *fantasy.ToolCho
 		}
 	}
 	return anthropicTools, anthropicToolChoice, warnings
+}
+
+// toAnthropicProviderTool maps a ProviderDefinedTool to its Anthropic SDK representation.
+// IDs follow the convention "anthropic.<tool-name>". Returns nil for unknown IDs.
+func toAnthropicProviderTool(pt fantasy.ProviderDefinedTool) *anthropic.ToolUnionParam {
+	switch pt.ID {
+	case "anthropic.bash", "anthropic.bash_20250124":
+		return &anthropic.ToolUnionParam{OfBashTool20250124: &anthropic.ToolBash20250124Param{}}
+
+	case "anthropic.text_editor_20250124":
+		return &anthropic.ToolUnionParam{OfTextEditor20250124: &anthropic.ToolTextEditor20250124Param{}}
+
+	case "anthropic.text_editor_20250429":
+		return &anthropic.ToolUnionParam{OfTextEditor20250429: &anthropic.ToolTextEditor20250429Param{}}
+
+	case "anthropic.text_editor", "anthropic.text_editor_20250728":
+		t := &anthropic.ToolTextEditor20250728Param{}
+		if maxChars, ok := pt.Args["max_characters"].(float64); ok {
+			t.MaxCharacters = param.NewOpt(int64(maxChars))
+		}
+		return &anthropic.ToolUnionParam{OfTextEditor20250728: t}
+
+	case "anthropic.web_search", "anthropic.web_search_20250305":
+		t := &anthropic.WebSearchTool20250305Param{}
+		if maxUses, ok := pt.Args["max_uses"].(float64); ok {
+			t.MaxUses = param.NewOpt(int64(maxUses))
+		}
+		if allowed, ok := pt.Args["allowed_domains"].([]string); ok {
+			t.AllowedDomains = allowed
+		}
+		if blocked, ok := pt.Args["blocked_domains"].([]string); ok {
+			t.BlockedDomains = blocked
+		}
+		return &anthropic.ToolUnionParam{OfWebSearchTool20250305: t}
+
+	default:
+		return nil
+	}
 }
 
 func toPrompt(prompt fantasy.Prompt, sendReasoningData bool) ([]anthropic.TextBlockParam, []anthropic.MessageParam, []fantasy.CallWarning) {
@@ -548,17 +598,41 @@ func toPrompt(prompt fantasy.Prompt, sendReasoningData bool) ([]anthropic.TextBl
 							if !ok {
 								continue
 							}
-							// TODO: handle other file types
-							if !strings.HasPrefix(file.MediaType, "image/") {
-								continue
-							}
 
-							base64Encoded := base64.StdEncoding.EncodeToString(file.Data)
-							imageBlock := anthropic.NewImageBlockBase64(file.MediaType, base64Encoded)
-							if cacheControl != nil {
-								imageBlock.OfImage.CacheControl = anthropic.NewCacheControlEphemeralParam()
+							switch {
+							case strings.HasPrefix(file.MediaType, "image/"):
+								base64Encoded := base64.StdEncoding.EncodeToString(file.Data)
+								imageBlock := anthropic.NewImageBlockBase64(file.MediaType, base64Encoded)
+								if cacheControl != nil {
+									imageBlock.OfImage.CacheControl = anthropic.NewCacheControlEphemeralParam()
+								}
+								anthropicContent = append(anthropicContent, imageBlock)
+
+							case file.MediaType == "application/pdf":
+								base64Encoded := base64.StdEncoding.EncodeToString(file.Data)
+								docBlock := anthropic.NewDocumentBlock(anthropic.Base64PDFSourceParam{
+									Data: base64Encoded,
+								})
+								if cacheControl != nil {
+									docBlock.OfDocument.CacheControl = anthropic.NewCacheControlEphemeralParam()
+								}
+								anthropicContent = append(anthropicContent, docBlock)
+
+							case file.MediaType == "text/plain":
+								docBlock := anthropic.NewDocumentBlock(anthropic.PlainTextSourceParam{
+									Data: string(file.Data),
+								})
+								if cacheControl != nil {
+									docBlock.OfDocument.CacheControl = anthropic.NewCacheControlEphemeralParam()
+								}
+								anthropicContent = append(anthropicContent, docBlock)
+
+							default:
+								warnings = append(warnings, fantasy.CallWarning{
+									Type:    fantasy.CallWarningTypeUnsupportedSetting,
+									Message: fmt.Sprintf("unsupported file media type for Anthropic: %s", file.MediaType),
+								})
 							}
-							anthropicContent = append(anthropicContent, imageBlock)
 						}
 					}
 				} else if msg.Role == fantasy.MessageRoleTool {
@@ -698,14 +772,12 @@ func toPrompt(prompt fantasy.Prompt, sendReasoningData bool) ([]anthropic.TextBl
 						if !ok {
 							continue
 						}
-						if toolCall.ProviderExecuted {
-							// TODO: implement provider executed call
-							continue
-						}
 
+						// Provider-executed tool calls still appear as tool_use blocks
+						// in the Anthropic assistant message; the ProviderExecuted flag
+						// is only informational metadata about who ran the tool.
 						var inputMap map[string]any
-						err := json.Unmarshal([]byte(toolCall.Input), &inputMap)
-						if err != nil {
+						if err := json.Unmarshal([]byte(toolCall.Input), &inputMap); err != nil {
 							continue
 						}
 						toolUseBlock := anthropic.NewToolUseBlock(toolCall.ToolCallID, inputMap, toolCall.ToolName)
@@ -714,7 +786,13 @@ func toPrompt(prompt fantasy.Prompt, sendReasoningData bool) ([]anthropic.TextBl
 						}
 						anthropicContent = append(anthropicContent, toolUseBlock)
 					case fantasy.ContentTypeToolResult:
-						// TODO: implement provider executed tool result
+						// Tool results in an assistant-role block are not a valid construct
+						// in the Anthropic API (they belong in user/tool-role messages).
+						// Emit a warning so callers know this content will be dropped.
+						warnings = append(warnings, fantasy.CallWarning{
+							Type:    fantasy.CallWarningTypeOther,
+							Message: "tool result found in assistant message block; Anthropic requires tool results in user/tool-role messages — content dropped",
+						})
 					}
 				}
 			}

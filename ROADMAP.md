@@ -229,12 +229,13 @@ flowchart LR
 ## Ideas and improvements
 
 - [ ] Add a new tool for the agent to use: `focus_search`
-- [ ] Add LLMCompiler runtime features to the DAG task executure
-- [ ] Isolated tool runtime features
-  - [ ] ZKP
-  - [ ] daemon-based zero-trust tool runtime
-  - [ ] capability-based tool runtime
-  - [ ] tools own their own secrets
-  - [ ] tools own their own context
-  - [ ] keyring-based secret management
-  - [ ] 
+- [ ] Isolated tool runtime + DAG executor + RLM engine — see [ADR-001](docs/adr/001-isolated-tool-runtime.md)
+  - [ ] Layer 1: Capability manifests (`CapableTool` interface)
+  - [ ] Layer 2: SecureBus + FlatBuffers command protocol (incl. DAG types) + leak scanning
+  - [ ] DAG executor: LLMCompiler-style parallel dispatch, topological wave execution, dependency resolution, Joiner synthesis, replanning loop
+  - [ ] Programmatic tool calling: PTC-style context isolation (intermediate results never enter LLM context), ToolSearch for on-demand tool discovery
+  - [ ] RLM engine: recursive context decomposition (rope DS, parallel fan-out, cheap sub-LM strategy, recursive DAG expansion)
+  - [ ] ReAct/DAG routing: automatic mode selection (`ModeReAct | ModeDAG | ModeAuto`)
+  - [ ] Layer 3: SecretStore + keyring-based secret management
+  - [ ] Layer 4: Daemon mode + Schnorr ZKP authentication
+  - [ ] Layer 5: wazero WASM isolates (pure Go, no CGO), `CodeExec` command variant

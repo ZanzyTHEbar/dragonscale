@@ -796,6 +796,20 @@ func (a *agent) Stream(ctx context.Context, opts AgentStreamCall) (*AgentResult,
 	var steps []StepResult
 	var totalUsage Usage
 
+	// Build a composite observer that fans out to all registered transition observers.
+	var streamFSMObserver ReActTransitionObserver
+	if len(a.settings.transitionObservers) > 0 {
+		streamObs := a.settings.transitionObservers
+		streamFSMObserver = ReActTransitionObserverFunc(func(ctx context.Context, t ReActTransition) {
+			for _, o := range streamObs {
+				o.OnReActTransition(ctx, t)
+			}
+		})
+	}
+	streamStepIdx := 0
+	streamFSM := newReActFSM(streamFSMObserver, &streamStepIdx)
+	streamFSM.Fire(ctx, ReActTriggerStart)
+
 	// Start agent stream
 	if opts.OnAgentStart != nil {
 		opts.OnAgentStart()
@@ -856,6 +870,7 @@ func (a *agent) Stream(ctx context.Context, opts AgentStreamCall) (*AgentResult,
 		}
 
 		preparedTools := a.prepareTools(stepTools, stepActiveTools, disableAllTools)
+		streamFSM.Fire(ctx, ReActTriggerPrepared)
 
 		// Start step stream
 		if opts.OnStepStart != nil {
@@ -900,13 +915,23 @@ func (a *agent) Stream(ctx context.Context, opts AgentStreamCall) (*AgentResult,
 			return result, nil
 		})
 		if err != nil {
+			streamFSM.Fire(ctx, ReActTriggerErrored)
 			if opts.OnError != nil {
 				opts.OnError(err)
 			}
 			return nil, err
 		}
 
+		// Fire LLMResponded → ToolsValidated → ToolsExecuted in sequence.
+		// processStepStream handles all three internally; we fire them here for
+		// FSM parity with the Generate path so transition observers receive the
+		// same state sequence regardless of whether Generate or Stream is used.
+		streamFSM.Fire(ctx, ReActTriggerLLMResponded)
+		streamFSM.Fire(ctx, ReActTriggerToolsValidated)
+		streamFSM.Fire(ctx, ReActTriggerToolsExecuted)
+
 		steps = append(steps, result.StepResult)
+		streamStepIdx = len(steps) - 1
 		totalUsage = addUsage(totalUsage, result.StepResult.Usage)
 
 		for _, obs := range a.settings.stepObservers {
@@ -920,12 +945,19 @@ func (a *agent) Stream(ctx context.Context, opts AgentStreamCall) (*AgentResult,
 		// Add step messages to response messages
 		stepMessages := toResponseMessages(result.StepResult.Content)
 		responseMessages = append(responseMessages, stepMessages...)
+		streamFSM.Fire(ctx, ReActTriggerMessagesAppended)
 
 		// Check stop conditions
 		shouldStop := isStopConditionMet(call.StopWhen, steps)
-		if shouldStop || !result.ShouldContinue {
+		if shouldStop {
+			streamFSM.Fire(ctx, ReActTriggerStopConditionMet)
 			break
 		}
+		if !result.ShouldContinue {
+			streamFSM.Fire(ctx, ReActTriggerFinished)
+			break
+		}
+		streamFSM.Fire(ctx, ReActTriggerContinue)
 	}
 
 	// Finish agent stream
@@ -1019,20 +1051,24 @@ func (a *agent) validateToolCall(toolCall ToolCallContent, availableTools []Agen
 		return fmt.Errorf("tool not found: %s", toolCall.ToolName)
 	}
 
-	// Validate JSON parsing
 	var input map[string]any
 	if err := json.Unmarshal([]byte(toolCall.Input), &input); err != nil {
 		return fmt.Errorf("invalid JSON input: %w", err)
 	}
 
-	// Basic schema validation (check required fields)
-	// TODO: more robust schema validation using JSON Schema or similar
 	toolInfo := tool.Info()
-	for _, required := range toolInfo.Required {
-		if _, exists := input[required]; !exists {
-			return fmt.Errorf("missing required parameter: %s", required)
-		}
+
+	// Full JSON Schema validation against the tool's parameter schema.
+	inputSchema := map[string]any{
+		"type":       "object",
+		"properties": toolInfo.Parameters,
+		"required":   toolInfo.Required,
 	}
+	schema.Normalize(inputSchema)
+	if err := schema.ValidateAgainstSchemaMap(input, inputSchema); err != nil {
+		return err
+	}
+
 	return nil
 }
 

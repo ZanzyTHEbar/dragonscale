@@ -147,7 +147,44 @@ type ProviderOptions struct {
 	User *string `json:"user,omitempty"`
 	// Provider routing preferences to control request routing behavior
 	Provider *Provider `json:"provider,omitempty"`
-	// TODO: add the web search plugin config
+	// Plugins is the ordered list of OpenRouter plugins to enable for this
+	// request. Use WebSearchPlugin to activate online search:
+	//
+	//   Plugins: []Plugin{{ID: "web"}}
+	//
+	// Refer to https://openrouter.ai/docs/features/web-search for the full
+	// plugin reference.
+	Plugins []Plugin `json:"plugins,omitempty"`
+}
+
+// WebSearchPlugin configures the OpenRouter web-search plugin.
+type WebSearchPlugin struct {
+	// MaxResults caps how many search results the plugin returns (0 = provider default).
+	MaxResults int `json:"max_results,omitempty"`
+	// SearchPrompt overrides the system prompt used internally by the plugin.
+	SearchPrompt string `json:"search_prompt,omitempty"`
+}
+
+// Plugin represents a single OpenRouter plugin entry.
+// Set ID to the plugin identifier (e.g. "web") and optionally populate
+// WebSearch for web-search-specific settings.
+type Plugin struct {
+	// ID is the plugin identifier (e.g. "web").
+	ID string `json:"id"`
+	// WebSearch holds optional web-search configuration. Omit for defaults.
+	WebSearch *WebSearchPlugin `json:"web,omitempty"`
+}
+
+// NewWebSearchPlugin is a convenience constructor that returns a Plugin slice
+// enabling the web-search plugin with optional per-call overrides.
+//
+//	// Use provider defaults:
+//	opts.Plugins = openrouter.NewWebSearchPlugin(nil)
+//
+//	// Cap results to 5:
+//	opts.Plugins = openrouter.NewWebSearchPlugin(&openrouter.WebSearchPlugin{MaxResults: 5})
+func NewWebSearchPlugin(cfg *WebSearchPlugin) []Plugin {
+	return []Plugin{{ID: "web", WebSearch: cfg}}
 }
 
 // Options implements the ProviderOptionsData interface for ProviderOptions.

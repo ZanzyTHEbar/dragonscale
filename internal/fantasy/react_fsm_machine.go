@@ -10,8 +10,11 @@ import (
 // reactFSM is a thin wrapper around a stateless.StateMachine that emits
 // transitions to a log and an optional observer.
 //
-// TODO: For now, this is used by Agent.Generate (Generate-first). Streaming parity is
-// implemented later.
+// The FSM drives both Agent.Generate (non-streaming) and Agent.Stream
+// (streaming). In the streaming path, LLMResponded/ToolsValidated/ToolsExecuted
+// are fired in sequence after processStepStream returns, since that function
+// handles all three phases internally. Both paths emit the full state sequence
+// so transition observers receive identical events regardless of execution mode.
 type reactFSM struct {
 	sm       *stateless.StateMachine
 	log      *ReActTransitionLog

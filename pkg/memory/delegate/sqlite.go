@@ -181,6 +181,10 @@ func (d *LibSQLDelegate) MigrateDown(ctx context.Context) error {
 // EmbeddingDims returns the configured embedding vector dimensions.
 func (d *LibSQLDelegate) EmbeddingDims() int { return d.embeddingDims }
 
+// Queries returns the underlying sqlc.Queries for callers (e.g. agent package
+// tests) that need direct DB access without going through the delegate API.
+func (d *LibSQLDelegate) Queries() *memsqlc.Queries { return d.queries }
+
 func (d *LibSQLDelegate) Close() error {
 	if d.stmts != nil {
 		d.stmts.close()

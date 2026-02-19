@@ -175,6 +175,7 @@ func (s *CheckpointStore) ListCheckpoints(ctx context.Context, conversationID id
 	}
 	return s.q.ListAgentCheckpointsByConversationID(ctx, sqlc.ListAgentCheckpointsByConversationIDParams{
 		ConversationID: conversationID,
+		Lim:            1000,
 	})
 }
 
