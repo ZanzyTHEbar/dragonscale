@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -13,6 +12,16 @@ import (
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/tools"
 )
+
+// mustNewAgentLoop wraps NewAgentLoop and fails the test on error.
+func mustNewAgentLoop(t *testing.T, cfg *config.Config, msgBus *bus.MessageBus, model fantasy.LanguageModel) *AgentLoop {
+	t.Helper()
+	al, err := NewAgentLoop(context.Background(), cfg, msgBus, model)
+	if err != nil {
+		t.Fatalf("NewAgentLoop: %v", err)
+	}
+	return al
+}
 
 // mockLanguageModel is a simple mock fantasy.LanguageModel for testing
 type mockLanguageModel struct {
@@ -76,11 +85,11 @@ func TestRecordLastChannel(t *testing.T) {
 	// Create agent loop
 	msgBus := bus.NewMessageBus()
 	model := newMockLanguageModel("")
-	al := NewAgentLoop(cfg, msgBus, model)
+	al := mustNewAgentLoop(t, cfg, msgBus, model)
 
 	// Test RecordLastChannel
 	testChannel := "test-channel"
-	err = al.RecordLastChannel(testChannel)
+	err = al.RecordLastChannel(context.Background(), testChannel)
 	if err != nil {
 		t.Fatalf("RecordLastChannel failed: %v", err)
 	}
@@ -92,7 +101,7 @@ func TestRecordLastChannel(t *testing.T) {
 	}
 
 	// Verify persistence by creating a new agent loop
-	al2 := NewAgentLoop(cfg, msgBus, model)
+	al2 := mustNewAgentLoop(t, cfg, msgBus, model)
 	if al2.state.GetLastChannel() != testChannel {
 		t.Errorf("Expected persistent channel '%s', got '%s'", testChannel, al2.state.GetLastChannel())
 	}
@@ -121,11 +130,11 @@ func TestRecordLastChatID(t *testing.T) {
 	// Create agent loop
 	msgBus := bus.NewMessageBus()
 	model := newMockLanguageModel("")
-	al := NewAgentLoop(cfg, msgBus, model)
+	al := mustNewAgentLoop(t, cfg, msgBus, model)
 
 	// Test RecordLastChatID
 	testChatID := "test-chat-id-123"
-	err = al.RecordLastChatID(testChatID)
+	err = al.RecordLastChatID(context.Background(), testChatID)
 	if err != nil {
 		t.Fatalf("RecordLastChatID failed: %v", err)
 	}
@@ -137,7 +146,7 @@ func TestRecordLastChatID(t *testing.T) {
 	}
 
 	// Verify persistence by creating a new agent loop
-	al2 := NewAgentLoop(cfg, msgBus, model)
+	al2 := mustNewAgentLoop(t, cfg, msgBus, model)
 	if al2.state.GetLastChatID() != testChatID {
 		t.Errorf("Expected persistent chat ID '%s', got '%s'", testChatID, al2.state.GetLastChatID())
 	}
@@ -166,17 +175,11 @@ func TestNewAgentLoop_StateInitialized(t *testing.T) {
 	// Create agent loop
 	msgBus := bus.NewMessageBus()
 	model := newMockLanguageModel("")
-	al := NewAgentLoop(cfg, msgBus, model)
+	al := mustNewAgentLoop(t, cfg, msgBus, model)
 
-	// Verify state manager is initialized
+	// Verify state manager is initialized (delegate-backed via always-on memory)
 	if al.state == nil {
 		t.Error("Expected state manager to be initialized")
-	}
-
-	// Verify state directory was created
-	stateDir := filepath.Join(tmpDir, "state")
-	if _, err := os.Stat(stateDir); os.IsNotExist(err) {
-		t.Error("Expected state directory to exist")
 	}
 }
 
@@ -201,7 +204,7 @@ func TestToolRegistry_ToolRegistration(t *testing.T) {
 
 	msgBus := bus.NewMessageBus()
 	model := newMockLanguageModel("")
-	al := NewAgentLoop(cfg, msgBus, model)
+	al := mustNewAgentLoop(t, cfg, msgBus, model)
 
 	// Register a custom tool
 	customTool := &mockCustomTool{}
@@ -247,7 +250,7 @@ func TestToolContext_Updates(t *testing.T) {
 
 	msgBus := bus.NewMessageBus()
 	model := newMockLanguageModel("OK")
-	_ = NewAgentLoop(cfg, msgBus, model)
+	_ = mustNewAgentLoop(t, cfg, msgBus, model)
 
 	// Verify that ContextualTool interface is defined and can be implemented
 	// This test validates the interface contract exists
@@ -278,7 +281,7 @@ func TestToolRegistry_GetDefinitions(t *testing.T) {
 
 	msgBus := bus.NewMessageBus()
 	model := newMockLanguageModel("")
-	al := NewAgentLoop(cfg, msgBus, model)
+	al := mustNewAgentLoop(t, cfg, msgBus, model)
 
 	// Register a test tool and verify it shows up in startup info
 	testTool := &mockCustomTool{}
@@ -322,7 +325,7 @@ func TestAgentLoop_GetStartupInfo(t *testing.T) {
 
 	msgBus := bus.NewMessageBus()
 	model := newMockLanguageModel("")
-	al := NewAgentLoop(cfg, msgBus, model)
+	al := mustNewAgentLoop(t, cfg, msgBus, model)
 
 	info := al.GetStartupInfo()
 
@@ -369,7 +372,7 @@ func TestAgentLoop_Stop(t *testing.T) {
 
 	msgBus := bus.NewMessageBus()
 	model := newMockLanguageModel("")
-	al := NewAgentLoop(cfg, msgBus, model)
+	al := mustNewAgentLoop(t, cfg, msgBus, model)
 
 	// Note: running is only set to true when Run() is called
 	// We can't test that without starting the event loop
@@ -476,7 +479,7 @@ func TestToolResult_SilentToolDoesNotSendUserMessage(t *testing.T) {
 
 	msgBus := bus.NewMessageBus()
 	model := newMockLanguageModel("File operation complete")
-	al := NewAgentLoop(cfg, msgBus, model)
+	al := mustNewAgentLoop(t, cfg, msgBus, model)
 	helper := testHelper{al: al}
 
 	// ReadFileTool returns SilentResult, which should not send user message
@@ -518,7 +521,7 @@ func TestToolResult_UserFacingToolDoesSendMessage(t *testing.T) {
 
 	msgBus := bus.NewMessageBus()
 	model := newMockLanguageModel("Command output: hello world")
-	al := NewAgentLoop(cfg, msgBus, model)
+	al := mustNewAgentLoop(t, cfg, msgBus, model)
 	helper := testHelper{al: al}
 
 	// ExecTool returns UserResult, which should send user message

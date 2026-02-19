@@ -181,7 +181,7 @@ func TestIntegration_FullAgentLoop_SimpleResponse(t *testing.T) {
 
 	msgBus := bus.NewMessageBus()
 	model := newMockLanguageModel("Hello from Fantasy agent")
-	al := NewAgentLoop(cfg, msgBus, model)
+	al := mustNewAgentLoop(t, cfg, msgBus, model)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -244,7 +244,7 @@ func TestIntegration_FullAgentLoop_WithToolCalls(t *testing.T) {
 
 	msgBus := bus.NewMessageBus()
 	model := &toolCallingModel{}
-	al := NewAgentLoop(cfg, msgBus, model)
+	al := mustNewAgentLoop(t, cfg, msgBus, model)
 
 	// Register the echo tool
 	al.RegisterTool(&echoTool{})
@@ -298,7 +298,7 @@ func TestIntegration_ProcessDirect(t *testing.T) {
 
 	msgBus := bus.NewMessageBus()
 	model := newMockLanguageModel("Direct CLI response")
-	al := NewAgentLoop(cfg, msgBus, model)
+	al := mustNewAgentLoop(t, cfg, msgBus, model)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -393,7 +393,7 @@ func TestIntegration_Streaming_TextDeltas(t *testing.T) {
 
 	msgBus := bus.NewMessageBus()
 	model := newStreamingModel("Hello from streaming agent response")
-	al := NewAgentLoop(cfg, msgBus, model)
+	al := mustNewAgentLoop(t, cfg, msgBus, model)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -469,7 +469,7 @@ func TestIntegration_Streaming_WithToolCalls(t *testing.T) {
 
 	msgBus := bus.NewMessageBus()
 	model := &toolCallingModel{}
-	al := NewAgentLoop(cfg, msgBus, model)
+	al := mustNewAgentLoop(t, cfg, msgBus, model)
 	al.RegisterTool(&echoTool{})
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -531,7 +531,7 @@ func TestIntegration_MultipleMessages(t *testing.T) {
 
 	msgBus := bus.NewMessageBus()
 	model := newMockLanguageModel("Response")
-	al := NewAgentLoop(cfg, msgBus, model)
+	al := mustNewAgentLoop(t, cfg, msgBus, model)
 
 	sessionKey := "multi-msg-session"
 	ctx := context.Background()

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/memory"
 	"github.com/sipeed/picoclaw/pkg/messages"
@@ -25,26 +26,30 @@ type ContextBuilder struct {
 	observationBlock string                // Pre-rendered observation block for prompt injection
 	knowledgeBlock   string                // Pre-rendered knowledge block from Focus completions
 	dagBlock         string                // Pre-rendered DAG compressed history
-}
-
-func getGlobalConfigDir() string {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return ""
-	}
-	return filepath.Join(home, ".picoclaw")
+	contextWindow    int                   // Max tokens for context window (0 = no limit)
 }
 
 func NewContextBuilder(workspace string) *ContextBuilder {
-	// builtin skills: skills directory in current project
-	// Use the skills/ directory under the current working directory
+	// Primary skills dir: XDG data dir (installed skills).
+	// Falls back to workspace/skills for legacy setups.
+	primarySkillsDir := filepath.Join(workspace, "skills")
+	if dir, err := config.SkillsDir(); err == nil {
+		primarySkillsDir = dir
+	}
+
+	// Global skills: ~/.config/picoclaw/skills (user-level overrides).
+	globalSkillsDir := ""
+	if dir, err := config.ConfigDir(); err == nil {
+		globalSkillsDir = filepath.Join(dir, "skills")
+	}
+
+	// Builtin skills: skills/ directory relative to the binary's working dir.
 	wd, _ := os.Getwd()
 	builtinSkillsDir := filepath.Join(wd, "skills")
-	globalSkillsDir := filepath.Join(getGlobalConfigDir(), "skills")
 
 	return &ContextBuilder{
 		workspace:    workspace,
-		skillsLoader: skills.NewSkillsLoader(workspace, globalSkillsDir, builtinSkillsDir),
+		skillsLoader: skills.NewSkillsLoader(primarySkillsDir, globalSkillsDir, builtinSkillsDir),
 	}
 }
 
@@ -79,6 +84,11 @@ func (cb *ContextBuilder) SetKnowledgeBlock(block string) {
 // SetDAGBlock sets the pre-rendered DAG compressed history for prompt injection.
 func (cb *ContextBuilder) SetDAGBlock(block string) {
 	cb.dagBlock = block
+}
+
+// SetContextWindow configures the token budget for the system prompt.
+func (cb *ContextBuilder) SetContextWindow(tokens int) {
+	cb.contextWindow = tokens
 }
 
 func (cb *ContextBuilder) getIdentity() string {
@@ -139,86 +149,138 @@ func (cb *ContextBuilder) buildToolsSection() string {
 	return sb.String()
 }
 
+// roughTokenEstimate gives a conservative char-to-token ratio for budget checks.
+// ~4 chars per token for English text is a standard heuristic.
+// FIXME: This is a rough estimate and may not be accurate for all languages.
+// FIXME: Implement a proper token estimator.
+const charsPerToken = 4
+
 func (cb *ContextBuilder) BuildSystemPrompt() string {
-	parts := []string{}
-
-	// Core identity section
-	parts = append(parts, cb.getIdentity())
-
-	// Bootstrap files
-	bootstrapContent := cb.LoadBootstrapFiles()
-	if bootstrapContent != "" {
-		parts = append(parts, bootstrapContent)
+	type section struct {
+		name     string
+		content  string
+		priority int // lower = higher priority (kept first when trimming)
 	}
 
-	// Skills - show summary index and inline full definitions for direct use
-	skillsSummary := cb.skillsLoader.BuildSkillsSummary()
-	if skillsSummary != "" {
-		parts = append(parts, fmt.Sprintf(`# Skills
+	// Collect sections in priority order
+	sections := []section{}
 
-The following skills extend your capabilities. Full definitions are included below.
+	// P0: Core identity (always included)
+	sections = append(sections, section{"identity", cb.getIdentity(), 0})
 
-%s`, skillsSummary))
-	}
-	if skillsDefs := cb.loadSkills(); skillsDefs != "" {
-		parts = append(parts, skillsDefs)
+	// P1: Bootstrap files (user identity)
+	if bc := cb.LoadBootstrapFiles(); bc != "" {
+		sections = append(sections, section{"bootstrap", bc, 1})
 	}
 
-	// Observation block (stable prefix for prompt cache alignment)
-	if cb.observationBlock != "" {
-		parts = append(parts, "# Observations\n\n"+cb.observationBlock)
+	// P2: Skills index (lightweight Level 1 metadata)
+	if summary := cb.skillsLoader.BuildSkillsSummary(); summary != "" {
+		sections = append(sections, section{"skills", fmt.Sprintf(`# Skills
+
+The following skills extend your capabilities. To use a skill:
+1. Use **skill_search** to find relevant skills by keyword
+2. Use **skill_read** via tool_call to load the full skill content
+3. Use **skill_traverse** via tool_call to explore related skills
+
+Do NOT assume skill content — always load before applying.
+
+%s`, summary), 2})
 	}
 
-	if cb.knowledgeBlock != "" {
-		parts = append(parts, cb.knowledgeBlock)
-	}
-
-	if cb.dagBlock != "" {
-		parts = append(parts, "# Conversation History (Compressed)\n\n"+cb.dagBlock)
-	}
-
-	// 3-tier MemGPT working context injection
+	// P3: Working context (hot tier — highly dynamic, high value)
 	if cb.memoryStore != nil {
-		wcSection := cb.buildWorkingContextSection()
-		if wcSection != "" {
-			parts = append(parts, wcSection)
+		if wc := cb.buildWorkingContextSection(); wc != "" {
+			sections = append(sections, section{"working_context", wc, 3})
 		}
 	}
 
-	// Join with "---" separator
-	return strings.Join(parts, "\n\n---\n\n")
+	// P4: Observation block
+	if cb.observationBlock != "" {
+		sections = append(sections, section{"observations", "# Observations\n\n" + cb.observationBlock, 4})
+	}
+
+	// P5: Knowledge block
+	if cb.knowledgeBlock != "" {
+		sections = append(sections, section{"knowledge", cb.knowledgeBlock, 5})
+	}
+
+	// P6: DAG compressed history (lowest priority — can be reconstructed)
+	if cb.dagBlock != "" {
+		sections = append(sections, section{"dag", "# Conversation History (Compressed)\n\n" + cb.dagBlock, 6})
+	}
+
+	// Token budget enforcement: if we exceed ~40% of context window for the
+	// system prompt, trim lowest-priority sections first.
+	budgetChars := cb.tokenBudgetChars()
+	totalChars := 0
+	for _, s := range sections {
+		totalChars += len(s.content)
+	}
+
+	if budgetChars > 0 && totalChars > budgetChars {
+		logger.WarnCF("context", "System prompt exceeds token budget, trimming low-priority sections",
+			map[string]interface{}{
+				"total_chars":  totalChars,
+				"budget_chars": budgetChars,
+				"sections":     len(sections),
+			})
+		// Trim from lowest priority (highest number) first
+		for i := len(sections) - 1; i >= 0 && totalChars > budgetChars; i-- {
+			if sections[i].priority >= 5 { // only trim P5+ (knowledge, dag)
+				totalChars -= len(sections[i].content)
+				sections[i].content = ""
+			}
+		}
+	}
+
+	parts := make([]string, 0, len(sections))
+	for _, s := range sections {
+		if s.content != "" {
+			parts = append(parts, s.content)
+		}
+	}
+
+	prompt := strings.Join(parts, "\n\n---\n\n")
+
+	// Log token estimate for observability
+	tokenEst := len(prompt) / charsPerToken
+	logger.DebugCF("context", "System prompt token estimate",
+		map[string]interface{}{
+			"chars":      len(prompt),
+			"tokens_est": tokenEst,
+			"sections":   len(parts),
+		})
+
+	return prompt
+}
+
+// tokenBudgetChars returns the maximum character count for the system prompt,
+// derived from the context window size. Returns 0 if no limit is configured.
+func (cb *ContextBuilder) tokenBudgetChars() int {
+	if cb.contextWindow <= 0 {
+		return 0
+	}
+	// Reserve ~40% of context window for system prompt
+	return int(float64(cb.contextWindow) * 0.4 * charsPerToken)
 }
 
 func (cb *ContextBuilder) LoadBootstrapFiles() string {
-	if cb.delegate != nil {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
-
-		docs, err := cb.delegate.ListDocumentsByCategory(ctx, "picoclaw", "bootstrap")
-		if err == nil && len(docs) > 0 {
-			var result string
-			for _, doc := range docs {
-				result += fmt.Sprintf("## %s\n\n%s\n\n", doc.Name, doc.Content)
-			}
-			return result
-		}
+	if cb.delegate == nil {
+		return ""
 	}
 
-	bootstrapFiles := []string{
-		"AGENTS.md",
-		"SOUL.md",
-		"USER.md",
-		"IDENTITY.md",
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	docs, err := cb.delegate.ListDocumentsByCategory(ctx, "picoclaw", "bootstrap")
+	if err != nil || len(docs) == 0 {
+		return ""
 	}
 
 	var result string
-	for _, filename := range bootstrapFiles {
-		filePath := filepath.Join(cb.workspace, filename)
-		if data, err := os.ReadFile(filePath); err == nil {
-			result += fmt.Sprintf("## %s\n\n%s\n\n", filename, string(data))
-		}
+	for _, doc := range docs {
+		result += fmt.Sprintf("## %s\n\n%s\n\n", doc.Name, doc.Content)
 	}
-
 	return result
 }
 
@@ -329,26 +391,7 @@ func (cb *ContextBuilder) AddAssistantMessage(msgs []messages.Message, content s
 	return msgs
 }
 
-func (cb *ContextBuilder) loadSkills() string {
-	allSkills := cb.skillsLoader.ListSkills()
-	if len(allSkills) == 0 {
-		return ""
-	}
-
-	var skillNames []string
-	for _, s := range allSkills {
-		skillNames = append(skillNames, s.Name)
-	}
-
-	content := cb.skillsLoader.LoadSkillsForContext(skillNames)
-	if content == "" {
-		return ""
-	}
-
-	return "# Skill Definitions\n\n" + content
-}
-
-// GetSkillsInfo returns information about loaded skills.
+// GetSkillsInfo returns information about available skills (metadata only).
 func (cb *ContextBuilder) GetSkillsInfo() map[string]interface{} {
 	allSkills := cb.skillsLoader.ListSkills()
 	skillNames := make([]string, 0, len(allSkills))

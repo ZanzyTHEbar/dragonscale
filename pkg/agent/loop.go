@@ -35,6 +35,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/security/securebus"
 	"github.com/sipeed/picoclaw/pkg/session"
 	"github.com/sipeed/picoclaw/pkg/state"
+	picosync "github.com/sipeed/picoclaw/pkg/sync"
 	"github.com/sipeed/picoclaw/pkg/tools"
 	"github.com/sipeed/picoclaw/pkg/utils"
 )
@@ -50,11 +51,12 @@ type AgentLoop struct {
 	state             *state.Manager
 	contextBuilder    *ContextBuilder
 	tools             *tools.ToolRegistry
-	memoryStore       *memstore.MemoryStore // 3-tier MemGPT memory (nil if init failed)
-	memDelegate       memory.MemoryDelegate // DB delegate (nil if memory disabled)
-	obsManager        *observation.Manager  // Observational memory (nil if memory disabled)
-	secureBus         *securebus.Bus        // ITR SecureBus (nil = disabled, direct execution)
-	activeSessionKey  atomic.Value          // Current session key for tool access
+	memoryStore       *memstore.MemoryStore  // 3-tier MemGPT memory (always initialized)
+	memDelegate       memory.MemoryDelegate  // DB delegate (always initialized)
+	obsManager        *observation.Manager   // Observational memory (always initialized)
+	secureBus         *securebus.Bus         // ITR SecureBus (nil = disabled, direct execution)
+	identitySync      *picosync.IdentitySync // File→DB sync for identity docs (nil if memory disabled)
+	activeSessionKey  atomic.Value           // Current session key for tool access
 	running           atomic.Bool
 	summarizing       sync.Map       // Tracks which sessions are currently being summarized
 	summarizeFailures sync.Map       // Tracks consecutive summarization failures per session (string -> int)
@@ -125,159 +127,150 @@ func createToolRegistry(workspace string, restrict bool, cfg *config.Config, msg
 	return registry
 }
 
-func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, model fantasy.LanguageModel) *AgentLoop {
-	workspace := cfg.WorkspacePath()
-	os.MkdirAll(workspace, 0755)
+func NewAgentLoop(ctx context.Context, cfg *config.Config, msgBus *bus.MessageBus, model fantasy.LanguageModel) (*AgentLoop, error) {
+	sandbox := cfg.SandboxPath()
+	os.MkdirAll(sandbox, 0755)
 
-	restrict := cfg.Agents.Defaults.RestrictToWorkspace
+	workspace := sandbox
+	restrict := cfg.RestrictToSandbox()
 
-	// Create tool registry for main agent
 	toolsRegistry := createToolRegistry(workspace, restrict, cfg, msgBus)
 
-	// Create subagent manager with its own tool registry
 	subagentManager := tools.NewSubagentManager(model, cfg.Agents.Defaults.Model, workspace, msgBus)
 	subagentTools := createToolRegistry(workspace, restrict, cfg, msgBus)
-	// Subagent doesn't need spawn/subagent tools to avoid recursion
 	subagentManager.SetTools(subagentTools)
 
-	// Register spawn tool (for main agent)
 	spawnTool := tools.NewSpawnTool(subagentManager)
 	toolsRegistry.Register(spawnTool)
 
-	// Register subagent tool (synchronous execution)
 	subagentTool := tools.NewSubagentTool(subagentManager)
 	toolsRegistry.Register(subagentTool)
 
-	// Create context builder and set tools registry
 	contextBuilder := NewContextBuilder(workspace)
 	contextBuilder.SetToolsRegistry(toolsRegistry)
+	contextBuilder.SetContextWindow(cfg.Agents.Defaults.MaxTokens)
 
-	// Progressive skill disclosure tools (skill_search → skill_read → skill_traverse)
 	sl := contextBuilder.SkillsLoader()
 	toolsRegistry.Register(tools.NewSkillSearchTool(sl))
 	toolsRegistry.Register(tools.NewSkillReadTool(sl))
 	toolsRegistry.Register(tools.NewSkillTraverseTool(sl))
 
-	// Initialize 3-tier MemGPT memory system
-	var ms *memstore.MemoryStore
-	var memDelegate memory.MemoryDelegate
-	if cfg.Memory.Enabled {
-		memDBPath := filepath.Join(workspace, "memory", "picoclaw.db")
-		os.MkdirAll(filepath.Dir(memDBPath), 0755)
+	// Initialize 3-tier MemGPT memory system (always enabled, fail-fast on error)
+	memDBPath := cfg.DBPath()
+	os.MkdirAll(filepath.Dir(memDBPath), 0755)
 
-		del, err := delegate.NewFromConfig(cfg.Memory, memDBPath)
-		if err != nil {
-			logger.WarnCF("agent", "Failed to create memory delegate, memory system disabled",
-				map[string]interface{}{"error": err.Error()})
-		} else {
-			if err := del.Init(context.Background()); err != nil {
-				logger.WarnCF("agent", "Failed to init memory schema, memory system disabled",
-					map[string]interface{}{"error": err.Error()})
-				del.Close()
-			} else {
-				memDelegate = del
-				offloadThreshold := cfg.Memory.OffloadThresholdTokens
-				if offloadThreshold <= 0 {
-					offloadThreshold = 4000
-				}
-				chunker := memstore.NewMarkdownChunker(memstore.DefaultMarkdownChunkerConfig())
+	del, err := delegate.NewFromConfig(cfg.Memory, memDBPath)
+	if err != nil {
+		return nil, fmt.Errorf("memory delegate init: %w", err)
+	}
+	if err := del.Init(ctx); err != nil {
+		del.Close()
+		return nil, fmt.Errorf("memory schema init: %w", err)
+	}
+	memDelegate := del
 
-				embedder, embErr := memstore.NewEmbedderFromConfig(cfg.Memory.Embedding, cfg.Providers)
-				if embErr != nil {
-					logger.WarnCF("agent", "Failed to create embedding provider, archival search will use FTS5 only",
-						map[string]interface{}{"error": embErr.Error()})
-				}
+	offloadThreshold := cfg.Memory.OffloadThresholdTokens
+	if offloadThreshold <= 0 {
+		offloadThreshold = 4000
+	}
+	chunker := memstore.NewMarkdownChunker(memstore.DefaultMarkdownChunkerConfig())
 
-				ms = memstore.New(del, chunker, embedder, memstore.Config{
-					ContextWindowTokens:    cfg.Agents.Defaults.MaxTokens,
-					OffloadThresholdTokens: offloadThreshold,
-				})
-				contextBuilder.SetMemoryStore(ms)
+	embedder, embErr := memstore.NewEmbedderFromConfig(cfg.Memory.Embedding, cfg.Providers)
+	if embErr != nil {
+		logger.WarnCF("agent", "Failed to create embedding provider, archival search will use FTS5 only",
+			map[string]interface{}{"error": embErr.Error()})
+	}
 
-				memTool := NewMemGPTTool(ms, "picoclaw", "default")
-				toolsRegistry.Register(memTool)
+	ms := memstore.New(del, chunker, embedder, memstore.Config{
+		ContextWindowTokens:    cfg.Agents.Defaults.MaxTokens,
+		OffloadThresholdTokens: offloadThreshold,
+	})
+	contextBuilder.SetMemoryStore(ms)
 
-				// Agentic retrieval tools (keyword_search → semantic_search → chunk_read)
-				toolsRegistry.Register(tools.NewKeywordSearchTool(ms, "picoclaw"))
-				toolsRegistry.Register(tools.NewSemanticSearchTool(ms, "picoclaw"))
-				toolsRegistry.Register(tools.NewChunkReadTool(ms, "picoclaw"))
+	memTool := NewMemGPTTool(ms, "picoclaw", "default")
+	toolsRegistry.Register(memTool)
 
-				contextBuilder.SetDelegate(del)
+	toolsRegistry.Register(tools.NewKeywordSearchTool(ms, "picoclaw"))
+	toolsRegistry.Register(tools.NewSemanticSearchTool(ms, "picoclaw"))
+	toolsRegistry.Register(tools.NewChunkReadTool(ms, "picoclaw"))
 
-				// One-time migrations
-				mctx := context.Background()
-				if migErr := memory.MigrateState(mctx, workspace, del, "picoclaw"); migErr != nil {
-					logger.WarnCF("agent", "State KV migration failed (non-fatal)",
-						map[string]interface{}{"error": migErr.Error()})
-				}
-				if migErr := memory.MigrateDocuments(mctx, workspace, del, "picoclaw"); migErr != nil {
-					logger.WarnCF("agent", "Document migration failed (non-fatal)",
-						map[string]interface{}{"error": migErr.Error()})
-				}
-				if migErr := memory.MigrateLongTermMemory(mctx, workspace, del, "picoclaw"); migErr != nil {
-					logger.WarnCF("agent", "Long-term memory migration failed (non-fatal)",
-						map[string]interface{}{"error": migErr.Error()})
-				}
-				if migErr := memory.MigrateDailyNotes(mctx, workspace, del, "picoclaw"); migErr != nil {
-					logger.WarnCF("agent", "Daily notes migration failed (non-fatal)",
-						map[string]interface{}{"error": migErr.Error()})
-				}
-			}
-		}
+	contextBuilder.SetDelegate(del)
+
+	if migErr := memory.MigrateState(ctx, workspace, del, "picoclaw"); migErr != nil {
+		logger.WarnCF("agent", "State KV migration failed (non-fatal)",
+			map[string]interface{}{"error": migErr.Error()})
+	}
+	if migErr := memory.MigrateDocuments(ctx, workspace, del, "picoclaw"); migErr != nil {
+		logger.WarnCF("agent", "Document migration failed (non-fatal)",
+			map[string]interface{}{"error": migErr.Error()})
+	}
+	if migErr := memory.MigrateLongTermMemory(ctx, workspace, del, "picoclaw"); migErr != nil {
+		logger.WarnCF("agent", "Long-term memory migration failed (non-fatal)",
+			map[string]interface{}{"error": migErr.Error()})
+	}
+	if migErr := memory.MigrateDailyNotes(ctx, workspace, del, "picoclaw"); migErr != nil {
+		logger.WarnCF("agent", "Daily notes migration failed (non-fatal)",
+			map[string]interface{}{"error": migErr.Error()})
+	}
+
+	subagentManager.SetRunLoop(MakeRunLoopFunc(ms))
+
+	// Identity file sync (disk → DB)
+	var idSync *picosync.IdentitySync
+	identityDir, idErr := config.IdentityDir()
+	if idErr != nil {
+		logger.WarnCF("agent", "Could not resolve identity dir, identity sync disabled",
+			map[string]interface{}{"error": idErr.Error()})
 	} else {
-		logger.InfoCF("agent", "Memory system disabled by config", nil)
-	}
-
-	// Create state manager -- use delegate-backed KV when memory system is active
-	var stateOpts []state.Option
-	if memDelegate != nil {
-		stateOpts = append(stateOpts, state.WithDelegate(memDelegate))
-	}
-	stateManager := state.NewManager(workspace, stateOpts...)
-
-	// Create session manager -- use delegate for DB persistence when available
-	sessionsDir := filepath.Join(workspace, "sessions")
-	var sessionOpts []session.SessionOption
-	if memDelegate != nil {
-		sessionOpts = append(sessionOpts, session.WithSessionDelegate(memDelegate, "picoclaw"))
-	}
-	sessionsManager := session.NewSessionManager(sessionsDir, sessionOpts...)
-
-	// Register meta-tools for progressive disclosure (tool_search + tool_call)
-	toolsRegistry.RegisterMetaTools()
-
-	// If memory tool is a gateway, mark it visible in progressive mode
-	if ms != nil {
-		toolsRegistry.MarkGateway("memory")
-	}
-
-	// Apply progressive disclosure config
-	if cfg.Tools.ProgressiveDisclosure {
-		toolsRegistry.SetProgressiveDisclosure(true)
-		logger.InfoCF("agent", "Progressive tool disclosure enabled",
-			map[string]interface{}{"gateway_tools": toolsRegistry.ListVisible()})
-	}
-
-	// Initialize observation manager if memory is enabled
-	var obsManager *observation.Manager
-	if memDelegate != nil {
-		callModelFn := func(ctx context.Context, prompt string) (string, error) {
-			temp := 0.3
-			maxTokens := int64(1024)
-			resp, err := model.Generate(ctx, fantasy.Call{
-				Prompt: fantasy.Prompt{
-					fantasy.NewUserMessage(prompt),
-				},
-				Temperature:     &temp,
-				MaxOutputTokens: &maxTokens,
-			})
-			if err != nil {
-				return "", err
-			}
-			return resp.Content.Text(), nil
+		idSync = picosync.New(identityDir, "picoclaw", memDelegate)
+		if syncErr := idSync.SyncAll(ctx); syncErr != nil {
+			logger.WarnCF("agent", "Initial identity sync failed (non-fatal)",
+				map[string]interface{}{"error": syncErr.Error()})
+		} else {
+			logger.InfoCF("agent", "Identity files synced to DB", nil)
 		}
-		obsManager = observation.NewManager(memDelegate, "picoclaw", callModelFn, observation.DefaultManagerConfig())
+		if watchErr := idSync.Watch(ctx); watchErr != nil {
+			logger.WarnCF("agent", "Identity file watcher failed to start, using mtime fallback",
+				map[string]interface{}{"error": watchErr.Error()})
+		}
 	}
+
+	// State manager (always delegate-backed)
+	stateManager := state.NewManager(workspace, state.WithDelegate(memDelegate))
+
+	// Session manager (always delegate-backed)
+	sessionsDir := filepath.Join(workspace, "sessions")
+	sessionsManager := session.NewSessionManager(sessionsDir, session.WithSessionDelegate(memDelegate, "picoclaw"))
+
+	// Meta-tools for progressive disclosure (tool_search + tool_call)
+	toolsRegistry.RegisterMetaTools()
+	toolsRegistry.MarkGateway("memory")
+	toolsRegistry.MarkGateway("skill_search")
+
+	// Wire skills loader into tool_search for unified discovery
+	if ts, ok := toolsRegistry.Get("tool_search"); ok {
+		if tst, ok := ts.(*tools.ToolSearchTool); ok {
+			tst.SetSkillsLoader(contextBuilder.SkillsLoader())
+		}
+	}
+
+	// Observation manager
+	callModelFn := func(ctx context.Context, prompt string) (string, error) {
+		temp := 0.3
+		maxTokens := int64(1024)
+		resp, err := model.Generate(ctx, fantasy.Call{
+			Prompt: fantasy.Prompt{
+				fantasy.NewUserMessage(prompt),
+			},
+			Temperature:     &temp,
+			MaxOutputTokens: &maxTokens,
+		})
+		if err != nil {
+			return "", err
+		}
+		return resp.Content.Text(), nil
+	}
+	obsManager := observation.NewManager(memDelegate, "picoclaw", callModelFn, observation.DefaultManagerConfig())
 
 	al := &AgentLoop{
 		bus:            msgBus,
@@ -293,24 +286,22 @@ func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, model fantasy.Lang
 		memoryStore:    ms,
 		memDelegate:    memDelegate,
 		obsManager:     obsManager,
+		identitySync:   idSync,
 		summarizing:    sync.Map{},
 		cfg:            cfg,
 	}
 
-	// Register focus tools (start_focus / complete_focus) when memory is available.
-	// The sessionKeyFn closure reads the activeSessionKey set at the start of each agent turn.
-	if memDelegate != nil {
-		sessionKeyFn := func() string {
-			if v := al.activeSessionKey.Load(); v != nil {
-				return v.(string)
-			}
-			return ""
+	// Focus tools (start_focus / complete_focus)
+	sessionKeyFn := func() string {
+		if v := al.activeSessionKey.Load(); v != nil {
+			return v.(string)
 		}
-		toolsRegistry.Register(tools.NewStartFocusTool(memDelegate, sessionsManager, sessionKeyFn))
-		toolsRegistry.Register(tools.NewCompleteFocusTool(memDelegate, sessionsManager, sessionKeyFn))
+		return ""
 	}
+	toolsRegistry.Register(tools.NewStartFocusTool(memDelegate, sessionsManager, sessionKeyFn))
+	toolsRegistry.Register(tools.NewCompleteFocusTool(memDelegate, sessionsManager, sessionKeyFn))
 
-	return al
+	return al, nil
 }
 
 func (al *AgentLoop) Run(ctx context.Context) error {
@@ -357,6 +348,9 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 
 func (al *AgentLoop) Stop() {
 	al.running.Store(false)
+	if al.identitySync != nil {
+		al.identitySync.Close()
+	}
 	if al.memoryStore != nil {
 		if err := al.memoryStore.Sync(); err != nil {
 			logger.WarnCF("agent", "Failed to sync memory before shutdown",
@@ -405,14 +399,14 @@ func (al *AgentLoop) SetupSecureBus(ss *security.SecretStore, cfg securebus.BusC
 
 // RecordLastChannel records the last active channel for this workspace.
 // This uses the atomic state save mechanism to prevent data loss on crash.
-func (al *AgentLoop) RecordLastChannel(channel string) error {
-	return al.state.SetLastChannel(channel)
+func (al *AgentLoop) RecordLastChannel(ctx context.Context, channel string) error {
+	return al.state.SetLastChannel(ctx, channel)
 }
 
 // RecordLastChatID records the last active chat ID for this workspace.
 // This uses the atomic state save mechanism to prevent data loss on crash.
-func (al *AgentLoop) RecordLastChatID(chatID string) error {
-	return al.state.SetLastChatID(chatID)
+func (al *AgentLoop) RecordLastChatID(ctx context.Context, chatID string) error {
+	return al.state.SetLastChatID(ctx, chatID)
 }
 
 func (al *AgentLoop) ProcessDirect(ctx context.Context, content, sessionKey string) (string, error) {
@@ -560,27 +554,30 @@ func (al *AgentLoop) processSystemMessage(_ context.Context, msg bus.InboundMess
 	return "", nil
 }
 
-// runAgentLoop is the core message processing logic.
-// It handles context building, Fantasy agent creation, tool execution, and response handling.
-// When opts.Streaming is true, delegates to runAgentLoopStreaming for real-time token delivery.
-func (al *AgentLoop) runAgentLoop(ctx context.Context, opts processOptions) (string, error) {
-	al.activeSessionKey.Store(opts.SessionKey)
+// assembledContext holds the pre-processed context produced by assembleContext,
+// consumed by both the Generate and Stream code paths.
+type assembledContext struct {
+	systemPrompt   string
+	userPrompt     string
+	fantasyHistory []fantasy.Message
+	adaptedTools   []fantasy.AgentTool
+	agent          fantasy.Agent
+}
 
-	if opts.Streaming {
-		return al.runAgentLoopStreaming(ctx, opts)
-	}
-	// 0. Record last channel for heartbeat notifications (skip internal channels)
+// assembleContext performs the shared pre-processing for every agent turn:
+// record channel, update tool contexts, load memory blocks, build messages,
+// DAG-compress history, split into system/history/user, adapt tools, create Fantasy agent.
+func (al *AgentLoop) assembleContext(ctx context.Context, opts processOptions) assembledContext {
 	if opts.Channel != "" && opts.ChatID != "" {
 		if !constants.IsInternalChannel(opts.Channel) {
 			channelKey := fmt.Sprintf("%s:%s", opts.Channel, opts.ChatID)
-			if err := al.RecordLastChannel(channelKey); err != nil {
+			if err := al.RecordLastChannel(ctx, channelKey); err != nil {
 				logger.WarnCF("agent", "Failed to record last channel: %v", map[string]interface{}{"error": err.Error()})
 			}
 		}
 	}
 
-	// 1. Update tool contexts
-	logger.DebugCF("agent", "runAgentLoop: starting",
+	logger.DebugCF("agent", "assembleContext: starting",
 		map[string]interface{}{
 			"session_key": opts.SessionKey,
 			"channel":     opts.Channel,
@@ -588,19 +585,12 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, opts processOptions) (str
 		})
 	al.updateToolContexts(opts.Channel, opts.ChatID)
 
-	// 2. Load observation block for system prompt injection
-	if al.obsManager != nil {
-		block := al.obsManager.LoadBlock(ctx, opts.SessionKey)
-		al.contextBuilder.SetObservationBlock(block)
-	}
+	block := al.obsManager.LoadBlock(ctx, opts.SessionKey)
+	al.contextBuilder.SetObservationBlock(block)
 
-	// 2b. Load knowledge block from completed Focus sessions
-	if al.memDelegate != nil {
-		kb := tools.LoadKnowledgeBlock(ctx, al.memDelegate, opts.SessionKey)
-		al.contextBuilder.SetKnowledgeBlock(kb)
-	}
+	kb := tools.LoadKnowledgeBlock(ctx, al.memDelegate, opts.SessionKey)
+	al.contextBuilder.SetKnowledgeBlock(kb)
 
-	// 3. Build messages with DAG compression (skip history for heartbeat)
 	var history []messages.Message
 	var summary string
 	if !opts.NoHistory {
@@ -608,43 +598,32 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, opts processOptions) (str
 		summary = al.sessions.GetSummary(opts.SessionKey)
 	}
 
-	// 3a. DAG compression: compress old history, keep raw tail
 	history = al.applyDAGCompression(history)
 
-	builtMsgs := al.contextBuilder.BuildMessages(
-		history,
-		summary,
-		opts.UserMessage,
-		nil,
-		opts.Channel,
-		opts.ChatID,
-	)
+	if al.identitySync != nil {
+		_ = al.identitySync.CheckAndSync(ctx)
+	}
 
-	// 3b. Save user message to session
+	builtMsgs := al.contextBuilder.BuildMessages(history, summary, opts.UserMessage, nil, opts.Channel, opts.ChatID)
 	al.sessions.AddMessage(opts.SessionKey, "user", opts.UserMessage)
 
-	// 4. Split built messages into system prompt, conversation history, and current user prompt.
-	// BuildMessages returns: [system, ...history, user]
 	systemPrompt := ""
 	var historyMsgs []messages.Message
 	userPrompt := opts.UserMessage
 
 	if len(builtMsgs) > 0 && builtMsgs[0].Role == "system" {
 		systemPrompt = builtMsgs[0].Content
-		// History is everything between system and last user message.
 		if len(builtMsgs) > 2 {
 			historyMsgs = builtMsgs[1 : len(builtMsgs)-1]
 		}
 	}
 
-	// 5. Convert history to Fantasy message format
-	logger.DebugCF("agent", "runAgentLoop: history messages",
+	logger.DebugCF("agent", "assembleContext: history messages",
 		map[string]interface{}{
 			"history": formatMessagesForLog(historyMsgs),
 		})
 	fantasyHistory := picofantasy.MessagesToFantasy(historyMsgs)
 
-	// 6. Build adapted tools from PicoClaw registry (with optional offloading)
 	adaptCfg := picofantasy.AdaptedToolsConfig{
 		MemStore:   al.memoryStore,
 		AgentID:    "picoclaw",
@@ -652,7 +631,6 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, opts processOptions) (str
 	}
 	adaptedTools := picofantasy.BuildAdaptedTools(al.tools, al.bus, opts.Channel, opts.ChatID, adaptCfg)
 
-	// 7. Create Fantasy agent with tools and configuration
 	agentOpts := []fantasy.AgentOption{
 		fantasy.WithTools(adaptedTools...),
 		fantasy.WithStopConditions(fantasy.StepCountIs(al.maxIterations)),
@@ -660,7 +638,6 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, opts processOptions) (str
 	if systemPrompt != "" {
 		agentOpts = append(agentOpts, fantasy.WithSystemPrompt(systemPrompt))
 	}
-	// Attach SecureBusToolRuntime when ITR is enabled (non-nil bus).
 	if al.secureBus != nil {
 		sbrt := SecureBusToolRuntime{
 			Bus:        al.secureBus,
@@ -676,55 +653,34 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, opts processOptions) (str
 			"tools_count":    len(adaptedTools),
 			"history_count":  len(historyMsgs),
 			"max_iterations": al.maxIterations,
-			"memory_enabled": al.memoryStore != nil,
+			"memory_enabled": true,
 		})
 
-	// 8. Call Fantasy agent.Generate()
-	result, err := agent.Generate(ctx, fantasy.AgentCall{
-		Prompt:   userPrompt,
-		Messages: fantasyHistory,
-	})
-	if err != nil {
-		logger.ErrorCF("agent", "Fantasy Generate failed",
-			map[string]interface{}{
-				"error": err.Error(),
-			})
-		return "", fmt.Errorf("agent Generate failed: %w", err)
+	return assembledContext{
+		systemPrompt:   systemPrompt,
+		userPrompt:     userPrompt,
+		fantasyHistory: fantasyHistory,
+		adaptedTools:   adaptedTools,
+		agent:          agent,
 	}
+}
 
-	// 9. Save all step messages to session and audit tool calls
-	stepCount := len(result.Steps)
-	for _, step := range result.Steps {
-		stepMsgs := picofantasy.StepToMessages(step)
-		for _, m := range stepMsgs {
-			al.sessions.AddFullMessage(opts.SessionKey, m)
-		}
-		al.auditStep(ctx, step, opts.SessionKey)
-	}
-
-	// 10. Extract final text
-	finalContent := result.Response.Content.Text()
-
-	// 11. Handle empty response
+// postProcess handles the common finalization after Generate or Stream:
+// extract final text, save session, summarize, observe, optionally send response.
+func (al *AgentLoop) postProcess(ctx context.Context, opts processOptions, finalContent string, stepCount int) string {
 	if finalContent == "" {
 		finalContent = opts.DefaultResponse
 	}
 
-	// 12. Save session
 	al.sessions.Save(opts.SessionKey)
 
-	// 13. Optional: summarization
 	if opts.EnableSummary {
-		al.maybeSummarize(opts.SessionKey, opts.Channel, opts.ChatID)
+		al.maybeSummarize(ctx, opts.SessionKey, opts.Channel, opts.ChatID)
 	}
 
-	// 13b. Trigger async observation if tail exceeds token threshold
-	if al.obsManager != nil {
-		tail := al.sessionsToMessagePairs(opts.SessionKey)
-		al.obsManager.MaybeObserveAsync(ctx, opts.SessionKey, tail)
-	}
+	tail := al.sessionsToMessagePairs(opts.SessionKey)
+	al.obsManager.MaybeObserveAsync(ctx, opts.SessionKey, tail)
 
-	// 14. Optional: send response via bus
 	if opts.SendResponse {
 		al.bus.PublishOutbound(bus.OutboundMessage{
 			Channel: opts.Channel,
@@ -733,7 +689,6 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, opts processOptions) (str
 		})
 	}
 
-	// 15. Log response
 	responsePreview := utils.Truncate(finalContent, 120)
 	logger.InfoCF("agent", fmt.Sprintf("Response: %s", responsePreview),
 		map[string]interface{}{
@@ -742,110 +697,50 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, opts processOptions) (str
 			"final_length": len(finalContent),
 		})
 
-	return finalContent, nil
+	return finalContent
 }
 
-// runAgentLoopStreaming uses Fantasy's agent.Stream() to stream token deltas
-// to the bus in real time. Structure mirrors runAgentLoop but uses AgentStreamCall
-// with OnTextDelta, OnStepFinish, and OnToolCall callbacks.
-func (al *AgentLoop) runAgentLoopStreaming(ctx context.Context, opts processOptions) (string, error) {
-	// 0. Record last channel
-	if opts.Channel != "" && opts.ChatID != "" {
-		if !constants.IsInternalChannel(opts.Channel) {
-			channelKey := fmt.Sprintf("%s:%s", opts.Channel, opts.ChatID)
-			if err := al.RecordLastChannel(channelKey); err != nil {
-				logger.WarnCF("agent", "Failed to record last channel: %v", map[string]interface{}{"error": err.Error()})
-			}
+// runAgentLoop is the core message processing logic.
+// It delegates to assembleContext for shared pre-processing, then branches on
+// opts.Streaming to either Generate (synchronous) or Stream (real-time deltas).
+func (al *AgentLoop) runAgentLoop(ctx context.Context, opts processOptions) (string, error) {
+	al.activeSessionKey.Store(opts.SessionKey)
+
+	ac := al.assembleContext(ctx, opts)
+
+	if opts.Streaming {
+		return al.runStreaming(ctx, opts, ac)
+	}
+
+	result, err := ac.agent.Generate(ctx, fantasy.AgentCall{
+		Prompt:   ac.userPrompt,
+		Messages: ac.fantasyHistory,
+	})
+	if err != nil {
+		logger.ErrorCF("agent", "Fantasy Generate failed",
+			map[string]interface{}{"error": err.Error()})
+		return "", fmt.Errorf("agent Generate failed: %w", err)
+	}
+
+	for _, step := range result.Steps {
+		stepMsgs := picofantasy.StepToMessages(step)
+		for _, m := range stepMsgs {
+			al.sessions.AddFullMessage(opts.SessionKey, m)
 		}
+		al.auditStep(ctx, step, opts.SessionKey)
 	}
 
-	// 1. Update tool contexts
-	al.updateToolContexts(opts.Channel, opts.ChatID)
+	finalContent := result.Response.Content.Text()
+	return al.postProcess(ctx, opts, finalContent, len(result.Steps)), nil
+}
 
-	// 2. Load observation block for system prompt injection
-	if al.obsManager != nil {
-		block := al.obsManager.LoadBlock(ctx, opts.SessionKey)
-		al.contextBuilder.SetObservationBlock(block)
-	}
-
-	// 2b. Load knowledge block from completed Focus sessions
-	if al.memDelegate != nil {
-		kb := tools.LoadKnowledgeBlock(ctx, al.memDelegate, opts.SessionKey)
-		al.contextBuilder.SetKnowledgeBlock(kb)
-	}
-
-	// 3. Build messages with DAG compression
-	var history []messages.Message
-	var summary string
-	if !opts.NoHistory {
-		history = al.sessions.GetHistory(opts.SessionKey)
-		summary = al.sessions.GetSummary(opts.SessionKey)
-	}
-
-	// 3a. DAG compression
-	history = al.applyDAGCompression(history)
-
-	builtMsgs := al.contextBuilder.BuildMessages(history, summary, opts.UserMessage, nil, opts.Channel, opts.ChatID)
-
-	// 4. Save user message
-	al.sessions.AddMessage(opts.SessionKey, "user", opts.UserMessage)
-
-	// 5. Split into system/history/user
-	systemPrompt := ""
-	var historyMsgs []messages.Message
-	userPrompt := opts.UserMessage
-
-	if len(builtMsgs) > 0 && builtMsgs[0].Role == "system" {
-		systemPrompt = builtMsgs[0].Content
-		if len(builtMsgs) > 2 {
-			historyMsgs = builtMsgs[1 : len(builtMsgs)-1]
-		}
-	}
-
-	// 5. Convert history
-	fantasyHistory := picofantasy.MessagesToFantasy(historyMsgs)
-
-	// 6. Build adapted tools (with optional offloading)
-	streamAdaptCfg := picofantasy.AdaptedToolsConfig{
-		MemStore:   al.memoryStore,
-		AgentID:    "picoclaw",
-		SessionKey: opts.SessionKey,
-	}
-	adaptedTools := picofantasy.BuildAdaptedTools(al.tools, al.bus, opts.Channel, opts.ChatID, streamAdaptCfg)
-
-	// 7. Create Fantasy agent
-	agentOpts := []fantasy.AgentOption{
-		fantasy.WithTools(adaptedTools...),
-		fantasy.WithStopConditions(fantasy.StepCountIs(al.maxIterations)),
-	}
-	if systemPrompt != "" {
-		agentOpts = append(agentOpts, fantasy.WithSystemPrompt(systemPrompt))
-	}
-	// Attach SecureBusToolRuntime when ITR is enabled (non-nil bus).
-	if al.secureBus != nil {
-		sbrt := SecureBusToolRuntime{
-			Bus:        al.secureBus,
-			SessionKey: opts.SessionKey,
-		}
-		agentOpts = append(agentOpts, fantasy.WithToolRuntime(sbrt))
-	}
-	fantasyAgent := fantasy.NewAgent(al.languageModel, agentOpts...)
-
-	logger.DebugCF("agent", "Fantasy streaming agent created",
-		map[string]interface{}{
-			"model":          al.model,
-			"tools_count":    len(adaptedTools),
-			"history_count":  len(historyMsgs),
-			"max_iterations": al.maxIterations,
-			"memory_enabled": al.memoryStore != nil,
-		})
-
-	// 8. Build streaming call with callbacks
+// runStreaming uses Fantasy's agent.Stream() to stream token deltas to the bus
+// in real time, using the pre-assembled context from assembleContext.
+func (al *AgentLoop) runStreaming(ctx context.Context, opts processOptions, ac assembledContext) (string, error) {
 	streamCall := fantasy.AgentStreamCall{
-		Prompt:   userPrompt,
-		Messages: fantasyHistory,
+		Prompt:   ac.userPrompt,
+		Messages: ac.fantasyHistory,
 
-		// Stream text deltas to bus in real time
 		OnTextDelta: func(id, text string) error {
 			if opts.Channel != "" && opts.ChatID != "" {
 				al.bus.PublishOutbound(bus.OutboundMessage{
@@ -867,7 +762,6 @@ func (al *AgentLoop) runAgentLoopStreaming(ctx context.Context, opts processOpti
 			return nil
 		},
 
-		// Log tool calls as they happen
 		OnToolCall: func(tc fantasy.ToolCallContent) error {
 			logger.DebugCF("agent", "Streaming tool call",
 				map[string]interface{}{
@@ -878,56 +772,21 @@ func (al *AgentLoop) runAgentLoopStreaming(ctx context.Context, opts processOpti
 		},
 	}
 
-	// 9. Call Fantasy agent.Stream()
-	result, err := fantasyAgent.Stream(ctx, streamCall)
+	result, err := ac.agent.Stream(ctx, streamCall)
 	if err != nil {
 		logger.ErrorCF("agent", "Fantasy Stream failed",
 			map[string]interface{}{"error": err.Error()})
 		return "", fmt.Errorf("agent Stream failed: %w", err)
 	}
 
-	// 10. Extract final text
 	finalContent := result.Response.Content.Text()
-	if finalContent == "" {
-		finalContent = opts.DefaultResponse
-	}
-
-	// 11. Save session
-	al.sessions.Save(opts.SessionKey)
-
-	// 12. Summarization
-	if opts.EnableSummary {
-		al.maybeSummarize(opts.SessionKey, opts.Channel, opts.ChatID)
-	}
-
-	// 12b. Trigger async observation if tail exceeds token threshold
-	if al.obsManager != nil {
-		tail := al.sessionsToMessagePairs(opts.SessionKey)
-		al.obsManager.MaybeObserveAsync(ctx, opts.SessionKey, tail)
-	}
-
-	// 13. Log response
-	stepCount := len(result.Steps)
-	responsePreview := utils.Truncate(finalContent, 120)
-	logger.InfoCF("agent", fmt.Sprintf("Streaming response: %s", responsePreview),
-		map[string]interface{}{
-			"session_key":  opts.SessionKey,
-			"steps":        stepCount,
-			"final_length": len(finalContent),
-			"total_tokens": result.TotalUsage.TotalTokens,
-		})
-
-	return finalContent, nil
+	return al.postProcess(ctx, opts, finalContent, len(result.Steps)), nil
 }
 
 // runLLMIteration — DELETED. Replaced by Fantasy's internal agent loop.
 
 // auditStep logs tool calls from a Fantasy step result to the audit log.
 func (al *AgentLoop) auditStep(ctx context.Context, step fantasy.StepResult, sessionKey string) {
-	if al.memDelegate == nil {
-		return
-	}
-
 	toolCalls := step.Content.ToolCalls()
 	if len(toolCalls) == 0 {
 		return
@@ -974,13 +833,12 @@ func (al *AgentLoop) updateToolContexts(channel, chatID string) {
 // maybeSummarize triggers summarization if the session history exceeds thresholds.
 // At the critical threshold (≥95% of context window) it synchronously force-compresses
 // the history before the normal async summarization path runs.
-func (al *AgentLoop) maybeSummarize(sessionKey, channel, chatID string) {
+func (al *AgentLoop) maybeSummarize(ctx context.Context, sessionKey, channel, chatID string) {
 	newHistory := al.sessions.GetHistory(sessionKey)
 	tokenEstimate := al.estimateTokens(newHistory)
 	threshold := al.contextWindow * 75 / 100
 	criticalThreshold := al.contextWindow * 95 / 100
 
-	// Emergency path: drop oldest messages immediately when near context limit.
 	if tokenEstimate > criticalThreshold {
 		al.forceCompression(sessionKey)
 		return
@@ -990,7 +848,6 @@ func (al *AgentLoop) maybeSummarize(sessionKey, channel, chatID string) {
 		if _, loading := al.summarizing.LoadOrStore(sessionKey, true); !loading {
 			go func() {
 				defer al.summarizing.Delete(sessionKey)
-				// Notify user about optimization if not an internal channel
 				if !constants.IsInternalChannel(channel) {
 					al.bus.PublishOutbound(bus.OutboundMessage{
 						Channel: channel,
@@ -998,7 +855,7 @@ func (al *AgentLoop) maybeSummarize(sessionKey, channel, chatID string) {
 						Content: "⚠️ Memory threshold reached. Optimizing conversation history...",
 					})
 				}
-				al.summarizeSession(sessionKey)
+				al.summarizeSession(ctx, sessionKey)
 			}()
 		}
 	}
@@ -1119,8 +976,8 @@ func formatMessagesForLog(msgs []messages.Message) string {
 }
 
 // summarizeSession summarizes the conversation history for a session.
-func (al *AgentLoop) summarizeSession(sessionKey string) {
-	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+func (al *AgentLoop) summarizeSession(parentCtx context.Context, sessionKey string) {
+	ctx, cancel := context.WithTimeout(parentCtx, 120*time.Second)
 	defer cancel()
 
 	history := al.sessions.GetHistory(sessionKey)
