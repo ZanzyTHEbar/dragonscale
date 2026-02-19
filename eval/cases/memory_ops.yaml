@@ -1,0 +1,61 @@
+# Memory Operations Evaluation Cases
+# Tests the 3-tier memory system: working context, recall, archival.
+# The "memory" gateway tool supports actions: search, read, write, update, delete, status.
+
+- description: "memory write and search: store a fact then retrieve it"
+  vars:
+    prompt: "Remember this important fact: 'The picoclaw eval harness was built in February 2026.' Then search your memory for 'eval harness' to confirm you stored it."
+  assert:
+    - type: javascript
+      value: |
+        const trace = JSON.parse(output);
+        if (trace.error) return { pass: false, score: 0, reason: trace.error };
+        const toolCalls = trace.steps.filter(s => s.type === 'tool_call');
+        const getToolName = (t) => {
+          if (t.tool !== 'tool_call') return t.tool;
+          try { return JSON.parse(t.args).tool_name || t.tool; } catch(e) { return t.tool; }
+        };
+        const toolNames = toolCalls.map(getToolName);
+        const usedMemory = toolNames.includes('memory') || toolNames.includes('keyword_search') || toolNames.includes('semantic_search');
+        return { pass: usedMemory, score: usedMemory ? 1.0 : 0.0, reason: usedMemory ? 'used memory system' : `no memory tools used (tools: ${toolNames.join(', ')})` };
+
+- description: "memory status: agent can report context pressure"
+  vars:
+    prompt: "Check your memory system status and tell me the current context pressure level."
+  assert:
+    - type: javascript
+      value: |
+        const trace = JSON.parse(output);
+        if (trace.error) return { pass: false, score: 0, reason: trace.error };
+        const out = (trace.output || '').toLowerCase();
+        const mentionsStatus = out.includes('normal') || out.includes('warn') || out.includes('pressure') ||
+                               out.includes('status') || out.includes('memory') || out.includes('context');
+        return { pass: mentionsStatus, score: mentionsStatus ? 1.0 : 0.0, reason: mentionsStatus ? 'reported memory status' : 'did not report status' };
+
+- description: "memory search with no results: graceful empty response"
+  vars:
+    prompt: "Search your memory for 'xyzzy_nonexistent_topic_42' and tell me what you find."
+  assert:
+    - type: javascript
+      value: |
+        const trace = JSON.parse(output);
+        if (trace.error && !trace.output) return { pass: false, score: 0, reason: 'crashed: ' + trace.error };
+        const out = (trace.output || '').toLowerCase();
+        const isDefault = out.includes('completed processing but have no response');
+        if (isDefault) return { pass: false, score: 0.2, reason: 'fell back to default empty response' };
+        const graceful = out.includes('no results') || out.includes('nothing') || out.includes('not found') ||
+                         out.includes("didn't find") || out.includes("don't have") || out.includes('no memories') ||
+                         out.includes('no matching') || out.length > 10;
+        return { pass: graceful, score: graceful ? 1.0 : 0.0, reason: graceful ? 'handled empty search gracefully' : 'no meaningful response' };
+
+- description: "reduced iterations provider: agent respects max_tool_iterations limit"
+  providers: ["picoclaw-no-memory"]
+  vars:
+    prompt: "Hello, what can you help me with today?"
+  assert:
+    - type: javascript
+      value: |
+        const trace = JSON.parse(output);
+        if (trace.error && !trace.output) return { pass: false, score: 0, reason: 'crashed: ' + trace.error };
+        const responded = (trace.output || '').length > 10;
+        return { pass: responded, score: responded ? 1.0 : 0.0, reason: responded ? 'functions with reduced iteration limit' : 'no response' };

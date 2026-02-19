@@ -58,7 +58,14 @@ func main() {
 	}
 
 	if strings.TrimSpace(prompt) == "" {
-		emitError("empty prompt")
+		trace := Trace{
+			Output: "No prompt provided. Please provide a message.",
+			Metrics: Metrics{
+				TotalDurationMs: 0,
+			},
+		}
+		out, _ := json.Marshal(trace)
+		fmt.Println(string(out))
 		return
 	}
 
@@ -156,7 +163,12 @@ func runEval(cfg *config.Config, prompt string) Trace {
 		}
 	}()
 
-	agentLoop := agent.NewAgentLoop(cfg, msgBus, instrumentedModel)
+	agentLoop, err := agent.NewAgentLoop(ctx, cfg, msgBus, instrumentedModel)
+	if err != nil {
+		cancel()
+		<-outDone
+		return Trace{Error: fmt.Sprintf("agent loop init error: %v", err)}
+	}
 	defer agentLoop.Stop()
 
 	response, err := agentLoop.ProcessDirect(ctx, prompt, sessionKey)
@@ -280,6 +292,15 @@ func (m *instrumentedLanguageModel) Generate(ctx context.Context, call fantasy.C
 		m.totalUsage.TotalTokens += resp.Usage.TotalTokens
 		m.totalUsage.ReasoningTokens += resp.Usage.ReasoningTokens
 		m.totalUsage.CacheReadTokens += resp.Usage.CacheReadTokens
+
+		for _, tc := range resp.Content.ToolCalls() {
+			var args map[string]interface{}
+			_ = json.Unmarshal([]byte(tc.Input), &args)
+			ic.toolCalls = append(ic.toolCalls, instrumentedToolCall{
+				name: tc.ToolName,
+				args: args,
+			})
+		}
 	}
 
 	m.calls = append(m.calls, ic)
@@ -298,13 +319,21 @@ func (m *instrumentedLanguageModel) Stream(ctx context.Context, call fantasy.Cal
 
 	wrappedStream := func(yield func(fantasy.StreamPart) bool) {
 		stream(func(part fantasy.StreamPart) bool {
-			if part.Type == fantasy.StreamPartTypeFinish {
+			switch part.Type {
+			case fantasy.StreamPartTypeFinish:
 				ic.usage = part.Usage
 				m.totalUsage.InputTokens += part.Usage.InputTokens
 				m.totalUsage.OutputTokens += part.Usage.OutputTokens
 				m.totalUsage.TotalTokens += part.Usage.TotalTokens
 				m.totalUsage.ReasoningTokens += part.Usage.ReasoningTokens
 				m.totalUsage.CacheReadTokens += part.Usage.CacheReadTokens
+			case fantasy.StreamPartTypeToolCall:
+				var args map[string]interface{}
+				_ = json.Unmarshal([]byte(part.ToolCallInput), &args)
+				ic.toolCalls = append(ic.toolCalls, instrumentedToolCall{
+					name: part.ToolCallName,
+					args: args,
+				})
 			}
 			return yield(part)
 		})

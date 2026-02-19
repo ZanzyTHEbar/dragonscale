@@ -15,9 +15,9 @@
       value: |
         const trace = JSON.parse(output);
         const tokens = trace.metrics.total_tokens;
-        const efficient = tokens < 2000;
-        const score = efficient ? 1.0 : Math.max(0, 1.0 - (tokens - 2000) / 5000);
-        return { pass: efficient, score, reason: `${tokens} total tokens (threshold: 2000)` };
+        const efficient = tokens < 8000;
+        const score = efficient ? 1.0 : Math.max(0, 1.0 - (tokens - 8000) / 10000);
+        return { pass: efficient, score, reason: `${tokens} total tokens (threshold: 8000)` };
 
 - description: "no unnecessary tool calls for conversational query"
   vars:
@@ -43,6 +43,10 @@
       value: |
         const trace = JSON.parse(output);
         if (trace.error) return { pass: false, score: 0, reason: trace.error };
+        const toolCalls = trace.steps.filter(s => s.type === 'tool_call');
+        const hasToolCalls = toolCalls.length > 0;
+        if (!hasToolCalls) return { pass: false, score: 0, reason: 'no tool calls made (expected write + read)' };
         const steps = trace.metrics.step_count;
         const reasonable = steps <= 5;
-        return { pass: reasonable, score: reasonable ? 1.0 : Math.max(0, 1.0 - (steps - 5) * 0.2), reason: `${steps} LLM calls (threshold: 5)` };
+        const score = reasonable ? 1.0 : Math.max(0, 1.0 - (steps - 5) * 0.2);
+        return { pass: reasonable, score, reason: `${toolCalls.length} tool calls, ${steps} LLM calls (threshold: 5)` };

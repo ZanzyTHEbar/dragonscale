@@ -1,0 +1,20 @@
+{
+  "tools": {
+    "progressive_disclosure": false
+  },
+  "memory": {
+    "enabled": true
+  },
+  "agents": {
+    "defaults": {
+      "restrict_to_sandbox": true,
+      "max_tool_iterations": 20
+    }
+  },
+  "heartbeat": {
+    "enabled": false
+  },
+  "devices": {
+    "enabled": false
+  }
+}

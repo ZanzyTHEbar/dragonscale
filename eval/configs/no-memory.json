@@ -1,0 +1,21 @@
+{
+  "tools": {
+    "progressive_disclosure": false
+  },
+  "memory": {
+    "embedding_dims": 384,
+    "offload_threshold_tokens": 100000
+  },
+  "agents": {
+    "defaults": {
+      "restrict_to_sandbox": true,
+      "max_tool_iterations": 10
+    }
+  },
+  "heartbeat": {
+    "enabled": false
+  },
+  "devices": {
+    "enabled": false
+  }
+}

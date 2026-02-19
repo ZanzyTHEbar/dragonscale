@@ -1,0 +1,5 @@
+PicoClaw Eval Fixture Data
+Line 2: This file is used by the evaluation harness for deterministic read tests.
+Line 3: It contains known content that assertions can verify against.
+Line 4: The quick brown fox jumps over the lazy dog.
+Line 5: picoclaw-fixture-marker-abc123

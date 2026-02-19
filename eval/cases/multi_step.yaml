@@ -9,11 +9,16 @@
       value: |
         const trace = JSON.parse(output);
         if (trace.error) return { pass: false, score: 0, reason: trace.error };
-        const tools = trace.steps.filter(s => s.type === 'tool_call').map(s => s.tool);
-        const hasWrite = tools.includes('write_file') || tools.includes('tool_call');
-        const hasRead = tools.filter(t => t === 'read_file' || t === 'tool_call').length >= 1;
+        const toolCalls = trace.steps.filter(s => s.type === 'tool_call');
+        const getToolName = (t) => {
+          if (t.tool !== 'tool_call') return t.tool;
+          try { return JSON.parse(t.args).tool_name || t.tool; } catch(e) { return t.tool; }
+        };
+        const toolNames = toolCalls.map(getToolName);
+        const hasWrite = toolNames.includes('write_file');
+        const hasRead = toolNames.includes('read_file');
         const bothOps = hasWrite && hasRead;
-        return { pass: bothOps, score: bothOps ? 1.0 : 0.5, reason: `write=${hasWrite}, read=${hasRead}` };
+        return { pass: bothOps, score: bothOps ? 1.0 : 0.5, reason: `write=${hasWrite}, read=${hasRead} (tools: ${toolNames.join(', ')})` };
     - type: javascript
       value: |
         const trace = JSON.parse(output);
@@ -28,10 +33,63 @@
       value: |
         const trace = JSON.parse(output);
         if (trace.error) return { pass: false, score: 0, reason: trace.error };
-        const hasListDir = trace.steps.some(s => s.tool === 'list_dir' || (s.tool === 'tool_call'));
-        return { pass: hasListDir, score: hasListDir ? 1.0 : 0.0, reason: hasListDir ? 'explored workspace' : 'did not explore' };
+        const toolCalls = trace.steps.filter(s => s.type === 'tool_call');
+        const getToolName = (t) => {
+          if (t.tool !== 'tool_call') return t.tool;
+          try { return JSON.parse(t.args).tool_name || t.tool; } catch(e) { return t.tool; }
+        };
+        const toolNames = toolCalls.map(getToolName);
+        const hasListDir = toolNames.includes('list_dir');
+        return { pass: hasListDir, score: hasListDir ? 1.0 : 0.0, reason: hasListDir ? 'explored workspace' : `did not explore (tools: ${toolNames.join(', ')})` };
     - type: javascript
       value: |
         const trace = JSON.parse(output);
-        const hasSummary = trace.output.length > 50;
-        return { pass: hasSummary, score: hasSummary ? 1.0 : 0.0, reason: `output length: ${trace.output.length}` };
+        const output_text = trace.output || '';
+        const isDefault = output_text.includes('completed processing but have no response');
+        if (isDefault) return { pass: false, score: 0.1, reason: 'fell back to default empty response' };
+        const hasSummary = output_text.length > 50;
+        return { pass: hasSummary, score: hasSummary ? 1.0 : 0.0, reason: `output length: ${output_text.length}` };
+
+- description: "3-step chain: exec, capture, write"
+  vars:
+    prompt: "Run 'uname -s' to get the OS name, then write the result to a file called os_name.txt, then read it back and confirm."
+  assert:
+    - type: javascript
+      value: |
+        const trace = JSON.parse(output);
+        if (trace.error) return { pass: false, score: 0, reason: trace.error };
+        const toolCalls = trace.steps.filter(s => s.type === 'tool_call');
+        const getToolName = (t) => {
+          if (t.tool !== 'tool_call') return t.tool;
+          try { return JSON.parse(t.args).tool_name || t.tool; } catch(e) { return t.tool; }
+        };
+        const toolNames = toolCalls.map(getToolName);
+        const hasExec = toolNames.includes('exec');
+        const hasWrite = toolNames.includes('write_file');
+        const hasRead = toolNames.includes('read_file');
+        const score = (hasExec ? 0.33 : 0) + (hasWrite ? 0.33 : 0) + (hasRead ? 0.34 : 0);
+        return { pass: score >= 0.66, score, reason: `exec=${hasExec}, write=${hasWrite}, read=${hasRead}` };
+    - type: javascript
+      value: |
+        const trace = JSON.parse(output);
+        const out = (trace.output || '').toLowerCase();
+        const hasOS = out.includes('linux') || out.includes('darwin') || out.includes('os');
+        return { pass: hasOS, score: hasOS ? 1.0 : 0.0, reason: hasOS ? 'confirmed OS name' : 'did not confirm OS' };
+
+- description: "chained file ops: create directory structure"
+  vars:
+    prompt: "Create a file called project/readme.txt with 'Project initialized'. Then list the project directory to verify it exists."
+  assert:
+    - type: javascript
+      value: |
+        const trace = JSON.parse(output);
+        if (trace.error) return { pass: false, score: 0, reason: trace.error };
+        const toolCalls = trace.steps.filter(s => s.type === 'tool_call');
+        const getToolName = (t) => {
+          if (t.tool !== 'tool_call') return t.tool;
+          try { return JSON.parse(t.args).tool_name || t.tool; } catch(e) { return t.tool; }
+        };
+        const toolNames = toolCalls.map(getToolName);
+        const hasWrite = toolNames.includes('write_file');
+        const hasListOrExec = toolNames.includes('list_dir') || toolNames.includes('exec');
+        return { pass: hasWrite, score: (hasWrite ? 0.5 : 0) + (hasListOrExec ? 0.5 : 0), reason: `write=${hasWrite}, verify=${hasListOrExec}` };

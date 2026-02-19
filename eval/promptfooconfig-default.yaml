@@ -1,9 +1,7 @@
-# PicoClaw Eval Harness - promptfoo configuration
-# Run: make eval              (default config only)
-# Run: make eval-matrix       (all config variants)
-# View: cd eval && npx promptfoo view
+# PicoClaw Eval - default config only (fast iteration)
+# Used by: make eval
 
-description: "PicoClaw agent end-to-end evaluation"
+description: "PicoClaw agent evaluation (default config)"
 
 providers:
   - id: "exec:./bin/eval-runner-default"
@@ -11,17 +9,6 @@ providers:
     config:
       timeout: 120000
 
-  - id: "exec:./bin/eval-runner-progressive"
-    label: "picoclaw-progressive"
-    config:
-      timeout: 120000
-
-  - id: "exec:./bin/eval-runner-no-memory"
-    label: "picoclaw-no-memory"
-    config:
-      timeout: 120000
-
-# Default assertions applied to every test case
 defaultTest:
   assert:
     - type: javascript

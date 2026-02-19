@@ -1,21 +1,31 @@
 # Tool Calling Evaluation Cases
 # Tests that the agent correctly selects and invokes the right tools.
+# PicoClaw uses progressive disclosure: the LLM may invoke tools directly
+# (e.g. "read_file") or via the meta-tool "tool_call" with tool_name in args.
 
-- description: "file read: agent reads a file when asked about its contents"
+- description: "file read: agent reads a known fixture file and returns its content"
   vars:
-    prompt: "Read the file SYSTEM_PROMPT.md in the workspace and tell me the first line."
+    prompt: "Read the file eval_fixture.txt in the workspace and tell me the first line."
   assert:
     - type: javascript
       value: |
         const trace = JSON.parse(output);
         if (trace.error) return { pass: false, score: 0, reason: trace.error };
         const toolCalls = trace.steps.filter(s => s.type === 'tool_call');
-        const hasRead = toolCalls.some(t => t.tool === 'read_file' || t.tool === 'tool_call');
-        return { pass: hasRead, score: hasRead ? 1.0 : 0.0, reason: hasRead ? 'correctly used file read' : 'did not read the file' };
+        const hasRead = toolCalls.some(t => {
+          if (t.tool === 'read_file') return true;
+          if (t.tool === 'tool_call') {
+            try { const a = JSON.parse(t.args); return a.tool_name === 'read_file'; } catch(e) {}
+          }
+          return false;
+        });
+        return { pass: hasRead, score: hasRead ? 1.0 : 0.0, reason: hasRead ? 'correctly used file read' : `did not read file (${toolCalls.length} tool calls: ${toolCalls.map(t=>t.tool).join(', ')})` };
     - type: javascript
       value: |
         const trace = JSON.parse(output);
-        return { pass: trace.output.length > 0, score: trace.output.length > 0 ? 1.0 : 0.0, reason: 'non-empty output' };
+        const out = (trace.output || '').toLowerCase();
+        const hasContent = out.includes('picoclaw eval fixture') || out.includes('hello from the eval harness');
+        return { pass: hasContent, score: hasContent ? 1.0 : 0.3, reason: hasContent ? 'returned fixture content' : 'output did not contain expected fixture text' };
 
 - description: "file write: agent creates a new file when asked"
   vars:
@@ -26,8 +36,14 @@
         const trace = JSON.parse(output);
         if (trace.error) return { pass: false, score: 0, reason: trace.error };
         const toolCalls = trace.steps.filter(s => s.type === 'tool_call');
-        const hasWrite = toolCalls.some(t => t.tool === 'write_file' || (t.tool === 'tool_call' && t.args && JSON.parse(t.args).tool_name === 'write_file'));
-        return { pass: hasWrite, score: hasWrite ? 1.0 : 0.0, reason: hasWrite ? 'correctly used file write' : 'did not write the file' };
+        const hasWrite = toolCalls.some(t => {
+          if (t.tool === 'write_file') return true;
+          if (t.tool === 'tool_call') {
+            try { const a = JSON.parse(t.args); return a.tool_name === 'write_file'; } catch(e) {}
+          }
+          return false;
+        });
+        return { pass: hasWrite, score: hasWrite ? 1.0 : 0.0, reason: hasWrite ? 'correctly used file write' : `did not write file (${toolCalls.length} tool calls: ${toolCalls.map(t=>t.tool).join(', ')})` };
 
 - description: "shell exec: agent runs a shell command"
   vars:
@@ -37,9 +53,16 @@
       value: |
         const trace = JSON.parse(output);
         if (trace.error) return { pass: false, score: 0, reason: trace.error };
-        const hasExec = trace.steps.some(s => s.tool === 'exec' || (s.tool === 'tool_call' && s.args && JSON.parse(s.args).tool_name === 'exec'));
+        const toolCalls = trace.steps.filter(s => s.type === 'tool_call');
+        const hasExec = toolCalls.some(t => {
+          if (t.tool === 'exec') return true;
+          if (t.tool === 'tool_call') {
+            try { const a = JSON.parse(t.args); return a.tool_name === 'exec'; } catch(e) {}
+          }
+          return false;
+        });
         const outputContains = trace.output.includes('picoclaw-eval-test');
-        return { pass: hasExec && outputContains, score: (hasExec ? 0.5 : 0) + (outputContains ? 0.5 : 0), reason: `exec=${hasExec}, output_correct=${outputContains}` };
+        return { pass: hasExec && outputContains, score: (hasExec ? 0.5 : 0) + (outputContains ? 0.5 : 0), reason: `exec=${hasExec}, output_correct=${outputContains} (${toolCalls.length} tool calls)` };
 
 - description: "list directory: agent lists workspace contents"
   vars:
@@ -49,5 +72,96 @@
       value: |
         const trace = JSON.parse(output);
         if (trace.error) return { pass: false, score: 0, reason: trace.error };
-        const hasListDir = trace.steps.some(s => s.tool === 'list_dir' || (s.tool === 'tool_call' && s.args && JSON.parse(s.args).tool_name === 'list_dir'));
-        return { pass: hasListDir, score: hasListDir ? 1.0 : 0.0, reason: hasListDir ? 'used list_dir' : 'did not list directory' };
+        const toolCalls = trace.steps.filter(s => s.type === 'tool_call');
+        const hasListDir = toolCalls.some(t => {
+          if (t.tool === 'list_dir') return true;
+          if (t.tool === 'tool_call') {
+            try { const a = JSON.parse(t.args); return a.tool_name === 'list_dir'; } catch(e) {}
+          }
+          return false;
+        });
+        return { pass: hasListDir, score: hasListDir ? 1.0 : 0.0, reason: hasListDir ? 'used list_dir' : `did not list directory (${toolCalls.length} tool calls: ${toolCalls.map(t=>t.tool).join(', ')})` };
+
+- description: "edit file: agent edits an existing file"
+  vars:
+    prompt: "First write a file called edit_target.txt with 'hello world'. Then edit it to replace 'world' with 'picoclaw'. Read it back and confirm."
+  assert:
+    - type: javascript
+      value: |
+        const trace = JSON.parse(output);
+        if (trace.error) return { pass: false, score: 0, reason: trace.error };
+        const toolCalls = trace.steps.filter(s => s.type === 'tool_call');
+        const getToolName = (t) => {
+          if (t.tool !== 'tool_call') return t.tool;
+          try { return JSON.parse(t.args).tool_name || t.tool; } catch(e) { return t.tool; }
+        };
+        const toolNames = toolCalls.map(getToolName);
+        const hasEdit = toolNames.includes('edit_file');
+        const hasWrite = toolNames.includes('write_file');
+        const hasAnyModify = hasEdit || hasWrite;
+        return { pass: hasAnyModify, score: hasEdit ? 1.0 : (hasWrite ? 0.7 : 0.0), reason: `edit=${hasEdit}, write=${hasWrite} (tools: ${toolNames.join(', ')})` };
+    - type: javascript
+      value: |
+        const trace = JSON.parse(output);
+        const out = (trace.output || '').toLowerCase();
+        const hasPicoclaw = out.includes('picoclaw');
+        return { pass: hasPicoclaw, score: hasPicoclaw ? 1.0 : 0.0, reason: hasPicoclaw ? 'confirmed edit result' : 'did not confirm picoclaw in output' };
+
+- description: "append file: agent appends to an existing file"
+  vars:
+    prompt: "Write 'line one' to append_test.txt. Then append 'line two' to the same file. Read it back and tell me both lines."
+  assert:
+    - type: javascript
+      value: |
+        const trace = JSON.parse(output);
+        if (trace.error) return { pass: false, score: 0, reason: trace.error };
+        const toolCalls = trace.steps.filter(s => s.type === 'tool_call');
+        const getToolName = (t) => {
+          if (t.tool !== 'tool_call') return t.tool;
+          try { return JSON.parse(t.args).tool_name || t.tool; } catch(e) { return t.tool; }
+        };
+        const toolNames = toolCalls.map(getToolName);
+        const hasAppend = toolNames.includes('append_file');
+        const hasWrite = toolNames.filter(n => n === 'write_file').length >= 2;
+        const modified = hasAppend || hasWrite;
+        return { pass: modified, score: hasAppend ? 1.0 : (hasWrite ? 0.7 : 0.0), reason: `append=${hasAppend}, multi_write=${hasWrite} (tools: ${toolNames.join(', ')})` };
+
+- description: "web search: agent searches the web"
+  vars:
+    prompt: "Search the web for 'picoclaw AI agent' and summarize what you find."
+  assert:
+    - type: javascript
+      value: |
+        const trace = JSON.parse(output);
+        if (trace.error) return { pass: false, score: 0, reason: trace.error };
+        const toolCalls = trace.steps.filter(s => s.type === 'tool_call');
+        const getToolName = (t) => {
+          if (t.tool !== 'tool_call') return t.tool;
+          try { return JSON.parse(t.args).tool_name || t.tool; } catch(e) { return t.tool; }
+        };
+        const toolNames = toolCalls.map(getToolName);
+        const hasWebSearch = toolNames.includes('web_search');
+        return { pass: hasWebSearch, score: hasWebSearch ? 1.0 : 0.0, reason: hasWebSearch ? 'used web_search' : `no web search (tools: ${toolNames.join(', ')})` };
+
+- description: "web fetch: agent fetches a URL"
+  vars:
+    prompt: "Fetch the contents of https://example.com and tell me the title of the page."
+  assert:
+    - type: javascript
+      value: |
+        const trace = JSON.parse(output);
+        if (trace.error) return { pass: false, score: 0, reason: trace.error };
+        const toolCalls = trace.steps.filter(s => s.type === 'tool_call');
+        const getToolName = (t) => {
+          if (t.tool !== 'tool_call') return t.tool;
+          try { return JSON.parse(t.args).tool_name || t.tool; } catch(e) { return t.tool; }
+        };
+        const toolNames = toolCalls.map(getToolName);
+        const hasFetch = toolNames.includes('web_fetch');
+        return { pass: hasFetch, score: hasFetch ? 1.0 : 0.0, reason: hasFetch ? 'used web_fetch' : `no web_fetch (tools: ${toolNames.join(', ')})` };
+    - type: javascript
+      value: |
+        const trace = JSON.parse(output);
+        const out = (trace.output || '').toLowerCase();
+        const hasTitle = out.includes('example domain') || out.includes('example');
+        return { pass: hasTitle, score: hasTitle ? 1.0 : 0.0, reason: hasTitle ? 'returned page content' : 'did not return page title' };
