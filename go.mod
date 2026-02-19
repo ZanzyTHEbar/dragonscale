@@ -12,6 +12,7 @@ require (
 	github.com/bwmarrin/discordgo v0.29.0
 	github.com/caarlos0/env/v11 v11.3.1
 	github.com/chzyer/readline v1.5.1
+	github.com/fsnotify/fsnotify v1.9.0
 	github.com/go-json-experiment/json v0.0.0-20260214004413-d219187c3433
 	github.com/google/flatbuffers v25.12.19+incompatible
 	github.com/google/uuid v1.6.0
