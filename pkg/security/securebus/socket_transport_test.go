@@ -75,11 +75,13 @@ func TestSocketTransportMultipleRequests(t *testing.T) {
 	defer client.Close()
 
 	for i := 0; i < 10; i++ {
-		req := itr.ToolRequest{
-			ID:        "req-" + string(rune('A'+i)),
-			Type:      itr.CmdToolExec,
-			Timestamp: time.Now().UnixNano(),
-		}
+		req := itr.NewToolExecRequest(
+			"req-"+string(rune('A'+i)),
+			"sess",
+			"",
+			"echo",
+			`{}`,
+		)
 		resp, err := client.Send(context.Background(), req)
 		require.NoError(t, err)
 		assert.Equal(t, req.ID, resp.ID)

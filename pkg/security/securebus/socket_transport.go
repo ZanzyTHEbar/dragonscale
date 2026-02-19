@@ -3,7 +3,6 @@ package securebus
 import (
 	"context"
 	"encoding/binary"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net"
@@ -20,7 +19,7 @@ const (
 )
 
 // SocketTransport implements Transport over a Unix domain socket using
-// length-prefixed JSON frames (4-byte big-endian length + JSON payload).
+// length-prefixed FlatBuffers frames (4-byte big-endian length + FB payload).
 // The server side listens for connections and dispatches requests to the
 // SecureBus; the client side connects and performs request/response exchanges.
 type SocketTransport struct {
@@ -189,9 +188,18 @@ func (st *SocketTransport) Close() error {
 	return nil
 }
 
-// writeFrame writes a length-prefixed JSON frame to w.
+// writeFrame writes a length-prefixed FlatBuffers frame to w.
 func writeFrame(w io.Writer, v interface{}) error {
-	data, err := json.Marshal(v)
+	var data []byte
+	var err error
+	switch t := v.(type) {
+	case itr.ToolRequest:
+		data, err = t.Marshal()
+	case itr.ToolResponse:
+		data, err = t.Marshal()
+	default:
+		return fmt.Errorf("unsupported type for writeFrame: %T", v)
+	}
 	if err != nil {
 		return fmt.Errorf("marshal: %w", err)
 	}
@@ -210,7 +218,7 @@ func writeFrame(w io.Writer, v interface{}) error {
 	return err
 }
 
-// readFrame reads a length-prefixed JSON frame from r into v.
+// readFrame reads a length-prefixed FlatBuffers frame from r into v.
 func readFrame(r io.Reader, v interface{}) error {
 	var header [4]byte
 	if _, err := io.ReadFull(r, header[:]); err != nil {
@@ -227,5 +235,21 @@ func readFrame(r io.Reader, v interface{}) error {
 		return err
 	}
 
-	return json.Unmarshal(buf, v)
+	switch t := v.(type) {
+	case *itr.ToolRequest:
+		req, err := itr.UnmarshalRequest(buf)
+		if err != nil {
+			return fmt.Errorf("unmarshal request: %w", err)
+		}
+		*t = req
+	case *itr.ToolResponse:
+		resp, err := itr.UnmarshalResponse(buf)
+		if err != nil {
+			return fmt.Errorf("unmarshal response: %w", err)
+		}
+		*t = resp
+	default:
+		return fmt.Errorf("unsupported type for readFrame: %T", v)
+	}
+	return nil
 }
