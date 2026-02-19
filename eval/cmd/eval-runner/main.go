@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -116,15 +115,48 @@ func readPrompt() (string, error) {
 	return "", fmt.Errorf("no prompt provided (use positional arg, --prompt, or pipe to stdin)")
 }
 
+// resolveBaseConfigPath returns the path to the user's config file, checking
+// candidate paths in order and returning the first one that exists. Falls back
+// to the XDG-standard path even if the file is absent, matching the main
+// picoclaw binary's behaviour.
+func resolveBaseConfigPath() string {
+	// Prefer XDG standard path (~/.config/picoclaw/config.json).
+	if xdgPath, err := config.DefaultConfigPath(); err == nil {
+		if _, statErr := os.Stat(xdgPath); statErr == nil {
+			return xdgPath
+		}
+	}
+	// Legacy path used before XDG migration.
+	home, _ := os.UserHomeDir()
+	legacy := home + "/.picoclaw/config.json"
+	if _, err := os.Stat(legacy); err == nil {
+		return legacy
+	}
+	// Neither exists; return the XDG path so LoadConfig returns defaults.
+	if xdgPath, err := config.DefaultConfigPath(); err == nil {
+		return xdgPath
+	}
+	return home + "/.picoclaw/config.json"
+}
+
 func loadEvalConfig() (*config.Config, error) {
-	evalConfig := os.Getenv("PICOCLAW_EVAL_CONFIG")
-	if evalConfig != "" {
-		return config.LoadConfig(evalConfig)
+	// Always load the user's base config first so provider API keys,
+	// model selection, and other credentials are preserved.
+	cfg, err := config.LoadConfig(resolveBaseConfigPath())
+	if err != nil {
+		return nil, fmt.Errorf("load base config: %w", err)
 	}
 
-	home, _ := os.UserHomeDir()
-	configPath := filepath.Join(home, ".picoclaw", "config.json")
-	return config.LoadConfig(configPath)
+	// If an eval-specific override file is set, merge it on top of the base
+	// config. Only fields present in the overlay are changed; API keys etc.
+	// from the base config are preserved.
+	if overlayPath := os.Getenv("PICOCLAW_EVAL_CONFIG"); overlayPath != "" {
+		if err := config.OverlayConfigFile(cfg, overlayPath); err != nil {
+			return nil, fmt.Errorf("load eval overlay: %w", err)
+		}
+	}
+
+	return cfg, nil
 }
 
 func runEval(cfg *config.Config, prompt string) Trace {

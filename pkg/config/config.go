@@ -520,6 +520,27 @@ func (c *Config) Validate() []string {
 	return warnings
 }
 
+// OverlayConfigFile reads a JSON file and merges its fields into an existing
+// Config. Fields present in the overlay file overwrite the corresponding fields
+// in cfg; fields absent from the overlay file are left unchanged. This allows
+// partial override files (e.g. eval configs that only set tools or agent
+// settings) without losing base config values such as provider API keys.
+//
+// A non-existent overlay file is silently ignored.
+func OverlayConfigFile(cfg *Config, path string) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("read overlay config %q: %w", path, err)
+	}
+	if err := jsonv2.Unmarshal(data, cfg); err != nil {
+		return fmt.Errorf("parse overlay config %q: %w", path, err)
+	}
+	return nil
+}
+
 func SaveConfig(path string, cfg *Config) error {
 	cfg.mu.RLock()
 	defer cfg.mu.RUnlock()
