@@ -3,9 +3,10 @@ package openrouter
 import (
 	"encoding/base64"
 	"fmt"
-	jsonv2 "github.com/go-json-experiment/json"
 	"maps"
 	"strings"
+
+	jsonv2 "github.com/go-json-experiment/json"
 
 	"charm.land/fantasy"
 	"charm.land/fantasy/providers/anthropic"
@@ -1010,7 +1011,6 @@ func languageModelToPrompt(prompt fantasy.Prompt, _, model string) ([]openaisdk.
 					}
 					messages = append(messages, tr)
 				case fantasy.ToolResultContentTypeError:
-					// TODO: check if better handling is needed
 					output, ok := fantasy.AsToolResultOutputType[fantasy.ToolResultOutputContentError](toolResultPart.Output)
 					if !ok {
 						warnings = append(warnings, fantasy.CallWarning{

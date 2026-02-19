@@ -5,11 +5,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	jsonv2 "github.com/go-json-experiment/json"
 	"maps"
 	"net/http"
 	"reflect"
 	"strings"
+
+	jsonv2 "github.com/go-json-experiment/json"
 
 	"charm.land/fantasy"
 	"charm.land/fantasy/object"
@@ -62,6 +63,10 @@ func New(opts ...Option) (fantasy.Provider, error) {
 
 	options.name = cmp.Or(options.name, Name)
 
+	if options.backend == genai.BackendVertexAI && (options.project == "" || options.location == "") {
+		return nil, errors.New("google: WithVertex requires non-empty project and location")
+	}
+
 	return &provider{
 		options: options,
 	}, nil
@@ -85,10 +90,8 @@ func WithGeminiAPIKey(apiKey string) Option {
 }
 
 // WithVertex configures the Google provider to use Vertex AI.
+// Both project and location are validated when New() is called.
 func WithVertex(project, location string) Option {
-	if project == "" || location == "" {
-		panic("project and location must be provided")
-	}
 	return func(o *options) {
 		o.backend = genai.BackendVertexAI
 		o.apiKey = ""
@@ -220,7 +223,10 @@ func (g languageModel) prepareParams(call fantasy.Call) (*genai.GenerateContentC
 		}
 	}
 
-	systemInstructions, content, warnings := toGooglePrompt(call.Prompt)
+	systemInstructions, content, warnings, err := toGooglePrompt(call.Prompt)
+	if err != nil {
+		return nil, nil, nil, err
+	}
 
 	if providerOptions.ThinkingConfig != nil {
 		if providerOptions.ThinkingConfig.IncludeThoughts != nil &&
@@ -324,7 +330,7 @@ func (g languageModel) prepareParams(call fantasy.Call) (*genai.GenerateContentC
 	return config, content, warnings, nil
 }
 
-func toGooglePrompt(prompt fantasy.Prompt) (*genai.Content, []*genai.Content, []fantasy.CallWarning) { //nolint: unparam
+func toGooglePrompt(prompt fantasy.Prompt) (*genai.Content, []*genai.Content, []fantasy.CallWarning, error) {
 	var systemInstructions *genai.Content
 	var content []*genai.Content
 	var warnings []fantasy.CallWarning
@@ -334,8 +340,10 @@ func toGooglePrompt(prompt fantasy.Prompt) (*genai.Content, []*genai.Content, []
 		switch msg.Role {
 		case fantasy.MessageRoleSystem:
 			if finishedSystemBlock {
-				// skip multiple system messages that are separated by user/assistant messages
-				// TODO: see if we need to send error here?
+				warnings = append(warnings, fantasy.CallWarning{
+					Type:    fantasy.CallWarningTypeOther,
+					Message: "google: additional system message after user/assistant messages was skipped",
+				})
 				continue
 			}
 			finishedSystemBlock = true
@@ -514,10 +522,10 @@ func toGooglePrompt(prompt fantasy.Prompt) (*genai.Content, []*genai.Content, []
 				})
 			}
 		default:
-			panic("unsupported message role: " + msg.Role)
+			return nil, nil, nil, fmt.Errorf("google: unsupported message role: %s", msg.Role)
 		}
 	}
-	return systemInstructions, content, warnings
+	return systemInstructions, content, warnings, nil
 }
 
 // Generate implements fantasy.LanguageModel.

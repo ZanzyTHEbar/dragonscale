@@ -7,10 +7,11 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-	jsonv2 "github.com/go-json-experiment/json"
 	"io"
 	"maps"
 	"strings"
+
+	jsonv2 "github.com/go-json-experiment/json"
 
 	"charm.land/fantasy"
 	"charm.land/fantasy/object"
@@ -542,8 +543,10 @@ func toPrompt(prompt fantasy.Prompt, sendReasoningData bool) ([]anthropic.TextBl
 		switch block.Role {
 		case fantasy.MessageRoleSystem:
 			if finishedSystemBlock {
-				// skip multiple system messages that are separated by user/assistant messages
-				// TODO: see if we need to send error here?
+				warnings = append(warnings, fantasy.CallWarning{
+					Type:    fantasy.CallWarningTypeOther,
+					Message: "anthropic: additional system message after user/assistant messages was skipped",
+				})
 				continue
 			}
 			finishedSystemBlock = true

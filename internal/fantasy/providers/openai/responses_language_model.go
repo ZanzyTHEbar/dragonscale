@@ -4,9 +4,10 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
-	jsonv2 "github.com/go-json-experiment/json"
 	"reflect"
 	"strings"
+
+	jsonv2 "github.com/go-json-experiment/json"
 
 	"charm.land/fantasy"
 	"charm.land/fantasy/object"
@@ -1232,7 +1233,6 @@ func (o responsesLanguageModel) streamObjectWithJSONMode(ctx context.Context, ca
 		var lastParsedObject any
 		var usage fantasy.Usage
 		var finishReason fantasy.FinishReason
-		var streamErr error
 		hasFunctionCall := false
 
 		for stream.Next() {
@@ -1299,13 +1299,10 @@ func (o responsesLanguageModel) streamObjectWithJSONMode(ctx context.Context, ca
 
 			case "error":
 				errorEvent := event.AsError()
-				streamErr = fmt.Errorf("response error: %s (code: %s)", errorEvent.Message, errorEvent.Code)
-				if !yield(fantasy.ObjectStreamPart{
+				yield(fantasy.ObjectStreamPart{
 					Type:  fantasy.ObjectStreamPartTypeError,
-					Error: streamErr,
-				}) {
-					return
-				}
+					Error: fmt.Errorf("response error: %s (code: %s)", errorEvent.Message, errorEvent.Code),
+				})
 				return
 			}
 		}
@@ -1320,14 +1317,13 @@ func (o responsesLanguageModel) streamObjectWithJSONMode(ctx context.Context, ca
 		}
 
 		// Final validation and emit
-		if streamErr == nil && lastParsedObject != nil {
+		if lastParsedObject != nil {
 			yield(fantasy.ObjectStreamPart{
 				Type:         fantasy.ObjectStreamPartTypeFinish,
 				Usage:        usage,
 				FinishReason: finishReason,
 			})
-		} else if streamErr == nil && lastParsedObject == nil {
-			// No object was generated
+		} else {
 			yield(fantasy.ObjectStreamPart{
 				Type: fantasy.ObjectStreamPartTypeError,
 				Error: &fantasy.NoObjectGeneratedError{

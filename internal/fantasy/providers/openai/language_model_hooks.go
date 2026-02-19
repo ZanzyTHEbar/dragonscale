@@ -539,7 +539,6 @@ func DefaultToPrompt(prompt fantasy.Prompt, _, _ string) ([]openai.ChatCompletio
 					}
 					messages = append(messages, openai.ToolMessage(output.Text, toolResultPart.ToolCallID))
 				case fantasy.ToolResultContentTypeError:
-					// TODO: check if better handling is needed
 					output, ok := fantasy.AsToolResultOutputType[fantasy.ToolResultOutputContentError](toolResultPart.Output)
 					if !ok {
 						warnings = append(warnings, fantasy.CallWarning{
