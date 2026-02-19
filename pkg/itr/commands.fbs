@@ -1,0 +1,99 @@
+// PicoClaw Isolated Tool Runtime — Command Protocol
+// Namespace: picoclaw.itr
+//
+// This schema defines the binary command protocol between the agent loop
+// and the SecureBus. All tool invocations, including RLM recursive
+// decomposition operations, are serialized using this schema.
+//
+// Generated Go code lives in commands_generated.go (committed).
+// To regenerate: flatc --go --gen-mutable -o pkg/itr pkg/itr/commands.fbs
+//
+// FlatBuffers provides:
+//   - Zero-copy reads (no deserialization on the hot path)
+//   - Schema-enforced vocabulary (LLM cannot construct out-of-vocab requests)
+//   - Single binary format across all transports (channel, socket, WASM)
+
+namespace picoclaw.itr;
+
+// ── RLM Decomposition Operations ────────────────────────────────────────────
+
+// Peek reads a byte range from the context rope.
+table Peek {
+  start:  uint64;  // byte offset
+  length: uint32;  // bytes to read (0 = to end)
+}
+
+// Grep searches the context for a pattern.
+table Grep {
+  pattern:          string (required);
+  max_matches:      uint32 = 50;
+  case_insensitive: bool   = false;
+}
+
+// Partition splits the context into k roughly-equal chunks.
+table Partition {
+  k:        uint32 = 4;     // number of partitions
+  method:   string = "uniform"; // "uniform" | "semantic"
+  overlap:  uint32 = 0;     // token overlap between partitions
+  semantic: bool   = false; // use semantic boundaries (sentence/paragraph)
+}
+
+// Recurse spawns a sub-RLM call over a context partition.
+table Recurse {
+  sub_query:   string (required); // the question to answer over the partition
+  context_key: string (required); // identifies which partition to use
+  depth_hint:  uint8  = 3;        // max recursion depth
+}
+
+// ── Traditional Tool Execution ───────────────────────────────────────────────
+
+// ToolExec invokes a named tool with JSON-serialized arguments.
+table ToolExec {
+  tool_name: string (required);
+  args_json: string (required);  // JSON object
+}
+
+// ExecWasm runs a WASM module (Layer 5 — optional, wazero isolate).
+table ExecWasm {
+  module_key: string (required);  // key into the WASM module registry
+  entry:      string (required);  // exported function name
+  input_json: string;             // JSON input for the module
+}
+
+// Final records the terminal answer from an RLM recursion.
+table Final {
+  answer:   string (required);
+  var_name: string;  // optional variable name for multi-part answers
+}
+
+// ── Envelope ─────────────────────────────────────────────────────────────────
+
+union CommandPayload {
+  Peek,
+  Grep,
+  Partition,
+  Recurse,
+  ToolExec,
+  ExecWasm,
+  Final
+}
+
+table ToolRequest {
+  id:          string (required);  // UUIDv7 for correlation
+  payload:     CommandPayload;
+  timestamp:   uint64;             // Unix nanoseconds
+  depth:       uint8  = 0;         // recursion depth (0 = top-level)
+  session_key: string;             // opaque session/conversation identifier
+  tool_call_id: string;            // links back to LLM tool_call.id
+}
+
+table ToolResponse {
+  id:            string (required);  // mirrors request id
+  result:        string;             // JSON-serialized result
+  is_error:      bool   = false;
+  leak_detected: bool   = false;     // set when Redactor found a match
+  cost_tokens:   uint32 = 0;         // tokens consumed (RLM operations)
+  redacted_keys: [string];           // keys that were redacted, for audit
+}
+
+root_type ToolRequest;
