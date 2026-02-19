@@ -155,19 +155,12 @@ func main() {
 
 		subcommand := os.Args[2]
 
-		cfg, err := loadConfig()
-		if err != nil {
-			fmt.Printf("Error loading config: %v\n", err)
-			os.Exit(1)
-		}
-
-		workspace := cfg.WorkspacePath()
-		installer := skills.NewSkillInstaller(workspace)
-		// 获取全局配置目录和内置 skills 目录
-		globalDir := filepath.Dir(getConfigPath())
-		globalSkillsDir := filepath.Join(globalDir, "skills")
-		builtinSkillsDir := filepath.Join(globalDir, "picoclaw", "skills")
-		skillsLoader := skills.NewSkillsLoader(workspace, globalSkillsDir, builtinSkillsDir)
+		skillsDir, _ := config.SkillsDir()
+		installer := skills.NewSkillInstaller(skillsDir)
+		cfgDir, _ := config.ConfigDir()
+		globalSkillsDir := filepath.Join(cfgDir, "skills")
+		builtinSkillsDir := filepath.Join(cfgDir, "picoclaw", "skills")
+		skillsLoader := skills.NewSkillsLoader(skillsDir, globalSkillsDir, builtinSkillsDir)
 
 		switch subcommand {
 		case "list":
@@ -181,7 +174,7 @@ func main() {
 			}
 			skillsRemoveCmd(installer, os.Args[3])
 		case "install-builtin":
-			skillsInstallBuiltinCmd(workspace)
+			skillsInstallBuiltinCmd(skillsDir)
 		case "list-builtin":
 			skillsListBuiltinCmd()
 		case "search":
@@ -250,8 +243,11 @@ func onboard() {
 		os.Exit(1)
 	}
 
-	workspace := cfg.WorkspacePath()
-	createWorkspaceTemplates(workspace)
+	if migErr := migrate.MigrateToXDG(""); migErr != nil {
+		fmt.Printf("Warning: XDG migration failed: %v\n", migErr)
+	}
+
+	createWorkspaceTemplates(cfg)
 
 	fmt.Printf("%s picoclaw is ready!\n", logo)
 
@@ -280,58 +276,68 @@ func onboard() {
 	fmt.Println("  2. Chat: picoclaw agent -m \"Hello!\"")
 }
 
-func copyEmbeddedToTarget(targetDir string) error {
-	// Ensure target directory exists
-	if err := os.MkdirAll(targetDir, 0755); err != nil {
-		return fmt.Errorf("Failed to create target directory: %w", err)
-	}
-
-	// Walk through all files in embed.FS
-	err := fs.WalkDir(embeddedFiles, "workspace", func(path string, d fs.DirEntry, err error) error {
+// seedEmbeddedIdentity copies identity template files from the embedded FS
+// into the XDG identity directory ($XDG_CONFIG_HOME/picoclaw/identity/).
+func seedEmbeddedIdentity(identityDir string) error {
+	identityFiles := []string{"AGENT.md", "IDENTITY.md", "SOUL.md", "USER.md"}
+	for _, name := range identityFiles {
+		data, err := embeddedFiles.ReadFile("workspace/" + name)
 		if err != nil {
-			return err
+			continue
 		}
-
-		// Skip directories
-		if d.IsDir() {
-			return nil
+		targetPath := filepath.Join(identityDir, name)
+		if _, err := os.Stat(targetPath); err == nil {
+			continue
 		}
-
-		// Read embedded file
-		data, err := embeddedFiles.ReadFile(path)
-		if err != nil {
-			return fmt.Errorf("Failed to read embedded file %s: %w", path, err)
-		}
-
-		new_path, err := filepath.Rel("workspace", path)
-		if err != nil {
-			return fmt.Errorf("Failed to get relative path for %s: %v\n", path, err)
-		}
-
-		// Build target file path
-		targetPath := filepath.Join(targetDir, new_path)
-
-		// Ensure target file's directory exists
-		if err := os.MkdirAll(filepath.Dir(targetPath), 0755); err != nil {
-			return fmt.Errorf("Failed to create directory %s: %w", filepath.Dir(targetPath), err)
-		}
-
-		// Write file
 		if err := os.WriteFile(targetPath, data, 0644); err != nil {
-			return fmt.Errorf("Failed to write file %s: %w", targetPath, err)
+			return fmt.Errorf("write %s: %w", targetPath, err)
 		}
-
-		return nil
-	})
-
-	return err
+	}
+	return nil
 }
 
-func createWorkspaceTemplates(workspace string) {
-	err := copyEmbeddedToTarget(workspace)
+// seedEmbeddedSkills copies skill templates from the embedded FS into the
+// XDG skills directory ($XDG_DATA_HOME/picoclaw/skills/).
+func seedEmbeddedSkills(skillsDir string) error {
+	return fs.WalkDir(embeddedFiles, "workspace/skills", func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		data, readErr := embeddedFiles.ReadFile(path)
+		if readErr != nil {
+			return readErr
+		}
+		relPath, _ := filepath.Rel("workspace/skills", path)
+		targetPath := filepath.Join(skillsDir, relPath)
+		if _, statErr := os.Stat(targetPath); statErr == nil {
+			return nil
+		}
+		os.MkdirAll(filepath.Dir(targetPath), 0755)
+		return os.WriteFile(targetPath, data, 0644)
+	})
+}
+
+func createWorkspaceTemplates(cfg *config.Config) {
+	identityDir, err := config.IdentityDir()
 	if err != nil {
-		fmt.Printf("Error copying workspace templates: %v\n", err)
+		fmt.Printf("Error resolving identity dir: %v\n", err)
+		return
 	}
+	if err := seedEmbeddedIdentity(identityDir); err != nil {
+		fmt.Printf("Error seeding identity files: %v\n", err)
+	}
+
+	skillsDir, err := config.SkillsDir()
+	if err != nil {
+		fmt.Printf("Error resolving skills dir: %v\n", err)
+		return
+	}
+	if err := seedEmbeddedSkills(skillsDir); err != nil {
+		fmt.Printf("Error seeding skills: %v\n", err)
+	}
+
+	// Ensure sandbox directory exists.
+	_ = os.MkdirAll(cfg.SandboxPath(), 0755)
 }
 
 func migrateCmd() {
@@ -439,21 +445,25 @@ func agentCmd() {
 		os.Exit(1)
 	}
 
-	ctx := context.Background()
-	languageModel, err := fantasyProvider.LanguageModel(ctx, picofantasy.ModelID(cfg))
+	appCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+
+	languageModel, err := fantasyProvider.LanguageModel(appCtx, picofantasy.ModelID(cfg))
 	if err != nil {
 		fmt.Printf("Error creating language model: %v\n", err)
 		os.Exit(1)
 	}
 
 	msgBus := bus.NewMessageBus()
-	agentLoop := agent.NewAgentLoop(cfg, msgBus, languageModel)
+	agentLoop, err := agent.NewAgentLoop(appCtx, cfg, msgBus, languageModel)
+	if err != nil {
+		fmt.Printf("Error initializing agent: %v\n", err)
+		os.Exit(1)
+	}
 
-	// Wire ITR SecureBus — routes all tool calls through capability enforcement.
 	closeBus := setupSecureBus(agentLoop)
 	defer closeBus()
 
-	// Print agent startup info (only for interactive mode)
 	startupInfo := agentLoop.GetStartupInfo()
 	logger.InfoCF("agent", "Agent initialized",
 		map[string]interface{}{
@@ -463,7 +473,7 @@ func agentCmd() {
 		})
 
 	if message != "" {
-		response, err := agentLoop.ProcessDirect(ctx, message, sessionKey)
+		response, err := agentLoop.ProcessDirect(appCtx, message, sessionKey)
 		if err != nil {
 			fmt.Printf("Error: %v\n", err)
 			os.Exit(1)
@@ -471,11 +481,11 @@ func agentCmd() {
 		fmt.Printf("\n%s %s\n", logo, response)
 	} else {
 		fmt.Printf("%s Interactive mode (Ctrl+C to exit)\n\n", logo)
-		interactiveMode(agentLoop, sessionKey)
+		interactiveMode(appCtx, agentLoop, sessionKey)
 	}
 }
 
-func interactiveMode(agentLoop *agent.AgentLoop, sessionKey string) {
+func interactiveMode(ctx context.Context, agentLoop *agent.AgentLoop, sessionKey string) {
 	prompt := fmt.Sprintf("%s You: ", logo)
 
 	rl, err := readline.NewEx(&readline.Config{
@@ -489,7 +499,7 @@ func interactiveMode(agentLoop *agent.AgentLoop, sessionKey string) {
 	if err != nil {
 		fmt.Printf("Error initializing readline: %v\n", err)
 		fmt.Println("Falling back to simple input mode...")
-		simpleInteractiveMode(agentLoop, sessionKey)
+		simpleInteractiveMode(ctx, agentLoop, sessionKey)
 		return
 	}
 	defer rl.Close()
@@ -515,7 +525,6 @@ func interactiveMode(agentLoop *agent.AgentLoop, sessionKey string) {
 			return
 		}
 
-		ctx := context.Background()
 		response, err := agentLoop.ProcessDirect(ctx, input, sessionKey)
 		if err != nil {
 			fmt.Printf("Error: %v\n", err)
@@ -526,10 +535,10 @@ func interactiveMode(agentLoop *agent.AgentLoop, sessionKey string) {
 	}
 }
 
-func simpleInteractiveMode(agentLoop *agent.AgentLoop, sessionKey string) {
+func simpleInteractiveMode(ctx context.Context, agentLoop *agent.AgentLoop, sessionKey string) {
 	reader := bufio.NewReader(os.Stdin)
 	for {
-		fmt.Print(fmt.Sprintf("%s You: ", logo))
+		fmt.Printf("%s You: ", logo)
 		line, err := reader.ReadString('\n')
 		if err != nil {
 			if err == io.EOF {
@@ -550,7 +559,6 @@ func simpleInteractiveMode(agentLoop *agent.AgentLoop, sessionKey string) {
 			return
 		}
 
-		ctx := context.Background()
 		response, err := agentLoop.ProcessDirect(ctx, input, sessionKey)
 		if err != nil {
 			fmt.Printf("Error: %v\n", err)
@@ -584,20 +592,25 @@ func gatewayCmd() {
 		os.Exit(1)
 	}
 
-	languageModel, err := fantasyProvider.LanguageModel(context.Background(), picofantasy.ModelID(cfg))
+	appCtx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	languageModel, err := fantasyProvider.LanguageModel(appCtx, picofantasy.ModelID(cfg))
 	if err != nil {
 		fmt.Printf("Error creating language model: %v\n", err)
 		os.Exit(1)
 	}
 
 	msgBus := bus.NewMessageBus()
-	agentLoop := agent.NewAgentLoop(cfg, msgBus, languageModel)
+	agentLoop, err := agent.NewAgentLoop(appCtx, cfg, msgBus, languageModel)
+	if err != nil {
+		fmt.Printf("Error initializing agent: %v\n", err)
+		os.Exit(1)
+	}
 
-	// Wire ITR SecureBus — routes all tool calls through capability enforcement.
 	closeBus := setupSecureBus(agentLoop)
 	defer closeBus()
 
-	// Print agent startup info
 	fmt.Println("\n📦 Agent Status:")
 	startupInfo := agentLoop.GetStartupInfo()
 	toolsInfo := startupInfo["tools"].(map[string]interface{})
@@ -621,10 +634,10 @@ func gatewayCmd() {
 	if del := agentLoop.MemoryDelegate(); del != nil {
 		cronOpts = append(cronOpts, cron.WithCronDelegate(del, "picoclaw"))
 	}
-	cronService := setupCronTool(agentLoop, msgBus, cfg.WorkspacePath(), cfg.Agents.Defaults.RestrictToWorkspace, execTimeout, cronOpts...)
+	cronService := setupCronTool(appCtx, agentLoop, msgBus, cfg.SandboxPath(), cfg.RestrictToSandbox(), execTimeout, cronOpts...)
 
 	heartbeatService := heartbeat.NewHeartbeatService(
-		cfg.WorkspacePath(),
+		cfg.SandboxPath(),
 		cfg.Heartbeat.Interval,
 		cfg.Heartbeat.Enabled,
 	)
@@ -635,7 +648,7 @@ func gatewayCmd() {
 			channel, chatID = "cli", "direct"
 		}
 		// Use ProcessHeartbeat - no session history, each heartbeat is independent
-		response, err := agentLoop.ProcessHeartbeat(context.Background(), prompt, channel, chatID)
+		response, err := agentLoop.ProcessHeartbeat(appCtx, prompt, channel, chatID)
 		if err != nil {
 			return tools.ErrorResult(fmt.Sprintf("Heartbeat error: %v", err))
 		}
@@ -693,9 +706,6 @@ func gatewayCmd() {
 	fmt.Printf("✓ Gateway started on %s:%d\n", cfg.Gateway.Host, cfg.Gateway.Port)
 	fmt.Println("Press Ctrl+C to stop")
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
 	if err := cronService.Start(); err != nil {
 		fmt.Printf("Error starting cron service: %v\n", err)
 	}
@@ -706,19 +716,19 @@ func gatewayCmd() {
 	}
 	fmt.Println("✓ Heartbeat service started")
 
-	stateManager := state.NewManager(cfg.WorkspacePath())
+	stateManager := state.NewManager(cfg.SandboxPath())
 	deviceService := devices.NewService(devices.Config{
 		Enabled:    cfg.Devices.Enabled,
 		MonitorUSB: cfg.Devices.MonitorUSB,
 	}, stateManager)
 	deviceService.SetBus(msgBus)
-	if err := deviceService.Start(ctx); err != nil {
+	if err := deviceService.Start(appCtx); err != nil {
 		fmt.Printf("Error starting device service: %v\n", err)
 	} else if cfg.Devices.Enabled {
 		fmt.Println("✓ Device event service started")
 	}
 
-	if err := channelManager.StartAll(ctx); err != nil {
+	if err := channelManager.StartAll(appCtx); err != nil {
 		fmt.Printf("Error starting channels: %v\n", err)
 	}
 
@@ -730,7 +740,7 @@ func gatewayCmd() {
 	}()
 	fmt.Printf("✓ Health endpoints available at http://%s:%d/health and /ready\n", cfg.Gateway.Host, cfg.Gateway.Port)
 
-	go agentLoop.Run(ctx)
+	go agentLoop.Run(appCtx)
 
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt)
@@ -738,12 +748,15 @@ func gatewayCmd() {
 
 	fmt.Println("\nShutting down...")
 	cancel()
-	healthServer.Stop(context.Background())
+
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer shutdownCancel()
+	healthServer.Stop(shutdownCtx)
 	deviceService.Stop()
 	heartbeatService.Stop()
 	cronService.Stop()
 	agentLoop.Stop()
-	channelManager.StopAll(ctx)
+	channelManager.StopAll(shutdownCtx)
 	fmt.Println("✓ Gateway stopped")
 }
 
@@ -784,16 +797,7 @@ func memoryMigrateSessions() {
 		os.Exit(1)
 	}
 
-	if !cfg.Memory.Enabled {
-		fmt.Println("Memory system is disabled in config. Enable it first.")
-		os.Exit(1)
-	}
-
-	workspace := cfg.WorkspacePath()
-	memDBPath := cfg.Memory.DBPath
-	if memDBPath == "" {
-		memDBPath = filepath.Join(workspace, "memory", "picoclaw.db")
-	}
+	memDBPath := cfg.DBPath()
 	os.MkdirAll(filepath.Dir(memDBPath), 0755)
 
 	del, err := delegate.NewFromConfig(cfg.Memory, memDBPath)
@@ -809,7 +813,7 @@ func memoryMigrateSessions() {
 		os.Exit(1)
 	}
 
-	sessionsDir := filepath.Join(workspace, "sessions")
+	sessionsDir := filepath.Join(cfg.SandboxPath(), "sessions")
 	stats, err := picomemory.MigrateFileSessions(ctx, del, "picoclaw", sessionsDir)
 	if err != nil {
 		fmt.Printf("Migration error: %v\n", err)
@@ -830,11 +834,7 @@ func memoryDBStatus() {
 		os.Exit(1)
 	}
 
-	workspace := cfg.WorkspacePath()
-	memDBPath := cfg.Memory.DBPath
-	if memDBPath == "" {
-		memDBPath = filepath.Join(workspace, "memory", "picoclaw.db")
-	}
+	memDBPath := cfg.DBPath()
 
 	fi, err := os.Stat(memDBPath)
 	if err != nil {
@@ -876,11 +876,11 @@ func statusCmd() {
 		fmt.Println("Config:", configPath, "✗")
 	}
 
-	workspace := cfg.WorkspacePath()
-	if _, err := os.Stat(workspace); err == nil {
-		fmt.Println("Workspace:", workspace, "✓")
+	sandboxPath := cfg.SandboxPath()
+	if _, err := os.Stat(sandboxPath); err == nil {
+		fmt.Println("Sandbox:", sandboxPath, "✓")
 	} else {
-		fmt.Println("Workspace:", workspace, "✗")
+		fmt.Println("Sandbox:", sandboxPath, "✗")
 	}
 
 	if _, err := os.Stat(configPath); err == nil {
@@ -926,34 +926,29 @@ func statusCmd() {
 			}
 		}
 
-		// Memory system status
+		// Memory system status (always enabled)
 		fmt.Println("\nMemory System:")
-		if cfg.Memory.Enabled {
-			fmt.Println("  Enabled: ✓")
-			fmt.Printf("  Embedding dims: %d\n", cfg.Memory.EmbeddingDims)
-			if cfg.Memory.Embedding.Provider != "" {
-				fmt.Printf("  Embedding provider: %s\n", cfg.Memory.Embedding.Provider)
-				if cfg.Memory.Embedding.Model != "" {
-					fmt.Printf("  Embedding model: %s\n", cfg.Memory.Embedding.Model)
-				}
-			} else {
-				fmt.Println("  Embedding provider: none (FTS5-only)")
-			}
-			if cfg.Memory.Sync.SyncURL != "" {
-				fmt.Printf("  Turso replica: ✓ %s\n", cfg.Memory.Sync.SyncURL)
-				fmt.Printf("  Sync interval: %ds\n", cfg.Memory.Sync.SyncIntervalSeconds)
-			} else {
-				fmt.Println("  Turso replica: local-only")
-			}
-			memDBPath := cfg.Memory.DBPath
-			if memDBPath == "" {
-				memDBPath = filepath.Join(workspace, "memory", "picoclaw.db")
-			}
-			if fi, err := os.Stat(memDBPath); err == nil {
-				fmt.Printf("  DB size: %.1f KB\n", float64(fi.Size())/1024)
+		fmt.Printf("  Embedding dims: %d\n", cfg.Memory.EmbeddingDims)
+		if cfg.Memory.Embedding.Provider != "" {
+			fmt.Printf("  Embedding provider: %s\n", cfg.Memory.Embedding.Provider)
+			if cfg.Memory.Embedding.Model != "" {
+				fmt.Printf("  Embedding model: %s\n", cfg.Memory.Embedding.Model)
 			}
 		} else {
-			fmt.Println("  Enabled: ✗")
+			fmt.Println("  Embedding provider: none (FTS5-only)")
+		}
+		if cfg.Memory.Sync.SyncURL != "" {
+			fmt.Printf("  Turso replica: ✓ %s\n", cfg.Memory.Sync.SyncURL)
+			fmt.Printf("  Sync interval: %ds\n", cfg.Memory.Sync.SyncIntervalSeconds)
+		} else {
+			fmt.Println("  Turso replica: local-only")
+		}
+		memDBPath := cfg.Memory.DBPath
+		if memDBPath == "" {
+			memDBPath = filepath.Join(cfg.WorkspacePath(), "memory", "picoclaw.db")
+		}
+		if fi, err := os.Stat(memDBPath); err == nil {
+			fmt.Printf("  DB size: %.1f KB\n", float64(fi.Size())/1024)
 		}
 	}
 }
@@ -1419,13 +1414,13 @@ func daemonStart() {
 	}
 
 	registry := tools.NewToolRegistry()
-	workspace := cfg.WorkspacePath()
-	restrict := cfg.Agents.Defaults.RestrictToWorkspace
-	registry.Register(tools.NewExecTool(workspace, restrict))
-	registry.Register(tools.NewReadFileTool(workspace, restrict))
-	registry.Register(tools.NewWriteFileTool(workspace, restrict))
-	registry.Register(tools.NewListDirTool(workspace, restrict))
-	registry.Register(tools.NewEditFileTool(workspace, restrict))
+	sandbox := cfg.SandboxPath()
+	restrict := cfg.RestrictToSandbox()
+	registry.Register(tools.NewExecTool(sandbox, restrict))
+	registry.Register(tools.NewReadFileTool(sandbox, restrict))
+	registry.Register(tools.NewWriteFileTool(sandbox, restrict))
+	registry.Register(tools.NewListDirTool(sandbox, restrict))
+	registry.Register(tools.NewEditFileTool(sandbox, restrict))
 
 	capLookup := func(name string) (tools.ToolCapabilities, bool) {
 		t, ok := registry.Get(name)
@@ -1443,7 +1438,7 @@ func daemonStart() {
 	defer secureBus.Close()
 
 	fmt.Printf("picoclaw daemon started (pid=%d, socket=%s)\n", pid, sockPath)
-	fmt.Printf("  workspace: %s\n", workspace)
+	fmt.Printf("  sandbox: %s\n", sandbox)
 	fmt.Printf("  tools: %d registered\n", len(registry.List()))
 	fmt.Println("Press Ctrl+C to stop.")
 
@@ -1541,18 +1536,18 @@ func getConfigPath() string {
 	return filepath.Join(home, ".picoclaw", "config.json")
 }
 
-func setupCronTool(agentLoop *agent.AgentLoop, msgBus *bus.MessageBus, workspace string, restrict bool, execTimeout time.Duration, cronOpts ...cron.CronOption) *cron.CronService {
+func setupCronTool(appCtx context.Context, agentLoop *agent.AgentLoop, msgBus *bus.MessageBus, workspace string, restrict bool, execTimeout time.Duration, cronOpts ...cron.CronOption) *cron.CronService {
 	cronStorePath := filepath.Join(workspace, "cron", "jobs.json")
 
 	cronService := cron.NewCronService(cronStorePath, nil, cronOpts...)
 
-	// Create and register CronTool
 	cronTool := tools.NewCronTool(cronService, agentLoop, msgBus, workspace, restrict, execTimeout)
 	agentLoop.RegisterTool(cronTool)
 
-	// Set the onJob handler
 	cronService.SetOnJob(func(job *cron.CronJob) (string, error) {
-		result := cronTool.ExecuteJob(context.Background(), job)
+		jobCtx, jobCancel := context.WithTimeout(appCtx, execTimeout)
+		defer jobCancel()
+		result := cronTool.ExecuteJob(jobCtx, job)
 		return result, nil
 	})
 
@@ -1620,7 +1615,7 @@ func cronCmd() {
 		return
 	}
 
-	cronStorePath := filepath.Join(cfg.WorkspacePath(), "cron", "jobs.json")
+	cronStorePath := filepath.Join(cfg.SandboxPath(), "cron", "jobs.json")
 
 	switch subcommand {
 	case "list":
@@ -1924,12 +1919,12 @@ func skillsInstallBuiltinCmd(workspace string) {
 }
 
 func skillsListBuiltinCmd() {
-	cfg, err := loadConfig()
+	_, err := loadConfig()
 	if err != nil {
 		fmt.Printf("Error loading config: %v\n", err)
 		return
 	}
-	builtinSkillsDir := filepath.Join(filepath.Dir(cfg.WorkspacePath()), "picoclaw", "skills")
+	builtinSkillsDir, _ := config.SkillsDir()
 
 	fmt.Println("\nAvailable Builtin Skills:")
 	fmt.Println("-----------------------")

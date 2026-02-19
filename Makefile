@@ -222,12 +222,30 @@ eval-build: generate
 	@$(GO) build $(GOFLAGS) $(LDFLAGS) -o eval/bin/eval-runner ./eval/cmd/eval-runner
 	@echo "Eval runner built: eval/bin/eval-runner"
 
-## eval: Run the eval suite against the current build
-eval: eval-build
-	@echo "Running eval suite..."
-	@cd eval && npx promptfoo eval --no-progress-bar
+## eval: Run the eval suite (default config only) against the current build
+eval: eval-build eval-fixtures
+	@echo "Running eval suite (default config)..."
+	@cd eval && npx promptfoo eval --config promptfooconfig-default.yaml --no-progress-bar
 	@echo "Results: eval/results/latest.json"
 	@echo "View: cd eval && npx promptfoo view"
+
+## eval-matrix: Run eval suite against all config variants (default, progressive, no-memory)
+eval-matrix: eval-build eval-fixtures
+	@echo "Running eval matrix (all config variants)..."
+	@cd eval && npx promptfoo eval --config promptfooconfig.yaml --no-progress-bar
+	@echo "Results: eval/results/latest.json"
+	@echo "View: cd eval && npx promptfoo view"
+
+## eval-fixtures: Reset workspace to a known state and seed fixture files for eval
+eval-fixtures:
+	@mkdir -p $(HOME)/.picoclaw/workspace
+	@rm -f $(HOME)/.picoclaw/workspace/eval_test_output.txt \
+	       $(HOME)/.picoclaw/workspace/test_steps.txt \
+	       $(HOME)/.picoclaw/workspace/eval_checkpoint.txt
+	@printf 'picoclaw eval fixture — hello from the eval harness\nThis is line two of the fixture file.\n' > $(HOME)/.picoclaw/workspace/eval_fixture.txt
+	@cp -f eval/fixtures/sample_data.txt $(HOME)/.picoclaw/workspace/sample_data.txt
+	@mkdir -p $(HOME)/.picoclaw/workspace/skills
+	@cp -rf eval/fixtures/skills/* $(HOME)/.picoclaw/workspace/skills/ 2>/dev/null || true
 
 ## eval-view: Open the promptfoo results viewer
 eval-view:

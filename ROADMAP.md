@@ -229,6 +229,33 @@ flowchart LR
 ## Ideas and improvements
 
 - [ ] Add a new tool for the agent to use: `focus_search`
+- [ ] Clean up the main.go and extract to modules
+- [ ] Create a pure Application API that I/O calls into
+  - [ ] cli
+  - [ ] daemon
+  - [ ] web
+  - [ ] grpc
+  - [ ] http
+  - [ ] websocket
+  - [ ] tcp
+  - [ ] udp
+  - [ ] serial
+  - [ ] i2c
+  - [ ] spi
+  - [ ] pwm
+  - [ ] etc
+  - [ ] all of these should be able to be configured and plugged in/out at runtime
+- [ ] Migrate to Cobra CLI framework
+  - [ ] Use command-palette pattern for subcommands
+  - [ ] keep cli commands as pure cli that calls into the application
+- [ ] Consolidate tool signatures: 
+  - [ ] fold tools that operate on the same data into a single tool with a "mode"/"action"/"event" parameter
+  - [ ] move the "mode"/"action"/"event" parameter to the beginning of the tool signature
+  - [ ] add a "description" field to the tool signature
+  - [ ] this reduces the number of tools and makes the tool signatures more consistent
+  - [ ] Tools can then live in packages like `pkg/tools/filesystem.go` and `pkg/tools/network.go`  where we expose only a limited ABI/API to the agent loop
+- [ ] Extract out all inline prompts into separate files
+  - [ ] Use dotprompt, poml, or any other structured prompt builder to build prompts
 - [ ] Isolated tool runtime + DAG executor + RLM engine — see [ADR-001](docs/adr/001-isolated-tool-runtime.md)
   - [ ] Layer 1: Capability manifests (`CapableTool` interface)
   - [ ] Layer 2: SecureBus + FlatBuffers command protocol (incl. DAG types) + leak scanning
