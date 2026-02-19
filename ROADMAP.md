@@ -239,3 +239,11 @@ flowchart LR
   - [ ] Layer 3: SecretStore + keyring-based secret management
   - [ ] Layer 4: Daemon mode + Schnorr ZKP authentication
   - [ ] Layer 5: wazero WASM isolates (pure Go, no CGO), `CodeExec` command variant
+- [ ] Plug-in tool support: `pkg/tools/registry.go` — add `Search(query) []ToolInfo` for ToolSearch
+  - [ ] Allow tools to be built as Go plugins
+  - [ ] Allow tools to be built as WASM modules
+  - [ ] Load tools from the filesystem or network
+  - [ ] Tool discovery: `ToolSearch` command variant
+  - [ ] Dynamic tool registration: `RegisterTool(Tool)` function
+    - [ ] Event-based tool discovery: tool registration triggers `ToolDiscovery` event
+    - [ ] Tools have a manifest: `ToolInfo` struct with name, description, capabilities, metadata

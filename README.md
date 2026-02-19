@@ -2,22 +2,31 @@
 
 A managed fork of [sipeed/picoclaw](https://github.com/sipeed/picoclaw) — an ultra-lightweight AI agent runtime written in Go.
 
-This fork diverges from upstream with its own architectural decisions: vendored LLM SDK, MemGPT-style tiered memory, progressive tool disclosure, and libSQL-native storage with vector search.
+This fork diverges from upstream with its own architectural decisions:
+ 
+- vendored LLM SDK
+- MemGPT-style tiered memory
+- Isolated Tool Runtime: 
+  - capability-based security
+  - DAG-based parallel tool execution
+  - libSQL-native storage with vector search
 
-Where it makes sense, I will do my best to merge upstream changes back into this fork.
+> [!NOTE] 
+> Where it makes sense, upstream changes are merged back. This is not a strict rule, but a guideline.
 
 ---
 
 ## Why This Fork Exists
 
-The upstream PicoClaw project is a solid foundation — a single-binary AI agent that runs on $10 hardware with <10MB RAM. But it has several architectural gaps that limit extensibility:
+The upstream PicoClaw project is a solid foundation — a single-binary AI agent that runs on $10 hardware with <10MB RAM. But it has architectural gaps that limit extensibility:
 
-- **Duplicated type systems** across `pkg/providers` and `pkg/tools`
+- **No privilege boundary** between the LLM and tool execution — a compromised tool has full process access
 - **No structured memory** beyond flat markdown files
-- **All tools loaded into context** every request (token waste)
+- **All tools loaded into context** every request (token waste at scale)
+- **Sequential tool calling only** — each tool call requires a full inference pass
 - **Hand-rolled LLM provider implementations** with no streaming, retry, or multi-provider support
 
-This fork addresses all of those with a coherent architecture while preserving the original's defining strengths: small binary, low memory, single-process deployment.
+This fork addresses all of those while preserving the original's strengths: small binary, low memory, single-process deployment.
 
 ## Architecture
 
@@ -27,14 +36,28 @@ flowchart TB
         AL[AgentLoop] --> CB[ContextBuilder]
         AL --> TR[ToolRegistry]
         AL --> MS[MemoryStore]
+        AL --> FSM[ReAct FSM]
+    end
+
+    subgraph ITR["Isolated Tool Runtime"]
+        SB[SecureBus] --> CAP[Capability Check]
+        SB --> SI[Secret Injection]
+        SB --> EX[Tool Execution]
+        SB --> LS[Leak Scanning]
+        SB --> AU[Audit Log]
+    end
+
+    subgraph DAG["DAG Executor"]
+        DE[Executor] --> RES[Dependency Resolver]
+        DE --> WAVE[Parallel Wave Dispatch]
+        DE --> JOIN[Joiner Synthesis]
+        RT[Router] -->|ModeReAct| FSM
+        RT -->|ModeDAG| DE
     end
 
     subgraph Fantasy["Fantasy SDK (vendored)"]
         FA[FantasyAdapter] --> FP[Provider Registry]
-        FP --> OR[OpenRouter]
-        FP --> AN[Anthropic]
-        FP --> GG[Google Gemini]
-        FP --> OA[OpenAI]
+        FP --> OR[OpenRouter / Anthropic / OpenAI / Gemini]
     end
 
     subgraph Progressive["Progressive Disclosure"]
@@ -42,10 +65,12 @@ flowchart TB
         TR --> TC["tool_call (dispatch)"]
     end
 
-    subgraph Memory["MemGPT 3-Tier Memory"]
+    subgraph Memory["Memory System"]
         MS --> WC[Working Context]
         MS --> RC[Recall Memory]
         MS --> AR[Archival Memory]
+        MS --> OBS[Observational Memory]
+        MS --> DAGC[DAG Compression]
     end
 
     subgraph Storage["libSQL Storage"]
@@ -53,6 +78,13 @@ flowchart TB
         DEL --> F32["F32_BLOB (embeddings)"]
         DEL --> FTS["FTS5 + BM25"]
         DEL --> VEC["vector_top_k (ANN)"]
+    end
+
+    subgraph Security["Security"]
+        VLT[Vault XChaCha20] --> SS[SecretStore]
+        SS --> KR[Keyring / Env / File]
+        RED[Redactor] --> SB
+        ZKP[Schnorr ZKP] -.-> SOCK[Daemon Socket]
     end
 
     subgraph Bus["Message Bus"]
@@ -64,93 +96,93 @@ flowchart TB
         BUS --> QQ[QQ]
     end
 
+    AL --> SB
     AL --> FA
     MS --> DEL
     AL --> BUS
+    SB --> TR
 
     style AgentLoop fill:#1a1a2e,stroke:#e066ff,stroke-width:2px,color:#fff
+    style ITR fill:#1a1a2e,stroke:#ff6b6b,stroke-width:2px,color:#fff
+    style DAG fill:#1a1a2e,stroke:#ffab00,stroke-width:2px,color:#fff
     style Fantasy fill:#1a1a2e,stroke:#4d94ff,stroke-width:2px,color:#fff
-    style Progressive fill:#1a1a2e,stroke:#ffab00,stroke-width:2px,color:#fff
+    style Progressive fill:#1a1a2e,stroke:#00bfa5,stroke-width:2px,color:#fff
     style Memory fill:#1a1a2e,stroke:#2eb82e,stroke-width:2px,color:#fff
-    style Storage fill:#1a1a2e,stroke:#ff6b6b,stroke-width:2px,color:#fff
-    style Bus fill:#1a1a2e,stroke:#00bfa5,stroke-width:2px,color:#fff
+    style Storage fill:#1a1a2e,stroke:#9c27b0,stroke-width:2px,color:#fff
+    style Security fill:#1a1a2e,stroke:#ff9800,stroke-width:2px,color:#fff
+    style Bus fill:#1a1a2e,stroke:#607d8b,stroke-width:2px,color:#fff
 ```
 
 ### Key Design Decisions
 
 | Decision | Rationale |
 |----------|-----------|
-| **Vendored Fantasy SDK** | `charm.land/fantasy` vendored into `internal/fantasy/` via `go.mod` replace directive. Enables direct modification for streaming hooks, tool call repair, and progressive disclosure without waiting on upstream releases. |
-| **MemGPT 3-tier memory** | Working context (hot), recall items (warm, session-scoped), archival chunks (cold, embedded + indexed). Mirrors the MemGPT paper's approach to bounded-context memory management. |
-| **Progressive tool disclosure** | Agent sees only `tool_search` and `tool_call` meta-tools. Discovers actual tools on demand via fuzzy search. Cuts system prompt tokens dramatically for large tool registries. |
+| **Isolated Tool Runtime** | All tool calls route through a `SecureBus` that enforces capability manifests, injects secrets, scans output for leaks, and writes audit logs. The LLM never sees raw secrets. See [ADR-001](docs/adr/001-isolated-tool-runtime.md). |
+| **DAG executor** | LLMCompiler-style parallel tool dispatch. The planner builds a dependency DAG in a single inference pass; the executor dispatches independent nodes concurrently. Joiner synthesizes results. Replanning on failure. Falls back to ReAct for simple single-tool cases. |
+| **Vendored Fantasy SDK** | `charm.land/fantasy` vendored into `internal/fantasy/` via `go.mod` replace directive. Enables direct modification for streaming hooks, tool call repair, and progressive disclosure. |
+| **MemGPT + Observational Memory** | Working context (hot), recall items (warm), archival chunks (cold, embedded + indexed), plus observational memory (compressed conversation history with priority-tagged observations and temporal reasoning). DAG-based context budget compression manages token allocation across tiers. |
+| **Progressive tool disclosure** | Agent sees only `tool_search` and `tool_call` meta-tools. Discovers actual tools on demand via fuzzy search. Cuts system prompt tokens for large registries. |
 | **libSQL over modernc/sqlite** | Native F32_BLOB for vector storage, `libsql_vector_idx` for ANN search, FTS5 for full-text. Single database, no external vector DB dependency. |
-| **BLOB primary keys** | 16-byte UUIDv7 stored as BLOB, not 36-byte TEXT. More compact, byte-comparable, monotonically sortable by creation time. |
-| **sqlc for type-safe queries** | Generated Go code from SQL. Hand-written SQL only where sqlc can't parse (FTS5 MATCH, vector_top_k). Prepared statement cache for the hand-written queries. |
-| **Deleted legacy providers** | Removed all hand-rolled `pkg/providers/` LLM implementations. Fantasy SDK handles provider routing, streaming, retry, and error normalization. |
-
-## What Changed From Upstream
-
-### Added
-- `internal/fantasy/` — Vendored Charmbracelet Fantasy SDK (v0.8.1)
-- `pkg/fantasy/` — Fantasy adapter layer (converts between PicoClaw and Fantasy types)
-- `pkg/memory/` — Full MemGPT memory system (delegate, store, retrieval, chunker, scorer, queue)
-- `pkg/cache/` — Generic LRU+TTL cache with stale-while-revalidate and tag invalidation
-- `pkg/messages/` — Canonical message types (replaces duplicated type definitions)
-- `pkg/ids/` — UUIDv7 generation + BLOB codec
-- `pkg/tools/call.go` — `tool_call` meta-tool for progressive disclosure
-- `pkg/tools/search.go` — `tool_search` meta-tool with fuzzy matching
-- `pkg/memory/delegate/` — libSQL delegate with FTS5, vector search, capability detection, statement cache
-
-### Removed
-- Legacy LLM provider implementations (OpenAI, Anthropic, Gemini, DeepSeek, Groq, Zhipu, OpenRouter hand-rolled HTTP clients)
-- Duplicated type definitions between `pkg/providers/` and `pkg/tools/`
-
-### Modified
-- Agent loop now initializes memory, builds context with working memory, offloads large tool results to archival
-- Session manager uses LRU cache with disk-backed eviction
-- Tool registry supports progressive disclosure mode
-- Config system extended for memory, progressive disclosure, embedding settings
+| **BLOB primary keys** | 16-byte UUIDv7 stored as BLOB. Compact, byte-comparable, monotonically sortable by creation time. |
+| **XChaCha20-Poly1305 vault** | Secrets encrypted at rest with AES-256-GCM or XChaCha20-Poly1305. Master key from OS keyring, env var, or file. Schnorr ZKP for daemon-mode authentication. |
+| **Goose migrations** | Schema managed by `pressly/goose/v3`. 10 versioned migrations covering core schema, FTS5, vector indexes, KV store, documents, audit log, conversations, runtime state, jobs, and conversation graphs. |
+| **FlatBuffers command protocol** | Zero-copy serialized `ToolRequest`/`ToolResponse` for the ITR command vocabulary. Same binary format across in-process channels, Unix sockets (daemon mode), and wazero WASM host calls. |
 
 ## Project Layout
 
 ```
-cmd/picoclaw/          # CLI entrypoint (agent, gateway, onboard, status, cron)
-internal/fantasy/      # Vendored charm.land/fantasy SDK
+cmd/picoclaw/              # CLI entrypoint
+internal/fantasy/          # Vendored charm.land/fantasy SDK
+docs/adr/                  # Architecture Decision Records
+eval/                      # Promptfoo-based evaluation harness
 pkg/
-├── agent/             # Agent loop, context builder, memory integration
-├── auth/              # OAuth2 + PKCE for provider auth
-├── bus/               # Hub-and-spoke message bus
-├── cache/             # Generic LRU+TTL cache
-├── channels/          # Telegram, Discord, Slack, LINE, DingTalk, QQ, WeChat, MaixCAM
-├── config/            # JSON config with env var overrides
-├── constants/         # Channel name constants
-├── cron/              # Cron scheduler (gronx-based)
-├── devices/           # Hardware device hotplug (USB on Linux)
-├── errors/            # Shared error types
-├── fantasy/           # Fantasy SDK adapter (provider factory, type conversion)
-├── heartbeat/         # Periodic task execution
-├── ids/               # UUIDv7 generation + BLOB codec
-├── logger/            # Structured logger
-├── memory/            # MemGPT memory system
-│   ├── delegate/      # libSQL storage backend (FTS5, vector, capabilities)
-│   ├── sqlc/          # sqlc config + generated code
-│   └── store/         # MemoryStore, retrieval, chunking, scoring, queuing
-├── messages/          # Canonical message/tool-call types
-├── migrate/           # Config + workspace migration
-├── providers/         # Legacy provider types (kept for interface compatibility)
-├── session/           # Session manager with LRU disk-backed cache
-├── skills/            # Skill loader + installer
-├── state/             # Persistent state (last channel, etc.)
-├── tools/             # Tool registry, meta-tools, built-in tools
-├── utils/             # Media + string helpers
-└── voice/             # Groq Whisper voice transcription
-skills/                # Built-in skills (weather, tmux, summarize, github, hardware)
-config/                # Example configuration files
+├── agent/                 # Agent loop, ReAct FSM, context builder
+│   ├── conversations/     # Conversation store (multi-turn tracking)
+│   ├── mentions/          # Mention tracking
+│   └── threads/           # Thread store
+├── auth/                  # OAuth2 + PKCE for provider auth
+├── bus/                   # Hub-and-spoke message bus
+├── cache/                 # Generic LRU+TTL cache (SWR, tag invalidation)
+├── channels/              # Telegram, Discord, Slack, LINE, DingTalk, QQ, MaixCAM
+├── config/                # JSON config with env var overrides, XDG paths
+├── cron/                  # Cron scheduler (gronx-based)
+├── devices/               # Hardware device hotplug (USB on Linux)
+├── fantasy/               # Fantasy SDK adapter (provider factory, type conversion)
+├── health/                # HTTP health/readiness endpoints
+├── heartbeat/             # Periodic task execution
+├── ids/                   # UUIDv7 generation + BLOB codec
+├── itr/                   # Isolated Tool Runtime
+│   ├── dag/               # DAG executor, planner, resolver, router, replanner
+│   ├── itrfb/             # FlatBuffers generated code (command protocol)
+│   └── wasm/              # wazero WASM isolate runtime + transport
+├── logger/                # Structured logger
+├── memory/                # Memory system
+│   ├── dag/               # DAG-based context budget compression
+│   ├── delegate/          # libSQL storage backend (FTS5, vector, capabilities)
+│   ├── migrations/        # Goose versioned schema migrations (001–010)
+│   ├── observation/       # Observational memory (observer, reflector, store)
+│   ├── sqlc/              # sqlc config + generated code
+│   └── store/             # MemoryStore, retrieval, chunking, scoring, queuing
+├── messages/              # Canonical message/tool-call types
+├── pcerrors/              # Structured error types
+├── rlm/                   # Recursive Language Model engine (rope, fanout, strategy)
+├── security/              # Vault, SecretStore, Redactor, URL guard, Schnorr ZKP
+│   └── securebus/         # SecureBus (policy, audit, transport, socket transport)
+├── session/               # Session manager with LRU disk-backed cache
+├── skills/                # Skill loader, installer, dependency graph, templates
+├── tools/                 # Tool registry, meta-tools, built-in tools, CapableTool
+├── voice/                 # Groq Whisper voice transcription
+└── worker/                # Background job worker
+skills/                    # Built-in skills (weather, tmux, summarize, github, hardware)
+config/                    # Example configuration files
 ```
 
 ## Quick Start
 
 ### Build from source
+
+> [!IMPORTANT]
+> Requires `CGO_ENABLED=1` — the go-libsql driver links against glibc.
 
 ```bash
 git clone https://github.com/ZanzyTHEbar/picoclaw.git
@@ -158,14 +190,14 @@ cd picoclaw
 make build
 ```
 
-> [!NOTE] Requires `CGO_ENABLED=1` — the go-libsql driver ships pre-compiled C binaries linked against glibc.
 
 ### Configure
 
 ```bash
-# Initialize config and workspace
 ./bin/picoclaw onboard
 ```
+
+The onboard wizard initializes config, workspace, and optionally sets up encrypted secret storage.
 
 Edit `~/.picoclaw/config.json`:
 
@@ -211,10 +243,38 @@ picoclaw gateway
 
 ```bash
 cp config/config.example.json config/config.json
-# Edit config.json with your API keys
-
 docker compose --profile gateway up -d
 docker compose logs -f picoclaw-gateway
+```
+
+## Secret Management
+
+PicoClaw encrypts secrets at rest with XChaCha20-Poly1305. The master key is sourced from an environment variable, OS keyring, or file.
+
+```bash
+picoclaw secret init           # Generate a master key
+picoclaw secret add <name>     # Store a secret (interactive prompt)
+picoclaw secret list            # List secret names
+picoclaw secret delete <name>  # Remove a secret
+```
+
+> [!WARNING]
+> This is a security-sensitive operation. The master key is used to encrypt and decrypt secrets. If you lose it, you will not be able to decrypt secrets.
+> You should should NEVER store the master key in a file or environment variable if possible.
+
+
+Set the master key: `export PICOCLAW_MASTER_KEY=<hex>`
+
+Tools declare which secrets they need via `CapableTool.Capabilities()`. The SecureBus injects secrets into tool execution context at runtime — the LLM never sees them. Tool output is scanned for leaked patterns before it reaches the agent loop.
+
+## Daemon Mode
+
+For non-embedded deployments, the SecureBus can run in a separate privileged daemon process. The agent connects as an unprivileged client over a Unix domain socket.
+
+```bash
+picoclaw daemon start          # Start daemon (foreground, Ctrl+C to stop)
+picoclaw daemon status         # Check if running
+picoclaw daemon stop           # Stop a running daemon
 ```
 
 ## LLM Providers
@@ -241,8 +301,6 @@ API key links: [OpenRouter](https://openrouter.ai/keys) · [Anthropic](https://c
 | DingTalk | Medium — app credentials |
 | LINE | Medium — credentials + webhook URL |
 | Slack | Medium — app credentials + event subscriptions |
-
-See the channel configuration sections below for setup details.
 
 <details>
 <summary><b>Telegram</b></summary>
@@ -362,63 +420,58 @@ See the channel configuration sections below for setup details.
 
 ## Memory System
 
-PicoClaw implements a 3-tier MemGPT-inspired memory system:
+PicoClaw implements a multi-tier memory system combining MemGPT-style tiered storage with observational memory compression:
 
 | Tier | Purpose | Storage | Search |
 |------|---------|---------|--------|
 | **Working Context** | Current focus, active goals | Single JSON document per agent | Direct load |
 | **Recall Memory** | Session-scoped conversation items | Rows with metadata + timestamps | FTS5 + BM25 |
 | **Archival Memory** | Long-term knowledge, chunked + embedded | F32_BLOB embeddings + FTS5 index | Vector ANN + FTS5 fusion (RRF) |
+| **Observational Memory** | Compressed conversation history | Priority-tagged observations with 3-date model | Prefix-cacheable block |
+| **DAG Compression** | Hierarchical context summaries | Tree nodes with lossless pointers to originals | Budget-allocated traversal |
 
-The agent interacts with memory through a unified `memory` tool that supports search, read, write, update, delete, and status operations. Large tool results are automatically offloaded to archival memory.
+The agent interacts with memory through a unified `memory` tool. Large tool results are automatically offloaded to archival memory. Retrieval uses Reciprocal Rank Fusion (RRF) to combine vector similarity and full-text relevance, with recency decay and metadata pre-filtering.
 
-Retrieval uses Reciprocal Rank Fusion (RRF) to combine vector similarity and full-text relevance, with recency decay and metadata pre-filtering.
-
-## Scheduled Tasks
-
-PicoClaw supports cron-based scheduling and heartbeat-driven periodic tasks:
-
-```bash
-picoclaw cron list          # List scheduled jobs
-picoclaw cron add ...       # Add a scheduled job
-```
-
-The heartbeat system reads `~/.picoclaw/workspace/HEARTBEAT.md` every 30 minutes (configurable) and executes listed tasks. Long-running tasks can be delegated to subagents via the `spawn` tool.
+Schema is managed by Goose with 10 versioned migrations.
 
 ## CLI Reference
 
 | Command | Description |
 |---------|-------------|
-| `picoclaw onboard` | Initialize config and workspace |
+| `picoclaw onboard` | Initialize config, workspace, and secret storage |
 | `picoclaw agent -m "..."` | One-shot chat |
 | `picoclaw agent` | Interactive REPL |
 | `picoclaw gateway` | Start message bus gateway |
-| `picoclaw status` | Show system status |
+| `picoclaw status` | Show system status (incl. memory) |
+| `picoclaw memory` | Memory system management |
+| `picoclaw secret <sub>` | Secret management (init, add, list, delete) |
+| `picoclaw daemon <sub>` | Daemon management (start, stop, status) |
 | `picoclaw cron list` | List scheduled jobs |
 | `picoclaw cron add ...` | Add a scheduled job |
+| `picoclaw skills <sub>` | Skill management (install, list, remove) |
 
-## Security Sandbox
+## Security
 
-The agent runs in a sandboxed environment by default. File and command access is restricted to the configured workspace (`~/.picoclaw/workspace`).
+### Workspace Sandbox
 
-| Setting | Default | Description |
-|---------|---------|-------------|
-| `restrict_to_workspace` | `true` | Restrict all file/exec operations to workspace |
-
-The `exec` tool blocks dangerous commands (bulk deletion, disk formatting, fork bombs, shutdown) regardless of sandbox setting.
-
-To disable workspace restriction:
+File and command access is restricted to the configured workspace by default. The `exec` tool blocks dangerous commands regardless of sandbox setting.
 
 ```json
 { "agents": { "defaults": { "restrict_to_workspace": false } } }
 ```
 
-Or: `export PICOCLAW_AGENTS_DEFAULTS_RESTRICT_TO_WORKSPACE=false`
+### Isolated Tool Runtime (ITR)
+
+The SecureBus mediates all tool execution. Tools declare capabilities via the `CapableTool` interface — secrets needed, network endpoints, filesystem paths, shell access level. Tools that don't implement it get zero capabilities.
+
+The pipeline: capability check → secret injection → tool execution → leak scanning → audit log.
+
+See [ADR-001](docs/adr/001-isolated-tool-runtime.md) for the full design including DAG executor convergence, RLM integration, and the FlatBuffers command protocol.
 
 ## Development
 
 ```bash
-make build          # Build for current platform
+make build          # Build for current platform (output: bin/)
 make build-all      # Cross-compile (linux/amd64, linux/arm64, linux/riscv64, darwin/arm64, windows/amd64)
 make install        # Install to ~/.local/bin + copy skills
 make fmt            # go fmt ./...
@@ -434,19 +487,36 @@ Memory queries are generated by sqlc. After modifying SQL files:
 cd pkg/memory/sqlc && sqlc generate
 ```
 
+CI enforces that generated code matches: `sqlc generate` + `git diff --exit-code`.
+
+### Migrations
+
+Schema changes go through Goose migrations in `pkg/memory/migrations/`. Migrations run automatically on startup.
+
+### Evaluation
+
+A promptfoo-based evaluation harness lives in `eval/`:
+
+```bash
+cd eval && go run ./cmd/eval-runner
+```
+
 ### Syncing Upstream
 
 ```bash
-git remote add upstream git@github.com:sipeed/picoclaw.git
 git fetch upstream
 git merge upstream/main
 ```
 
 See `internal/fantasy/VENDORING.md` for syncing the vendored Fantasy SDK.
 
+## Roadmap
+
+See [ROADMAP.md](ROADMAP.md) for the full project roadmap covering context management, skill graphs, agentic retrieval, delegation protocol, and multi-agent coordination.
+
 ## Upstream
 
-This is a fork of [sipeed/picoclaw](https://github.com/sipeed/picoclaw), originally inspired by [nanobot](https://github.com/HKUDS/nanobot). The upstream project targets $10 RISC-V hardware with <10MB RAM — a constraint this fork tries to respect while extending the agent's cognitive architecture.
+This is a fork of [sipeed/picoclaw](https://github.com/sipeed/picoclaw), originally inspired by [nanobot](https://github.com/HKUDS/nanobot). The upstream project targets $10 RISC-V hardware with <10MB RAM — a constraint this fork respects while extending the agent's cognitive and security architecture.
 
 ## License
 
