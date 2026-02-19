@@ -48,8 +48,7 @@
                          out.includes('no matching') || out.length > 10;
         return { pass: graceful, score: graceful ? 1.0 : 0.0, reason: graceful ? 'handled empty search gracefully' : 'no meaningful response' };
 
-- description: "reduced iterations provider: agent respects max_tool_iterations limit"
-  providers: ["picoclaw-no-memory"]
+- description: "agent responds to greeting with memory system active"
   vars:
     prompt: "Hello, what can you help me with today?"
   assert:

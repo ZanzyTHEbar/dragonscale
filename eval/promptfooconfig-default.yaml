@@ -27,6 +27,17 @@ defaultTest:
         const ok = dur < 60000;
         return { pass: ok, score: ok ? 1.0 : 0.0, reason: `duration: ${dur}ms (limit: 60000ms)` };
 
-tests: "cases/*.yaml"
+# Excludes progressive_disclosure.yaml (requires picoclaw-progressive provider)
+# Run `make eval-matrix` to test all providers including progressive disclosure.
+tests:
+  - "cases/tool_calling.yaml"
+  - "cases/multi_step.yaml"
+  - "cases/edge_cases.yaml"
+  - "cases/token_efficiency.yaml"
+  - "cases/memory_ops.yaml"
+  - "cases/subagent.yaml"
+  - "cases/skills.yaml"
+  - "cases/reasoning.yaml"
+  - "cases/error_recovery.yaml"
 
 outputPath: "results/latest.json"
