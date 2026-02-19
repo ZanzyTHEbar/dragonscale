@@ -5,8 +5,9 @@ package conversations
 
 import (
 	"context"
-	jsonv2 "github.com/go-json-experiment/json"
 	"strings"
+
+	jsonv2 "github.com/go-json-experiment/json"
 
 	"github.com/sipeed/picoclaw/pkg/ids"
 	sqlc "github.com/sipeed/picoclaw/pkg/memory/sqlc"
@@ -174,7 +175,11 @@ func (s *Store) ForkFromCheckpoint(ctx context.Context, p ForkFromCheckpointPara
 		Messages []msgSnapshot `json:"messages"`
 	}
 	var snap snapshot
-	_ = jsonv2.Unmarshal([]byte(runState.SnapshotJson), &snap)
+	if len(runState.SnapshotJson) > 0 {
+		if err := jsonv2.Unmarshal(runState.SnapshotJson, &snap); err != nil {
+			return sqlc.AgentConversation{}, pcerrors.Wrapf(pcerrors.CodeInternal, err, "parse snapshot for run state %s", cp.RunStateID)
+		}
+	}
 
 	conv, err := s.q.CreateAgentConversation(ctx, sqlc.CreateAgentConversationParams{
 		ID:    ids.New(),
@@ -518,7 +523,9 @@ func (s *Store) Graph(ctx context.Context, p GraphParams) (GraphResult, error) {
 				Type: "fork", From: from, To: to, CheckpointID: &cpID,
 			}
 			if remaining > 0 {
-				_ = visit(fp.ParentConversationID, remaining-1)
+				if err := visit(fp.ParentConversationID, remaining-1); err != nil {
+					return err
+				}
 			}
 		}
 
@@ -533,7 +540,9 @@ func (s *Store) Graph(ctx context.Context, p GraphParams) (GraphResult, error) {
 					Type: "fork", From: from, To: to, CheckpointID: &cpID,
 				}
 				if remaining > 0 {
-					_ = visit(c.ChildConversationID, remaining-1)
+					if err := visit(c.ChildConversationID, remaining-1); err != nil {
+						return err
+					}
 				}
 			}
 		}
