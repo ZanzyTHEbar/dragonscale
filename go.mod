@@ -1,6 +1,6 @@
 module github.com/sipeed/picoclaw
 
-go 1.25.7
+go 1.26
 
 replace charm.land/fantasy v0.8.1 => ./internal/fantasy
 
@@ -12,6 +12,8 @@ require (
 	github.com/bwmarrin/discordgo v0.29.0
 	github.com/caarlos0/env/v11 v11.3.1
 	github.com/chzyer/readline v1.5.1
+	github.com/go-json-experiment/json v0.0.0-20260214004413-d219187c3433
+	github.com/google/flatbuffers v25.12.19+incompatible
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.3
 	github.com/larksuite/oapi-sdk-go/v3 v3.5.3
@@ -24,6 +26,7 @@ require (
 	github.com/slack-go/slack v0.17.3
 	github.com/stretchr/testify v1.11.1
 	github.com/tencent-connect/botgo v0.2.1
+	github.com/tetratelabs/wazero v1.11.0
 	github.com/tursodatabase/go-libsql v0.0.0-20251219133454-43644db490ff
 	golang.org/x/crypto v0.48.0
 	golang.org/x/oauth2 v0.35.0
@@ -45,7 +48,6 @@ require (
 	github.com/charmbracelet/x/json v0.2.0 // indirect
 	github.com/cloudwego/base64x v0.1.6 // indirect
 	github.com/dlclark/regexp2 v1.10.0 // indirect
-	github.com/go-json-experiment/json v0.0.0-20251027170946-4849db3c2f7e // indirect
 	github.com/go-resty/resty/v2 v2.17.1 // indirect
 	github.com/go-viper/mapstructure/v2 v2.5.0 // indirect
 	github.com/goccy/go-yaml v1.19.2 // indirect
@@ -64,7 +66,6 @@ require (
 	github.com/mfridman/interpolate v0.0.2 // indirect
 	github.com/qmuntal/stateless v1.8.0 // indirect
 	github.com/sethvargo/go-retry v0.3.0 // indirect
-	github.com/tetratelabs/wazero v1.11.0 // indirect
 	github.com/tidwall/gjson v1.18.0 // indirect
 	github.com/tidwall/match v1.2.0 // indirect
 	github.com/tidwall/pretty v1.2.1 // indirect
