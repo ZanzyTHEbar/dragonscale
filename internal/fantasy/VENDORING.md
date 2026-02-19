@@ -12,8 +12,7 @@ PicoClaw's `go.mod` contains a `replace` directive:
 replace charm.land/fantasy v0.8.1 => ./internal/fantasy
 ```
 
-This redirects all `charm.land/fantasy` imports to this local copy. No import paths
-need to change in either PicoClaw code or the fantasy source itself.
+This redirects all `charm.land/fantasy` imports to this local copy. No import paths need to change in either PicoClaw code or the fantasy source itself.
 
 ## Automated Sync System
 
@@ -69,14 +68,11 @@ The sync script will:
 - Update `.vendor-version`, `go.mod` replace directive, and this file
 - Run `go build` and `go test` for validation
 
-If any patch fails to apply, the script aborts with a clear error message showing
-which patch conflicted. You'll need to resolve the conflict manually, then re-save
-the patch with `make fantasy-patch`.
+If any patch fails to apply, the script aborts with a clear error message showing which patch conflicted. You'll need to resolve the conflict manually, then re-save the patch with `make fantasy-patch`.
 
 ## Patch Management
 
-Local modifications to the vendored SDK are tracked as numbered `.patch` files in the
-`patches/` directory:
+Local modifications to the vendored SDK are tracked as numbered `.patch` files in the `patches/` directory:
 
 ```
 internal/fantasy/patches/
@@ -119,7 +115,3 @@ If a patch fails during sync:
 | `patches/` | Directory of local modification patches |
 | `patches/.gitkeep` | Ensures the directory is tracked in git |
 | `VENDORING.md` | This documentation file |
-
-## Original License
-
-Fantasy is licensed under the MIT License. See `LICENSE` in this directory.

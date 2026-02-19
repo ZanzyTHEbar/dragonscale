@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"context"
 	"sort"
 	"testing"
 )
@@ -100,7 +101,7 @@ func TestProgressiveDisclosure_AllToolsStillDispatchable(t *testing.T) {
 
 	// tool_call should still dispatch to it
 	tc, _ := r.Get("tool_call")
-	result := tc.Execute(nil, map[string]interface{}{
+	result := tc.Execute(context.TODO(), map[string]interface{}{
 		"tool_name": "read_file",
 		"arguments": map[string]interface{}{},
 	})
@@ -118,7 +119,7 @@ func TestProgressiveDisclosure_SearchFindsHiddenTools(t *testing.T) {
 
 	// Even though read_file is hidden from Fantasy, tool_search should find it
 	ts, _ := r.Get("tool_search")
-	result := ts.Execute(nil, map[string]interface{}{"query": "read"})
+	result := ts.Execute(context.TODO(), map[string]interface{}{"query": "read"})
 
 	if result.IsError {
 		t.Fatalf("unexpected error: %s", result.ForLLM)

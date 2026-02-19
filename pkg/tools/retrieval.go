@@ -191,25 +191,25 @@ func formatSearchResults(source, query string, results []memory.SearchResult) st
 	}
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Found %d results for '%s':\n\n", len(results), query))
+	fmt.Fprintf(&sb, "Found %d results for '%s':\n\n", len(results), query)
 
 	for i, r := range results {
-		sb.WriteString(fmt.Sprintf("%d. [%s] (score: %.2f) id=%s\n", i+1, r.Source, r.Score, r.ID))
+		fmt.Fprintf(&sb, "%d. [%s] (score: %.2f) id=%s\n", i+1, r.Source, r.Score, r.ID)
 
 		preview := r.Content
 		if len(preview) > 200 {
 			preview = preview[:200] + "..."
 		}
-		sb.WriteString(fmt.Sprintf("   %s\n", preview))
+		fmt.Fprintf(&sb, "   %s\n", preview)
 
 		if len(r.Metadata) > 0 {
 			var meta []string
 			for k, v := range r.Metadata {
 				meta = append(meta, fmt.Sprintf("%s=%s", k, v))
 			}
-			sb.WriteString(fmt.Sprintf("   meta: %s\n", strings.Join(meta, ", ")))
+			fmt.Fprintf(&sb, "   meta: %s\n", strings.Join(meta, ", "))
 		}
-		sb.WriteByte('\n')
+		fmt.Fprintf(&sb, "\n")
 	}
 
 	return sb.String()

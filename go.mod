@@ -6,6 +6,8 @@ replace charm.land/fantasy v0.8.1 => ./internal/fantasy
 
 require (
 	charm.land/fantasy v0.8.1
+	github.com/ZanzyTHEbar/assert-lib v1.3.1
+	github.com/ZanzyTHEbar/errbuilder-go v1.5.1
 	github.com/adhocore/gronx v1.19.6
 	github.com/bwmarrin/discordgo v0.29.0
 	github.com/caarlos0/env/v11 v11.3.1
@@ -18,10 +20,12 @@ require (
 	github.com/openai/openai-go/v2 v2.7.1
 	github.com/pkoukk/tiktoken-go v0.1.6
 	github.com/pressly/goose/v3 v3.26.0
+	github.com/rs/zerolog v1.34.0
 	github.com/slack-go/slack v0.17.3
 	github.com/stretchr/testify v1.11.1
 	github.com/tencent-connect/botgo v0.2.1
 	github.com/tursodatabase/go-libsql v0.0.0-20251219133454-43644db490ff
+	golang.org/x/crypto v0.48.0
 	golang.org/x/oauth2 v0.35.0
 )
 
@@ -32,8 +36,6 @@ require (
 )
 
 require (
-	github.com/ZanzyTHEbar/assert-lib v1.3.1 // indirect
-	github.com/ZanzyTHEbar/errbuilder-go v1.5.1 // indirect
 	github.com/andybalholm/brotli v1.2.0 // indirect
 	github.com/antlr4-go/antlr/v4 v4.13.0 // indirect
 	github.com/bytedance/gopkg v0.1.3 // indirect
@@ -61,7 +63,6 @@ require (
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/mfridman/interpolate v0.0.2 // indirect
 	github.com/qmuntal/stateless v1.8.0 // indirect
-	github.com/rs/zerolog v1.34.0 // indirect
 	github.com/sethvargo/go-retry v0.3.0 // indirect
 	github.com/tidwall/gjson v1.18.0 // indirect
 	github.com/tidwall/match v1.2.0 // indirect
@@ -73,7 +74,6 @@ require (
 	github.com/valyala/fastjson v1.6.7 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	golang.org/x/arch v0.24.0 // indirect
-	golang.org/x/crypto v0.48.0 // indirect
 	golang.org/x/exp v0.0.0-20251023183803-a4bb9ffd2546 // indirect
 	golang.org/x/net v0.50.0 // indirect
 	golang.org/x/sync v0.19.0 // indirect

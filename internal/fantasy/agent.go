@@ -377,6 +377,20 @@ func (a *agent) Generate(ctx context.Context, opts AgentCall) (*AgentResult, err
 	var responseMessages []Message
 	var steps []StepResult
 
+	// Build a composite observer that fans out to all registered transition observers.
+	var fsmObserver ReActTransitionObserver
+	if len(a.settings.transitionObservers) > 0 {
+		obs := a.settings.transitionObservers
+		fsmObserver = ReActTransitionObserverFunc(func(ctx context.Context, t ReActTransition) {
+			for _, o := range obs {
+				o.OnReActTransition(ctx, t)
+			}
+		})
+	}
+	stepIdx := 0
+	fsm := newReActFSM(fsmObserver, &stepIdx)
+	fsm.Fire(ctx, ReActTriggerStart)
+
 	for {
 		stepInputMessages := append(initialPrompt, responseMessages...)
 		stepModel := a.settings.model
@@ -432,6 +446,8 @@ func (a *agent) Generate(ctx context.Context, opts AgentCall) (*AgentResult, err
 			}
 		}
 
+		fsm.Fire(ctx, ReActTriggerPrepared)
+
 		preparedTools := a.prepareTools(stepTools, stepActiveTools, disableAllTools)
 
 		retryOptions := DefaultRetryOptions()
@@ -456,8 +472,10 @@ func (a *agent) Generate(ctx context.Context, opts AgentCall) (*AgentResult, err
 			})
 		})
 		if err != nil {
+			fsm.Fire(ctx, ReActTriggerErrored)
 			return nil, err
 		}
+		fsm.Fire(ctx, ReActTriggerLLMResponded)
 
 		var stepToolCalls []ToolCallContent
 		for _, content := range result.Content {
@@ -472,6 +490,7 @@ func (a *agent) Generate(ctx context.Context, opts AgentCall) (*AgentResult, err
 				stepToolCalls = append(stepToolCalls, validatedToolCall)
 			}
 		}
+		fsm.Fire(ctx, ReActTriggerToolsValidated)
 
 		var toolResults []ToolResultContent
 		if a.settings.toolRuntime != nil {
@@ -479,6 +498,7 @@ func (a *agent) Generate(ctx context.Context, opts AgentCall) (*AgentResult, err
 		} else {
 			toolResults, err = a.executeTools(ctx, stepTools, stepToolCalls, nil)
 		}
+		fsm.Fire(ctx, ReActTriggerToolsExecuted)
 
 		// Build step content with validated tool calls and tool results
 		stepContent := []Content{}
@@ -503,6 +523,7 @@ func (a *agent) Generate(ctx context.Context, opts AgentCall) (*AgentResult, err
 		}
 		currentStepMessages := toResponseMessages(stepContent)
 		responseMessages = append(responseMessages, currentStepMessages...)
+		fsm.Fire(ctx, ReActTriggerMessagesAppended)
 
 		stepResult := StepResult{
 			Response: Response{
@@ -515,6 +536,7 @@ func (a *agent) Generate(ctx context.Context, opts AgentCall) (*AgentResult, err
 			Messages: currentStepMessages,
 		}
 		steps = append(steps, stepResult)
+		stepIdx = len(steps) - 1
 
 		for _, obs := range a.settings.stepObservers {
 			obs.OnReActStep(ctx, len(steps)-1, stepResult)
@@ -522,9 +544,15 @@ func (a *agent) Generate(ctx context.Context, opts AgentCall) (*AgentResult, err
 
 		shouldStop := isStopConditionMet(opts.StopWhen, steps)
 
-		if shouldStop || err != nil || len(stepToolCalls) == 0 || result.FinishReason != FinishReasonToolCalls {
+		if shouldStop {
+			fsm.Fire(ctx, ReActTriggerStopConditionMet)
 			break
 		}
+		if err != nil || len(stepToolCalls) == 0 || result.FinishReason != FinishReasonToolCalls {
+			fsm.Fire(ctx, ReActTriggerFinished)
+			break
+		}
+		fsm.Fire(ctx, ReActTriggerContinue)
 	}
 
 	totalUsage := Usage{}
@@ -1148,7 +1176,7 @@ func WithToolResultObserver(o ReActToolResultObserver) AgentOption {
 }
 
 // processStepStream processes a single step's stream and returns the step result.
-func (a *agent) processStepStream(ctx context.Context, stream StreamResponse, opts AgentStreamCall, _ []StepResult, stepTools []AgentTool) (stepExecutionResult, error) {
+func (a *agent) processStepStream(ctx context.Context, stream StreamResponse, opts AgentStreamCall, steps []StepResult, stepTools []AgentTool) (stepExecutionResult, error) {
 	var stepContent []Content
 	var stepToolCalls []ToolCallContent
 	var stepUsage Usage
@@ -1439,7 +1467,7 @@ func (a *agent) processStepStream(ctx context.Context, stream StreamResponse, op
 	for _, tr := range toolResults {
 		stepContent = append(stepContent, tr)
 		for _, obs := range a.settings.toolResultObservers {
-			obs.OnReActToolResult(ctx, 0, tr)
+			obs.OnReActToolResult(ctx, len(steps), tr)
 		}
 	}
 

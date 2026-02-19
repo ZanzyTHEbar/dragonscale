@@ -35,7 +35,9 @@ func (m *mockLanguageModel) Generate(_ context.Context, call fantasy.Call) (*fan
 
 func (m *mockLanguageModel) Stream(_ context.Context, call fantasy.Call) (fantasy.StreamResponse, error) {
 	return func(yield func(fantasy.StreamPart) bool) {
-		yield(fantasy.StreamPart{Type: fantasy.StreamPartTypeTextDelta, Delta: m.response})
+		if !yield(fantasy.StreamPart{Type: fantasy.StreamPartTypeTextDelta, Delta: m.response}) {
+			return
+		}
 		yield(fantasy.StreamPart{Type: fantasy.StreamPartTypeFinish, FinishReason: fantasy.FinishReasonStop})
 	}, nil
 }

@@ -17,14 +17,14 @@ import (
 )
 
 type ContextBuilder struct {
-	workspace       string
-	skillsLoader    *skills.SkillsLoader
-	memoryStore     memory.Memory         // 3-tier MemGPT memory (may be nil)
-	delegate        memory.MemoryDelegate // Direct delegate for document loading (may be nil)
-	tools           *tools.ToolRegistry   // Direct reference to tool registry
-	observationBlock string               // Pre-rendered observation block for prompt injection
-	knowledgeBlock   string               // Pre-rendered knowledge block from Focus completions
-	dagBlock         string               // Pre-rendered DAG compressed history
+	workspace        string
+	skillsLoader     *skills.SkillsLoader
+	memoryStore      memory.Memory         // 3-tier MemGPT memory (may be nil)
+	delegate         memory.MemoryDelegate // Direct delegate for document loading (may be nil)
+	tools            *tools.ToolRegistry   // Direct reference to tool registry
+	observationBlock string                // Pre-rendered observation block for prompt injection
+	knowledgeBlock   string                // Pre-rendered knowledge block from Focus completions
+	dagBlock         string                // Pre-rendered DAG compressed history
 }
 
 func getGlobalConfigDir() string {
@@ -151,14 +151,17 @@ func (cb *ContextBuilder) BuildSystemPrompt() string {
 		parts = append(parts, bootstrapContent)
 	}
 
-	// Skills - show summary, AI can read full content with read_file tool
+	// Skills - show summary index and inline full definitions for direct use
 	skillsSummary := cb.skillsLoader.BuildSkillsSummary()
 	if skillsSummary != "" {
 		parts = append(parts, fmt.Sprintf(`# Skills
 
-The following skills extend your capabilities. To use a skill, read its SKILL.md file using the read_file tool.
+The following skills extend your capabilities. Full definitions are included below.
 
 %s`, skillsSummary))
+	}
+	if skillsDefs := cb.loadSkills(); skillsDefs != "" {
+		parts = append(parts, skillsDefs)
 	}
 
 	// Observation block (stable prefix for prompt cache alignment)

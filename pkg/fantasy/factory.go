@@ -20,6 +20,7 @@ import (
 
 // CreateProvider builds a Fantasy provider from PicoClaw config.
 // It mirrors the provider selection logic from the legacy providers.CreateProvider.
+// FIXME: we should use provider condigs and a handler, not hardcoded cases
 func CreateProvider(cfg *config.Config) (fantasy.Provider, error) {
 	model := cfg.Agents.Defaults.Model
 	providerName := strings.ToLower(cfg.Agents.Defaults.Provider)
@@ -67,14 +68,16 @@ func CreateProvider(cfg *config.Config) (fantasy.Provider, error) {
 
 // ModelID returns the effective model ID to pass to Fantasy's LanguageModel.
 // It strips provider prefixes that the old system used for routing.
+// FIXME: we should use provider condigs and a handler, not hardcoded cases
 func ModelID(cfg *config.Config) string {
 	model := cfg.Agents.Defaults.Model
 
 	// Strip provider prefix from model name (e.g., moonshot/kimi-k2.5 -> kimi-k2.5)
-	if idx := strings.Index(model, "/"); idx != -1 {
-		prefix := model[:idx]
+	if before, after, ok := strings.Cut(model, "/"); ok {
+		prefix := before
+		// FIXME: hardcoded provider prefixes are a hack
 		if prefix == "moonshot" || prefix == "nvidia" {
-			return model[idx+1:]
+			return after
 		}
 	}
 
@@ -82,6 +85,7 @@ func ModelID(cfg *config.Config) string {
 }
 
 // resolveProvider determines the API key, base URL, and proxy for a given config.
+// FIXME: we should use provider condigs and a handler, not hardcoded cases
 func resolveProvider(cfg *config.Config, providerName, model, lowerModel string) (apiKey, apiBase, proxy string) {
 	// First, try explicitly configured provider
 	if providerName != "" {
@@ -166,6 +170,7 @@ func resolveProvider(cfg *config.Config, providerName, model, lowerModel string)
 }
 
 // resolveProviderTimeout extracts the timeout from the matched provider config.
+// FIXME: we should use provider condigs and a handler, not hardcoded cases
 func resolveProviderTimeout(cfg *config.Config, providerName string) time.Duration {
 	var timeoutSec int
 

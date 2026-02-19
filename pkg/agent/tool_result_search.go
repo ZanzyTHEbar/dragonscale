@@ -278,6 +278,9 @@ func loadView(ctx context.Context, kv KVDelegate, row sqlc.AgentToolResult, star
 	if sl < 1 {
 		sl = 1
 	}
+	if sl > len(lines) {
+		sl = len(lines)
+	}
 	if el > len(lines) {
 		el = len(lines)
 	}

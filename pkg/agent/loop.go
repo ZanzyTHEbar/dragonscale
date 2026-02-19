@@ -48,10 +48,10 @@ type AgentLoop struct {
 	state             *state.Manager
 	contextBuilder    *ContextBuilder
 	tools             *tools.ToolRegistry
-	memoryStore       *memstore.MemoryStore      // 3-tier MemGPT memory (nil if init failed)
-	memDelegate       memory.MemoryDelegate      // DB delegate (nil if memory disabled)
-	obsManager        *observation.Manager        // Observational memory (nil if memory disabled)
-	activeSessionKey  atomic.Value               // Current session key for tool access
+	memoryStore       *memstore.MemoryStore // 3-tier MemGPT memory (nil if init failed)
+	memDelegate       memory.MemoryDelegate // DB delegate (nil if memory disabled)
+	obsManager        *observation.Manager  // Observational memory (nil if memory disabled)
+	activeSessionKey  atomic.Value          // Current session key for tool access
 	running           atomic.Bool
 	summarizing       sync.Map       // Tracks which sessions are currently being summarized
 	summarizeFailures sync.Map       // Tracks consecutive summarization failures per session (string -> int)
@@ -64,6 +64,7 @@ type processOptions struct {
 	SessionKey      string // Session identifier for history/context
 	Channel         string // Target channel for tool execution
 	ChatID          string // Target chat ID for tool execution
+	SenderID        string // Originating sender identifier (for logging/audit)
 	UserMessage     string // User message content (may include prefix)
 	DefaultResponse string // Response when LLM returns empty
 	EnableSummary   bool   // Whether to trigger summarization
@@ -413,6 +414,7 @@ func (al *AgentLoop) ProcessDirectStreaming(ctx context.Context, content, sessio
 		SessionKey:      msg.SessionKey,
 		Channel:         msg.Channel,
 		ChatID:          msg.ChatID,
+		SenderID:        msg.SenderID,
 		UserMessage:     msg.Content,
 		DefaultResponse: "I've completed processing but have no response to give.",
 		EnableSummary:   true,
@@ -474,7 +476,7 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 	})
 }
 
-func (al *AgentLoop) processSystemMessage(ctx context.Context, msg bus.InboundMessage) (string, error) {
+func (al *AgentLoop) processSystemMessage(_ context.Context, msg bus.InboundMessage) (string, error) {
 	// Verify this is a system message
 	if msg.Channel != "system" {
 		return "", fmt.Errorf("processSystemMessage called with non-system message channel: %s", msg.Channel)
@@ -546,6 +548,12 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, opts processOptions) (str
 	}
 
 	// 1. Update tool contexts
+	logger.DebugCF("agent", "runAgentLoop: starting",
+		map[string]interface{}{
+			"session_key": opts.SessionKey,
+			"channel":     opts.Channel,
+			"sender_id":   opts.SenderID,
+		})
 	al.updateToolContexts(opts.Channel, opts.ChatID)
 
 	// 2. Load observation block for system prompt injection
@@ -598,6 +606,10 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, opts processOptions) (str
 	}
 
 	// 5. Convert history to Fantasy message format
+	logger.DebugCF("agent", "runAgentLoop: history messages",
+		map[string]interface{}{
+			"history": formatMessagesForLog(historyMsgs),
+		})
 	fantasyHistory := picofantasy.MessagesToFantasy(historyMsgs)
 
 	// 6. Build adapted tools from PicoClaw registry (with optional offloading)
@@ -912,10 +924,19 @@ func (al *AgentLoop) updateToolContexts(channel, chatID string) {
 }
 
 // maybeSummarize triggers summarization if the session history exceeds thresholds.
+// At the critical threshold (≥95% of context window) it synchronously force-compresses
+// the history before the normal async summarization path runs.
 func (al *AgentLoop) maybeSummarize(sessionKey, channel, chatID string) {
 	newHistory := al.sessions.GetHistory(sessionKey)
 	tokenEstimate := al.estimateTokens(newHistory)
 	threshold := al.contextWindow * 75 / 100
+	criticalThreshold := al.contextWindow * 95 / 100
+
+	// Emergency path: drop oldest messages immediately when near context limit.
+	if tokenEstimate > criticalThreshold {
+		al.forceCompression(sessionKey)
+		return
+	}
 
 	if len(newHistory) > 20 || tokenEstimate > threshold {
 		if _, loading := al.summarizing.LoadOrStore(sessionKey, true); !loading {
@@ -1249,7 +1270,7 @@ func (al *AgentLoop) estimateTokens(msgs []messages.Message) int {
 	return totalChars * 2 / 5
 }
 
-func (al *AgentLoop) handleCommand(ctx context.Context, msg bus.InboundMessage) (string, bool) {
+func (al *AgentLoop) handleCommand(_ context.Context, msg bus.InboundMessage) (string, bool) {
 	content := strings.TrimSpace(msg.Content)
 	if !strings.HasPrefix(content, "/") {
 		return "", false

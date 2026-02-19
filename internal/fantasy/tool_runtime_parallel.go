@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"sync"
+	"sync/atomic"
 )
 
 // ParallelToolRuntime executes tool calls concurrently when tools opt-in via
@@ -64,11 +65,11 @@ func (r ParallelToolRuntime) Execute(ctx context.Context, tools []AgentTool, too
 	}
 
 	sem := make(chan struct{}, maxConc)
-	inFlight := 0
+	var inFlight atomic.Int64
 	barrierWaits := 0
 	i := 0
 	emit := func() {
-		metrics(ToolRuntimeMetrics{Queued: len(toolCalls) - i, InFlightParallel: inFlight, BarrierWaits: barrierWaits})
+		metrics(ToolRuntimeMetrics{Queued: len(toolCalls) - i, InFlightParallel: int(inFlight.Load()), BarrierWaits: barrierWaits})
 	}
 	for i < len(toolCalls) {
 		if !isParallelSafe(toolCalls[i]) {
@@ -110,11 +111,11 @@ func (r ParallelToolRuntime) Execute(ctx context.Context, tools []AgentTool, too
 				defer wg.Done()
 				logEvent(ToolRuntimeLogEvent{Event: "dispatch", ToolCallID: tc.ToolCallID, ToolName: tc.ToolName})
 				sem <- struct{}{}
-				inFlight++
+				inFlight.Add(1)
 				emit()
 				defer func() {
 					<-sem
-					inFlight--
+					inFlight.Add(-1)
 					emit()
 				}()
 
