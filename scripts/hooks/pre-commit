@@ -152,17 +152,29 @@ fi
 
 # ── Step 4: Test (staged packages only) ──────────────────────────────────────
 
+is_sub_module() {
+    local dir="${1#./}"
+    local check="$dir"
+    while [[ "$check" != "." && -n "$check" ]]; do
+        if [[ -f "$check/go.mod" ]]; then
+            return 0
+        fi
+        check=$(dirname "$check")
+    done
+    return 1
+}
+
 run_tests() {
-    # Only test packages that have staged changes — keeps it fast.
-    # Fallback to ./... if package detection fails.
     local pkgs="$STAGED_PKGS"
     if [[ -z "$pkgs" ]]; then
         pkgs="./..."
     fi
 
-    # Filter to packages that actually have _test.go files
     local testable=""
     for pkg in $pkgs; do
+        if is_sub_module "$pkg"; then
+            continue
+        fi
         if ls "${pkg}"/*_test.go >/dev/null 2>&1; then
             testable="$testable $pkg"
         fi
