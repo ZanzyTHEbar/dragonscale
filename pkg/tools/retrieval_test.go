@@ -55,8 +55,8 @@ func TestChunkReadTool_MissingID(t *testing.T) {
 }
 
 func TestFormatSearchResults_Empty(t *testing.T) {
-	output := formatSearchResults("test", "query", nil)
-	assert.Contains(t, output, "No results found")
+	output := formatSearchResults("keyword", "query", nil)
+	assert.Contains(t, output, "No keyword results found")
 }
 
 func TestFormatSearchResults_WithResults(t *testing.T) {

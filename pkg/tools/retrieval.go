@@ -66,7 +66,7 @@ func (t *KeywordSearchTool) Execute(ctx context.Context, args map[string]interfa
 		return ErrorResult(fmt.Sprintf("keyword search failed: %v", err))
 	}
 
-	return SilentResult(formatSearchResults("keyword_search", query, results))
+	return SilentResult(formatSearchResults("keyword", query, results))
 }
 
 // SemanticSearchTool performs vector ANN search using embeddings.
@@ -136,7 +136,7 @@ func (t *SemanticSearchTool) Execute(ctx context.Context, args map[string]interf
 		return ErrorResult(fmt.Sprintf("semantic search failed: %v", err))
 	}
 
-	return SilentResult(formatSearchResults("semantic_search", query, results))
+	return SilentResult(formatSearchResults("semantic", query, results))
 }
 
 // ChunkReadTool loads full document/chunk content by ID.
@@ -185,13 +185,13 @@ func (t *ChunkReadTool) Execute(ctx context.Context, args map[string]interface{}
 	return SilentResult(content)
 }
 
-func formatSearchResults(source, query string, results []memory.SearchResult) string {
+func formatSearchResults(method, query string, results []memory.SearchResult) string {
 	if len(results) == 0 {
-		return fmt.Sprintf("No results found for: %s", query)
+		return fmt.Sprintf("No %s results found for: %s", method, query)
 	}
 
 	var sb strings.Builder
-	fmt.Fprintf(&sb, "Found %d results for '%s':\n\n", len(results), query)
+	fmt.Fprintf(&sb, "Found %d %s results for '%s':\n\n", len(results), method, query)
 
 	for i, r := range results {
 		fmt.Fprintf(&sb, "%d. [%s] (score: %.2f) id=%s\n", i+1, r.Source, r.Score, r.ID)

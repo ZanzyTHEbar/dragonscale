@@ -39,7 +39,9 @@ func (m *MockLanguageModel) Stream(_ context.Context, call fantasy.Call) (fantas
 		return nil, err
 	}
 	return func(yield func(fantasy.StreamPart) bool) {
-		yield(fantasy.StreamPart{Type: fantasy.StreamPartTypeTextDelta, Delta: resp.Content.Text()})
+		if !yield(fantasy.StreamPart{Type: fantasy.StreamPartTypeTextDelta, Delta: resp.Content.Text()}) {
+			return
+		}
 		yield(fantasy.StreamPart{Type: fantasy.StreamPartTypeFinish, FinishReason: fantasy.FinishReasonStop})
 	}, nil
 }

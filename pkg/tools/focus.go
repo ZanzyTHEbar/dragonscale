@@ -197,8 +197,9 @@ func (t *CompleteFocusTool) Execute(ctx context.Context, args map[string]interfa
 	pruned := t.pruneHistory(history, state.CheckpointIndex)
 	t.sessions.SetHistory(sk, pruned)
 
-	// Clean up focus state
-	_ = t.delegate.DeleteKV(ctx, focusAgentID, focusKey)
+	if err := t.delegate.DeleteKV(ctx, focusAgentID, focusKey); err != nil {
+		logger.WarnCF("focus", "failed to clean up focus state", map[string]interface{}{"error": err, "session": sk})
+	}
 
 	msgsBefore := len(history)
 	msgsAfter := len(pruned)
@@ -252,7 +253,9 @@ func (t *CompleteFocusTool) appendKnowledge(ctx context.Context, sessionKey, top
 	kb := &KnowledgeBlock{}
 	raw, err := t.delegate.GetKV(ctx, focusAgentID, kvKey)
 	if err == nil && raw != "" {
-		_ = jsonv2.Unmarshal([]byte(raw), kb)
+		if uerr := jsonv2.Unmarshal([]byte(raw), kb); uerr != nil {
+			logger.WarnCF("focus", "corrupt knowledge block, resetting", map[string]interface{}{"error": uerr, "key": kvKey})
+		}
 	}
 
 	kb.Entries = append(kb.Entries, KnowledgeEntry{
