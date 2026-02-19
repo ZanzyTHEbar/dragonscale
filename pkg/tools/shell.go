@@ -165,6 +165,18 @@ func (t *ExecTool) Parameters() map[string]interface{} {
 	}
 }
 
+// Capabilities declares that ExecTool requires shell access with denylist
+// enforcement. This satisfies the CapableTool interface so the SecureBus
+// applies the correct policy without restricting existing behavior.
+func (t *ExecTool) Capabilities() ToolCapabilities {
+	return ToolCapabilities{
+		Shell: ShellDenylist,
+		Filesystem: []PathRule{
+			{Pattern: "**", Mode: "rw"},
+		},
+	}
+}
+
 func (t *ExecTool) Execute(ctx context.Context, args map[string]interface{}) *ToolResult {
 	command, ok := args["command"].(string)
 	if !ok {

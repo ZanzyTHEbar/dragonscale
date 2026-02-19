@@ -314,6 +314,19 @@ func (t *WebSearchTool) Parameters() map[string]interface{} {
 	}
 }
 
+// Capabilities declares that WebSearchTool requires network access.
+// The Brave Search API key is injected as a header by the SecureBus.
+func (t *WebSearchTool) Capabilities() ToolCapabilities {
+	return ToolCapabilities{
+		Secrets: []SecretRef{
+			{Name: "brave_api_key", InjectAs: "header:X-Subscription-Token", Required: false},
+		},
+		Network: []EndpointRule{
+			{Pattern: "https://api.search.brave.com/**"},
+		},
+	}
+}
+
 func (t *WebSearchTool) Execute(ctx context.Context, args map[string]interface{}) *ToolResult {
 	query, ok := args["query"].(string)
 	if !ok {
@@ -374,6 +387,17 @@ func (t *WebFetchTool) Parameters() map[string]interface{} {
 			},
 		},
 		"required": []string{"url"},
+	}
+}
+
+// Capabilities declares that WebFetchTool requires broad network access.
+// SSRF validation is applied within the SecureBus before any request is made.
+func (t *WebFetchTool) Capabilities() ToolCapabilities {
+	return ToolCapabilities{
+		Network: []EndpointRule{
+			{Pattern: "https://**"},
+			{Pattern: "http://**"},
+		},
 	}
 }
 

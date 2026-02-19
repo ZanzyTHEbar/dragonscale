@@ -148,6 +148,13 @@ func (t *ReadFileTool) Parameters() map[string]interface{} {
 	}
 }
 
+// Capabilities declares that ReadFileTool requires read-only filesystem access.
+func (t *ReadFileTool) Capabilities() ToolCapabilities {
+	return ToolCapabilities{
+		Filesystem: []PathRule{{Pattern: "**", Mode: "r"}},
+	}
+}
+
 func (t *ReadFileTool) Execute(ctx context.Context, args map[string]interface{}) *ToolResult {
 	path, ok := args["path"].(string)
 	if !ok {
@@ -198,6 +205,13 @@ func (t *WriteFileTool) Parameters() map[string]interface{} {
 			},
 		},
 		"required": []string{"path", "content"},
+	}
+}
+
+// Capabilities declares that WriteFileTool requires read-write filesystem access.
+func (t *WriteFileTool) Capabilities() ToolCapabilities {
+	return ToolCapabilities{
+		Filesystem: []PathRule{{Pattern: "**", Mode: "rw"}},
 	}
 }
 
@@ -260,6 +274,13 @@ func (t *ListDirTool) Parameters() map[string]interface{} {
 			},
 		},
 		"required": []string{"path"},
+	}
+}
+
+// Capabilities declares that ListDirTool requires read-only filesystem access.
+func (t *ListDirTool) Capabilities() ToolCapabilities {
+	return ToolCapabilities{
+		Filesystem: []PathRule{{Pattern: "**", Mode: "r"}},
 	}
 }
 
