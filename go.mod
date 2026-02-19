@@ -64,6 +64,7 @@ require (
 	github.com/mfridman/interpolate v0.0.2 // indirect
 	github.com/qmuntal/stateless v1.8.0 // indirect
 	github.com/sethvargo/go-retry v0.3.0 // indirect
+	github.com/tetratelabs/wazero v1.11.0 // indirect
 	github.com/tidwall/gjson v1.18.0 // indirect
 	github.com/tidwall/match v1.2.0 // indirect
 	github.com/tidwall/pretty v1.2.1 // indirect
