@@ -34,7 +34,7 @@
         const toolCalls = trace.steps.filter(s => s.type === 'tool_call');
         const hasToolCall = toolCalls.some(t => {
           if (t.tool === 'tool_call') {
-            try { const a = JSON.parse(t.args); return a.tool_name === 'read_file'; } catch(e) {}
+            const _ta = typeof t.args === 'string' ? JSON.parse(t.args) : t.args; return _ta && _ta.tool_name === 'read_file';
           }
           return false;
         });
@@ -58,7 +58,7 @@
         const toolCalls = trace.steps.filter(s => s.type === 'tool_call');
         const hasToolCall = toolCalls.some(t => {
           if (t.tool === 'tool_call') {
-            try { const a = JSON.parse(t.args); return a.tool_name === 'exec'; } catch(e) {}
+            const _ta = typeof t.args === 'string' ? JSON.parse(t.args) : t.args; return _ta && _ta.tool_name === 'exec';
           }
           return false;
         });
@@ -82,7 +82,7 @@
         const toolCalls = trace.steps.filter(s => s.type === 'tool_call');
         const getDispatchedName = (t) => {
           if (t.tool === 'tool_call') {
-            try { return JSON.parse(t.args).tool_name || 'unknown'; } catch(e) { return 'unknown'; }
+            try { const a = typeof t.args === 'string' ? JSON.parse(t.args) : t.args; return (a && a.tool_name) || 'unknown'; } catch(e) { return 'unknown'; }
           }
           return t.tool;
         };

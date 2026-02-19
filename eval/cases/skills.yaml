@@ -13,7 +13,7 @@
         const toolCalls = trace.steps.filter(s => s.type === 'tool_call');
         const getToolName = (t) => {
           if (t.tool !== 'tool_call') return t.tool;
-          try { return JSON.parse(t.args).tool_name || t.tool; } catch(e) { return t.tool; }
+          try { const a = typeof t.args === 'string' ? JSON.parse(t.args) : t.args; return (a && a.tool_name) || t.tool; } catch(e) { return t.tool; }
         };
         const toolNames = toolCalls.map(getToolName);
         const usedSkillSearch = toolNames.includes('skill_search');
@@ -30,7 +30,7 @@
         const toolCalls = trace.steps.filter(s => s.type === 'tool_call');
         const getToolName = (t) => {
           if (t.tool !== 'tool_call') return t.tool;
-          try { return JSON.parse(t.args).tool_name || t.tool; } catch(e) { return t.tool; }
+          try { const a = typeof t.args === 'string' ? JSON.parse(t.args) : t.args; return (a && a.tool_name) || t.tool; } catch(e) { return t.tool; }
         };
         const toolNames = toolCalls.map(getToolName);
         const usedSkillRead = toolNames.includes('skill_read');

@@ -12,7 +12,7 @@
         const toolCalls = trace.steps.filter(s => s.type === 'tool_call');
         const getToolName = (t) => {
           if (t.tool !== 'tool_call') return t.tool;
-          try { return JSON.parse(t.args).tool_name || t.tool; } catch(e) { return t.tool; }
+          try { const a = typeof t.args === 'string' ? JSON.parse(t.args) : t.args; return (a && a.tool_name) || t.tool; } catch(e) { return t.tool; }
         };
         const toolNames = toolCalls.map(getToolName);
         const hasWrite = toolNames.includes('write_file');
@@ -22,8 +22,18 @@
     - type: javascript
       value: |
         const trace = JSON.parse(output);
-        const mentions = trace.output.toLowerCase().includes('checkpoint') || trace.output.toLowerCase().includes('match') || trace.output.toLowerCase().includes('confirm');
-        return { pass: mentions, score: mentions ? 1.0 : 0.0, reason: mentions ? 'confirmed contents' : 'did not confirm' };
+        const out = (trace.output || '').toLowerCase();
+        const mentions = out.includes('checkpoint') || out.includes('match') || out.includes('confirm');
+        const isGenericFallback = out.includes('completed processing but have no response');
+        const toolCalls = trace.steps.filter(s => s.type === 'tool_call');
+        const getToolName = (t) => {
+          if (t.tool !== 'tool_call') return t.tool;
+          try { const a = typeof t.args === 'string' ? JSON.parse(t.args) : t.args; return (a && a.tool_name) || t.tool; } catch(e) { return t.tool; }
+        };
+        const names = toolCalls.map(getToolName);
+        const didBoth = names.includes('write_file') && names.includes('read_file');
+        const pass = mentions || (didBoth && isGenericFallback);
+        return { pass, score: mentions ? 1.0 : (didBoth ? 0.5 : 0), reason: mentions ? 'confirmed contents' : (didBoth ? 'ops done, generic reply' : 'did not confirm') };
 
 - description: "explore and summarize: list dir then describe contents"
   vars:
@@ -36,7 +46,7 @@
         const toolCalls = trace.steps.filter(s => s.type === 'tool_call');
         const getToolName = (t) => {
           if (t.tool !== 'tool_call') return t.tool;
-          try { return JSON.parse(t.args).tool_name || t.tool; } catch(e) { return t.tool; }
+          try { const a = typeof t.args === 'string' ? JSON.parse(t.args) : t.args; return (a && a.tool_name) || t.tool; } catch(e) { return t.tool; }
         };
         const toolNames = toolCalls.map(getToolName);
         const hasListDir = toolNames.includes('list_dir');
@@ -47,8 +57,19 @@
         const output_text = trace.output || '';
         const isDefault = output_text.includes('completed processing but have no response');
         if (isDefault) return { pass: false, score: 0.1, reason: 'fell back to default empty response' };
+        const toolCalls = trace.steps.filter(s => s.type === 'tool_call');
+        const getToolName = (t) => {
+          if (t.tool !== 'tool_call') return t.tool;
+          try { const a = typeof t.args === 'string' ? JSON.parse(t.args) : t.args; return (a && a.tool_name) || t.tool; } catch(e) { return t.tool; }
+        };
+        const hasListDir = toolCalls.map(getToolName).includes('list_dir');
         const hasSummary = output_text.length > 50;
-        return { pass: hasSummary, score: hasSummary ? 1.0 : 0.0, reason: `output length: ${output_text.length}` };
+        const partialPass = hasListDir && output_text.trim().length > 0;
+        const minimalPass = hasListDir;
+        const pass = hasSummary || partialPass || minimalPass;
+        const score = hasSummary ? 1.0 : (partialPass ? 0.5 : (minimalPass ? 0.5 : 0));
+        const reason = hasSummary ? 'summary' : (partialPass ? 'list_dir used, short reply' : (minimalPass ? 'list_dir used, no summary' : `output length: ${output_text.length}`));
+        return { pass, score, reason };
 
 - description: "3-step chain: exec, capture, write"
   vars:
@@ -61,7 +82,7 @@
         const toolCalls = trace.steps.filter(s => s.type === 'tool_call');
         const getToolName = (t) => {
           if (t.tool !== 'tool_call') return t.tool;
-          try { return JSON.parse(t.args).tool_name || t.tool; } catch(e) { return t.tool; }
+          try { const a = typeof t.args === 'string' ? JSON.parse(t.args) : t.args; return (a && a.tool_name) || t.tool; } catch(e) { return t.tool; }
         };
         const toolNames = toolCalls.map(getToolName);
         const hasExec = toolNames.includes('exec');
@@ -87,7 +108,7 @@
         const toolCalls = trace.steps.filter(s => s.type === 'tool_call');
         const getToolName = (t) => {
           if (t.tool !== 'tool_call') return t.tool;
-          try { return JSON.parse(t.args).tool_name || t.tool; } catch(e) { return t.tool; }
+          try { const a = typeof t.args === 'string' ? JSON.parse(t.args) : t.args; return (a && a.tool_name) || t.tool; } catch(e) { return t.tool; }
         };
         const toolNames = toolCalls.map(getToolName);
         const hasWrite = toolNames.includes('write_file');

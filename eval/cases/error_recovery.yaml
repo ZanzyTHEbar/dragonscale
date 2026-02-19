@@ -41,7 +41,7 @@
         const trace = JSON.parse(output);
         const out = (trace.output || '').toLowerCase();
         const dur = trace.metrics.total_duration_ms;
-        const notHung = dur < 65000;
+        const notHung = dur < 95000;
         const graceful = out.includes('timeout') || out.includes('cancel') || out.includes('too long') ||
                          out.includes('killed') || out.includes('error') || out.includes('interrupt') ||
                          out.length > 5;

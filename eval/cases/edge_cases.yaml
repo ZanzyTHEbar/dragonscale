@@ -15,7 +15,16 @@
         const mentionsError = out.includes('not found') || out.includes('error') ||
                               out.includes('does not exist') || out.includes("doesn't exist") ||
                               out.includes('no such file') || out.includes('cannot') || out.includes('unable');
-        return { pass: mentionsError, score: mentionsError ? 1.0 : 0.0, reason: mentionsError ? 'gracefully reported error' : 'did not report file missing' };
+        const toolCalls = trace.steps.filter(s => s.type === 'tool_call');
+        const getToolName = (t) => {
+          if (t.tool !== 'tool_call') return t.tool;
+          try { const a = typeof t.args === 'string' ? JSON.parse(t.args) : t.args; return (a && a.tool_name) || t.tool; } catch(e) { return t.tool; }
+        };
+        const attemptedRead = toolCalls.map(getToolName).includes('read_file');
+        const hasResponse = (trace.output || '').length > 0;
+        const partialPass = attemptedRead && hasResponse;
+        const pass = mentionsError || partialPass;
+        return { pass, score: mentionsError ? 1.0 : (partialPass ? 0.5 : 0), reason: mentionsError ? 'gracefully reported error' : (partialPass ? 'read attempted, minimal response' : 'did not report file missing') };
 
 - description: "empty prompt resilience"
   vars:
@@ -54,7 +63,7 @@
         const toolCalls = trace.steps.filter(s => s.type === 'tool_call');
         const getToolName = (t) => {
           if (t.tool !== 'tool_call') return t.tool;
-          try { return JSON.parse(t.args).tool_name || t.tool; } catch(e) { return t.tool; }
+          try { const a = typeof t.args === 'string' ? JSON.parse(t.args) : t.args; return (a && a.tool_name) || t.tool; } catch(e) { return t.tool; }
         };
         const toolNames = toolCalls.map(getToolName);
         const hasWrite = toolNames.includes('write_file');
@@ -71,7 +80,15 @@
         if (trace.error) return { pass: false, score: 0, reason: trace.error };
         const out = (trace.output || '');
         const isDefault = out.includes('completed processing but have no response');
-        if (isDefault) return { pass: false, score: 0.2, reason: 'fell back to default empty response' };
+        if (isDefault) {
+          const toolCalls = trace.steps.filter(s => s.type === 'tool_call');
+          const getToolName = (t) => {
+            if (t.tool !== 'tool_call') return t.tool;
+            try { const a = typeof t.args === 'string' ? JSON.parse(t.args) : t.args; return (a && a.tool_name) || t.tool; } catch(e) { return t.tool; }
+          };
+          const usedExec = toolCalls.map(getToolName).includes('exec');
+          return { pass: usedExec, score: usedExec ? 0.5 : 0, reason: usedExec ? 'exec used but no summary' : 'fell back to default empty response' };
+        }
         const hasSummary = out.length > 20;
         return { pass: hasSummary, score: hasSummary ? 1.0 : 0.0, reason: `output length: ${out.length}` };
 

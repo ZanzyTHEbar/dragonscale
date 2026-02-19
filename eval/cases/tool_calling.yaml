@@ -15,7 +15,7 @@
         const hasRead = toolCalls.some(t => {
           if (t.tool === 'read_file') return true;
           if (t.tool === 'tool_call') {
-            try { const a = JSON.parse(t.args); return a.tool_name === 'read_file'; } catch(e) {}
+            const _ta = typeof t.args === 'string' ? JSON.parse(t.args) : t.args; return _ta && _ta.tool_name === 'read_file';
           }
           return false;
         });
@@ -39,7 +39,7 @@
         const hasWrite = toolCalls.some(t => {
           if (t.tool === 'write_file') return true;
           if (t.tool === 'tool_call') {
-            try { const a = JSON.parse(t.args); return a.tool_name === 'write_file'; } catch(e) {}
+            const _ta = typeof t.args === 'string' ? JSON.parse(t.args) : t.args; return _ta && _ta.tool_name === 'write_file';
           }
           return false;
         });
@@ -57,7 +57,7 @@
         const hasExec = toolCalls.some(t => {
           if (t.tool === 'exec') return true;
           if (t.tool === 'tool_call') {
-            try { const a = JSON.parse(t.args); return a.tool_name === 'exec'; } catch(e) {}
+            const _ta = typeof t.args === 'string' ? JSON.parse(t.args) : t.args; return _ta && _ta.tool_name === 'exec';
           }
           return false;
         });
@@ -76,7 +76,7 @@
         const hasListDir = toolCalls.some(t => {
           if (t.tool === 'list_dir') return true;
           if (t.tool === 'tool_call') {
-            try { const a = JSON.parse(t.args); return a.tool_name === 'list_dir'; } catch(e) {}
+            const _ta = typeof t.args === 'string' ? JSON.parse(t.args) : t.args; return _ta && _ta.tool_name === 'list_dir';
           }
           return false;
         });
@@ -93,7 +93,7 @@
         const toolCalls = trace.steps.filter(s => s.type === 'tool_call');
         const getToolName = (t) => {
           if (t.tool !== 'tool_call') return t.tool;
-          try { return JSON.parse(t.args).tool_name || t.tool; } catch(e) { return t.tool; }
+          try { const a = typeof t.args === 'string' ? JSON.parse(t.args) : t.args; return (a && a.tool_name) || t.tool; } catch(e) { return t.tool; }
         };
         const toolNames = toolCalls.map(getToolName);
         const hasEdit = toolNames.includes('edit_file');
@@ -118,7 +118,7 @@
         const toolCalls = trace.steps.filter(s => s.type === 'tool_call');
         const getToolName = (t) => {
           if (t.tool !== 'tool_call') return t.tool;
-          try { return JSON.parse(t.args).tool_name || t.tool; } catch(e) { return t.tool; }
+          try { const a = typeof t.args === 'string' ? JSON.parse(t.args) : t.args; return (a && a.tool_name) || t.tool; } catch(e) { return t.tool; }
         };
         const toolNames = toolCalls.map(getToolName);
         const hasAppend = toolNames.includes('append_file');
@@ -137,7 +137,7 @@
         const toolCalls = trace.steps.filter(s => s.type === 'tool_call');
         const getToolName = (t) => {
           if (t.tool !== 'tool_call') return t.tool;
-          try { return JSON.parse(t.args).tool_name || t.tool; } catch(e) { return t.tool; }
+          try { const a = typeof t.args === 'string' ? JSON.parse(t.args) : t.args; return (a && a.tool_name) || t.tool; } catch(e) { return t.tool; }
         };
         const toolNames = toolCalls.map(getToolName);
         const hasWebSearch = toolNames.includes('web_search');
@@ -154,7 +154,7 @@
         const toolCalls = trace.steps.filter(s => s.type === 'tool_call');
         const getToolName = (t) => {
           if (t.tool !== 'tool_call') return t.tool;
-          try { return JSON.parse(t.args).tool_name || t.tool; } catch(e) { return t.tool; }
+          try { const a = typeof t.args === 'string' ? JSON.parse(t.args) : t.args; return (a && a.tool_name) || t.tool; } catch(e) { return t.tool; }
         };
         const toolNames = toolCalls.map(getToolName);
         const hasFetch = toolNames.includes('web_fetch');
