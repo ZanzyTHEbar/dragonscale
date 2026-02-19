@@ -31,6 +31,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/devices"
 	picofantasy "github.com/sipeed/picoclaw/pkg/fantasy"
 	"github.com/sipeed/picoclaw/pkg/health"
+	"github.com/sipeed/picoclaw/pkg/itr"
 	"github.com/sipeed/picoclaw/pkg/heartbeat"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	picomemory "github.com/sipeed/picoclaw/pkg/memory"
@@ -195,6 +196,10 @@ func main() {
 			fmt.Printf("Unknown skills command: %s\n", subcommand)
 			skillsHelp()
 		}
+	case "secret":
+		secretCmd()
+	case "daemon":
+		daemonCmd()
 	case "memory":
 		memoryCmd()
 	case "version", "--version", "-v":
@@ -219,6 +224,8 @@ func printHelp() {
 	fmt.Println("  cron        Manage scheduled tasks")
 	fmt.Println("  migrate     Migrate from OpenClaw to PicoClaw")
 	fmt.Println("  memory      Memory system management (db status, session migration)")
+	fmt.Println("  secret      Manage secrets (add, list, delete)")
+	fmt.Println("  daemon      Manage the picoclaw daemon (start, stop, status)")
 	fmt.Println("  skills      Manage skills (install, list, remove)")
 	fmt.Println("  version     Show version information")
 }
@@ -247,6 +254,26 @@ func onboard() {
 	createWorkspaceTemplates(workspace)
 
 	fmt.Printf("%s picoclaw is ready!\n", logo)
+
+	fmt.Print("\nSet up encrypted secret storage? (y/n): ")
+	var secretResponse string
+	fmt.Scanln(&secretResponse)
+	if secretResponse == "y" || secretResponse == "Y" {
+		key, err := security.GenerateKey()
+		if err != nil {
+			fmt.Printf("Error generating key: %v\n", err)
+		} else {
+			encoded := fmt.Sprintf("%x", key)
+			fmt.Println("\nGenerated master key (keep this safe!):")
+			fmt.Println("  " + encoded)
+			fmt.Println()
+			fmt.Println("Add to your shell profile:")
+			fmt.Println("  export PICOCLAW_MASTER_KEY=" + encoded)
+			fmt.Println()
+			fmt.Println("Then store secrets with: picoclaw secret add <name>")
+		}
+	}
+
 	fmt.Println("\nNext steps:")
 	fmt.Println("  1. Add your API key to", configPath)
 	fmt.Println("     Get one at: https://openrouter.ai/keys")
@@ -1146,6 +1173,361 @@ func authStatusCmd() {
 		}
 		if !cred.ExpiresAt.IsZero() {
 			fmt.Printf("    Expires: %s\n", cred.ExpiresAt.Format("2006-01-02 15:04"))
+		}
+	}
+}
+
+func secretCmd() {
+	if len(os.Args) < 3 {
+		secretHelp()
+		return
+	}
+
+	sub := os.Args[2]
+	switch sub {
+	case "init":
+		secretInit()
+	case "add":
+		secretAdd()
+	case "list":
+		secretList()
+	case "delete":
+		secretDelete()
+	case "--help", "-h":
+		secretHelp()
+	default:
+		fmt.Printf("Unknown secret command: %s\n", sub)
+		secretHelp()
+	}
+}
+
+func secretHelp() {
+	fmt.Println("\nSecret management (encrypted at rest)")
+	fmt.Println()
+	fmt.Println("Usage: picoclaw secret <subcommand>")
+	fmt.Println()
+	fmt.Println("Subcommands:")
+	fmt.Println("  init              Generate a master key (stored in keyring or env)")
+	fmt.Println("  add <name>        Add or update a secret")
+	fmt.Println("  list              List stored secret names")
+	fmt.Println("  delete <name>     Remove a secret")
+	fmt.Println()
+	fmt.Println("Environment:")
+	fmt.Println("  PICOCLAW_MASTER_KEY   32-byte key (hex or base64) for encryption")
+	fmt.Println()
+	fmt.Println("Examples:")
+	fmt.Println("  picoclaw secret init")
+	fmt.Println("  picoclaw secret add github_token")
+	fmt.Println("  picoclaw secret list")
+	fmt.Println("  picoclaw secret delete github_token")
+}
+
+func secretStorePath() string {
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".picoclaw", "secrets.json")
+}
+
+func loadSecretStore() (*security.SecretStore, error) {
+	var keyring security.KeyringProvider
+	if mk := os.Getenv("PICOCLAW_MASTER_KEY"); mk != "" {
+		keyring = security.NewEnvKeyring("PICOCLAW_MASTER_KEY")
+	} else {
+		keyring = security.NewNoopKeyring(nil)
+	}
+	return security.NewSecretStore(secretStorePath(), keyring)
+}
+
+func secretInit() {
+	key, err := security.GenerateKey()
+	if err != nil {
+		fmt.Printf("Error generating key: %v\n", err)
+		os.Exit(1)
+	}
+
+	encoded := fmt.Sprintf("%x", key)
+	fmt.Println("Generated master key (keep this safe!):")
+	fmt.Println()
+	fmt.Println("  " + encoded)
+	fmt.Println()
+	fmt.Println("Set it as an environment variable:")
+	fmt.Println("  export PICOCLAW_MASTER_KEY=" + encoded)
+	fmt.Println()
+	fmt.Println("Or add to your shell profile (~/.bashrc, ~/.zshrc).")
+}
+
+func secretAdd() {
+	if len(os.Args) < 4 {
+		fmt.Println("Usage: picoclaw secret add <name>")
+		return
+	}
+	name := os.Args[3]
+
+	ss, err := loadSecretStore()
+	if err != nil {
+		fmt.Printf("Error loading secret store: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("Enter value for %q (input hidden): ", name)
+	reader := bufio.NewReader(os.Stdin)
+	value, err := reader.ReadString('\n')
+	if err != nil {
+		fmt.Printf("Error reading input: %v\n", err)
+		os.Exit(1)
+	}
+	value = strings.TrimSpace(value)
+
+	if value == "" {
+		fmt.Println("Error: secret value cannot be empty")
+		os.Exit(1)
+	}
+
+	if err := ss.Set(name, []byte(value)); err != nil {
+		fmt.Printf("Error storing secret: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("Secret %q stored (%s)\n", name, secretStorePath())
+}
+
+func secretList() {
+	ss, err := loadSecretStore()
+	if err != nil {
+		fmt.Printf("Error loading secret store: %v\n", err)
+		os.Exit(1)
+	}
+
+	names := ss.List()
+	if len(names) == 0 {
+		fmt.Println("No secrets stored.")
+		fmt.Println("Add one with: picoclaw secret add <name>")
+		return
+	}
+
+	fmt.Printf("\nStored secrets (%d):\n", len(names))
+	for _, name := range names {
+		fmt.Printf("  - %s\n", name)
+	}
+}
+
+func secretDelete() {
+	if len(os.Args) < 4 {
+		fmt.Println("Usage: picoclaw secret delete <name>")
+		return
+	}
+	name := os.Args[3]
+
+	ss, err := loadSecretStore()
+	if err != nil {
+		fmt.Printf("Error loading secret store: %v\n", err)
+		os.Exit(1)
+	}
+
+	if !ss.Has(name) {
+		fmt.Printf("Secret %q not found\n", name)
+		return
+	}
+
+	if err := ss.Delete(name); err != nil {
+		fmt.Printf("Error deleting secret: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("Secret %q deleted\n", name)
+}
+
+func daemonSocketPath() string {
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".picoclaw", "daemon.sock")
+}
+
+func daemonPIDPath() string {
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".picoclaw", "daemon.pid")
+}
+
+func daemonCmd() {
+	if len(os.Args) < 3 {
+		daemonHelp()
+		return
+	}
+
+	sub := os.Args[2]
+	switch sub {
+	case "start":
+		daemonStart()
+	case "stop":
+		daemonStop()
+	case "status":
+		daemonStatus()
+	case "--help", "-h":
+		daemonHelp()
+	default:
+		fmt.Printf("Unknown daemon command: %s\n", sub)
+		daemonHelp()
+	}
+}
+
+func daemonHelp() {
+	fmt.Println("\nDaemon mode (Unix socket transport)")
+	fmt.Println()
+	fmt.Println("Usage: picoclaw daemon <subcommand>")
+	fmt.Println()
+	fmt.Println("Subcommands:")
+	fmt.Println("  start       Start the daemon (foreground)")
+	fmt.Println("  stop        Stop a running daemon")
+	fmt.Println("  status      Check daemon status")
+	fmt.Println()
+	fmt.Println("The daemon listens on ~/.picoclaw/daemon.sock and provides")
+	fmt.Println("tool execution services via the SecureBus.")
+}
+
+func daemonStart() {
+	sockPath := daemonSocketPath()
+	pidPath := daemonPIDPath()
+
+	if data, err := os.ReadFile(pidPath); err == nil {
+		fmt.Printf("Daemon PID file exists (%s): %s\n", pidPath, strings.TrimSpace(string(data)))
+		fmt.Println("If the daemon is not running, remove the PID file and try again:")
+		fmt.Printf("  rm %s\n", pidPath)
+		return
+	}
+
+	server, err := securebus.NewSocketTransportServer(sockPath)
+	if err != nil {
+		fmt.Printf("Error creating socket: %v\n", err)
+		os.Exit(1)
+	}
+	defer server.Close()
+
+	pid := os.Getpid()
+	home, _ := os.UserHomeDir()
+	_ = os.MkdirAll(filepath.Join(home, ".picoclaw"), 0700)
+	_ = os.WriteFile(pidPath, []byte(fmt.Sprintf("%d", pid)), 0600)
+	defer os.Remove(pidPath)
+
+	cfg, err := loadConfig()
+	if err != nil {
+		fmt.Printf("Error loading config: %v\n", err)
+		os.Exit(1)
+	}
+
+	ss, err := loadSecretStore()
+	if err != nil {
+		logger.WarnCF("daemon", "failed to load secret store", map[string]interface{}{"error": err.Error()})
+		ss = nil
+	}
+
+	registry := tools.NewToolRegistry()
+	workspace := cfg.WorkspacePath()
+	restrict := cfg.Agents.Defaults.RestrictToWorkspace
+	registry.Register(tools.NewExecTool(workspace, restrict))
+	registry.Register(tools.NewReadFileTool(workspace, restrict))
+	registry.Register(tools.NewWriteFileTool(workspace, restrict))
+	registry.Register(tools.NewListDirTool(workspace, restrict))
+	registry.Register(tools.NewEditFileTool(workspace, restrict))
+
+	capLookup := func(name string) (tools.ToolCapabilities, bool) {
+		t, ok := registry.Get(name)
+		if !ok {
+			return tools.ZeroCapabilities(), false
+		}
+		return tools.ExtractCapabilities(t), true
+	}
+	executor := func(ctx context.Context, name string, args map[string]interface{}) *tools.ToolResult {
+		return registry.Execute(ctx, name, args)
+	}
+
+	busCfg := securebus.DefaultBusConfig()
+	secureBus := securebus.New(busCfg, ss, capLookup, executor)
+	defer secureBus.Close()
+
+	fmt.Printf("picoclaw daemon started (pid=%d, socket=%s)\n", pid, sockPath)
+	fmt.Printf("  workspace: %s\n", workspace)
+	fmt.Printf("  tools: %d registered\n", len(registry.List()))
+	fmt.Println("Press Ctrl+C to stop.")
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- server.Serve(func(srvCtx context.Context, req itr.ToolRequest) itr.ToolResponse {
+			return secureBus.Execute(srvCtx, req)
+		})
+	}()
+
+	select {
+	case <-ctx.Done():
+		fmt.Println("\nShutting down daemon...")
+	case err := <-errCh:
+		if err != nil {
+			fmt.Printf("Daemon error: %v\n", err)
+		}
+	}
+}
+
+func daemonStop() {
+	pidPath := daemonPIDPath()
+
+	data, err := os.ReadFile(pidPath)
+	if err != nil {
+		fmt.Println("No daemon PID file found. Is the daemon running?")
+		return
+	}
+
+	pidStr := strings.TrimSpace(string(data))
+	var pid int
+	if _, err := fmt.Sscanf(pidStr, "%d", &pid); err != nil {
+		fmt.Printf("Invalid PID in %s: %s\n", pidPath, pidStr)
+		return
+	}
+
+	proc, err := os.FindProcess(pid)
+	if err != nil {
+		fmt.Printf("Could not find process %d: %v\n", pid, err)
+		_ = os.Remove(pidPath)
+		return
+	}
+
+	if err := proc.Signal(os.Interrupt); err != nil {
+		fmt.Printf("Could not signal process %d: %v\n", pid, err)
+		fmt.Println("Removing stale PID file.")
+		_ = os.Remove(pidPath)
+		return
+	}
+
+	fmt.Printf("Sent interrupt to daemon (pid=%d)\n", pid)
+}
+
+func daemonStatus() {
+	pidPath := daemonPIDPath()
+	sockPath := daemonSocketPath()
+
+	data, err := os.ReadFile(pidPath)
+	if err != nil {
+		fmt.Println("Daemon: not running (no PID file)")
+		return
+	}
+
+	pidStr := strings.TrimSpace(string(data))
+	fmt.Printf("Daemon PID: %s\n", pidStr)
+
+	if _, err := os.Stat(sockPath); err == nil {
+		fmt.Printf("Socket: %s (exists)\n", sockPath)
+	} else {
+		fmt.Printf("Socket: %s (missing)\n", sockPath)
+	}
+
+	var pid int
+	if _, err := fmt.Sscanf(pidStr, "%d", &pid); err == nil {
+		proc, err := os.FindProcess(pid)
+		if err == nil {
+			if err := proc.Signal(nil); err == nil {
+				fmt.Println("Status: running")
+			} else {
+				fmt.Println("Status: stale PID file (process not found)")
+			}
 		}
 	}
 }

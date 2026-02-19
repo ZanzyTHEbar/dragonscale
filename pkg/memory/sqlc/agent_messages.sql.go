@@ -64,6 +64,38 @@ func (q *Queries) AddAgentMessage(ctx context.Context, arg AddAgentMessageParams
 	return i, err
 }
 
+const GetAgentMessageByID = `-- name: GetAgentMessageByID :one
+SELECT id, conversation_id, role, content, metadata_json, created_at, updated_at
+FROM agent_messages
+WHERE id = ?
+LIMIT 1
+`
+
+type GetAgentMessageByIDParams struct {
+	ID ids.UUID `db:"id" json:"id"`
+}
+
+// GetAgentMessageByID
+//
+//	SELECT id, conversation_id, role, content, metadata_json, created_at, updated_at
+//	FROM agent_messages
+//	WHERE id = ?
+//	LIMIT 1
+func (q *Queries) GetAgentMessageByID(ctx context.Context, arg GetAgentMessageByIDParams) (AgentMessage, error) {
+	row := q.db.QueryRowContext(ctx, GetAgentMessageByID, arg.ID)
+	var i AgentMessage
+	err := row.Scan(
+		&i.ID,
+		&i.ConversationID,
+		&i.Role,
+		&i.Content,
+		&i.MetadataJson,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const ListAgentMessagesByConversationID = `-- name: ListAgentMessagesByConversationID :many
 SELECT id, conversation_id, role, content, metadata_json, created_at, updated_at
 FROM agent_messages
@@ -161,4 +193,37 @@ func (q *Queries) ListAgentMessagesByConversationIDLimit(ctx context.Context, ar
 		return nil, err
 	}
 	return items, nil
+}
+
+const UpdateAgentMessageContent = `-- name: UpdateAgentMessageContent :one
+UPDATE agent_messages
+SET content = ?
+WHERE id = ?
+RETURNING id, conversation_id, role, content, metadata_json, created_at, updated_at
+`
+
+type UpdateAgentMessageContentParams struct {
+	Content string   `db:"content" json:"content"`
+	ID      ids.UUID `db:"id" json:"id"`
+}
+
+// UpdateAgentMessageContent
+//
+//	UPDATE agent_messages
+//	SET content = ?
+//	WHERE id = ?
+//	RETURNING id, conversation_id, role, content, metadata_json, created_at, updated_at
+func (q *Queries) UpdateAgentMessageContent(ctx context.Context, arg UpdateAgentMessageContentParams) (AgentMessage, error) {
+	row := q.db.QueryRowContext(ctx, UpdateAgentMessageContent, arg.Content, arg.ID)
+	var i AgentMessage
+	err := row.Scan(
+		&i.ID,
+		&i.ConversationID,
+		&i.Role,
+		&i.Content,
+		&i.MetadataJson,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }

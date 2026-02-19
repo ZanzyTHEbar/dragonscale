@@ -28,21 +28,46 @@ import (
 // concatenated node outputs for synthesis.
 type JoinerFunc func(ctx context.Context, systemPrompt, resultSummary string) (string, uint32, error)
 
+// RLMExpandFunc processes oversized context through recursive decomposition.
+// It receives a session key, query, and context content; returns the
+// synthesised answer and token cost. This bridges the DAG executor to the
+// RLM engine without creating import cycles.
+type RLMExpandFunc func(ctx context.Context, sessionKey, query, contextContent string) (string, uint32, error)
+
 // Executor runs a DAGPlan through the SecureBus with topological dispatch.
 type Executor struct {
-	bus         *securebus.Bus
-	joiner      JoinerFunc
-	maxParallel int
+	bus                *securebus.Bus
+	joiner             JoinerFunc
+	rlmExpand          RLMExpandFunc
+	rlmThresholdBytes  int
+	maxParallel        int
+}
+
+// ExecutorOption configures an Executor via the functional options pattern.
+type ExecutorOption func(*Executor)
+
+// WithRLMExpander enables automatic RLM expansion for nodes whose output
+// exceeds threshold bytes.
+func WithRLMExpander(fn RLMExpandFunc, thresholdBytes int) ExecutorOption {
+	return func(e *Executor) {
+		e.rlmExpand = fn
+		e.rlmThresholdBytes = thresholdBytes
+	}
 }
 
 // NewExecutor creates a DAG executor.
 // joiner is called after all nodes complete to synthesise the final answer.
-func NewExecutor(bus *securebus.Bus, joiner JoinerFunc) *Executor {
-	return &Executor{
-		bus:         bus,
-		joiner:      joiner,
-		maxParallel: runtime.GOMAXPROCS(0),
+func NewExecutor(bus *securebus.Bus, joiner JoinerFunc, opts ...ExecutorOption) *Executor {
+	e := &Executor{
+		bus:               bus,
+		joiner:            joiner,
+		rlmThresholdBytes: 8192,
+		maxParallel:       runtime.GOMAXPROCS(0),
 	}
+	for _, opt := range opts {
+		opt(e)
+	}
+	return e
 }
 
 // ExecuteResult holds the output of a DAG execution.
@@ -141,7 +166,20 @@ func (e *Executor) Execute(ctx context.Context, sessionKey string, plan *itr.DAG
 				if resp.IsError {
 					ns.setResult(resp.Result, fmt.Errorf("node %s: %s", nodeID, resp.Result))
 				} else {
-					ns.setResult(resp.Result, nil)
+					result := resp.Result
+					// RLM expansion: if the result exceeds the threshold,
+					// recursively decompose it via the RLM engine.
+					if e.rlmExpand != nil && len(result) > e.rlmThresholdBytes {
+						expanded, rlmTokens, rlmErr := e.rlmExpand(ctx, sessionKey,
+							"Summarize and extract key information from this content", result)
+						if rlmErr == nil {
+							result = expanded
+							tokensMu.Lock()
+							totalTokens += rlmTokens
+							tokensMu.Unlock()
+						}
+					}
+					ns.setResult(result, nil)
 				}
 			}()
 		}

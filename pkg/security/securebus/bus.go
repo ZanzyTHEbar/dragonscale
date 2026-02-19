@@ -20,6 +20,10 @@ type ToolExecutor func(ctx context.Context, name string, args map[string]interfa
 // Wraps tools.Registry.Get + tools.ExtractCapabilities.
 type CapabilitiesLookup func(toolName string) (tools.ToolCapabilities, bool)
 
+// ToolSearchFunc searches the tool registry and returns matching tool info
+// as a JSON string. If nil, ToolSearch commands return an error.
+type ToolSearchFunc func(query string, maxResults int) string
+
 // BusConfig configures the SecureBus.
 type BusConfig struct {
 	Policy PolicyConfig
@@ -48,15 +52,16 @@ func DefaultBusConfig() BusConfig {
 //  6. Write audit log entry
 //  7. Return ToolResponse to caller
 type Bus struct {
-	cfg       BusConfig
-	policy    *PolicyEngine
-	secrets   *security.SecretStore // nil = no secret injection
-	redactor  *security.Redactor
-	audit     *AuditLog
-	transport *ChannelTransport
-	capLookup CapabilitiesLookup
-	executor  ToolExecutor
-	done      chan struct{}
+	cfg        BusConfig
+	policy     *PolicyEngine
+	secrets    *security.SecretStore // nil = no secret injection
+	redactor   *security.Redactor
+	audit      *AuditLog
+	transport  *ChannelTransport
+	capLookup  CapabilitiesLookup
+	executor   ToolExecutor
+	toolSearch ToolSearchFunc // nil = no tool search support
+	done       chan struct{}
 }
 
 // New creates a Bus and starts background worker goroutines.
@@ -142,9 +147,17 @@ func (b *Bus) dispatch(ctx context.Context, req itr.ToolRequest) itr.ToolRespons
 		At:          start,
 	}
 
-	// Only ToolExec requests require capability/secret/leak checks.
-	// RLM operations (Peek, Grep, etc.) are structural and access no tools.
-	if req.Type != itr.CmdToolExec {
+	// Only ToolExec requests require full capability/secret/leak checks.
+	// ToolSearch, DAGPlan, and RLM operations are handled separately.
+	switch req.Type {
+	case itr.CmdToolExec:
+		// Falls through to the capability/secret/leak pipeline below.
+	case itr.CmdToolSearch:
+		resp := b.handleToolSearch(ctx, req)
+		event.DurationMS = time.Since(start).Milliseconds()
+		_ = b.audit.Append(event)
+		return resp
+	default:
 		resp := b.handleRLMCommand(ctx, req)
 		event.DurationMS = time.Since(start).Milliseconds()
 		_ = b.audit.Append(event)
@@ -261,13 +274,34 @@ func injectArg(args map[string]interface{}, injectAs, value string) {
 	// recorded in the capability manifest so auditing can trace what was accessed.
 }
 
+// SetToolSearch configures the tool search callback. Call this after
+// constructing the Bus if tool search is needed.
+func (b *Bus) SetToolSearch(fn ToolSearchFunc) {
+	b.toolSearch = fn
+}
+
+// handleToolSearch processes CmdToolSearch requests by delegating to the
+// configured ToolSearchFunc.
+func (b *Bus) handleToolSearch(_ context.Context, req itr.ToolRequest) itr.ToolResponse {
+	ts, ok := req.Payload.(itr.ToolSearch)
+	if !ok {
+		return itr.NewErrorResponse(req.ID, "internal: payload is not ToolSearch")
+	}
+	if b.toolSearch == nil {
+		return itr.NewErrorResponse(req.ID, "tool search not configured")
+	}
+	maxResults := int(ts.MaxResults)
+	if maxResults <= 0 {
+		maxResults = 10
+	}
+	result := b.toolSearch(ts.Query, maxResults)
+	return itr.NewSuccessResponse(req.ID, result, 0)
+}
+
 // handleRLMCommand processes structural RLM decomposition commands.
 // These commands don't invoke tool code — they operate on the context rope
 // managed by the RLMEngine (which calls the SecureBus, not the other way around).
 func (b *Bus) handleRLMCommand(_ context.Context, req itr.ToolRequest) itr.ToolResponse {
-	// RLM commands are executed by the RLMEngine; if they reach the SecureBus
-	// directly it means the engine called Bus.Execute with an RLM payload.
-	// Return a stub response — the RLMEngine interprets this.
 	switch req.Type {
 	case itr.CmdFinal:
 		if f, ok := req.Payload.(itr.Final); ok {

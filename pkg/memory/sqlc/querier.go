@@ -303,6 +303,13 @@ type Querier interface {
 	//  WHERE child_conversation_id = ?
 	//  LIMIT 1
 	GetAgentConversationForkByChildConversationID(ctx context.Context, arg GetAgentConversationForkByChildConversationIDParams) (AgentConversationFork, error)
+	//GetAgentMessageByID
+	//
+	//  SELECT id, conversation_id, role, content, metadata_json, created_at, updated_at
+	//  FROM agent_messages
+	//  WHERE id = ?
+	//  LIMIT 1
+	GetAgentMessageByID(ctx context.Context, arg GetAgentMessageByIDParams) (AgentMessage, error)
 	//GetAgentRunStateByID
 	//
 	//  SELECT id, run_id, step_index, state, snapshot_json, created_at, updated_at
@@ -982,6 +989,13 @@ type Querier interface {
 	//  WHERE id = ?
 	//  RETURNING id, title, created_at, updated_at
 	UpdateAgentConversationTitle(ctx context.Context, arg UpdateAgentConversationTitleParams) (AgentConversation, error)
+	//UpdateAgentMessageContent
+	//
+	//  UPDATE agent_messages
+	//  SET content = ?
+	//  WHERE id = ?
+	//  RETURNING id, conversation_id, role, content, metadata_json, created_at, updated_at
+	UpdateAgentMessageContent(ctx context.Context, arg UpdateAgentMessageContentParams) (AgentMessage, error)
 	//UpdateAgentRunStatus
 	//
 	//  UPDATE agent_runs

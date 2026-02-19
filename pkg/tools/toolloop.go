@@ -16,6 +16,32 @@ import (
 	"github.com/sipeed/picoclaw/pkg/logger"
 )
 
+// ToolLoopMode controls whether the agent uses the sequential ReAct loop,
+// the parallel DAG executor, or lets the router decide automatically.
+type ToolLoopMode int
+
+const (
+	ModeReAct ToolLoopMode = iota
+	ModeDAG
+	ModeAuto
+)
+
+// DAGRunResult holds the output from a DAG execution.
+type DAGRunResult struct {
+	Answer     string
+	Tokens     uint32
+	Iterations int
+}
+
+// DAGRunFunc executes a query through the DAG planner/executor pipeline.
+// This function type breaks the import cycle between tools → dag → securebus → tools.
+// The concrete implementation is wired in the application entry point.
+type DAGRunFunc func(ctx context.Context, sessionKey, query string, availableTools []string) (*DAGRunResult, error)
+
+// RouteFunc classifies a query and returns the preferred execution mode.
+// When nil, all queries use ModeReAct.
+type RouteFunc func(mode ToolLoopMode, query string) ToolLoopMode
+
 // ToolLoopConfig configures the tool execution loop.
 type ToolLoopConfig struct {
 	Model         fantasy.LanguageModel
@@ -23,6 +49,17 @@ type ToolLoopConfig struct {
 	Tools         *ToolRegistry
 	Bus           *bus.MessageBus
 	MaxIterations int
+
+	// DAGRunner executes queries through the DAG planner/executor pipeline.
+	// When nil, all queries use the sequential ReAct loop.
+	DAGRunner DAGRunFunc
+
+	// Router classifies queries into ModeReAct or ModeDAG. When nil,
+	// ModeReAct is always used.
+	Router RouteFunc
+
+	// LoopMode controls execution routing. Default: ModeAuto.
+	LoopMode ToolLoopMode
 }
 
 // ToolLoopResult contains the result of running the tool loop.
@@ -31,13 +68,32 @@ type ToolLoopResult struct {
 	Iterations int
 }
 
-// RunToolLoop executes the Fantasy agent loop with PicoClaw tools.
-// This is the core agent logic reused by both main agent and subagents.
+// RunToolLoop executes the agent loop with PicoClaw tools. It supports two
+// execution modes:
+//   - ReAct (sequential): Fantasy's step-by-step tool calling loop
+//   - DAG (parallel): LLMCompiler-style DAG planning and execution
+//
+// When LoopMode is ModeAuto, the router classifies the query to pick the
+// optimal mode. The SecureBus enforces capabilities in both modes.
 func RunToolLoop(ctx context.Context, config ToolLoopConfig, systemPrompt, userPrompt, channel, chatID string) (*ToolLoopResult, error) {
-	// Build adapted tools
+	mode := config.LoopMode
+	if config.Router != nil {
+		mode = config.Router(mode, userPrompt)
+	} else if mode == ModeAuto {
+		mode = ModeReAct
+	}
+
+	if mode == ModeDAG && config.DAGRunner != nil {
+		return runDAGLoop(ctx, config, userPrompt, channel)
+	}
+
+	return runReActLoop(ctx, config, systemPrompt, userPrompt, channel, chatID)
+}
+
+// runReActLoop is the original sequential Fantasy agent loop.
+func runReActLoop(ctx context.Context, config ToolLoopConfig, systemPrompt, userPrompt, channel, chatID string) (*ToolLoopResult, error) {
 	adaptedTools := BuildAdaptedToolsFromRegistry(config.Tools, config.Bus, channel, chatID)
 
-	// Create Fantasy agent
 	agentOpts := []fantasy.AgentOption{
 		fantasy.WithTools(adaptedTools...),
 		fantasy.WithStopConditions(fantasy.StepCountIs(config.MaxIterations)),
@@ -47,28 +103,25 @@ func RunToolLoop(ctx context.Context, config ToolLoopConfig, systemPrompt, userP
 	}
 	agent := fantasy.NewAgent(config.Model, agentOpts...)
 
-	logger.DebugCF("toolloop", "Fantasy agent created for tool loop",
+	logger.DebugCF("toolloop", "ReAct mode: Fantasy agent created",
 		map[string]any{
 			"tools_count":    len(adaptedTools),
 			"max_iterations": config.MaxIterations,
 		})
 
-	// Run Fantasy agent
 	result, err := agent.Generate(ctx, fantasy.AgentCall{
 		Prompt: userPrompt,
 	})
 	if err != nil {
 		logger.ErrorCF("toolloop", "Fantasy agent.Generate failed",
-			map[string]any{
-				"error": err.Error(),
-			})
+			map[string]any{"error": err.Error()})
 		return nil, fmt.Errorf("agent Generate failed: %w", err)
 	}
 
 	finalContent := result.Response.Content.Text()
 	stepCount := len(result.Steps)
 
-	logger.InfoCF("toolloop", "Tool loop completed",
+	logger.InfoCF("toolloop", "ReAct loop completed",
 		map[string]any{
 			"steps":         stepCount,
 			"content_chars": len(finalContent),
@@ -77,6 +130,33 @@ func RunToolLoop(ctx context.Context, config ToolLoopConfig, systemPrompt, userP
 	return &ToolLoopResult{
 		Content:    finalContent,
 		Iterations: stepCount,
+	}, nil
+}
+
+// runDAGLoop uses the LLMCompiler-style DAG executor with replanning.
+func runDAGLoop(ctx context.Context, config ToolLoopConfig, query, sessionKey string) (*ToolLoopResult, error) {
+	logger.InfoCF("toolloop", "DAG mode: planning and executing",
+		map[string]any{"query_len": len(query)})
+
+	availableTools := config.Tools.List()
+
+	result, err := config.DAGRunner(ctx, sessionKey, query, availableTools)
+	if err != nil {
+		logger.ErrorCF("toolloop", "DAG execution failed",
+			map[string]any{"error": err.Error()})
+		return nil, fmt.Errorf("DAG execution failed: %w", err)
+	}
+
+	logger.InfoCF("toolloop", "DAG loop completed",
+		map[string]any{
+			"iterations":   result.Iterations,
+			"total_tokens": result.Tokens,
+			"answer_chars": len(result.Answer),
+		})
+
+	return &ToolLoopResult{
+		Content:    result.Answer,
+		Iterations: result.Iterations,
 	}, nil
 }
 
