@@ -2,8 +2,9 @@ package tools
 
 import (
 	"context"
-	"encoding/json"
 	"testing"
+
+	jsonv2 "github.com/go-json-experiment/json"
 )
 
 func TestToolSearchTool_Name(t *testing.T) {
@@ -52,7 +53,7 @@ func TestToolSearchTool_ListAll(t *testing.T) {
 	}
 
 	var results []toolSearchResult
-	if err := json.Unmarshal([]byte(result.ForLLM), &results); err != nil {
+	if err := jsonv2.Unmarshal([]byte(result.ForLLM), &results); err != nil {
 		t.Fatalf("failed to unmarshal: %v", err)
 	}
 
@@ -70,7 +71,7 @@ func TestToolSearchTool_EmptyQuery_ListsAll(t *testing.T) {
 	result := s.Execute(context.Background(), map[string]interface{}{"query": ""})
 
 	var results []toolSearchResult
-	if err := json.Unmarshal([]byte(result.ForLLM), &results); err != nil {
+	if err := jsonv2.Unmarshal([]byte(result.ForLLM), &results); err != nil {
 		t.Fatalf("failed to unmarshal: %v", err)
 	}
 
@@ -94,7 +95,7 @@ func TestToolSearchTool_ExactNameMatch(t *testing.T) {
 	result := s.Execute(context.Background(), map[string]interface{}{"query": "read_file"})
 
 	var results []toolSearchResult
-	json.Unmarshal([]byte(result.ForLLM), &results)
+	jsonv2.Unmarshal([]byte(result.ForLLM), &results)
 
 	if len(results) == 0 {
 		t.Fatal("expected at least one result")
@@ -116,7 +117,7 @@ func TestToolSearchTool_PartialMatch(t *testing.T) {
 	result := s.Execute(context.Background(), map[string]interface{}{"query": "file"})
 
 	var results []toolSearchResult
-	json.Unmarshal([]byte(result.ForLLM), &results)
+	jsonv2.Unmarshal([]byte(result.ForLLM), &results)
 
 	// Both file tools should match, web_search should not (unless "file" appears somewhere)
 	if len(results) < 2 {
@@ -133,7 +134,7 @@ func TestToolSearchTool_DescriptionMatch(t *testing.T) {
 	result := s.Execute(context.Background(), map[string]interface{}{"query": "internet"})
 
 	var results []toolSearchResult
-	json.Unmarshal([]byte(result.ForLLM), &results)
+	jsonv2.Unmarshal([]byte(result.ForLLM), &results)
 
 	if len(results) != 1 {
 		t.Errorf("expected 1 result, got %d", len(results))
@@ -153,7 +154,7 @@ func TestToolSearchTool_MultiTermQuery(t *testing.T) {
 	result := s.Execute(context.Background(), map[string]interface{}{"query": "web search"})
 
 	var results []toolSearchResult
-	json.Unmarshal([]byte(result.ForLLM), &results)
+	jsonv2.Unmarshal([]byte(result.ForLLM), &results)
 
 	if len(results) == 0 {
 		t.Fatal("expected at least one result")
@@ -189,7 +190,7 @@ func TestToolSearchTool_ExcludesMetaTools(t *testing.T) {
 	result := s.Execute(context.Background(), map[string]interface{}{})
 
 	var results []toolSearchResult
-	json.Unmarshal([]byte(result.ForLLM), &results)
+	jsonv2.Unmarshal([]byte(result.ForLLM), &results)
 
 	for _, res := range results {
 		if res.Name == "tool_search" || res.Name == "tool_call" {

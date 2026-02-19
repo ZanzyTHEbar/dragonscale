@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -13,31 +12,34 @@ import (
 	"time"
 
 	"github.com/adhocore/gronx"
+	jsonv2 "github.com/go-json-experiment/json"
+	"github.com/go-json-experiment/json/jsontext"
+
 	"github.com/sipeed/picoclaw/pkg/memory"
 )
 
 type CronSchedule struct {
 	Kind    string `json:"kind"`
-	AtMS    *int64 `json:"atMs,omitempty"`
-	EveryMS *int64 `json:"everyMs,omitempty"`
-	Expr    string `json:"expr,omitempty"`
-	TZ      string `json:"tz,omitempty"`
+	AtMS    *int64 `json:"atMs,omitzero"`
+	EveryMS *int64 `json:"everyMs,omitzero"`
+	Expr    string `json:"expr,omitzero"`
+	TZ      string `json:"tz,omitzero"`
 }
 
 type CronPayload struct {
 	Kind    string `json:"kind"`
 	Message string `json:"message"`
-	Command string `json:"command,omitempty"`
+	Command string `json:"command,omitzero"`
 	Deliver bool   `json:"deliver"`
-	Channel string `json:"channel,omitempty"`
-	To      string `json:"to,omitempty"`
+	Channel string `json:"channel,omitzero"`
+	To      string `json:"to,omitzero"`
 }
 
 type CronJobState struct {
-	NextRunAtMS *int64 `json:"nextRunAtMs,omitempty"`
-	LastRunAtMS *int64 `json:"lastRunAtMs,omitempty"`
-	LastStatus  string `json:"lastStatus,omitempty"`
-	LastError   string `json:"lastError,omitempty"`
+	NextRunAtMS *int64 `json:"nextRunAtMs,omitzero"`
+	LastRunAtMS *int64 `json:"lastRunAtMs,omitzero"`
+	LastStatus  string `json:"lastStatus,omitzero"`
+	LastError   string `json:"lastError,omitzero"`
 }
 
 type CronJob struct {
@@ -349,7 +351,7 @@ func (cs *CronService) loadStore() error {
 		return err
 	}
 
-	return json.Unmarshal(data, cs.store)
+	return jsonv2.Unmarshal(data, cs.store)
 }
 
 func (cs *CronService) loadStoreFromDelegate() error {
@@ -360,7 +362,7 @@ func (cs *CronService) loadStoreFromDelegate() error {
 	if err != nil || val == "" {
 		return nil
 	}
-	return json.Unmarshal([]byte(val), cs.store)
+	return jsonv2.Unmarshal([]byte(val), cs.store)
 }
 
 func (cs *CronService) saveStoreUnsafe() error {
@@ -373,7 +375,7 @@ func (cs *CronService) saveStoreUnsafe() error {
 		return err
 	}
 
-	data, err := json.MarshalIndent(cs.store, "", "  ")
+	data, err := jsonv2.Marshal(cs.store, jsontext.WithIndent("  "))
 	if err != nil {
 		return err
 	}
@@ -382,7 +384,7 @@ func (cs *CronService) saveStoreUnsafe() error {
 }
 
 func (cs *CronService) saveStoreToDelegate() error {
-	data, err := json.Marshal(cs.store)
+	data, err := jsonv2.Marshal(cs.store)
 	if err != nil {
 		return err
 	}

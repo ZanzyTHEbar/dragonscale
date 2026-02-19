@@ -2,11 +2,13 @@ package tools
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"regexp"
 	"runtime"
+
+	jsonv2 "github.com/go-json-experiment/json"
+	"github.com/go-json-experiment/json/jsontext"
 )
 
 // I2CTool provides I2C bus interaction for reading sensors and controlling peripherals.
@@ -111,7 +113,7 @@ func (t *I2CTool) detect() *ToolResult {
 		}
 	}
 
-	result, _ := json.MarshalIndent(buses, "", "  ")
+	result, _ := jsonv2.Marshal(buses, jsontext.WithIndent("  "))
 	return SilentResult(fmt.Sprintf("Found %d I2C bus(es):\n%s", len(buses), string(result)))
 }
 

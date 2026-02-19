@@ -2,7 +2,7 @@ package store
 
 import (
 	"context"
-	"encoding/json"
+	jsonv2 "github.com/go-json-experiment/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -18,14 +18,15 @@ func TestOllamaEmbedder_Embed(t *testing.T) {
 		}
 
 		var req ollamaEmbedRequest
-		json.NewDecoder(r.Body).Decode(&req)
+		jsonv2.UnmarshalRead(r.Body, &req)
 		if req.Model != "test-model" {
 			t.Errorf("expected model 'test-model', got %q", req.Model)
 		}
 
-		json.NewEncoder(w).Encode(ollamaEmbedResponse{
+		respData, _ := jsonv2.Marshal(ollamaEmbedResponse{
 			Embeddings: [][]float32{{0.1, 0.2, 0.3, 0.4}},
 		})
+		w.Write(respData)
 	}))
 	defer srv.Close()
 
@@ -55,9 +56,10 @@ func TestOllamaEmbedder_EmbedBatch(t *testing.T) {
 	callCount := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		callCount++
-		json.NewEncoder(w).Encode(ollamaEmbedResponse{
+		respData, _ := jsonv2.Marshal(ollamaEmbedResponse{
 			Embeddings: [][]float32{{float32(callCount) * 0.1}},
 		})
+		w.Write(respData)
 	}))
 	defer srv.Close()
 
@@ -91,7 +93,8 @@ func TestOllamaEmbedder_ServerError(t *testing.T) {
 
 func TestOllamaEmbedder_EmptyResponse(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(ollamaEmbedResponse{Embeddings: [][]float32{}})
+		respData, _ := jsonv2.Marshal(ollamaEmbedResponse{Embeddings: [][]float32{}})
+		w.Write(respData)
 	}))
 	defer srv.Close()
 

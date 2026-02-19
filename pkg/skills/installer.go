@@ -2,7 +2,6 @@ package skills
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -10,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	jsonv2 "github.com/go-json-experiment/json"
 )
 
 type SkillInstaller struct {
@@ -117,7 +118,7 @@ func (si *SkillInstaller) ListAvailableSkills(ctx context.Context) ([]AvailableS
 	}
 
 	var skills []AvailableSkill
-	if err := json.Unmarshal(body, &skills); err != nil {
+	if err := jsonv2.Unmarshal(body, &skills); err != nil {
 		return nil, fmt.Errorf("failed to parse skills list: %w", err)
 	}
 

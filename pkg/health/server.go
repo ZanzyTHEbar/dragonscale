@@ -2,11 +2,12 @@ package health
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"sync"
 	"time"
+
+	jsonv2 "github.com/go-json-experiment/json"
 )
 
 type Server struct {
@@ -20,14 +21,14 @@ type Server struct {
 type Check struct {
 	Name      string    `json:"name"`
 	Status    string    `json:"status"`
-	Message   string    `json:"message,omitempty"`
+	Message   string    `json:"message,omitzero"`
 	Timestamp time.Time `json:"timestamp"`
 }
 
 type StatusResponse struct {
 	Status string           `json:"status"`
 	Uptime string           `json:"uptime"`
-	Checks map[string]Check `json:"checks,omitempty"`
+	Checks map[string]Check `json:"checks,omitzero"`
 }
 
 func NewServer(host string, port int) *Server {
@@ -113,7 +114,7 @@ func (s *Server) healthHandler(w http.ResponseWriter, r *http.Request) {
 		Uptime: uptime.String(),
 	}
 
-	json.NewEncoder(w).Encode(resp)
+	jsonv2.MarshalWrite(w, resp)
 }
 
 func (s *Server) readyHandler(w http.ResponseWriter, r *http.Request) {
@@ -129,7 +130,7 @@ func (s *Server) readyHandler(w http.ResponseWriter, r *http.Request) {
 
 	if !ready {
 		w.WriteHeader(http.StatusServiceUnavailable)
-		json.NewEncoder(w).Encode(StatusResponse{
+		jsonv2.MarshalWrite(w, StatusResponse{
 			Status: "not ready",
 			Checks: checks,
 		})
@@ -139,7 +140,7 @@ func (s *Server) readyHandler(w http.ResponseWriter, r *http.Request) {
 	for _, check := range checks {
 		if check.Status == "fail" {
 			w.WriteHeader(http.StatusServiceUnavailable)
-			json.NewEncoder(w).Encode(StatusResponse{
+			jsonv2.MarshalWrite(w, StatusResponse{
 				Status: "not ready",
 				Checks: checks,
 			})
@@ -149,7 +150,7 @@ func (s *Server) readyHandler(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusOK)
 	uptime := time.Since(s.startTime)
-	json.NewEncoder(w).Encode(StatusResponse{
+	jsonv2.MarshalWrite(w, StatusResponse{
 		Status: "ready",
 		Uptime: uptime.String(),
 		Checks: checks,

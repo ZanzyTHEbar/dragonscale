@@ -6,7 +6,6 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -14,6 +13,9 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	jsonv2 "github.com/go-json-experiment/json"
+	"github.com/go-json-experiment/json/jsontext"
 
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/config"
@@ -140,7 +142,7 @@ func (c *LINEChannel) fetchBotInfo() error {
 		BasicID     string `json:"basicId"`
 		DisplayName string `json:"displayName"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
+	if err := jsonv2.UnmarshalRead(resp.Body, &info); err != nil {
 		return err
 	}
 
@@ -199,7 +201,7 @@ func (c *LINEChannel) webhookHandler(w http.ResponseWriter, r *http.Request) {
 	var payload struct {
 		Events []lineEvent `json:"events"`
 	}
-	if err := json.Unmarshal(body, &payload); err != nil {
+	if err := jsonv2.Unmarshal(body, &payload); err != nil {
 		logger.ErrorCF("line", "Failed to parse webhook payload", map[string]interface{}{
 			"error": err.Error(),
 		})
@@ -230,11 +232,11 @@ func (c *LINEChannel) verifySignature(body []byte, signature string) bool {
 
 // LINE webhook event types
 type lineEvent struct {
-	Type       string          `json:"type"`
-	ReplyToken string          `json:"replyToken"`
-	Source     lineSource      `json:"source"`
-	Message    json.RawMessage `json:"message"`
-	Timestamp  int64           `json:"timestamp"`
+	Type       string         `json:"type"`
+	ReplyToken string         `json:"replyToken"`
+	Source     lineSource     `json:"source"`
+	Message    jsontext.Value `json:"message"`
+	Timestamp  int64          `json:"timestamp"`
 }
 
 type lineSource struct {
@@ -277,7 +279,7 @@ func (c *LINEChannel) processEvent(event lineEvent) {
 	isGroup := event.Source.Type == "group" || event.Source.Type == "room"
 
 	var msg lineMessage
-	if err := json.Unmarshal(event.Message, &msg); err != nil {
+	if err := jsonv2.Unmarshal(event.Message, &msg); err != nil {
 		logger.ErrorCF("line", "Failed to parse message", map[string]interface{}{
 			"error": err.Error(),
 		})
@@ -558,7 +560,7 @@ func (c *LINEChannel) sendLoading(chatID string) {
 
 // callAPI makes an authenticated POST request to the LINE API.
 func (c *LINEChannel) callAPI(ctx context.Context, endpoint string, payload interface{}) error {
-	body, err := json.Marshal(payload)
+	body, err := jsonv2.Marshal(payload)
 	if err != nil {
 		return fmt.Errorf("failed to marshal payload: %w", err)
 	}

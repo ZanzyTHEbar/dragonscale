@@ -2,9 +2,9 @@ package openai
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
+	jsonv2 "github.com/go-json-experiment/json"
 	"io"
 	"reflect"
 	"strings"
@@ -642,7 +642,7 @@ func parseAnnotationsFromDelta(delta openai.ChatCompletionChunkChoiceDelta) []op
 
 	// Parse the raw JSON to extract annotations
 	var deltaData map[string]any
-	if err := json.Unmarshal([]byte(delta.RawJSON()), &deltaData); err != nil {
+	if err := jsonv2.Unmarshal([]byte(delta.RawJSON()), &deltaData); err != nil {
 		return annotations
 	}
 

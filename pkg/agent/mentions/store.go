@@ -5,7 +5,7 @@ package mentions
 
 import (
 	"context"
-	"encoding/json"
+	jsonv2 "github.com/go-json-experiment/json"
 	"strings"
 
 	"github.com/sipeed/picoclaw/pkg/ids"
@@ -76,7 +76,7 @@ func (s *Store) Add(ctx context.Context, p AddParams) (sqlc.AgentMention, error)
 		return sqlc.AgentMention{}, pcerrors.Wrapf(pcerrors.CodeInvalidArgument, err, "parse target_id %q", targetIDStr)
 	}
 
-	metaJSON, _ := json.Marshal(p.Metadata)
+	metaJSON, _ := jsonv2.Marshal(p.Metadata)
 
 	return s.q.AddAgentMention(ctx, sqlc.AddAgentMentionParams{
 		ID:             ids.New(),

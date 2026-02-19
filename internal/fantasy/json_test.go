@@ -1,8 +1,8 @@
 package fantasy
 
 import (
-	"encoding/json"
 	"errors"
+	jsonv2 "github.com/go-json-experiment/json"
 	"reflect"
 	"testing"
 )
@@ -156,14 +156,14 @@ func TestMessageJSONSerialization(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Marshal the message
-			data, err := json.Marshal(tt.message)
+			data, err := jsonv2.Marshal(tt.message)
 			if err != nil {
 				t.Fatalf("failed to marshal message: %v", err)
 			}
 
 			// Unmarshal back
 			var decoded Message
-			err = json.Unmarshal(data, &decoded)
+			err = jsonv2.Unmarshal(data, &decoded)
 			if err != nil {
 				t.Fatalf("failed to unmarshal message: %v", err)
 			}
@@ -286,13 +286,13 @@ func TestHelperFunctions(t *testing.T) {
 	t.Run("NewUserMessage - text only", func(t *testing.T) {
 		msg := NewUserMessage("Hello")
 
-		data, err := json.Marshal(msg)
+		data, err := jsonv2.Marshal(msg)
 		if err != nil {
 			t.Fatalf("failed to marshal: %v", err)
 		}
 
 		var decoded Message
-		if err := json.Unmarshal(data, &decoded); err != nil {
+		if err := jsonv2.Unmarshal(data, &decoded); err != nil {
 			t.Fatalf("failed to unmarshal: %v", err)
 		}
 
@@ -324,13 +324,13 @@ func TestHelperFunctions(t *testing.T) {
 			},
 		)
 
-		data, err := json.Marshal(msg)
+		data, err := jsonv2.Marshal(msg)
 		if err != nil {
 			t.Fatalf("failed to marshal: %v", err)
 		}
 
 		var decoded Message
-		if err := json.Unmarshal(data, &decoded); err != nil {
+		if err := jsonv2.Unmarshal(data, &decoded); err != nil {
 			t.Fatalf("failed to unmarshal: %v", err)
 		}
 
@@ -360,13 +360,13 @@ func TestHelperFunctions(t *testing.T) {
 	t.Run("NewSystemMessage - single prompt", func(t *testing.T) {
 		msg := NewSystemMessage("You are a helpful assistant.")
 
-		data, err := json.Marshal(msg)
+		data, err := jsonv2.Marshal(msg)
 		if err != nil {
 			t.Fatalf("failed to marshal: %v", err)
 		}
 
 		var decoded Message
-		if err := json.Unmarshal(data, &decoded); err != nil {
+		if err := jsonv2.Unmarshal(data, &decoded); err != nil {
 			t.Fatalf("failed to unmarshal: %v", err)
 		}
 
@@ -387,13 +387,13 @@ func TestHelperFunctions(t *testing.T) {
 	t.Run("NewSystemMessage - multiple prompts", func(t *testing.T) {
 		msg := NewSystemMessage("First instruction", "Second instruction", "Third instruction")
 
-		data, err := json.Marshal(msg)
+		data, err := jsonv2.Marshal(msg)
 		if err != nil {
 			t.Fatalf("failed to marshal: %v", err)
 		}
 
 		var decoded Message
-		if err := json.Unmarshal(data, &decoded); err != nil {
+		if err := jsonv2.Unmarshal(data, &decoded); err != nil {
 			t.Fatalf("failed to unmarshal: %v", err)
 		}
 
@@ -420,13 +420,13 @@ func TestEdgeCases(t *testing.T) {
 			},
 		}
 
-		data, err := json.Marshal(msg)
+		data, err := jsonv2.Marshal(msg)
 		if err != nil {
 			t.Fatalf("failed to marshal: %v", err)
 		}
 
 		var decoded Message
-		if err := json.Unmarshal(data, &decoded); err != nil {
+		if err := jsonv2.Unmarshal(data, &decoded); err != nil {
 			t.Fatalf("failed to unmarshal: %v", err)
 		}
 
@@ -449,13 +449,13 @@ func TestEdgeCases(t *testing.T) {
 			},
 		}
 
-		data, err := json.Marshal(msg)
+		data, err := jsonv2.Marshal(msg)
 		if err != nil {
 			t.Fatalf("failed to marshal: %v", err)
 		}
 
 		var decoded Message
-		if err := json.Unmarshal(data, &decoded); err != nil {
+		if err := jsonv2.Unmarshal(data, &decoded); err != nil {
 			t.Fatalf("failed to unmarshal: %v", err)
 		}
 
@@ -478,13 +478,13 @@ func TestEdgeCases(t *testing.T) {
 			},
 		}
 
-		data, err := json.Marshal(msg)
+		data, err := jsonv2.Marshal(msg)
 		if err != nil {
 			t.Fatalf("failed to marshal: %v", err)
 		}
 
 		var decoded Message
-		if err := json.Unmarshal(data, &decoded); err != nil {
+		if err := jsonv2.Unmarshal(data, &decoded); err != nil {
 			t.Fatalf("failed to unmarshal: %v", err)
 		}
 
@@ -502,13 +502,13 @@ func TestEdgeCases(t *testing.T) {
 			},
 		}
 
-		data, err := json.Marshal(msg)
+		data, err := jsonv2.Marshal(msg)
 		if err != nil {
 			t.Fatalf("failed to marshal: %v", err)
 		}
 
 		var decoded Message
-		if err := json.Unmarshal(data, &decoded); err != nil {
+		if err := jsonv2.Unmarshal(data, &decoded); err != nil {
 			t.Fatalf("failed to unmarshal: %v", err)
 		}
 
@@ -533,7 +533,7 @@ func TestInvalidJSONHandling(t *testing.T) {
 		}`
 
 		var msg Message
-		err := json.Unmarshal([]byte(invalidJSON), &msg)
+		err := jsonv2.Unmarshal([]byte(invalidJSON), &msg)
 		if err == nil {
 			t.Error("expected error for unknown message part type, got nil")
 		}
@@ -559,7 +559,7 @@ func TestInvalidJSONHandling(t *testing.T) {
 		}`
 
 		var msg Message
-		err := json.Unmarshal([]byte(invalidJSON), &msg)
+		err := jsonv2.Unmarshal([]byte(invalidJSON), &msg)
 		if err == nil {
 			t.Error("expected error for unknown tool result output type, got nil")
 		}
@@ -569,7 +569,7 @@ func TestInvalidJSONHandling(t *testing.T) {
 		invalidJSON := `{"role": "user", "content": [`
 
 		var msg Message
-		err := json.Unmarshal([]byte(invalidJSON), &msg)
+		err := jsonv2.Unmarshal([]byte(invalidJSON), &msg)
 		if err == nil {
 			t.Error("expected error for malformed JSON, got nil")
 		}
@@ -584,7 +584,7 @@ type mockProviderData struct {
 func (m mockProviderData) Options()     {}
 func (m mockProviderData) Type() string { return "mock" }
 func (m mockProviderData) MarshalJSON() ([]byte, error) {
-	return json.Marshal(struct {
+	return jsonv2.Marshal(struct {
 		Type string `json:"type"`
 		mockProviderData
 	}{
@@ -598,7 +598,7 @@ func (m *mockProviderData) UnmarshalJSON(data []byte) error {
 		Type string `json:"type"`
 		mockProviderData
 	}
-	if err := json.Unmarshal(data, &aux); err != nil {
+	if err := jsonv2.Unmarshal(data, &aux); err != nil {
 		return err
 	}
 	*m = aux.mockProviderData
@@ -618,13 +618,13 @@ func TestPromptSerialization(t *testing.T) {
 			},
 		}
 
-		data, err := json.Marshal(prompt)
+		data, err := jsonv2.Marshal(prompt)
 		if err != nil {
 			t.Fatalf("failed to marshal prompt: %v", err)
 		}
 
 		var decoded Prompt
-		if err := json.Unmarshal(data, &decoded); err != nil {
+		if err := jsonv2.Unmarshal(data, &decoded); err != nil {
 			t.Fatalf("failed to unmarshal prompt: %v", err)
 		}
 
@@ -672,14 +672,14 @@ func TestStreamPartErrorSerialization(t *testing.T) {
 		}
 
 		// Marshal the stream part
-		data, err := json.Marshal(streamPart)
+		data, err := jsonv2.Marshal(streamPart)
 		if err != nil {
 			t.Fatalf("failed to marshal stream part: %v", err)
 		}
 
 		// Unmarshal back
 		var decoded StreamPart
-		err = json.Unmarshal(data, &decoded)
+		err = jsonv2.Unmarshal(data, &decoded)
 		if err != nil {
 			t.Fatalf("failed to unmarshal stream part: %v", err)
 		}
@@ -728,7 +728,7 @@ func TestStreamPartErrorSerialization(t *testing.T) {
 		}`
 
 		var streamPart StreamPart
-		err := json.Unmarshal([]byte(jsonData), &streamPart)
+		err := jsonv2.Unmarshal([]byte(jsonData), &streamPart)
 		if err != nil {
 			t.Fatalf("failed to unmarshal stream part: %v", err)
 		}

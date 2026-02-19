@@ -5,8 +5,8 @@ package memory
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
+	jsonv2 "github.com/go-json-experiment/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -23,7 +23,7 @@ const migrationMarkerFile = ".sessions_migrated"
 type SessionFile struct {
 	Key      string       `json:"key"`
 	Messages []SessionMsg `json:"messages"`
-	Summary  string       `json:"summary,omitempty"`
+	Summary  string       `json:"summary,omitzero"`
 	Created  time.Time    `json:"created"`
 	Updated  time.Time    `json:"updated"`
 }
@@ -80,7 +80,7 @@ func MigrateFileSessions(ctx context.Context, del MemoryDelegate, agentID, sessi
 		}
 
 		var sess SessionFile
-		if err := json.Unmarshal(data, &sess); err != nil {
+		if err := jsonv2.Unmarshal(data, &sess); err != nil {
 			logger.WarnCF("migrate", "Failed to parse session file",
 				map[string]interface{}{"path": sessPath, "error": err.Error()})
 			result.Errors++

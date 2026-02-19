@@ -2,7 +2,7 @@ package delegate
 
 import (
 	"context"
-	"encoding/json"
+	jsonv2 "github.com/go-json-experiment/json"
 	"testing"
 
 	"github.com/sipeed/picoclaw/pkg/ids"
@@ -38,7 +38,7 @@ func TestCronKVBackend_Roundtrip(t *testing.T) {
 		},
 	}
 
-	data, err := json.Marshal(store)
+	data, err := jsonv2.Marshal(store)
 	require.NoError(t, err)
 
 	require.NoError(t, d.UpsertKV(ctx, agentID, kvKey, string(data)))
@@ -48,7 +48,7 @@ func TestCronKVBackend_Roundtrip(t *testing.T) {
 	require.NotEmpty(t, raw)
 
 	var loaded cronStore
-	require.NoError(t, json.Unmarshal([]byte(raw), &loaded))
+	require.NoError(t, jsonv2.Unmarshal([]byte(raw), &loaded))
 
 	assert.Equal(t, 1, loaded.Version)
 	assert.Len(t, loaded.Jobs, 2)

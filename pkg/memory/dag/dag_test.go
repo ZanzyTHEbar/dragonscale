@@ -220,9 +220,9 @@ func TestSelectDAGLevel(t *testing.T) {
 
 func TestTailMessageCount(t *testing.T) {
 	assert.Equal(t, 4, TailMessageCount(100))   // Minimum
-	assert.Equal(t, 20, TailMessageCount(1000))  // 1000/50
-	assert.Equal(t, 4, TailMessageCount(0))      // Zero budget
-	assert.Equal(t, 4, TailMessageCount(-1))     // Negative
+	assert.Equal(t, 20, TailMessageCount(1000)) // 1000/50
+	assert.Equal(t, 4, TailMessageCount(0))     // Zero budget
+	assert.Equal(t, 4, TailMessageCount(-1))    // Negative
 }
 
 func TestRenderDAGForBudget(t *testing.T) {

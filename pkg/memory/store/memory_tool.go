@@ -2,8 +2,8 @@ package store
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
+	jsonv2 "github.com/go-json-experiment/json"
 	"strings"
 
 	"github.com/sipeed/picoclaw/pkg/ids"
@@ -25,31 +25,31 @@ const (
 // MemoryToolRequest is the input to the memory tool.
 type MemoryToolRequest struct {
 	Action  MemoryToolAction `json:"action"`
-	Query   string           `json:"query,omitempty"`   // For search
-	ID      string           `json:"id,omitempty"`      // For read/update/delete
-	Content string           `json:"content,omitempty"` // For write/update
-	Source  string           `json:"source,omitempty"`  // For write
-	Sector  string           `json:"sector,omitempty"`  // For write: episodic/semantic/procedural/reflective
-	Tags    string           `json:"tags,omitempty"`    // For write: comma-separated
-	Tier    string           `json:"tier,omitempty"`    // "recall" or "archival" — defaults to "recall"
-	Limit   int              `json:"limit,omitempty"`   // For search — defaults to 5
+	Query   string           `json:"query,omitzero"`   // For search
+	ID      string           `json:"id,omitzero"`      // For read/update/delete
+	Content string           `json:"content,omitzero"` // For write/update
+	Source  string           `json:"source,omitzero"`  // For write
+	Sector  string           `json:"sector,omitzero"`  // For write: episodic/semantic/procedural/reflective
+	Tags    string           `json:"tags,omitzero"`    // For write: comma-separated
+	Tier    string           `json:"tier,omitzero"`    // "recall" or "archival" — defaults to "recall"
+	Limit   int              `json:"limit,omitzero"`   // For search — defaults to 5
 }
 
 // MemoryToolResponse is the output of the memory tool.
 type MemoryToolResponse struct {
 	Success bool              `json:"success"`
-	Message string            `json:"message,omitempty"`
-	Results []MemoryToolEntry `json:"results,omitempty"`
-	Status  *MemoryToolStatus `json:"status,omitempty"`
+	Message string            `json:"message,omitzero"`
+	Results []MemoryToolEntry `json:"results,omitzero"`
+	Status  *MemoryToolStatus `json:"status,omitzero"`
 }
 
 // MemoryToolEntry is a single memory entry in tool results.
 type MemoryToolEntry struct {
 	ID      string  `json:"id"`
 	Content string  `json:"content"`
-	Source  string  `json:"source,omitempty"`
-	Sector  string  `json:"sector,omitempty"`
-	Score   float64 `json:"score,omitempty"`
+	Source  string  `json:"source,omitzero"`
+	Sector  string  `json:"sector,omitzero"`
+	Score   float64 `json:"score,omitzero"`
 }
 
 // MemoryToolStatus summarizes the memory system state.
@@ -82,7 +82,7 @@ func NewMemoryTool(store *MemoryStore, agentID, session string) *MemoryTool {
 // Execute processes a memory tool request and returns a JSON response.
 func (t *MemoryTool) Execute(ctx context.Context, input string) (string, error) {
 	var req MemoryToolRequest
-	if err := json.Unmarshal([]byte(input), &req); err != nil {
+	if err := jsonv2.Unmarshal([]byte(input), &req); err != nil {
 		return t.errorResponse("invalid input: " + err.Error()), nil
 	}
 
@@ -325,6 +325,6 @@ func (t *MemoryTool) errorResponse(msg string) string {
 }
 
 func (t *MemoryTool) jsonResponse(resp *MemoryToolResponse) string {
-	b, _ := json.Marshal(resp)
+	b, _ := jsonv2.Marshal(resp)
 	return string(b)
 }

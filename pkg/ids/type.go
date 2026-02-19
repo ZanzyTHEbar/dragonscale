@@ -2,9 +2,10 @@ package ids
 
 import (
 	"database/sql/driver"
-	"encoding/json"
 	"errors"
 	"fmt"
+
+	jsonv2 "github.com/go-json-experiment/json"
 )
 
 // UUID represents a 16-byte RFC-9562 UUIDv7 value.
@@ -85,13 +86,13 @@ func (u *UUID) Scan(src interface{}) error {
 
 // MarshalJSON encodes UUID as JSON string.
 func (u UUID) MarshalJSON() ([]byte, error) {
-	return json.Marshal(u.String())
+	return jsonv2.Marshal(u.String())
 }
 
 // UnmarshalJSON decodes UUID from JSON string.
 func (u *UUID) UnmarshalJSON(b []byte) error {
 	var s string
-	if err := json.Unmarshal(b, &s); err != nil {
+	if err := jsonv2.Unmarshal(b, &s); err != nil {
 		return err
 	}
 	parsed, err := Parse(s)

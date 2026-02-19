@@ -1,7 +1,7 @@
 package providertests
 
 import (
-	"encoding/json"
+	jsonv2 "github.com/go-json-experiment/json"
 	"testing"
 
 	"charm.land/fantasy"
@@ -24,13 +24,13 @@ func TestProviderRegistry_Serialization_OpenAIOptions(t *testing.T) {
 		},
 	}
 
-	data, err := json.Marshal(msg)
+	data, err := jsonv2.Marshal(msg)
 	require.NoError(t, err)
 
 	var raw struct {
 		ProviderOptions map[string]map[string]any `json:"provider_options"`
 	}
-	require.NoError(t, json.Unmarshal(data, &raw))
+	require.NoError(t, jsonv2.Unmarshal(data, &raw))
 
 	po, ok := raw.ProviderOptions[openai.Name]
 	require.True(t, ok)
@@ -41,7 +41,7 @@ func TestProviderRegistry_Serialization_OpenAIOptions(t *testing.T) {
 	require.Equal(t, "tester", inner["user"])
 
 	var decoded fantasy.Message
-	require.NoError(t, json.Unmarshal(data, &decoded))
+	require.NoError(t, jsonv2.Unmarshal(data, &decoded))
 
 	got, ok := decoded.ProviderOptions[openai.Name]
 	require.True(t, ok)
@@ -66,14 +66,14 @@ func TestProviderRegistry_Serialization_OpenAIResponses(t *testing.T) {
 		},
 	}
 
-	data, err := json.Marshal(msg)
+	data, err := jsonv2.Marshal(msg)
 	require.NoError(t, err)
 
 	// JSON should include the typed wrapper with constant TypeResponsesProviderOptions
 	var raw struct {
 		ProviderOptions map[string]map[string]any `json:"provider_options"`
 	}
-	require.NoError(t, json.Unmarshal(data, &raw))
+	require.NoError(t, jsonv2.Unmarshal(data, &raw))
 
 	po := raw.ProviderOptions[openai.Name]
 	require.Equal(t, openai.TypeResponsesProviderOptions, po["type"]) // no magic strings
@@ -84,7 +84,7 @@ func TestProviderRegistry_Serialization_OpenAIResponses(t *testing.T) {
 
 	// Unmarshal back and assert concrete type
 	var decoded fantasy.Message
-	require.NoError(t, json.Unmarshal(data, &decoded))
+	require.NoError(t, jsonv2.Unmarshal(data, &decoded))
 	got := decoded.ProviderOptions[openai.Name]
 	reqOpts, ok := got.(*openai.ResponsesProviderOptions)
 	require.True(t, ok)
@@ -109,7 +109,7 @@ func TestProviderRegistry_Serialization_OpenAIResponsesReasoningMetadata(t *test
 		},
 	}
 
-	data, err := json.Marshal(resp)
+	data, err := jsonv2.Marshal(resp)
 	require.NoError(t, err)
 
 	// Ensure the provider metadata is wrapped with type using constant
@@ -119,7 +119,7 @@ func TestProviderRegistry_Serialization_OpenAIResponsesReasoningMetadata(t *test
 			Data map[string]any `json:"data"`
 		} `json:"content"`
 	}
-	require.NoError(t, json.Unmarshal(data, &raw))
+	require.NoError(t, jsonv2.Unmarshal(data, &raw))
 	require.Greater(t, len(raw.Content), 0)
 	tc := raw.Content[0]
 	pm, ok := tc.Data["provider_metadata"].(map[string]any)
@@ -133,7 +133,7 @@ func TestProviderRegistry_Serialization_OpenAIResponsesReasoningMetadata(t *test
 
 	// Unmarshal back
 	var decoded fantasy.Response
-	require.NoError(t, json.Unmarshal(data, &decoded))
+	require.NoError(t, jsonv2.Unmarshal(data, &decoded))
 	pmDecoded := decoded.Content[0].(fantasy.TextContent).ProviderMetadata
 	val, ok := pmDecoded[openai.Name]
 	require.True(t, ok)
@@ -157,11 +157,11 @@ func TestProviderRegistry_Serialization_AnthropicOptions(t *testing.T) {
 		},
 	}
 
-	data, err := json.Marshal(msg)
+	data, err := jsonv2.Marshal(msg)
 	require.NoError(t, err)
 
 	var decoded fantasy.Message
-	require.NoError(t, json.Unmarshal(data, &decoded))
+	require.NoError(t, jsonv2.Unmarshal(data, &decoded))
 
 	got, ok := decoded.ProviderOptions[anthropic.Name]
 	require.True(t, ok)
@@ -185,11 +185,11 @@ func TestProviderRegistry_Serialization_GoogleOptions(t *testing.T) {
 		},
 	}
 
-	data, err := json.Marshal(msg)
+	data, err := jsonv2.Marshal(msg)
 	require.NoError(t, err)
 
 	var decoded fantasy.Message
-	require.NoError(t, json.Unmarshal(data, &decoded))
+	require.NoError(t, jsonv2.Unmarshal(data, &decoded))
 
 	got, ok := decoded.ProviderOptions[google.Name]
 	require.True(t, ok)
@@ -214,11 +214,11 @@ func TestProviderRegistry_Serialization_OpenRouterOptions(t *testing.T) {
 		},
 	}
 
-	data, err := json.Marshal(msg)
+	data, err := jsonv2.Marshal(msg)
 	require.NoError(t, err)
 
 	var decoded fantasy.Message
-	require.NoError(t, json.Unmarshal(data, &decoded))
+	require.NoError(t, jsonv2.Unmarshal(data, &decoded))
 
 	got, ok := decoded.ProviderOptions[openrouter.Name]
 	require.True(t, ok)
@@ -245,11 +245,11 @@ func TestProviderRegistry_Serialization_OpenAICompatOptions(t *testing.T) {
 		},
 	}
 
-	data, err := json.Marshal(msg)
+	data, err := jsonv2.Marshal(msg)
 	require.NoError(t, err)
 
 	var decoded fantasy.Message
-	require.NoError(t, json.Unmarshal(data, &decoded))
+	require.NoError(t, jsonv2.Unmarshal(data, &decoded))
 
 	got, ok := decoded.ProviderOptions[openaicompat.Name]
 	require.True(t, ok)
@@ -277,11 +277,11 @@ func TestProviderRegistry_MultiProvider(t *testing.T) {
 		},
 	}
 
-	data, err := json.Marshal(msg)
+	data, err := jsonv2.Marshal(msg)
 	require.NoError(t, err)
 
 	var decoded fantasy.Message
-	require.NoError(t, json.Unmarshal(data, &decoded))
+	require.NoError(t, jsonv2.Unmarshal(data, &decoded))
 
 	// Check OpenAI options
 	openaiOpt, ok := decoded.ProviderOptions[openai.Name]
@@ -312,7 +312,7 @@ func TestProviderRegistry_ErrorHandling(t *testing.T) {
 		}`
 
 		var msg fantasy.Message
-		err := json.Unmarshal([]byte(invalidJSON), &msg)
+		err := jsonv2.Unmarshal([]byte(invalidJSON), &msg)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "unknown provider data type")
 	})
@@ -327,7 +327,7 @@ func TestProviderRegistry_ErrorHandling(t *testing.T) {
 		}`
 
 		var msg fantasy.Message
-		err := json.Unmarshal([]byte(invalidJSON), &msg)
+		err := jsonv2.Unmarshal([]byte(invalidJSON), &msg)
 		require.Error(t, err)
 	})
 }
@@ -364,11 +364,11 @@ func TestProviderRegistry_AllTypesRegistered(t *testing.T) {
 			}
 
 			// Marshal and unmarshal
-			data, err := json.Marshal(msg)
+			data, err := jsonv2.Marshal(msg)
 			require.NoError(t, err)
 
 			var decoded fantasy.Message
-			err = json.Unmarshal(data, &decoded)
+			err = jsonv2.Unmarshal(data, &decoded)
 			require.NoError(t, err)
 
 			// Verify the provider options exist
@@ -404,11 +404,11 @@ func TestProviderRegistry_AllTypesRegistered(t *testing.T) {
 			}
 
 			// Marshal and unmarshal
-			data, err := json.Marshal(resp)
+			data, err := jsonv2.Marshal(resp)
 			require.NoError(t, err)
 
 			var decoded fantasy.Response
-			err = json.Unmarshal(data, &decoded)
+			err = jsonv2.Unmarshal(data, &decoded)
 			require.NoError(t, err)
 
 			// Verify the provider metadata exists

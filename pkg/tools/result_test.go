@@ -1,9 +1,10 @@
 package tools
 
 import (
-	"encoding/json"
 	"errors"
 	"testing"
+
+	jsonv2 "github.com/go-json-experiment/json"
 )
 
 func TestNewToolResult(t *testing.T) {
@@ -125,14 +126,14 @@ func TestToolResultJSONSerialization(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Marshal to JSON
-			data, err := json.Marshal(tt.result)
+			data, err := jsonv2.Marshal(tt.result)
 			if err != nil {
 				t.Fatalf("Failed to marshal: %v", err)
 			}
 
 			// Unmarshal back
 			var decoded ToolResult
-			if err := json.Unmarshal(data, &decoded); err != nil {
+			if err := jsonv2.Unmarshal(data, &decoded); err != nil {
 				t.Fatalf("Failed to unmarshal: %v", err)
 			}
 
@@ -168,13 +169,13 @@ func TestToolResultWithErrors(t *testing.T) {
 	}
 
 	// Verify Err is not serialized
-	data, marshalErr := json.Marshal(result)
+	data, marshalErr := jsonv2.Marshal(result)
 	if marshalErr != nil {
 		t.Fatalf("Failed to marshal: %v", marshalErr)
 	}
 
 	var decoded ToolResult
-	if unmarshalErr := json.Unmarshal(data, &decoded); unmarshalErr != nil {
+	if unmarshalErr := jsonv2.Unmarshal(data, &decoded); unmarshalErr != nil {
 		t.Fatalf("Failed to unmarshal: %v", unmarshalErr)
 	}
 
@@ -186,14 +187,14 @@ func TestToolResultWithErrors(t *testing.T) {
 func TestToolResultJSONStructure(t *testing.T) {
 	result := UserResult("test content")
 
-	data, err := json.Marshal(result)
+	data, err := jsonv2.Marshal(result)
 	if err != nil {
 		t.Fatalf("Failed to marshal: %v", err)
 	}
 
 	// Verify JSON structure
 	var parsed map[string]interface{}
-	if err := json.Unmarshal(data, &parsed); err != nil {
+	if err := jsonv2.Unmarshal(data, &parsed); err != nil {
 		t.Fatalf("Failed to parse JSON: %v", err)
 	}
 

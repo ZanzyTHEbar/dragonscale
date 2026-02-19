@@ -1,7 +1,6 @@
 package skills
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -9,6 +8,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	jsonv2 "github.com/go-json-experiment/json"
 )
 
 var namePattern = regexp.MustCompile(`^[a-zA-Z0-9]+(-[a-zA-Z0-9]+)*$`)
@@ -21,10 +22,10 @@ const (
 type SkillMetadata struct {
 	Name        string   `json:"name"`
 	Description string   `json:"description"`
-	Tags        []string `json:"tags,omitempty"`
-	Links       []string `json:"links,omitempty"`
-	Domain      string   `json:"domain,omitempty"`
-	IsMOC       bool     `json:"is_moc,omitempty"`
+	Tags        []string `json:"tags,omitzero"`
+	Links       []string `json:"links,omitzero"`
+	Domain      string   `json:"domain,omitzero"`
+	IsMOC       bool     `json:"is_moc,omitzero"`
 }
 
 type SkillInfo struct {
@@ -32,8 +33,8 @@ type SkillInfo struct {
 	Path        string   `json:"path"`
 	Source      string   `json:"source"`
 	Description string   `json:"description"`
-	Tags        []string `json:"tags,omitempty"`
-	Domain      string   `json:"domain,omitempty"`
+	Tags        []string `json:"tags,omitzero"`
+	Domain      string   `json:"domain,omitzero"`
 }
 
 func (info SkillInfo) validate() error {
@@ -124,18 +125,18 @@ func (sl *SkillsLoader) ListSkills() []SkillInfo {
 							continue
 						}
 
-					info := SkillInfo{
-						Name:   dir.Name(),
-						Path:   skillFile,
-						Source: "global",
-					}
-					metadata := sl.getSkillMetadata(skillFile)
-					if metadata != nil {
-						info.Description = metadata.Description
-						info.Name = metadata.Name
-						info.Tags = metadata.Tags
-						info.Domain = metadata.Domain
-					}
+						info := SkillInfo{
+							Name:   dir.Name(),
+							Path:   skillFile,
+							Source: "global",
+						}
+						metadata := sl.getSkillMetadata(skillFile)
+						if metadata != nil {
+							info.Description = metadata.Description
+							info.Name = metadata.Name
+							info.Tags = metadata.Tags
+							info.Domain = metadata.Domain
+						}
 						if err := info.validate(); err != nil {
 							slog.Warn("invalid skill from global", "name", info.Name, "error", err)
 							continue
@@ -165,18 +166,18 @@ func (sl *SkillsLoader) ListSkills() []SkillInfo {
 							continue
 						}
 
-					info := SkillInfo{
-						Name:   dir.Name(),
-						Path:   skillFile,
-						Source: "builtin",
-					}
-					metadata := sl.getSkillMetadata(skillFile)
-					if metadata != nil {
-						info.Description = metadata.Description
-						info.Name = metadata.Name
-						info.Tags = metadata.Tags
-						info.Domain = metadata.Domain
-					}
+						info := SkillInfo{
+							Name:   dir.Name(),
+							Path:   skillFile,
+							Source: "builtin",
+						}
+						metadata := sl.getSkillMetadata(skillFile)
+						if metadata != nil {
+							info.Description = metadata.Description
+							info.Name = metadata.Name
+							info.Tags = metadata.Tags
+							info.Domain = metadata.Domain
+						}
 						if err := info.validate(); err != nil {
 							slog.Warn("invalid skill from builtin", "name", info.Name, "error", err)
 							continue
@@ -281,7 +282,7 @@ func (sl *SkillsLoader) getSkillMetadata(skillPath string) *SkillMetadata {
 
 	// Try JSON first (for backward compatibility)
 	var jsonMeta SkillMetadata
-	if err := json.Unmarshal([]byte(frontmatter), &jsonMeta); err == nil && jsonMeta.Name != "" {
+	if err := jsonv2.Unmarshal([]byte(frontmatter), &jsonMeta); err == nil && jsonMeta.Name != "" {
 		return &jsonMeta
 	}
 

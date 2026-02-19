@@ -1,11 +1,13 @@
 package tools
 
 import (
-	"encoding/json"
 	"fmt"
 	"runtime"
 	"syscall"
 	"unsafe"
+
+	jsonv2 "github.com/go-json-experiment/json"
+	"github.com/go-json-experiment/json/jsontext"
 )
 
 // SPI ioctl constants from Linux kernel headers.
@@ -130,12 +132,12 @@ func (t *SPITool) transfer(args map[string]interface{}) *ToolResult {
 		intBytes[i] = int(b)
 	}
 
-	result, _ := json.MarshalIndent(map[string]interface{}{
+	result, _ := jsonv2.Marshal(map[string]interface{}{
 		"device":   devPath,
 		"sent":     len(txBuf),
 		"received": intBytes,
 		"hex":      hexBytes,
-	}, "", "  ")
+	}, jsontext.WithIndent("  "))
 	return SilentResult(string(result))
 }
 
@@ -186,11 +188,11 @@ func (t *SPITool) readDevice(args map[string]interface{}) *ToolResult {
 		intBytes[i] = int(b)
 	}
 
-	result, _ := json.MarshalIndent(map[string]interface{}{
+	result, _ := jsonv2.Marshal(map[string]interface{}{
 		"device": devPath,
 		"bytes":  intBytes,
 		"hex":    hexBytes,
 		"length": len(rxBuf),
-	}, "", "  ")
+	}, jsontext.WithIndent("  "))
 	return SilentResult(string(result))
 }

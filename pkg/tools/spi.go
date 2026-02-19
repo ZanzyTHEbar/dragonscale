@@ -2,11 +2,13 @@ package tools
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"regexp"
 	"runtime"
+
+	jsonv2 "github.com/go-json-experiment/json"
+	"github.com/go-json-experiment/json/jsontext"
 )
 
 // SPITool provides SPI bus interaction for high-speed peripheral communication.
@@ -113,7 +115,7 @@ func (t *SPITool) list() *ToolResult {
 		}
 	}
 
-	result, _ := json.MarshalIndent(devices, "", "  ")
+	result, _ := jsonv2.Marshal(devices, jsontext.WithIndent("  "))
 	return SilentResult(fmt.Sprintf("Found %d SPI device(s):\n%s", len(devices), string(result)))
 }
 

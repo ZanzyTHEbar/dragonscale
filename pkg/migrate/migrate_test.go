@@ -1,10 +1,11 @@
 package migrate
 
 import (
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
+
+	jsonv2 "github.com/go-json-experiment/json"
 
 	"github.com/sipeed/picoclaw/pkg/config"
 )
@@ -104,7 +105,7 @@ func TestLoadOpenClawConfig(t *testing.T) {
 		},
 	}
 
-	data, err := json.Marshal(openclawConfig)
+	data, err := jsonv2.Marshal(openclawConfig)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -583,7 +584,7 @@ func TestRunDryRun(t *testing.T) {
 			},
 		},
 	}
-	data, _ := json.Marshal(configData)
+	data, _ := jsonv2.Marshal(configData)
 	os.WriteFile(filepath.Join(openclawHome, "openclaw.json"), data, 0644)
 
 	opts := Options{
@@ -638,7 +639,7 @@ func TestRunFullMigration(t *testing.T) {
 			},
 		},
 	}
-	data, _ := json.Marshal(configData)
+	data, _ := jsonv2.Marshal(configData)
 	os.WriteFile(filepath.Join(openclawHome, "openclaw.json"), data, 0644)
 
 	opts := Options{
@@ -784,7 +785,7 @@ func TestRunConfigOnly(t *testing.T) {
 			},
 		},
 	}
-	data, _ := json.Marshal(configData)
+	data, _ := jsonv2.Marshal(configData)
 	os.WriteFile(filepath.Join(openclawHome, "openclaw.json"), data, 0644)
 
 	opts := Options{
@@ -824,7 +825,7 @@ func TestRunWorkspaceOnly(t *testing.T) {
 			},
 		},
 	}
-	data, _ := json.Marshal(configData)
+	data, _ := jsonv2.Marshal(configData)
 	os.WriteFile(filepath.Join(openclawHome, "openclaw.json"), data, 0644)
 
 	opts := Options{

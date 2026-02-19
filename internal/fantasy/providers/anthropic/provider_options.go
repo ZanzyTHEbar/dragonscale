@@ -2,7 +2,7 @@
 package anthropic
 
 import (
-	"encoding/json"
+	jsonv2 "github.com/go-json-experiment/json"
 
 	"charm.land/fantasy"
 )
@@ -18,21 +18,21 @@ const (
 func init() {
 	fantasy.RegisterProviderType(TypeProviderOptions, func(data []byte) (fantasy.ProviderOptionsData, error) {
 		var v ProviderOptions
-		if err := json.Unmarshal(data, &v); err != nil {
+		if err := jsonv2.Unmarshal(data, &v); err != nil {
 			return nil, err
 		}
 		return &v, nil
 	})
 	fantasy.RegisterProviderType(TypeReasoningOptionMetadata, func(data []byte) (fantasy.ProviderOptionsData, error) {
 		var v ReasoningOptionMetadata
-		if err := json.Unmarshal(data, &v); err != nil {
+		if err := jsonv2.Unmarshal(data, &v); err != nil {
 			return nil, err
 		}
 		return &v, nil
 	})
 	fantasy.RegisterProviderType(TypeProviderCacheControl, func(data []byte) (fantasy.ProviderOptionsData, error) {
 		var v ProviderCacheControlOptions
-		if err := json.Unmarshal(data, &v); err != nil {
+		if err := jsonv2.Unmarshal(data, &v); err != nil {
 			return nil, err
 		}
 		return &v, nil

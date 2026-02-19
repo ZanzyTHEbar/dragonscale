@@ -2,7 +2,7 @@ package securebus_test
 
 import (
 	"context"
-	"encoding/json"
+	jsonv2 "github.com/go-json-experiment/json"
 	"testing"
 
 	"github.com/sipeed/picoclaw/pkg/itr"
@@ -49,7 +49,7 @@ func makeArgsJSON(kv map[string]interface{}) string {
 	if kv == nil {
 		return "{}"
 	}
-	b, _ := json.Marshal(kv)
+	b, _ := jsonv2.Marshal(kv)
 	return string(b)
 }
 
@@ -247,4 +247,57 @@ func TestBus_RLMFinalCommand(t *testing.T) {
 
 	assert.False(t, resp.IsError)
 	assert.Equal(t, "the answer", resp.Result)
+}
+
+func TestBus_CloseIdempotent(t *testing.T) {
+	bus := makeBus(t, nil, nil)
+
+	assert.NotPanics(t, func() {
+		bus.Close()
+		bus.Close()
+		bus.Close()
+	}, "Close() must be safe to call multiple times")
+}
+
+func TestBus_ToolSearch(t *testing.T) {
+	bus := makeBus(t, nil, nil)
+	defer bus.Close()
+
+	bus.SetToolSearch(func(query string, maxResults int) string {
+		return `[{"name":"read_file","description":"reads a file"}]`
+	})
+
+	req := itr.NewToolSearchRequest("req-search", "sess", "file operations", 5)
+	resp := bus.Execute(context.Background(), req)
+
+	assert.False(t, resp.IsError)
+	assert.Contains(t, resp.Result, "read_file")
+}
+
+func TestBus_ToolSearchNotConfigured(t *testing.T) {
+	bus := makeBus(t, nil, nil)
+	defer bus.Close()
+
+	req := itr.NewToolSearchRequest("req-search2", "sess", "anything", 5)
+	resp := bus.Execute(context.Background(), req)
+
+	assert.True(t, resp.IsError)
+	assert.Contains(t, resp.Result, "not configured")
+}
+
+func TestBus_NilToolResult(t *testing.T) {
+	executor := func(ctx context.Context, name string, args map[string]interface{}) *tools.ToolResult {
+		return nil
+	}
+	capLookup := func(name string) (tools.ToolCapabilities, bool) {
+		return tools.ZeroCapabilities(), true
+	}
+	bus := securebus.New(securebus.DefaultBusConfig(), nil, capLookup, executor)
+	defer bus.Close()
+
+	req := itr.NewToolExecRequest("req-nil", "sess", "tc", "something", "{}")
+	resp := bus.Execute(context.Background(), req)
+
+	assert.False(t, resp.IsError)
+	assert.Empty(t, resp.Result)
 }

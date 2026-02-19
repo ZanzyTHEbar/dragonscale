@@ -2,8 +2,8 @@ package dag
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
+	jsonv2 "github.com/go-json-experiment/json"
 
 	"github.com/sipeed/picoclaw/pkg/itr"
 	"github.com/sipeed/picoclaw/pkg/tools"
@@ -17,10 +17,10 @@ type PlannerFunc func(ctx context.Context, systemPrompt, userQuery string) (stri
 // LLM to produce a structured JSON plan. The LLM outputs a list of nodes
 // with dependency edges in a single inference pass (LLMCompiler pattern).
 type Planner struct {
-	callModel    PlannerFunc
-	registry     *tools.ToolRegistry
-	maxParallel  uint8
-	tokenBudget  uint32
+	callModel   PlannerFunc
+	registry    *tools.ToolRegistry
+	maxParallel uint8
+	tokenBudget uint32
 }
 
 // PlannerConfig configures the DAG planner.
@@ -115,30 +115,8 @@ func parsePlanResponse(response string) (*itr.DAGPlan, error) {
 	response = extractJSON(response)
 
 	var plan itr.DAGPlan
-	if err := json.Unmarshal([]byte(response), &plan); err != nil {
+	if err := jsonv2.Unmarshal([]byte(response), &plan, itr.LLMJSONOpts()); err != nil {
 		return nil, fmt.Errorf("JSON parse error: %w\nraw: %s", err, truncate(response, 500))
-	}
-
-	// Unmarshal re-encodes Payload as map[string]interface{} via JSON round-trip.
-	// Convert payload maps to their proper types.
-	for i := range plan.Nodes {
-		n := &plan.Nodes[i]
-		m, ok := n.Payload.(map[string]interface{})
-		if !ok {
-			continue
-		}
-		b, _ := json.Marshal(m)
-
-		switch n.Type {
-		case itr.CmdToolExec:
-			var te itr.ToolExec
-			_ = json.Unmarshal(b, &te)
-			n.Payload = te
-		case itr.CmdToolSearch:
-			var ts itr.ToolSearch
-			_ = json.Unmarshal(b, &ts)
-			n.Payload = ts
-		}
 	}
 
 	return &plan, nil

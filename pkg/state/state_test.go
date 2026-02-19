@@ -1,11 +1,12 @@
 package state
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
+
+	jsonv2 "github.com/go-json-experiment/json"
 )
 
 func TestAtomicSave(t *testing.T) {
@@ -162,7 +163,7 @@ func TestConcurrentAccess(t *testing.T) {
 	}
 
 	var state State
-	if err := json.Unmarshal(data, &state); err != nil {
+	if err := jsonv2.Unmarshal(data, &state); err != nil {
 		t.Errorf("State file contains invalid JSON: %v", err)
 	}
 }

@@ -13,7 +13,6 @@ package dag
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"runtime"
 	"strings"
@@ -36,11 +35,11 @@ type RLMExpandFunc func(ctx context.Context, sessionKey, query, contextContent s
 
 // Executor runs a DAGPlan through the SecureBus with topological dispatch.
 type Executor struct {
-	bus                *securebus.Bus
-	joiner             JoinerFunc
-	rlmExpand          RLMExpandFunc
-	rlmThresholdBytes  int
-	maxParallel        int
+	bus               *securebus.Bus
+	joiner            JoinerFunc
+	rlmExpand         RLMExpandFunc
+	rlmThresholdBytes int
+	maxParallel       int
 }
 
 // ExecutorOption configures an Executor via the functional options pattern.
@@ -133,8 +132,9 @@ func (e *Executor) Execute(ctx context.Context, sessionKey string, plan *itr.DAG
 					select {
 					case <-depState.done:
 						if _, depErr := depState.getResult(); depErr != nil {
-							ns.setResult("", fmt.Errorf("dependency %s failed: %w", dep, depErr))
-							errOnce.Do(func() { waveErr = depErr })
+							wrapped := fmt.Errorf("dependency %s failed: %w", dep, depErr)
+							ns.setResult("", wrapped)
+							errOnce.Do(func() { waveErr = wrapped })
 							return
 						}
 					case <-ctx.Done():
@@ -215,34 +215,31 @@ func (e *Executor) Execute(ctx context.Context, sessionKey string, plan *itr.DAG
 // executeNode dispatches a single node through the SecureBus after resolving
 // dependency references in its payload.
 func (e *Executor) executeNode(ctx context.Context, sessionKey string, node *itr.DAGNode, states map[string]*nodeState) itr.ToolResponse {
-	req := nodeToRequest(sessionKey, node, states)
+	req, err := nodeToRequest(sessionKey, node, states)
+	if err != nil {
+		return itr.NewErrorResponse(node.ID, err.Error())
+	}
 	return e.bus.Execute(ctx, req)
 }
 
 // nodeToRequest converts a DAGNode into a ToolRequest, resolving #nodeN
 // references in tool arguments.
-func nodeToRequest(sessionKey string, node *itr.DAGNode, states map[string]*nodeState) itr.ToolRequest {
+func nodeToRequest(sessionKey string, node *itr.DAGNode, states map[string]*nodeState) (itr.ToolRequest, error) {
 	switch node.Type {
 	case itr.CmdToolExec:
 		te, ok := node.Payload.(itr.ToolExec)
 		if !ok {
-			if m, ok := node.Payload.(map[string]interface{}); ok {
-				b, _ := json.Marshal(m)
-				_ = json.Unmarshal(b, &te)
-			}
+			return itr.ToolRequest{}, fmt.Errorf("node %s: expected ToolExec payload, got %T", node.ID, node.Payload)
 		}
 		te.ArgsJSON = resolveToolExecArgs(te.ArgsJSON, states)
-		return itr.NewToolExecRequest(node.ID, sessionKey, node.ID, te.ToolName, te.ArgsJSON)
+		return itr.NewToolExecRequest(node.ID, sessionKey, node.ID, te.ToolName, te.ArgsJSON), nil
 
 	case itr.CmdToolSearch:
 		ts, ok := node.Payload.(itr.ToolSearch)
 		if !ok {
-			if m, ok := node.Payload.(map[string]interface{}); ok {
-				b, _ := json.Marshal(m)
-				_ = json.Unmarshal(b, &ts)
-			}
+			return itr.ToolRequest{}, fmt.Errorf("node %s: expected ToolSearch payload, got %T", node.ID, node.Payload)
 		}
-		return itr.NewToolSearchRequest(node.ID, sessionKey, ts.Query, ts.MaxResults)
+		return itr.NewToolSearchRequest(node.ID, sessionKey, ts.Query, ts.MaxResults), nil
 
 	default:
 		return itr.ToolRequest{
@@ -250,7 +247,7 @@ func nodeToRequest(sessionKey string, node *itr.DAGNode, states map[string]*node
 			Type:       node.Type,
 			Payload:    node.Payload,
 			SessionKey: sessionKey,
-		}
+		}, nil
 	}
 }
 

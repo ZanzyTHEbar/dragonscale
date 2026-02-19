@@ -2,10 +2,11 @@ package channels
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net"
 	"sync"
+
+	jsonv2 "github.com/go-json-experiment/json"
 
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/config"
@@ -102,15 +103,13 @@ func (c *MaixCamChannel) handleConnection(conn net.Conn, ctx context.Context) {
 		logger.DebugC("maixcam", "Connection closed")
 	}()
 
-	decoder := json.NewDecoder(conn)
-
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		default:
 			var msg MaixCamMessage
-			if err := decoder.Decode(&msg); err != nil {
+			if err := jsonv2.UnmarshalRead(conn, &msg); err != nil {
 				if err.Error() != "EOF" {
 					logger.ErrorCF("maixcam", "Failed to decode message", map[string]interface{}{
 						"error": err.Error(),
@@ -221,7 +220,7 @@ func (c *MaixCamChannel) Send(ctx context.Context, msg bus.OutboundMessage) erro
 		"chat_id":   msg.ChatID,
 	}
 
-	data, err := json.Marshal(response)
+	data, err := jsonv2.Marshal(response)
 	if err != nil {
 		return fmt.Errorf("failed to marshal response: %w", err)
 	}

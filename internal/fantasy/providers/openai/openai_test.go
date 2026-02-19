@@ -3,7 +3,6 @@ package openai
 import (
 	"context"
 	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -11,6 +10,7 @@ import (
 	"testing"
 
 	"charm.land/fantasy"
+	jsonv2 "github.com/go-json-experiment/json"
 	"github.com/openai/openai-go/v2/packages/param"
 	"github.com/stretchr/testify/require"
 )
@@ -427,10 +427,10 @@ func TestToOpenAiPrompt_ToolCalls(t *testing.T) {
 		t.Parallel()
 
 		inputArgs := map[string]any{"foo": "bar123"}
-		inputJSON, _ := json.Marshal(inputArgs)
+		inputJSON, _ := jsonv2.Marshal(inputArgs)
 
 		outputResult := map[string]any{"oof": "321rab"}
-		outputJSON, _ := json.Marshal(outputResult)
+		outputJSON, _ := jsonv2.Marshal(outputResult)
 
 		prompt := fantasy.Prompt{
 			{
@@ -551,7 +551,7 @@ func TestToOpenAiPrompt_AssistantMessages(t *testing.T) {
 		t.Parallel()
 
 		inputArgs := map[string]any{"query": "test"}
-		inputJSON, _ := json.Marshal(inputArgs)
+		inputJSON, _ := jsonv2.Marshal(inputArgs)
 
 		prompt := fantasy.Prompt{
 			{
@@ -723,7 +723,7 @@ func newMockServer() *mockServer {
 		// Parse request body
 		if r.Body != nil {
 			var body map[string]any
-			json.NewDecoder(r.Body).Decode(&body)
+			jsonv2.UnmarshalRead(r.Body, &body)
 			call.body = body
 		}
 
@@ -731,7 +731,7 @@ func newMockServer() *mockServer {
 
 		// Return mock response
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(ms.response)
+		jsonv2.MarshalWrite(w, ms.response)
 	}))
 
 	return ms
@@ -2038,7 +2038,7 @@ func newStreamingMockServer() *streamingMockServer {
 		// Parse request body
 		if r.Body != nil {
 			var body map[string]any
-			json.NewDecoder(r.Body).Decode(&body)
+			jsonv2.UnmarshalRead(r.Body, &body)
 			call.body = body
 		}
 
@@ -2141,7 +2141,7 @@ func (sms *streamingMockServer) prepareStreamResponse(opts map[string]any) {
 			},
 		},
 	}
-	initialData, _ := json.Marshal(initialChunk)
+	initialData, _ := jsonv2.Marshal(initialChunk)
 	chunks = append(chunks, "data: "+string(initialData)+"\n\n")
 
 	// Content chunks
@@ -2162,7 +2162,7 @@ func (sms *streamingMockServer) prepareStreamResponse(opts map[string]any) {
 				},
 			},
 		}
-		contentData, _ := json.Marshal(contentChunk)
+		contentData, _ := jsonv2.Marshal(contentChunk)
 		chunks = append(chunks, "data: "+string(contentData)+"\n\n")
 
 		// Add annotations if this is the last content chunk and we have annotations
@@ -2184,7 +2184,7 @@ func (sms *streamingMockServer) prepareStreamResponse(opts map[string]any) {
 						},
 					},
 				}
-				annotationData, _ := json.Marshal(annotationChunk)
+				annotationData, _ := jsonv2.Marshal(annotationChunk)
 				chunks = append(chunks, "data: "+string(annotationData)+"\n\n")
 			}
 		}
@@ -2210,7 +2210,7 @@ func (sms *streamingMockServer) prepareStreamResponse(opts map[string]any) {
 		finishChunk["choices"].([]map[string]any)[0]["logprobs"] = logprobs
 	}
 
-	finishData, _ := json.Marshal(finishChunk)
+	finishData, _ := jsonv2.Marshal(finishChunk)
 	chunks = append(chunks, "data: "+string(finishData)+"\n\n")
 
 	// Usage chunk
@@ -2223,7 +2223,7 @@ func (sms *streamingMockServer) prepareStreamResponse(opts map[string]any) {
 		"choices":            []map[string]any{},
 		"usage":              usage,
 	}
-	usageData, _ := json.Marshal(usageChunk)
+	usageData, _ := jsonv2.Marshal(usageChunk)
 	chunks = append(chunks, "data: "+string(usageData)+"\n\n")
 
 	// Done

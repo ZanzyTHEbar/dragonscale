@@ -2,7 +2,7 @@
 package openrouter
 
 import (
-	"encoding/json"
+	jsonv2 "github.com/go-json-experiment/json"
 
 	"charm.land/fantasy"
 	"charm.land/fantasy/providers/openai"
@@ -101,11 +101,11 @@ func WithObjectMode(om fantasy.ObjectMode) Option {
 
 func structToMapJSON(s any) (map[string]any, error) {
 	var result map[string]any
-	jsonBytes, err := json.Marshal(s)
+	jsonBytes, err := jsonv2.Marshal(s)
 	if err != nil {
 		return nil, err
 	}
-	err = json.Unmarshal(jsonBytes, &result)
+	err = jsonv2.Unmarshal(jsonBytes, &result)
 	if err != nil {
 		return nil, err
 	}

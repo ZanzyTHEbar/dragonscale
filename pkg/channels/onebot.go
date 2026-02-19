@@ -2,13 +2,14 @@ package channels
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	jsonv2 "github.com/go-json-experiment/json"
+	"github.com/go-json-experiment/json/jsontext"
 	"github.com/gorilla/websocket"
 
 	"github.com/sipeed/picoclaw/pkg/bus"
@@ -31,21 +32,21 @@ type OneBotChannel struct {
 }
 
 type oneBotRawEvent struct {
-	PostType      string          `json:"post_type"`
-	MessageType   string          `json:"message_type"`
-	SubType       string          `json:"sub_type"`
-	MessageID     json.RawMessage `json:"message_id"`
-	UserID        json.RawMessage `json:"user_id"`
-	GroupID       json.RawMessage `json:"group_id"`
-	RawMessage    string          `json:"raw_message"`
-	Message       json.RawMessage `json:"message"`
-	Sender        json.RawMessage `json:"sender"`
-	SelfID        json.RawMessage `json:"self_id"`
-	Time          json.RawMessage `json:"time"`
-	MetaEventType string          `json:"meta_event_type"`
-	Echo          string          `json:"echo"`
-	RetCode       json.RawMessage `json:"retcode"`
-	Status        BotStatus       `json:"status"`
+	PostType      string         `json:"post_type"`
+	MessageType   string         `json:"message_type"`
+	SubType       string         `json:"sub_type"`
+	MessageID     jsontext.Value `json:"message_id"`
+	UserID        jsontext.Value `json:"user_id"`
+	GroupID       jsontext.Value `json:"group_id"`
+	RawMessage    string         `json:"raw_message"`
+	Message       jsontext.Value `json:"message"`
+	Sender        jsontext.Value `json:"sender"`
+	SelfID        jsontext.Value `json:"self_id"`
+	Time          jsontext.Value `json:"time"`
+	MetaEventType string         `json:"meta_event_type"`
+	Echo          string         `json:"echo"`
+	RetCode       jsontext.Value `json:"retcode"`
+	Status        BotStatus      `json:"status"`
 }
 
 type BotStatus struct {
@@ -54,9 +55,9 @@ type BotStatus struct {
 }
 
 type oneBotSender struct {
-	UserID   json.RawMessage `json:"user_id"`
-	Nickname string          `json:"nickname"`
-	Card     string          `json:"card"`
+	UserID   jsontext.Value `json:"user_id"`
+	Nickname string         `json:"nickname"`
+	Card     string         `json:"card"`
 }
 
 type oneBotEvent struct {
@@ -78,7 +79,7 @@ type oneBotEvent struct {
 type oneBotAPIRequest struct {
 	Action string      `json:"action"`
 	Params interface{} `json:"params"`
-	Echo   string      `json:"echo,omitempty"`
+	Echo   string      `json:"echo,omitzero"`
 }
 
 type oneBotSendPrivateMsgParams struct {
@@ -236,7 +237,7 @@ func (c *OneBotChannel) Send(ctx context.Context, msg bus.OutboundMessage) error
 		Echo:   echo,
 	}
 
-	data, err := json.Marshal(req)
+	data, err := jsonv2.Marshal(req)
 	if err != nil {
 		return fmt.Errorf("failed to marshal OneBot request: %w", err)
 	}
@@ -326,7 +327,7 @@ func (c *OneBotChannel) listen() {
 			})
 
 			var raw oneBotRawEvent
-			if err := json.Unmarshal(message, &raw); err != nil {
+			if err := jsonv2.Unmarshal(message, &raw); err != nil {
 				logger.WarnCF("onebot", "Failed to unmarshal raw event", map[string]interface{}{
 					"error":   err.Error(),
 					"payload": string(message),
@@ -354,29 +355,29 @@ func (c *OneBotChannel) listen() {
 	}
 }
 
-func parseJSONInt64(raw json.RawMessage) (int64, error) {
+func parseJSONInt64(raw jsontext.Value) (int64, error) {
 	if len(raw) == 0 {
 		return 0, nil
 	}
 
 	var n int64
-	if err := json.Unmarshal(raw, &n); err == nil {
+	if err := jsonv2.Unmarshal(raw, &n); err == nil {
 		return n, nil
 	}
 
 	var s string
-	if err := json.Unmarshal(raw, &s); err == nil {
+	if err := jsonv2.Unmarshal(raw, &s); err == nil {
 		return strconv.ParseInt(s, 10, 64)
 	}
 	return 0, fmt.Errorf("cannot parse as int64: %s", string(raw))
 }
 
-func parseJSONString(raw json.RawMessage) string {
+func parseJSONString(raw jsontext.Value) string {
 	if len(raw) == 0 {
 		return ""
 	}
 	var s string
-	if err := json.Unmarshal(raw, &s); err == nil {
+	if err := jsonv2.Unmarshal(raw, &s); err == nil {
 		return s
 	}
 
@@ -388,13 +389,13 @@ type parseMessageResult struct {
 	IsBotMentioned bool
 }
 
-func parseMessageContentEx(raw json.RawMessage, selfID int64) parseMessageResult {
+func parseMessageContentEx(raw jsontext.Value, selfID int64) parseMessageResult {
 	if len(raw) == 0 {
 		return parseMessageResult{}
 	}
 
 	var s string
-	if err := json.Unmarshal(raw, &s); err == nil {
+	if err := jsonv2.Unmarshal(raw, &s); err == nil {
 		mentioned := false
 		if selfID > 0 {
 			cqAt := fmt.Sprintf("[CQ:at,qq=%d]", selfID)
@@ -408,7 +409,7 @@ func parseMessageContentEx(raw json.RawMessage, selfID int64) parseMessageResult
 	}
 
 	var segments []map[string]interface{}
-	if err := json.Unmarshal(raw, &segments); err == nil {
+	if err := jsonv2.Unmarshal(raw, &segments); err == nil {
 		var text string
 		mentioned := false
 		selfIDStr := strconv.FormatInt(selfID, 10)
@@ -497,7 +498,7 @@ func (c *OneBotChannel) normalizeMessageEvent(raw *oneBotRawEvent) (*oneBotEvent
 
 	var sender oneBotSender
 	if len(raw.Sender) > 0 {
-		if err := json.Unmarshal(raw.Sender, &sender); err != nil {
+		if err := jsonv2.Unmarshal(raw.Sender, &sender); err != nil {
 			logger.WarnCF("onebot", "Failed to parse sender", map[string]interface{}{
 				"error":  err.Error(),
 				"sender": string(raw.Sender),

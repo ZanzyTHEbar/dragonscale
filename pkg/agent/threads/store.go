@@ -6,7 +6,7 @@ package threads
 
 import (
 	"context"
-	"encoding/json"
+	jsonv2 "github.com/go-json-experiment/json"
 	"strings"
 
 	"github.com/sipeed/picoclaw/pkg/ids"
@@ -45,7 +45,7 @@ func (s *Store) Create(ctx context.Context, p CreateParams) (sqlc.AgentThread, e
 		return sqlc.AgentThread{}, pcerrors.Wrapf(pcerrors.CodeInvalidArgument, err, "parse conversation_id %q", convIDStr)
 	}
 
-	metaJSON, _ := json.Marshal(p.Metadata)
+	metaJSON, _ := jsonv2.Marshal(p.Metadata)
 
 	return s.q.CreateAgentThread(ctx, sqlc.CreateAgentThreadParams{
 		ID:             ids.New(),
@@ -108,7 +108,7 @@ func (s *Store) AddMessage(ctx context.Context, p AddMessageParams) (sqlc.AgentT
 		return sqlc.AgentThreadMessage{}, pcerrors.New(pcerrors.CodeInvalidArgument, "content is empty")
 	}
 
-	metaJSON, _ := json.Marshal(p.Metadata)
+	metaJSON, _ := jsonv2.Marshal(p.Metadata)
 
 	return s.q.AddAgentThreadMessage(ctx, sqlc.AddAgentThreadMessageParams{
 		ID:           ids.New(),

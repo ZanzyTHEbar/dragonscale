@@ -7,10 +7,11 @@ package fantasy
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
 	"charm.land/fantasy"
+	jsonv2 "github.com/go-json-experiment/json"
+
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	memstore "github.com/sipeed/picoclaw/pkg/memory/store"
@@ -170,7 +171,7 @@ func parseToolArgs(input string) (map[string]interface{}, error) {
 	}
 
 	var args map[string]interface{}
-	if err := json.Unmarshal([]byte(input), &args); err != nil {
+	if err := jsonv2.Unmarshal([]byte(input), &args); err != nil {
 		return nil, fmt.Errorf("failed to parse tool arguments: %w", err)
 	}
 	return args, nil

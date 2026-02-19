@@ -2,7 +2,6 @@ package tools
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -10,6 +9,9 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	jsonv2 "github.com/go-json-experiment/json"
+	"github.com/go-json-experiment/json/jsontext"
 )
 
 const (
@@ -58,7 +60,7 @@ func (p *BraveSearchProvider) Search(ctx context.Context, query string, count in
 		} `json:"web"`
 	}
 
-	if err := json.Unmarshal(body, &searchResp); err != nil {
+	if err := jsonv2.Unmarshal(body, &searchResp); err != nil {
 		// Log error body for debugging
 		fmt.Printf("Brave API Error Body: %s\n", string(body))
 		return "", fmt.Errorf("failed to parse response: %w", err)
@@ -192,7 +194,7 @@ func (p *PerplexitySearchProvider) Search(ctx context.Context, query string, cou
 		"max_tokens": 1000,
 	}
 
-	payloadBytes, err := json.Marshal(payload)
+	payloadBytes, err := jsonv2.Marshal(payload)
 	if err != nil {
 		return "", fmt.Errorf("failed to marshal request: %w", err)
 	}
@@ -230,7 +232,7 @@ func (p *PerplexitySearchProvider) Search(ctx context.Context, query string, cou
 		} `json:"choices"`
 	}
 
-	if err := json.Unmarshal(body, &searchResp); err != nil {
+	if err := jsonv2.Unmarshal(body, &searchResp); err != nil {
 		return "", fmt.Errorf("failed to parse response: %w", err)
 	}
 
@@ -467,8 +469,8 @@ func (t *WebFetchTool) Execute(ctx context.Context, args map[string]interface{})
 
 	if strings.Contains(contentType, "application/json") {
 		var jsonData interface{}
-		if err := json.Unmarshal(body, &jsonData); err == nil {
-			formatted, _ := json.MarshalIndent(jsonData, "", "  ")
+		if err := jsonv2.Unmarshal(body, &jsonData); err == nil {
+			formatted, _ := jsonv2.Marshal(jsonData, jsontext.WithIndent("  "))
 			text = string(formatted)
 			extractor = "json"
 		} else {
@@ -498,7 +500,7 @@ func (t *WebFetchTool) Execute(ctx context.Context, args map[string]interface{})
 		"text":      text,
 	}
 
-	resultJSON, _ := json.MarshalIndent(result, "", "  ")
+	resultJSON, _ := jsonv2.Marshal(result, jsontext.WithIndent("  "))
 
 	return &ToolResult{
 		ForLLM:  fmt.Sprintf("Fetched %d bytes from %s (extractor: %s, truncated: %v)", len(text), urlStr, extractor, truncated),

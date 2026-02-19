@@ -6,6 +6,8 @@ import (
 	"strings"
 	"time"
 
+	jsonv2 "github.com/go-json-experiment/json"
+
 	"charm.land/fantasy"
 	"github.com/sipeed/picoclaw/pkg/ids"
 	"github.com/sipeed/picoclaw/pkg/memory/sqlc"
@@ -50,8 +52,8 @@ func (s *StateStore) UpdateRunStatus(ctx context.Context, runID ids.UUID, status
 
 	metaJSON := json.RawMessage(`{}`)
 	if meta != nil {
-		if b, err := json.Marshal(meta); err == nil {
-			metaJSON = b
+		if b, err := jsonv2.Marshal(meta); err == nil {
+			metaJSON = json.RawMessage(b)
 		}
 	}
 
@@ -75,8 +77,8 @@ func (s *StateStore) AddRunState(ctx context.Context, runID ids.UUID, stepIndex 
 
 	snapJSON := json.RawMessage(`{}`)
 	if snapshot != nil {
-		if b, err := json.Marshal(snapshot); err == nil {
-			snapJSON = b
+		if b, err := jsonv2.Marshal(snapshot); err == nil {
+			snapJSON = json.RawMessage(b)
 		}
 	}
 
@@ -99,8 +101,8 @@ func (s *StateStore) AddTransition(ctx context.Context, runID ids.UUID, t fantas
 
 	metaJSON := json.RawMessage(`{}`)
 	if t.Meta != nil {
-		if b, err := json.Marshal(t.Meta); err == nil {
-			metaJSON = b
+		if b, err := jsonv2.Marshal(t.Meta); err == nil {
+			metaJSON = json.RawMessage(b)
 		}
 	}
 
@@ -152,8 +154,8 @@ func (s *CheckpointStore) CreateCheckpoint(ctx context.Context, conversationID i
 
 	metaJSON := json.RawMessage(`{}`)
 	if meta != nil {
-		if b, err := json.Marshal(meta); err == nil {
-			metaJSON = b
+		if b, err := jsonv2.Marshal(meta); err == nil {
+			metaJSON = json.RawMessage(b)
 		}
 	}
 

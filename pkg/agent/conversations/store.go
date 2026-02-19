@@ -5,7 +5,7 @@ package conversations
 
 import (
 	"context"
-	"encoding/json"
+	jsonv2 "github.com/go-json-experiment/json"
 	"strings"
 
 	"github.com/sipeed/picoclaw/pkg/ids"
@@ -100,7 +100,7 @@ func (s *Store) EditMessage(ctx context.Context, p EditMessageParams) (sqlc.Agen
 		return sqlc.AgentMessage{}, err
 	}
 
-	metaJSON, _ := json.Marshal(p.Metadata)
+	metaJSON, _ := jsonv2.Marshal(p.Metadata)
 
 	// Best-effort revision record — a failure here does not abort the edit.
 	_, _ = s.q.AddAgentMessageRevision(ctx, sqlc.AddAgentMessageRevisionParams{
@@ -174,7 +174,7 @@ func (s *Store) ForkFromCheckpoint(ctx context.Context, p ForkFromCheckpointPara
 		Messages []msgSnapshot `json:"messages"`
 	}
 	var snap snapshot
-	_ = json.Unmarshal(runState.SnapshotJson, &snap)
+	_ = jsonv2.Unmarshal([]byte(runState.SnapshotJson), &snap)
 
 	conv, err := s.q.CreateAgentConversation(ctx, sqlc.CreateAgentConversationParams{
 		ID:    ids.New(),
@@ -188,7 +188,7 @@ func (s *Store) ForkFromCheckpoint(ctx context.Context, p ForkFromCheckpointPara
 		"checkpoint_name": cpName,
 		"run_state_id":    cp.RunStateID.String(),
 	}
-	forkMetaJSON, _ := json.Marshal(forkMeta)
+	forkMetaJSON, _ := jsonv2.Marshal(forkMeta)
 
 	_, _ = s.q.CreateAgentConversationFork(ctx, sqlc.CreateAgentConversationForkParams{
 		ID:                   ids.New(),
@@ -209,7 +209,7 @@ func (s *Store) ForkFromCheckpoint(ctx context.Context, p ForkFromCheckpointPara
 		"checkpoint_name":             cpName,
 		"run_state_id":                cp.RunStateID.String(),
 	}
-	seedMetaJSON, _ := json.Marshal(seedMeta)
+	seedMetaJSON, _ := jsonv2.Marshal(seedMeta)
 
 	for _, m := range msgs {
 		if m.Role != "user" && m.Role != "assistant" {
@@ -277,7 +277,7 @@ func (s *Store) MergeAsLinkedContext(ctx context.Context, p MergeAsLinkedContext
 	}
 
 	meta := map[string]any{"source": "merge_as_linked_context"}
-	metaJSON, _ := json.Marshal(meta)
+	metaJSON, _ := jsonv2.Marshal(meta)
 
 	_, _ = s.q.CreateAgentConversationLink(ctx, sqlc.CreateAgentConversationLinkParams{
 		ID:                   ids.New(),
@@ -321,7 +321,7 @@ type AncestryParams struct {
 // AncestryResult is the structured result of an Ancestry query.
 type AncestryResult struct {
 	Conversation sqlc.AgentConversation       `json:"conversation"`
-	ForkParent   *sqlc.AgentConversationFork  `json:"fork_parent,omitempty"`
+	ForkParent   *sqlc.AgentConversationFork  `json:"fork_parent,omitzero"`
 	ForkChildren []sqlc.AgentConversationFork `json:"fork_children"`
 	Links        []sqlc.AgentConversationLink `json:"links"`
 }
@@ -434,7 +434,7 @@ type GraphParams struct {
 // GraphNode is a single conversation node in the fork/link graph.
 type GraphNode struct {
 	ID    string  `json:"id"`
-	Title *string `json:"title,omitempty"`
+	Title *string `json:"title,omitzero"`
 }
 
 // GraphEdge is a directed edge between two conversation nodes.
@@ -444,9 +444,9 @@ type GraphEdge struct {
 	From string `json:"from"`
 	To   string `json:"to"`
 	// CheckpointID is set on fork edges.
-	CheckpointID *string `json:"checkpoint_id,omitempty"`
+	CheckpointID *string `json:"checkpoint_id,omitzero"`
 	// Kind is set on link edges (e.g. "merge").
-	Kind *string `json:"kind,omitempty"`
+	Kind *string `json:"kind,omitzero"`
 }
 
 // GraphResult is the full fork/link graph rooted at a conversation.

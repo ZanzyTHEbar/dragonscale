@@ -2,13 +2,15 @@ package state
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
 	"os"
 	"path/filepath"
 	"sync"
 	"time"
+
+	jsonv2 "github.com/go-json-experiment/json"
+	"github.com/go-json-experiment/json/jsontext"
 
 	"github.com/sipeed/picoclaw/pkg/memory"
 )
@@ -19,10 +21,10 @@ const kvAgentID = "picoclaw"
 // It includes information about the last active channel/chat.
 type State struct {
 	// LastChannel is the last channel used for communication
-	LastChannel string `json:"last_channel,omitempty"`
+	LastChannel string `json:"last_channel,omitzero"`
 
 	// LastChatID is the last chat ID used for communication
-	LastChatID string `json:"last_chat_id,omitempty"`
+	LastChatID string `json:"last_chat_id,omitzero"`
 
 	// Timestamp is the last time this state was updated
 	Timestamp time.Time `json:"timestamp"`
@@ -73,7 +75,7 @@ func NewManager(workspace string, opts ...Option) *Manager {
 
 	if _, err := os.Stat(stateFile); os.IsNotExist(err) {
 		if data, err := os.ReadFile(oldStateFile); err == nil {
-			if err := json.Unmarshal(data, sm.state); err == nil {
+			if err := jsonv2.Unmarshal(data, sm.state); err == nil {
 				sm.saveAtomic()
 				log.Printf("[INFO] state: migrated state from %s to %s", oldStateFile, stateFile)
 			}
@@ -180,7 +182,7 @@ func (sm *Manager) saveAtomic() error {
 	tempFile := sm.stateFile + ".tmp"
 
 	// Marshal state to JSON
-	data, err := json.MarshalIndent(sm.state, "", "  ")
+	data, err := jsonv2.Marshal(sm.state, jsontext.WithIndent("  "))
 	if err != nil {
 		return fmt.Errorf("failed to marshal state: %w", err)
 	}
@@ -211,7 +213,7 @@ func (sm *Manager) load() error {
 		return fmt.Errorf("failed to read state file: %w", err)
 	}
 
-	if err := json.Unmarshal(data, sm.state); err != nil {
+	if err := jsonv2.Unmarshal(data, sm.state); err != nil {
 		return fmt.Errorf("failed to unmarshal state: %w", err)
 	}
 

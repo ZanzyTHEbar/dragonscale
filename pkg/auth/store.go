@@ -1,17 +1,19 @@
 package auth
 
 import (
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"time"
+
+	jsonv2 "github.com/go-json-experiment/json"
+	"github.com/go-json-experiment/json/jsontext"
 )
 
 type AuthCredential struct {
 	AccessToken  string    `json:"access_token"`
-	RefreshToken string    `json:"refresh_token,omitempty"`
-	AccountID    string    `json:"account_id,omitempty"`
-	ExpiresAt    time.Time `json:"expires_at,omitempty"`
+	RefreshToken string    `json:"refresh_token,omitzero"`
+	AccountID    string    `json:"account_id,omitzero"`
+	ExpiresAt    time.Time `json:"expires_at,omitzero"`
 	Provider     string    `json:"provider"`
 	AuthMethod   string    `json:"auth_method"`
 }
@@ -50,7 +52,7 @@ func LoadStore() (*AuthStore, error) {
 	}
 
 	var store AuthStore
-	if err := json.Unmarshal(data, &store); err != nil {
+	if err := jsonv2.Unmarshal(data, &store); err != nil {
 		return nil, err
 	}
 	if store.Credentials == nil {
@@ -66,7 +68,7 @@ func SaveStore(store *AuthStore) error {
 		return err
 	}
 
-	data, err := json.MarshalIndent(store, "", "  ")
+	data, err := jsonv2.Marshal(store, jsontext.WithIndent("  "))
 	if err != nil {
 		return err
 	}

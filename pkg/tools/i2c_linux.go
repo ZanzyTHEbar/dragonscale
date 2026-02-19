@@ -1,10 +1,12 @@
 package tools
 
 import (
-	"encoding/json"
 	"fmt"
 	"syscall"
 	"unsafe"
+
+	jsonv2 "github.com/go-json-experiment/json"
+	"github.com/go-json-experiment/json/jsontext"
 )
 
 // I2C ioctl constants from Linux kernel headers (<linux/i2c-dev.h>, <linux/i2c.h>)
@@ -104,7 +106,7 @@ func (t *I2CTool) scan(args map[string]interface{}) *ToolResult {
 
 	type deviceEntry struct {
 		Address string `json:"address"`
-		Status  string `json:"status,omitempty"`
+		Status  string `json:"status,omitzero"`
 	}
 
 	var found []deviceEntry
@@ -133,11 +135,11 @@ func (t *I2CTool) scan(args map[string]interface{}) *ToolResult {
 		return SilentResult(fmt.Sprintf("No devices found on %s. Check wiring and pull-up resistors.", devPath))
 	}
 
-	result, _ := json.MarshalIndent(map[string]interface{}{
+	result, _ := jsonv2.Marshal(map[string]interface{}{
 		"bus":     devPath,
 		"devices": found,
 		"count":   len(found),
-	}, "", "  ")
+	}, jsontext.WithIndent("  "))
 	return SilentResult(fmt.Sprintf("Scan of %s:\n%s", devPath, string(result)))
 }
 
@@ -201,13 +203,13 @@ func (t *I2CTool) readDevice(args map[string]interface{}) *ToolResult {
 		intBytes[i] = int(buf[i])
 	}
 
-	result, _ := json.MarshalIndent(map[string]interface{}{
+	result, _ := jsonv2.Marshal(map[string]interface{}{
 		"bus":     devPath,
 		"address": fmt.Sprintf("0x%02x", addr),
 		"bytes":   intBytes,
 		"hex":     hexBytes,
 		"length":  n,
-	}, "", "  ")
+	}, jsontext.WithIndent("  "))
 	return SilentResult(string(result))
 }
 

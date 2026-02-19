@@ -5,9 +5,9 @@ import (
 	"cmp"
 	"context"
 	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"fmt"
+	jsonv2 "github.com/go-json-experiment/json"
 	"io"
 	"maps"
 	"strings"
@@ -777,7 +777,7 @@ func toPrompt(prompt fantasy.Prompt, sendReasoningData bool) ([]anthropic.TextBl
 						// in the Anthropic assistant message; the ProviderExecuted flag
 						// is only informational metadata about who ran the tool.
 						var inputMap map[string]any
-						if err := json.Unmarshal([]byte(toolCall.Input), &inputMap); err != nil {
+						if err := jsonv2.Unmarshal([]byte(toolCall.Input), &inputMap); err != nil {
 							continue
 						}
 						toolUseBlock := anthropic.NewToolUseBlock(toolCall.ToolCallID, inputMap, toolCall.ToolName)

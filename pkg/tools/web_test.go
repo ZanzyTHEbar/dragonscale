@@ -2,11 +2,13 @@ package tools
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	jsonv2 "github.com/go-json-experiment/json"
+	"github.com/go-json-experiment/json/jsontext"
 )
 
 // TestWebTool_WebFetch_Success verifies successful URL fetching
@@ -45,7 +47,7 @@ func TestWebTool_WebFetch_Success(t *testing.T) {
 // TestWebTool_WebFetch_JSON verifies JSON content handling
 func TestWebTool_WebFetch_JSON(t *testing.T) {
 	testData := map[string]string{"key": "value", "number": "123"}
-	expectedJSON, _ := json.MarshalIndent(testData, "", "  ")
+	expectedJSON, _ := jsonv2.Marshal(testData, jsontext.WithIndent("  "))
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -160,7 +162,7 @@ func TestWebTool_WebFetch_Truncation(t *testing.T) {
 
 	// ForUser should contain truncated content (not the full 20000 chars)
 	resultMap := make(map[string]interface{})
-	json.Unmarshal([]byte(result.ForUser), &resultMap)
+	jsonv2.Unmarshal([]byte(result.ForUser), &resultMap)
 	if text, ok := resultMap["text"].(string); ok {
 		if len(text) > 1100 { // Allow some margin
 			t.Errorf("Expected content to be truncated to ~1000 chars, got: %d", len(text))

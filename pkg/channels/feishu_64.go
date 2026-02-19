@@ -4,10 +4,11 @@ package channels
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"sync"
 	"time"
+
+	jsonv2 "github.com/go-json-experiment/json"
 
 	lark "github.com/larksuite/oapi-sdk-go/v3"
 	larkdispatcher "github.com/larksuite/oapi-sdk-go/v3/event/dispatcher"
@@ -97,7 +98,7 @@ func (c *FeishuChannel) Send(ctx context.Context, msg bus.OutboundMessage) error
 		return fmt.Errorf("chat ID is empty")
 	}
 
-	payload, err := json.Marshal(map[string]string{"text": msg.Content})
+	payload, err := jsonv2.Marshal(map[string]string{"text": msg.Content})
 	if err != nil {
 		return fmt.Errorf("failed to marshal feishu content: %w", err)
 	}
@@ -202,7 +203,7 @@ func extractFeishuMessageContent(message *larkim.EventMessage) string {
 		var textPayload struct {
 			Text string `json:"text"`
 		}
-		if err := json.Unmarshal([]byte(*message.Content), &textPayload); err == nil {
+		if err := jsonv2.Unmarshal([]byte(*message.Content), &textPayload); err == nil {
 			return textPayload.Text
 		}
 	}

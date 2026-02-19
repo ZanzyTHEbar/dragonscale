@@ -2,12 +2,14 @@ package session
 
 import (
 	"context"
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"time"
+
+	jsonv2 "github.com/go-json-experiment/json"
+	"github.com/go-json-experiment/json/jsontext"
 
 	"github.com/sipeed/picoclaw/pkg/cache"
 	"github.com/sipeed/picoclaw/pkg/ids"
@@ -19,7 +21,7 @@ import (
 type Session struct {
 	Key      string             `json:"key"`
 	Messages []messages.Message `json:"messages"`
-	Summary  string             `json:"summary,omitempty"`
+	Summary  string             `json:"summary,omitzero"`
 	Created  time.Time          `json:"created"`
 	Updated  time.Time          `json:"updated"`
 }
@@ -197,7 +199,7 @@ func (sm *SessionManager) loadSessionFromDisk(key string) *Session {
 		return nil
 	}
 	var session Session
-	if err := json.Unmarshal(data, &session); err != nil {
+	if err := jsonv2.Unmarshal(data, &session); err != nil {
 		return nil
 	}
 	return &session
@@ -487,7 +489,7 @@ func snapshotSession(s *Session) Session {
 }
 
 func (sm *SessionManager) writeSessionToDisk(key string, session *Session) error {
-	data, err := json.MarshalIndent(session, "", "  ")
+	data, err := jsonv2.Marshal(session, jsontext.WithIndent("  "))
 	if err != nil {
 		return err
 	}
@@ -558,7 +560,7 @@ func (sm *SessionManager) loadSessions() error {
 		}
 
 		var session Session
-		if err := json.Unmarshal(data, &session); err != nil {
+		if err := jsonv2.Unmarshal(data, &session); err != nil {
 			continue
 		}
 

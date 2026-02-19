@@ -8,13 +8,13 @@ package fantasy
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"iter"
 	"os/exec"
 	"strings"
 
 	"charm.land/fantasy"
+	jsonv2 "github.com/go-json-experiment/json"
 )
 
 // claudeCliProvider implements fantasy.Provider using the claude CLI subprocess.
@@ -147,7 +147,7 @@ func extractTextFromCLIOutput(output []byte) string {
 		Content string `json:"content"`
 		Text    string `json:"text"`
 	}
-	if err := json.Unmarshal(output, &results); err == nil {
+	if err := jsonv2.Unmarshal(output, &results); err == nil {
 		var texts []string
 		for _, r := range results {
 			switch {
@@ -167,7 +167,7 @@ func extractTextFromCLIOutput(output []byte) string {
 		Result string `json:"result"`
 		Text   string `json:"text"`
 	}
-	if err := json.Unmarshal(output, &single); err == nil {
+	if err := jsonv2.Unmarshal(output, &single); err == nil {
 		if single.Result != "" {
 			return single.Result
 		}

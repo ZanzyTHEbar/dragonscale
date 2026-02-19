@@ -2,9 +2,9 @@
 package security
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
+	jsonv2 "github.com/go-json-experiment/json"
 	"strings"
 )
 
@@ -50,12 +50,12 @@ func ExtractJSON(text string, dest interface{}, opts *ExtractJSONOptions) error 
 		return ErrNoJSON
 	}
 
-	dec := json.NewDecoder(strings.NewReader(cleaned))
+	var jsonOpts []jsonv2.Options
 	if opts.DisallowUnknownFields {
-		dec.DisallowUnknownFields()
+		jsonOpts = append(jsonOpts, jsonv2.RejectUnknownMembers(true))
 	}
 
-	if err := dec.Decode(dest); err != nil {
+	if err := jsonv2.Unmarshal([]byte(cleaned), dest, jsonOpts...); err != nil {
 		return fmt.Errorf("json decode: %w", err)
 	}
 	return nil

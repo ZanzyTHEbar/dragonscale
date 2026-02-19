@@ -2,7 +2,7 @@
 package openaicompat
 
 import (
-	"encoding/json"
+	jsonv2 "github.com/go-json-experiment/json"
 
 	"charm.land/fantasy"
 	"charm.land/fantasy/providers/openai"
@@ -17,7 +17,7 @@ const (
 func init() {
 	fantasy.RegisterProviderType(TypeProviderOptions, func(data []byte) (fantasy.ProviderOptionsData, error) {
 		var v ProviderOptions
-		if err := json.Unmarshal(data, &v); err != nil {
+		if err := jsonv2.Unmarshal(data, &v); err != nil {
 			return nil, err
 		}
 		return &v, nil

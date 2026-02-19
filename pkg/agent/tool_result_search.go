@@ -2,9 +2,11 @@ package agent
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
+
+	jsonv2 "github.com/go-json-experiment/json"
+	"github.com/go-json-experiment/json/jsontext"
 
 	"charm.land/fantasy"
 	"github.com/sipeed/picoclaw/pkg/ids"
@@ -13,23 +15,23 @@ import (
 )
 
 type ToolResultSearchView struct {
-	StartLine  int `json:"start_line,omitempty" description:"Optional. 1-indexed start line (inclusive)."`
-	EndLine    int `json:"end_line,omitempty" description:"Optional. 1-indexed end line (inclusive)."`
-	MaxLines   int `json:"max_lines,omitempty" description:"Optional. Default 30, max 200."`
-	StartChunk int `json:"start_chunk,omitempty" description:"Optional. 0-indexed start chunk (inclusive)."`
-	EndChunk   int `json:"end_chunk,omitempty" description:"Optional. 0-indexed end chunk (inclusive)."`
-	MaxChunks  int `json:"max_chunks,omitempty" description:"Optional. Default 3, max 20."`
+	StartLine  int `json:"start_line,omitzero" description:"Optional. 1-indexed start line (inclusive)."`
+	EndLine    int `json:"end_line,omitzero" description:"Optional. 1-indexed end line (inclusive)."`
+	MaxLines   int `json:"max_lines,omitzero" description:"Optional. Default 30, max 200."`
+	StartChunk int `json:"start_chunk,omitzero" description:"Optional. 0-indexed start chunk (inclusive)."`
+	EndChunk   int `json:"end_chunk,omitzero" description:"Optional. 0-indexed end chunk (inclusive)."`
+	MaxChunks  int `json:"max_chunks,omitzero" description:"Optional. Default 3, max 20."`
 }
 
 type ToolResultSearchInput struct {
-	ConversationID string `json:"conversation_id,omitempty" description:"Optional. Agent conversation UUID."`
-	RunID          string `json:"run_id,omitempty" description:"Optional. Agent run UUID."`
-	ToolCallID     string `json:"tool_call_id,omitempty" description:"Optional. Tool call id to fetch (requires run_id)."`
-	ToolName       string `json:"tool_name,omitempty" description:"Optional. Filter by tool name."`
-	Query          string `json:"query,omitempty" description:"Optional. Case-insensitive substring match on tool_name/tool_call_id/summary."`
+	ConversationID string `json:"conversation_id,omitzero" description:"Optional. Agent conversation UUID."`
+	RunID          string `json:"run_id,omitzero" description:"Optional. Agent run UUID."`
+	ToolCallID     string `json:"tool_call_id,omitzero" description:"Optional. Tool call id to fetch (requires run_id)."`
+	ToolName       string `json:"tool_name,omitzero" description:"Optional. Filter by tool name."`
+	Query          string `json:"query,omitzero" description:"Optional. Case-insensitive substring match on tool_name/tool_call_id/summary."`
 
-	Limit int                   `json:"limit,omitempty" description:"Optional. Default 5, max 50."`
-	View  *ToolResultSearchView `json:"view,omitempty" description:"Optional. File view range for each result."`
+	Limit int                   `json:"limit,omitzero" description:"Optional. Default 5, max 50."`
+	View  *ToolResultSearchView `json:"view,omitzero" description:"Optional. File view range for each result."`
 }
 
 // NewToolResultSearchTool creates the tool_result_search agent tool for
@@ -87,17 +89,17 @@ func NewToolResultSearchTool(q *sqlc.Queries, kv KVDelegate) fantasy.AgentTool {
 			startChunk, endChunk := normalizeChunkView(view)
 
 			type item struct {
-				ID         string          `json:"id"`
-				RunID      string          `json:"run_id"`
-				StepIndex  int64           `json:"step_index"`
-				ToolCallID string          `json:"tool_call_id"`
-				ToolName   string          `json:"tool_name"`
-				Preview    *string         `json:"preview,omitempty"`
-				FullKey    string          `json:"full_key"`
-				ChunkCount int64           `json:"chunk_count"`
-				View       string          `json:"view"`
-				ViewRange  map[string]int  `json:"view_range"`
-				Metadata   json.RawMessage `json:"metadata_json"`
+				ID         string         `json:"id"`
+				RunID      string         `json:"run_id"`
+				StepIndex  int64          `json:"step_index"`
+				ToolCallID string         `json:"tool_call_id"`
+				ToolName   string         `json:"tool_name"`
+				Preview    *string        `json:"preview,omitzero"`
+				FullKey    string         `json:"full_key"`
+				ChunkCount int64          `json:"chunk_count"`
+				View       string         `json:"view"`
+				ViewRange  map[string]int `json:"view_range"`
+				Metadata   jsontext.Value `json:"metadata_json"` // sqlc gives json.RawMessage; both are []byte
 			}
 
 			out := struct {
@@ -131,11 +133,11 @@ func NewToolResultSearchTool(q *sqlc.Queries, kv KVDelegate) fantasy.AgentTool {
 					ChunkCount: r.ChunkCount,
 					View:       sel,
 					ViewRange:  viewRange,
-					Metadata:   r.MetadataJson,
+					Metadata:   jsontext.Value(r.MetadataJson),
 				})
 			}
 
-			b, _ := json.Marshal(out)
+			b, _ := jsonv2.Marshal(out)
 			return fantasy.NewTextResponse(string(b)), nil
 		},
 	)

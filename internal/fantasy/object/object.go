@@ -4,8 +4,8 @@ package object
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
+	jsonv2 "github.com/go-json-experiment/json"
 	"reflect"
 
 	"charm.land/fantasy"
@@ -171,7 +171,7 @@ func GenerateWithText(
 	model fantasy.LanguageModel,
 	call fantasy.ObjectCall,
 ) (*fantasy.ObjectResponse, error) {
-	jsonSchemaBytes, err := json.Marshal(call.Schema)
+	jsonSchemaBytes, err := jsonv2.Marshal(call.Schema)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal schema: %w", err)
 	}
@@ -462,7 +462,7 @@ func StreamWithText(
 	call fantasy.ObjectCall,
 ) (fantasy.ObjectStreamResponse, error) {
 	jsonSchemaMap := schema.ToMap(call.Schema)
-	jsonSchemaBytes, err := json.Marshal(jsonSchemaMap)
+	jsonSchemaBytes, err := jsonv2.Marshal(jsonSchemaMap)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal schema: %w", err)
 	}
@@ -603,12 +603,12 @@ func StreamWithText(
 }
 
 func unmarshal(obj any, target any) error {
-	jsonBytes, err := json.Marshal(obj)
+	jsonBytes, err := jsonv2.Marshal(obj)
 	if err != nil {
 		return fmt.Errorf("failed to marshal object: %w", err)
 	}
 
-	if err := json.Unmarshal(jsonBytes, target); err != nil {
+	if err := jsonv2.Unmarshal(jsonBytes, target); err != nil {
 		return fmt.Errorf("failed to unmarshal into target type: %w", err)
 	}
 

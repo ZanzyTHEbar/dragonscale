@@ -1,8 +1,8 @@
 package dag
 
 import (
-	"encoding/json"
 	"fmt"
+	jsonv2 "github.com/go-json-experiment/json"
 	"regexp"
 	"strings"
 	"sync"
@@ -67,11 +67,10 @@ func resolveToolExecArgs(argsJSON string, states map[string]*nodeState) string {
 
 // escapeForJSON makes a string safe for embedding into a JSON value.
 func escapeForJSON(s string) string {
-	b, err := json.Marshal(s)
-	if err != nil {
+	b, err := jsonv2.Marshal(s)
+	if err != nil || len(b) < 2 {
 		return s
 	}
-	// Strip surrounding quotes since we're replacing within an existing string.
 	return string(b[1 : len(b)-1])
 }
 

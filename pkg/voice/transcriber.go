@@ -3,7 +3,6 @@ package voice
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -11,6 +10,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	jsonv2 "github.com/go-json-experiment/json"
 
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/utils"
@@ -24,8 +25,8 @@ type GroqTranscriber struct {
 
 type TranscriptionResponse struct {
 	Text     string  `json:"text"`
-	Language string  `json:"language,omitempty"`
-	Duration float64 `json:"duration,omitempty"`
+	Language string  `json:"language,omitzero"`
+	Duration float64 `json:"duration,omitzero"`
 }
 
 func NewGroqTranscriber(apiKey string) *GroqTranscriber {
@@ -137,7 +138,7 @@ func (t *GroqTranscriber) Transcribe(ctx context.Context, audioFilePath string) 
 	})
 
 	var result TranscriptionResponse
-	if err := json.Unmarshal(body, &result); err != nil {
+	if err := jsonv2.Unmarshal(body, &result); err != nil {
 		logger.ErrorCF("voice", "Failed to unmarshal response", map[string]interface{}{"error": err})
 		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
 	}

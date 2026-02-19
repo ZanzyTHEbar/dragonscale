@@ -2,8 +2,8 @@ package fantasy
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
+	jsonv2 "github.com/go-json-experiment/json"
 	"iter"
 	"reflect"
 
@@ -175,7 +175,7 @@ func (s *StreamObjectResult[T]) Object() (*ObjectResult[T], error) {
 			if part.Object != nil {
 				if err := unmarshalObject(part.Object, &finalObject); err == nil {
 					hasObject = true
-					if jsonBytes, err := json.Marshal(part.Object); err == nil {
+					if jsonBytes, err := jsonv2.Marshal(part.Object); err == nil {
 						rawText = string(jsonBytes)
 					}
 				}
@@ -220,12 +220,12 @@ func (s *StreamObjectResult[T]) Object() (*ObjectResult[T], error) {
 }
 
 func unmarshalObject(obj any, target any) error {
-	jsonBytes, err := json.Marshal(obj)
+	jsonBytes, err := jsonv2.Marshal(obj)
 	if err != nil {
 		return fmt.Errorf("failed to marshal object: %w", err)
 	}
 
-	if err := json.Unmarshal(jsonBytes, target); err != nil {
+	if err := jsonv2.Unmarshal(jsonBytes, target); err != nil {
 		return fmt.Errorf("failed to unmarshal into target type: %w", err)
 	}
 

@@ -5,7 +5,6 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net"
@@ -16,6 +15,9 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	jsonv2 "github.com/go-json-experiment/json"
+	"github.com/go-json-experiment/json/jsontext"
 )
 
 type OAuthProviderConfig struct {
@@ -128,12 +130,12 @@ type deviceCodeResponse struct {
 
 func parseDeviceCodeResponse(body []byte) (deviceCodeResponse, error) {
 	var raw struct {
-		DeviceAuthID string          `json:"device_auth_id"`
-		UserCode     string          `json:"user_code"`
-		Interval     json.RawMessage `json:"interval"`
+		DeviceAuthID string         `json:"device_auth_id"`
+		UserCode     string         `json:"user_code"`
+		Interval     jsontext.Value `json:"interval"`
 	}
 
-	if err := json.Unmarshal(body, &raw); err != nil {
+	if err := jsonv2.Unmarshal(body, &raw); err != nil {
 		return deviceCodeResponse{}, err
 	}
 
@@ -149,18 +151,18 @@ func parseDeviceCodeResponse(body []byte) (deviceCodeResponse, error) {
 	}, nil
 }
 
-func parseFlexibleInt(raw json.RawMessage) (int, error) {
+func parseFlexibleInt(raw jsontext.Value) (int, error) {
 	if len(raw) == 0 || string(raw) == "null" {
 		return 0, nil
 	}
 
 	var interval int
-	if err := json.Unmarshal(raw, &interval); err == nil {
+	if err := jsonv2.Unmarshal(raw, &interval); err == nil {
 		return interval, nil
 	}
 
 	var intervalStr string
-	if err := json.Unmarshal(raw, &intervalStr); err == nil {
+	if err := jsonv2.Unmarshal(raw, &intervalStr); err == nil {
 		intervalStr = strings.TrimSpace(intervalStr)
 		if intervalStr == "" {
 			return 0, nil
@@ -172,7 +174,7 @@ func parseFlexibleInt(raw json.RawMessage) (int, error) {
 }
 
 func LoginDeviceCode(cfg OAuthProviderConfig) (*AuthCredential, error) {
-	reqBody, _ := json.Marshal(map[string]string{
+	reqBody, _ := jsonv2.Marshal(map[string]string{
 		"client_id": cfg.ClientID,
 	})
 
@@ -224,7 +226,7 @@ func LoginDeviceCode(cfg OAuthProviderConfig) (*AuthCredential, error) {
 }
 
 func pollDeviceCode(cfg OAuthProviderConfig, deviceAuthID, userCode string) (*AuthCredential, error) {
-	reqBody, _ := json.Marshal(map[string]string{
+	reqBody, _ := jsonv2.Marshal(map[string]string{
 		"device_auth_id": deviceAuthID,
 		"user_code":      userCode,
 	})
@@ -250,7 +252,7 @@ func pollDeviceCode(cfg OAuthProviderConfig, deviceAuthID, userCode string) (*Au
 		CodeChallenge     string `json:"code_challenge"`
 		CodeVerifier      string `json:"code_verifier"`
 	}
-	if err := json.Unmarshal(body, &tokenResp); err != nil {
+	if err := jsonv2.Unmarshal(body, &tokenResp); err != nil {
 		return nil, err
 	}
 
@@ -349,7 +351,7 @@ func parseTokenResponse(body []byte, provider string) (*AuthCredential, error) {
 		ExpiresIn    int    `json:"expires_in"`
 		IDToken      string `json:"id_token"`
 	}
-	if err := json.Unmarshal(body, &tokenResp); err != nil {
+	if err := jsonv2.Unmarshal(body, &tokenResp); err != nil {
 		return nil, fmt.Errorf("parsing token response: %w", err)
 	}
 
@@ -435,7 +437,7 @@ func parseJWTClaims(token string) (map[string]interface{}, error) {
 	}
 
 	var claims map[string]interface{}
-	if err := json.Unmarshal(decoded, &claims); err != nil {
+	if err := jsonv2.Unmarshal(decoded, &claims); err != nil {
 		return nil, err
 	}
 

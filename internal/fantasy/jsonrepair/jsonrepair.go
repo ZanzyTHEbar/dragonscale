@@ -3,7 +3,6 @@ package jsonrepair
 
 import (
 	"bytes"
-	"encoding/json"
 	"errors"
 	"reflect"
 	"slices"
@@ -1521,7 +1520,7 @@ func normalizeValue(value any) any {
 		}
 		return items
 	case numberValue:
-		return json.Number(v.raw)
+		return v
 	default:
 		return v
 	}
@@ -1541,8 +1540,6 @@ func writeValue(buf *bytes.Buffer, value any, ensureASCII bool) {
 		buf.WriteByte('"')
 	case numberValue:
 		buf.WriteString(v.raw)
-	case json.Number:
-		buf.WriteString(v.String())
 	case bool:
 		if v {
 			buf.WriteString("true")

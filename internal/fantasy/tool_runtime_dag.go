@@ -2,9 +2,9 @@ package fantasy
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
+	jsonv2 "github.com/go-json-experiment/json"
 	"sort"
 	"strconv"
 	"strings"
@@ -233,7 +233,7 @@ func resolveToolRefsInInput(input string, results map[string]ToolResultContent) 
 	}
 
 	var v any
-	if err := json.Unmarshal([]byte(input), &v); err != nil {
+	if err := jsonv2.Unmarshal([]byte(input), &v); err != nil {
 		// Not JSON; nothing to resolve.
 		return input, nil
 	}
@@ -242,7 +242,7 @@ func resolveToolRefsInInput(input string, results map[string]ToolResultContent) 
 	if err != nil {
 		return "", err
 	}
-	b, err := json.Marshal(updated)
+	b, err := jsonv2.Marshal(updated)
 	if err != nil {
 		return "", err
 	}
@@ -328,7 +328,7 @@ func resolveToolRefValue(ref string, results map[string]ToolResultContent) (any,
 
 	// Path resolution: interpret base as JSON and walk.
 	var cur any
-	if err := json.Unmarshal([]byte(base), &cur); err != nil {
+	if err := jsonv2.Unmarshal([]byte(base), &cur); err != nil {
 		return nil, fmt.Errorf("tool ref %q path requires JSON output, got non-JSON", ref)
 	}
 

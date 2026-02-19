@@ -3,9 +3,9 @@ package fantasy
 import (
 	"cmp"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
+	jsonv2 "github.com/go-json-experiment/json"
 	"maps"
 	"slices"
 	"sync"
@@ -1052,7 +1052,7 @@ func (a *agent) validateToolCall(toolCall ToolCallContent, availableTools []Agen
 	}
 
 	var input map[string]any
-	if err := json.Unmarshal([]byte(toolCall.Input), &input); err != nil {
+	if err := jsonv2.Unmarshal([]byte(toolCall.Input), &input); err != nil {
 		return fmt.Errorf("invalid JSON input: %w", err)
 	}
 

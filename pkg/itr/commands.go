@@ -3,20 +3,15 @@
 // recursive decomposition operations — are serialized as ToolRequest /
 // ToolResponse pairs.
 //
-// The canonical schema lives in commands.fbs. This file provides the Go
-// types and encoding helpers that replace the raw flatc-generated code while
-// keeping the same wire format semantics. The encoding uses encoding/json
-// on the initial implementation path; the FlatBuffers binary encoding is
-// available via the flatbuffers package when performance demands it.
-//
-// Migration path: when the codebase moves to the full FlatBuffers binary
-// encoding, replace the JSON marshal/unmarshal calls with flatbuffers builder
-// calls without changing any call sites — the public types remain stable.
+// The canonical schema lives in commands.fbs. Wire encoding uses FlatBuffers
+// for all internal transport (socket, daemon, WASM). JSON encoding is
+// available via MarshalJSON / UnmarshalRequestJSON for the LLM boundary only.
 package itr
 
 import (
-	"encoding/json"
 	"fmt"
+	jsonv2 "github.com/go-json-experiment/json"
+	"github.com/go-json-experiment/json/jsontext"
 	"time"
 )
 
@@ -113,11 +108,101 @@ type CodeExec struct {
 // command payload and declares dependencies on other nodes by ID.
 // Args may contain "#nodeN" references that are resolved to the output of
 // the dependency node at execution time.
+//
+// Implements json.Unmarshaler to deserialize Payload directly into the
+// concrete type indicated by Type, avoiding the map[string]interface{}
+// erasure that encoding/json applies to interface{} fields.
 type DAGNode struct {
 	ID        string      `json:"id"`
 	Type      CommandType `json:"type"`
 	Payload   interface{} `json:"payload"`
 	DependsOn []string    `json:"depends_on,omitempty"`
+}
+
+// UnmarshalJSONFrom implements jsonv2.UnmarshalerFrom. It defers Payload
+// deserialization via jsontext.Value until the Type discriminator is known,
+// then unmarshals directly into the concrete Go type.
+func (n *DAGNode) UnmarshalJSONFrom(dec *jsontext.Decoder) error {
+	var raw struct {
+		ID        string         `json:"id"`
+		Type      CommandType    `json:"type"`
+		Payload   jsontext.Value `json:"payload"`
+		DependsOn []string       `json:"depends_on,omitempty"`
+	}
+	if err := jsonv2.UnmarshalDecode(dec, &raw); err != nil {
+		return err
+	}
+	n.ID = raw.ID
+	n.Type = raw.Type
+	n.DependsOn = raw.DependsOn
+
+	if len(raw.Payload) == 0 || string(raw.Payload) == "null" {
+		return nil
+	}
+
+	unmarshalPayload := func(dst any) error {
+		return jsonv2.Unmarshal(raw.Payload, dst, jsonv2.MatchCaseInsensitiveNames(true))
+	}
+
+	switch raw.Type {
+	case CmdToolExec:
+		var p ToolExec
+		if err := unmarshalPayload(&p); err != nil {
+			return fmt.Errorf("DAGNode %s payload: %w", raw.ID, err)
+		}
+		n.Payload = p
+	case CmdToolSearch:
+		var p ToolSearch
+		if err := unmarshalPayload(&p); err != nil {
+			return fmt.Errorf("DAGNode %s payload: %w", raw.ID, err)
+		}
+		n.Payload = p
+	case CmdPeek:
+		var p Peek
+		if err := unmarshalPayload(&p); err != nil {
+			return fmt.Errorf("DAGNode %s payload: %w", raw.ID, err)
+		}
+		n.Payload = p
+	case CmdGrep:
+		var p Grep
+		if err := unmarshalPayload(&p); err != nil {
+			return fmt.Errorf("DAGNode %s payload: %w", raw.ID, err)
+		}
+		n.Payload = p
+	case CmdPartition:
+		var p Partition
+		if err := unmarshalPayload(&p); err != nil {
+			return fmt.Errorf("DAGNode %s payload: %w", raw.ID, err)
+		}
+		n.Payload = p
+	case CmdRecurse:
+		var p Recurse
+		if err := unmarshalPayload(&p); err != nil {
+			return fmt.Errorf("DAGNode %s payload: %w", raw.ID, err)
+		}
+		n.Payload = p
+	case CmdCodeExec:
+		var p CodeExec
+		if err := unmarshalPayload(&p); err != nil {
+			return fmt.Errorf("DAGNode %s payload: %w", raw.ID, err)
+		}
+		n.Payload = p
+	case CmdExecWasm:
+		var p ExecWasm
+		if err := unmarshalPayload(&p); err != nil {
+			return fmt.Errorf("DAGNode %s payload: %w", raw.ID, err)
+		}
+		n.Payload = p
+	case CmdFinal:
+		var p Final
+		if err := unmarshalPayload(&p); err != nil {
+			return fmt.Errorf("DAGNode %s payload: %w", raw.ID, err)
+		}
+		n.Payload = p
+	default:
+		return fmt.Errorf("DAGNode %s: unknown type %q", raw.ID, raw.Type)
+	}
+	return nil
 }
 
 // DAGPlan is a composite command that contains multiple DAGNodes forming a
@@ -269,30 +354,77 @@ func NewLeakResponse(id, redactedResult string, redactedKeys []string) ToolRespo
 	}
 }
 
-// ── Serialisation helpers ────────────────────────────────────────────────────
+// ── Serialisation helpers (FlatBuffers default) ──────────────────────────────
 
-// Marshal encodes a ToolRequest to JSON bytes for transmission.
+// Marshal encodes a ToolRequest to FlatBuffers bytes for internal transport.
 func (r ToolRequest) Marshal() ([]byte, error) {
-	return json.Marshal(r)
+	return MarshalRequestFB(r)
 }
 
-// Marshal encodes a ToolResponse to JSON bytes for transmission.
+// Marshal encodes a ToolResponse to FlatBuffers bytes for internal transport.
 func (r ToolResponse) Marshal() ([]byte, error) {
-	return json.Marshal(r)
+	return MarshalResponseFB(r)
 }
 
-// UnmarshalRequest decodes a ToolRequest from JSON bytes.
+// UnmarshalRequest decodes a ToolRequest from FlatBuffers bytes.
 func UnmarshalRequest(data []byte) (ToolRequest, error) {
-	var raw struct {
-		ID         string          `json:"id"`
-		Type       CommandType     `json:"type"`
-		Payload    json.RawMessage `json:"payload"`
-		Timestamp  int64           `json:"timestamp"`
-		Depth      uint8           `json:"depth"`
-		SessionKey string          `json:"session_key"`
-		ToolCallID string          `json:"tool_call_id"`
+	return UnmarshalRequestFB(data)
+}
+
+// UnmarshalResponse decodes a ToolResponse from FlatBuffers bytes.
+func UnmarshalResponse(data []byte) (ToolResponse, error) {
+	return UnmarshalResponseFB(data)
+}
+
+// ── JSON helpers (LLM boundary only) ─────────────────────────────────────────
+
+// MarshalJSONTo implements jsonv2.MarshalerTo. Use only at the LLM boundary.
+func (r ToolRequest) MarshalJSONTo(enc *jsontext.Encoder) error {
+	type alias struct {
+		ID         string      `json:"id"`
+		Type       CommandType `json:"type"`
+		Payload    interface{} `json:"payload"`
+		Timestamp  int64       `json:"timestamp"`
+		Depth      uint8       `json:"depth,omitzero"`
+		SessionKey string      `json:"session_key,omitzero"`
+		ToolCallID string      `json:"tool_call_id,omitzero"`
 	}
-	if err := json.Unmarshal(data, &raw); err != nil {
+	return jsonv2.MarshalEncode(enc, alias{r.ID, r.Type, r.Payload, r.Timestamp, r.Depth, r.SessionKey, r.ToolCallID})
+}
+
+// MarshalJSONTo implements jsonv2.MarshalerTo. Use only at the LLM boundary.
+func (r ToolResponse) MarshalJSONTo(enc *jsontext.Encoder) error {
+	type alias struct {
+		ID           string   `json:"id"`
+		Result       string   `json:"result,omitzero"`
+		IsError      bool     `json:"is_error,omitzero"`
+		LeakDetected bool     `json:"leak_detected,omitzero"`
+		CostTokens   uint32   `json:"cost_tokens,omitzero"`
+		RedactedKeys []string `json:"redacted_keys,omitzero"`
+	}
+	return jsonv2.MarshalEncode(enc, alias{r.ID, r.Result, r.IsError, r.LeakDetected, r.CostTokens, r.RedactedKeys})
+}
+
+// LLMJSONOpts returns json/v2 options suitable for unmarshaling LLM-generated JSON,
+// which may use inconsistent casing.
+func LLMJSONOpts() jsonv2.Options {
+	return jsonv2.MatchCaseInsensitiveNames(true)
+}
+
+// UnmarshalRequestJSON decodes a ToolRequest from JSON bytes. Use only at
+// the LLM boundary (planner output, tool schemas).
+func UnmarshalRequestJSON(data []byte) (ToolRequest, error) {
+	opts := LLMJSONOpts()
+	var raw struct {
+		ID         string         `json:"id"`
+		Type       CommandType    `json:"type"`
+		Payload    jsontext.Value `json:"payload"`
+		Timestamp  int64          `json:"timestamp"`
+		Depth      uint8          `json:"depth"`
+		SessionKey string         `json:"session_key"`
+		ToolCallID string         `json:"tool_call_id"`
+	}
+	if err := jsonv2.Unmarshal(data, &raw, opts); err != nil {
 		return ToolRequest{}, err
 	}
 
@@ -305,47 +437,51 @@ func UnmarshalRequest(data []byte) (ToolRequest, error) {
 		ToolCallID: raw.ToolCallID,
 	}
 
+	unmarshalPayload := func(dst any) error {
+		return jsonv2.Unmarshal(raw.Payload, dst, opts)
+	}
+
 	var err error
 	switch raw.Type {
 	case CmdPeek:
 		var p Peek
-		err = json.Unmarshal(raw.Payload, &p)
+		err = unmarshalPayload(&p)
 		req.Payload = p
 	case CmdGrep:
 		var p Grep
-		err = json.Unmarshal(raw.Payload, &p)
+		err = unmarshalPayload(&p)
 		req.Payload = p
 	case CmdPartition:
 		var p Partition
-		err = json.Unmarshal(raw.Payload, &p)
+		err = unmarshalPayload(&p)
 		req.Payload = p
 	case CmdRecurse:
 		var p Recurse
-		err = json.Unmarshal(raw.Payload, &p)
+		err = unmarshalPayload(&p)
 		req.Payload = p
 	case CmdToolExec:
 		var p ToolExec
-		err = json.Unmarshal(raw.Payload, &p)
+		err = unmarshalPayload(&p)
 		req.Payload = p
 	case CmdExecWasm:
 		var p ExecWasm
-		err = json.Unmarshal(raw.Payload, &p)
+		err = unmarshalPayload(&p)
 		req.Payload = p
 	case CmdFinal:
 		var p Final
-		err = json.Unmarshal(raw.Payload, &p)
+		err = unmarshalPayload(&p)
 		req.Payload = p
 	case CmdToolSearch:
 		var p ToolSearch
-		err = json.Unmarshal(raw.Payload, &p)
+		err = unmarshalPayload(&p)
 		req.Payload = p
 	case CmdCodeExec:
 		var p CodeExec
-		err = json.Unmarshal(raw.Payload, &p)
+		err = unmarshalPayload(&p)
 		req.Payload = p
 	case CmdDAGPlan:
 		var p DAGPlan
-		err = json.Unmarshal(raw.Payload, &p)
+		err = unmarshalPayload(&p)
 		req.Payload = p
 	default:
 		return ToolRequest{}, fmt.Errorf("unknown command type: %q", raw.Type)
@@ -354,8 +490,8 @@ func UnmarshalRequest(data []byte) (ToolRequest, error) {
 	return req, err
 }
 
-// UnmarshalResponse decodes a ToolResponse from JSON bytes.
-func UnmarshalResponse(data []byte) (ToolResponse, error) {
+// UnmarshalResponseJSON decodes a ToolResponse from JSON bytes.
+func UnmarshalResponseJSON(data []byte) (ToolResponse, error) {
 	var r ToolResponse
-	return r, json.Unmarshal(data, &r)
+	return r, jsonv2.Unmarshal(data, &r)
 }

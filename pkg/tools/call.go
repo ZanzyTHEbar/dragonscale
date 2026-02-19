@@ -2,8 +2,9 @@ package tools
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
+
+	jsonv2 "github.com/go-json-experiment/json"
 
 	"github.com/sipeed/picoclaw/pkg/logger"
 )
@@ -84,7 +85,7 @@ func (t *ToolCallTool) Execute(ctx context.Context, args map[string]interface{})
 		if len(v) > maxArgsJSON {
 			return ErrorResult(fmt.Sprintf("arguments JSON too large: %d bytes (max %d)", len(v), maxArgsJSON))
 		}
-		if err := json.Unmarshal([]byte(v), &toolArgs); err != nil {
+		if err := jsonv2.Unmarshal([]byte(v), &toolArgs); err != nil {
 			return ErrorResult(fmt.Sprintf("invalid arguments JSON: %v", err))
 		}
 	case nil:

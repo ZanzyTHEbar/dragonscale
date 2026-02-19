@@ -3,8 +3,8 @@ package store
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
+	jsonv2 "github.com/go-json-experiment/json"
 	"io"
 	"net/http"
 	"time"
@@ -93,7 +93,7 @@ func (o *OllamaEmbedder) embedBatch(ctx context.Context, texts []string) ([]memo
 }
 
 func (o *OllamaEmbedder) embedSingle(ctx context.Context, text string) (memory.Embedding, error) {
-	body, err := json.Marshal(ollamaEmbedRequest{
+	body, err := jsonv2.Marshal(ollamaEmbedRequest{
 		Model: o.model,
 		Input: text,
 	})
@@ -119,7 +119,7 @@ func (o *OllamaEmbedder) embedSingle(ctx context.Context, text string) (memory.E
 	}
 
 	var result ollamaEmbedResponse
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+	if err := jsonv2.UnmarshalRead(resp.Body, &result); err != nil {
 		return nil, fmt.Errorf("decode response: %w", err)
 	}
 

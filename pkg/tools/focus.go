@@ -2,10 +2,11 @@ package tools
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
+
+	jsonv2 "github.com/go-json-experiment/json"
 
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/messages"
@@ -109,7 +110,7 @@ func (t *StartFocusTool) Execute(ctx context.Context, args map[string]interface{
 		StartedAt:       time.Now(),
 	}
 
-	data, err := json.Marshal(state)
+	data, err := jsonv2.Marshal(state)
 	if err != nil {
 		return ErrorResult(fmt.Sprintf("marshal focus state: %v", err))
 	}
@@ -181,7 +182,7 @@ func (t *CompleteFocusTool) Execute(ctx context.Context, args map[string]interfa
 	}
 
 	var state FocusState
-	if err := json.Unmarshal([]byte(raw), &state); err != nil {
+	if err := jsonv2.Unmarshal([]byte(raw), &state); err != nil {
 		return ErrorResult(fmt.Sprintf("corrupt focus state: %v", err))
 	}
 
@@ -251,7 +252,7 @@ func (t *CompleteFocusTool) appendKnowledge(ctx context.Context, sessionKey, top
 	kb := &KnowledgeBlock{}
 	raw, err := t.delegate.GetKV(ctx, focusAgentID, kvKey)
 	if err == nil && raw != "" {
-		_ = json.Unmarshal([]byte(raw), kb)
+		_ = jsonv2.Unmarshal([]byte(raw), kb)
 	}
 
 	kb.Entries = append(kb.Entries, KnowledgeEntry{
@@ -260,7 +261,7 @@ func (t *CompleteFocusTool) appendKnowledge(ctx context.Context, sessionKey, top
 		CreatedAt: time.Now(),
 	})
 
-	data, err := json.Marshal(kb)
+	data, err := jsonv2.Marshal(kb)
 	if err != nil {
 		return err
 	}
@@ -280,7 +281,7 @@ func LoadKnowledgeBlock(ctx context.Context, delegate KVStore, sessionKey string
 	}
 
 	var kb KnowledgeBlock
-	if err := json.Unmarshal([]byte(raw), &kb); err != nil {
+	if err := jsonv2.Unmarshal([]byte(raw), &kb); err != nil {
 		return ""
 	}
 

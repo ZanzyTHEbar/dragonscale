@@ -15,8 +15,8 @@ type Manager struct {
 	observer  *Observer
 	reflector *Reflector
 
-	mu       sync.Mutex
-	running  map[string]bool // sessionKey -> running flag to prevent concurrent runs
+	mu      sync.Mutex
+	running map[string]bool // sessionKey -> running flag to prevent concurrent runs
 }
 
 // ManagerConfig bundles configuration for the observation system.

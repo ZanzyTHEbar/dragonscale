@@ -1,9 +1,9 @@
 package fantasy
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
+	jsonv2 "github.com/go-json-experiment/json"
 	"strings"
 )
 
@@ -91,7 +91,7 @@ func extractToolDependencies(input string) ([]string, error) {
 	}
 
 	var v any
-	if err := json.Unmarshal([]byte(input), &v); err != nil {
+	if err := jsonv2.Unmarshal([]byte(input), &v); err != nil {
 		// If the tool input isn't valid JSON, treat it as having no dependencies.
 		return nil, nil
 	}

@@ -1,7 +1,7 @@
 package store
 
 import (
-	"encoding/json"
+	jsonv2 "github.com/go-json-experiment/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -38,11 +38,12 @@ func TestNewEmbedderFromConfig_OpenAI_NoKey(t *testing.T) {
 
 func TestNewEmbedderFromConfig_OpenAI_FallbackKey(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		respData, _ := jsonv2.Marshal(map[string]interface{}{
 			"data": []map[string]interface{}{
 				{"index": 0, "embedding": []float32{0.1, 0.2, 0.3}},
 			},
 		})
+		w.Write(respData)
 	}))
 	defer srv.Close()
 
@@ -70,9 +71,10 @@ func TestNewEmbedderFromConfig_OpenAI_FallbackKey(t *testing.T) {
 
 func TestNewEmbedderFromConfig_Ollama(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		respData, _ := jsonv2.Marshal(map[string]interface{}{
 			"embeddings": [][]float32{{0.1, 0.2, 0.3}},
 		})
+		w.Write(respData)
 	}))
 	defer srv.Close()
 
@@ -97,9 +99,10 @@ func TestNewEmbedderFromConfig_Ollama(t *testing.T) {
 
 func TestNewEmbedderFromConfig_Ollama_FallbackBase(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		respData, _ := jsonv2.Marshal(map[string]interface{}{
 			"embeddings": [][]float32{{0.5}},
 		})
+		w.Write(respData)
 	}))
 	defer srv.Close()
 
@@ -119,9 +122,10 @@ func TestNewEmbedderFromConfig_Ollama_FallbackBase(t *testing.T) {
 
 func TestNewEmbedderFromConfig_CaseInsensitive(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		respData, _ := jsonv2.Marshal(map[string]interface{}{
 			"embeddings": [][]float32{{0.1}},
 		})
+		w.Write(respData)
 	}))
 	defer srv.Close()
 

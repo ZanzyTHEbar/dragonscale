@@ -2,8 +2,8 @@ package dag_test
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
+	jsonv2 "github.com/go-json-experiment/json"
 	"testing"
 
 	"github.com/sipeed/picoclaw/pkg/itr"
@@ -123,7 +123,11 @@ func TestExecutor_WithJoiner(t *testing.T) {
 	defer bus.Close()
 
 	joiner := func(_ context.Context, _, userQuery string) (string, uint32, error) {
-		return "synthesized: " + userQuery[:20], 50, nil
+		n := len(userQuery)
+		if n > 20 {
+			n = 20
+		}
+		return "synthesized: " + userQuery[:n], 50, nil
 	}
 
 	executor := dag.NewExecutor(bus, joiner)
@@ -173,7 +177,8 @@ func TestResolver_NodeRefSubstitution(t *testing.T) {
 
 	result, err := executor.Execute(context.Background(), "test-sess", plan)
 	require.NoError(t, err)
-	_ = result
+	assert.Contains(t, result.NodeResults["prev"], "previous-output")
+	assert.Contains(t, result.NodeResults["search"], "found")
 }
 
 func TestRouter_SimpleQuerySelectsReAct(t *testing.T) {
@@ -225,7 +230,7 @@ func TestPlanner_ValidatePlan(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var plan itr.DAGPlan
-			err := json.Unmarshal([]byte(tt.plan), &plan)
+			err := jsonv2.Unmarshal([]byte(tt.plan), &plan)
 			require.NoError(t, err)
 
 			// Use planner with a mock that returns the pre-built plan JSON

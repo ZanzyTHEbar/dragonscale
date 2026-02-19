@@ -2,7 +2,7 @@ package memory
 
 import (
 	"context"
-	"encoding/json"
+	jsonv2 "github.com/go-json-experiment/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -103,7 +103,7 @@ func (m *mockDelegate) CountAuditEntries(_ context.Context, _ string) (int, erro
 
 func writeSessionFile(t *testing.T, dir, name string, sess SessionFile) {
 	t.Helper()
-	data, err := json.Marshal(sess)
+	data, err := jsonv2.Marshal(sess)
 	if err != nil {
 		t.Fatalf("marshal session: %v", err)
 	}

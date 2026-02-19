@@ -14,10 +14,10 @@ type Message struct {
 
 // CompressorConfig controls the deterministic compression behavior.
 type CompressorConfig struct {
-	ChunkSize       int // Messages per chunk node (default 8)
-	SectionSize     int // Chunks per section node (default 4)
-	MaxSentences    int // Max sentences to extract per message (default 2)
-	TargetRatio     float64 // Target compression ratio (default 0.25 = 4:1)
+	ChunkSize    int     // Messages per chunk node (default 8)
+	SectionSize  int     // Chunks per section node (default 4)
+	MaxSentences int     // Max sentences to extract per message (default 2)
+	TargetRatio  float64 // Target compression ratio (default 0.25 = 4:1)
 }
 
 // DefaultCompressorConfig returns sensible defaults.

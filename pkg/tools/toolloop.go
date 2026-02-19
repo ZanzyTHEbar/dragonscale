@@ -8,8 +8,9 @@ package tools
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
+
+	jsonv2 "github.com/go-json-experiment/json"
 
 	fantasy "charm.land/fantasy"
 	"github.com/sipeed/picoclaw/pkg/bus"
@@ -257,7 +258,7 @@ func parseToolCallArgs(input string) (map[string]interface{}, error) {
 	}
 
 	var args map[string]interface{}
-	if err := json.Unmarshal([]byte(input), &args); err != nil {
+	if err := jsonv2.Unmarshal([]byte(input), &args); err != nil {
 		return nil, fmt.Errorf("failed to parse tool arguments: %w", err)
 	}
 	return args, nil

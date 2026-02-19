@@ -3,12 +3,12 @@ package dag
 // BudgetConfig defines the percentage allocation for each context section.
 // All percentages should sum to 100.
 type BudgetConfig struct {
-	SystemPromptPct  int // % for system prompt (identity, rules, skills)
-	ObservationsPct  int // % for observation block
-	KnowledgePct     int // % for knowledge block (Focus completions)
-	DAGSummariesPct  int // % for DAG compressed history
-	RawTailPct       int // % for raw recent messages (uncompressed tail)
-	ToolResultsPct   int // % for tool call results
+	SystemPromptPct int // % for system prompt (identity, rules, skills)
+	ObservationsPct int // % for observation block
+	KnowledgePct    int // % for knowledge block (Focus completions)
+	DAGSummariesPct int // % for DAG compressed history
+	RawTailPct      int // % for raw recent messages (uncompressed tail)
+	ToolResultsPct  int // % for tool call results
 }
 
 // DefaultBudgetConfig returns a balanced allocation.

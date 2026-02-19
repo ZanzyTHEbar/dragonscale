@@ -4,8 +4,8 @@ package schema
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
+	jsonv2 "github.com/go-json-experiment/json"
 	"reflect"
 	"slices"
 	"strings"
@@ -259,7 +259,7 @@ func ParsePartialJSON(text string) (any, ParseState, error) {
 	}
 
 	var result any
-	if err := json.Unmarshal([]byte(text), &result); err == nil {
+	if err := jsonv2.Unmarshal([]byte(text), &result); err == nil {
 		return result, ParseStateSuccessful, nil
 	}
 
@@ -268,7 +268,7 @@ func ParsePartialJSON(text string) (any, ParseState, error) {
 		return nil, ParseStateFailed, fmt.Errorf("json repair failed: %w", err)
 	}
 
-	if err := json.Unmarshal([]byte(repaired), &result); err != nil {
+	if err := jsonv2.Unmarshal([]byte(repaired), &result); err != nil {
 		return nil, ParseStateFailed, fmt.Errorf("failed to parse repaired json: %w", err)
 	}
 
@@ -317,7 +317,7 @@ func ValidateAgainstSchema(obj any, schema Schema) error {
 // This is a convenience wrapper for use sites that hold the schema as a map rather
 // than the typed Schema struct.
 func ValidateAgainstSchemaMap(obj any, schemaMap map[string]any) error {
-	schemaBytes, err := json.Marshal(schemaMap)
+	schemaBytes, err := jsonv2.Marshal(schemaMap)
 	if err != nil {
 		return fmt.Errorf("failed to marshal schema map: %w", err)
 	}
@@ -341,7 +341,7 @@ func ValidateAgainstSchemaMap(obj any, schemaMap map[string]any) error {
 }
 
 func validateAgainstSchema(obj any, schema Schema) error {
-	jsonSchemaBytes, err := json.Marshal(schema)
+	jsonSchemaBytes, err := jsonv2.Marshal(schema)
 	if err != nil {
 		return fmt.Errorf("failed to marshal schema: %w", err)
 	}

@@ -238,8 +238,8 @@ func TestParseKeptIndices(t *testing.T) {
 		{"normal", "KEEP 0\nDROP 1\nKEEP 2", 2},
 		{"all keep", "KEEP 0\nKEEP 1\nKEEP 2", 3},
 		{"all drop", "DROP 0\nDROP 1\nDROP 2", 1}, // Fallback keeps critical
-		{"invalid output", "blah blah", 1},           // Fallback keeps critical
-		{"out of range", "KEEP 99", 1},                // Fallback keeps critical
+		{"invalid output", "blah blah", 1},        // Fallback keeps critical
+		{"out of range", "KEEP 99", 1},            // Fallback keeps critical
 	}
 
 	for _, tc := range tests {

@@ -7,7 +7,7 @@ package agent
 
 import (
 	"context"
-	"encoding/json"
+	jsonv2 "github.com/go-json-experiment/json"
 
 	memstore "github.com/sipeed/picoclaw/pkg/memory/store"
 	"github.com/sipeed/picoclaw/pkg/tools"
@@ -84,7 +84,7 @@ func (t *MemGPTTool) Parameters() map[string]interface{} {
 
 func (t *MemGPTTool) Execute(ctx context.Context, args map[string]interface{}) *tools.ToolResult {
 	// Marshal the args back to JSON for the inner MemoryTool.Execute()
-	input, err := json.Marshal(args)
+	input, err := jsonv2.Marshal(args)
 	if err != nil {
 		return tools.ErrorResult("invalid arguments: " + err.Error())
 	}

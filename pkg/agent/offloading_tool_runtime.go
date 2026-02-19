@@ -2,8 +2,8 @@ package agent
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
+	jsonv2 "github.com/go-json-experiment/json"
 	"strconv"
 	"strings"
 
@@ -91,7 +91,7 @@ func (r OffloadingToolRuntime) Execute(ctx context.Context, tools []fantasy.Agen
 		fullKey := toolResultFullKey(r.ConversationID, r.RunID, stepIndex, tc.ToolCallID)
 
 		payload, payloadType, payloadText := toolResultPayload(res)
-		b, marshalErr := json.Marshal(payload)
+		b, marshalErr := jsonv2.Marshal(payload)
 		if marshalErr != nil {
 			b = []byte(`{"error":"failed to marshal tool result payload"}`)
 			payloadType = "error"
@@ -134,7 +134,7 @@ func (r OffloadingToolRuntime) Execute(ctx context.Context, tools []fantasy.Agen
 			"result_type": payloadType,
 			"step_index":  stepIndex,
 		}
-		metaJSON, _ := json.Marshal(meta)
+		metaJSON, _ := jsonv2.Marshal(meta)
 
 		var previewPtr *string
 		if strings.TrimSpace(preview) != "" {

@@ -6,9 +6,9 @@
 package fantasy
 
 import (
-	"encoding/json"
-
 	"charm.land/fantasy"
+	jsonv2 "github.com/go-json-experiment/json"
+
 	"github.com/sipeed/picoclaw/pkg/messages"
 )
 
@@ -55,7 +55,7 @@ func MessageToFantasy(msg messages.Message) fantasy.Message {
 			input = tc.Function.Arguments
 		} else if tc.Arguments != nil {
 			// Fallback: serialize the map to JSON.
-			data, _ := json.Marshal(tc.Arguments)
+			data, _ := jsonv2.Marshal(tc.Arguments)
 			input = string(data)
 		}
 

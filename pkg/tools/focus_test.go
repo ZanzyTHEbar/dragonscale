@@ -2,8 +2,9 @@ package tools
 
 import (
 	"context"
-	"encoding/json"
 	"testing"
+
+	jsonv2 "github.com/go-json-experiment/json"
 
 	"github.com/sipeed/picoclaw/pkg/messages"
 	"github.com/sipeed/picoclaw/pkg/session"
@@ -75,7 +76,7 @@ func TestStartFocus(t *testing.T) {
 	require.NotEmpty(t, raw)
 
 	var state FocusState
-	require.NoError(t, json.Unmarshal([]byte(raw), &state))
+	require.NoError(t, jsonv2.Unmarshal([]byte(raw), &state))
 	assert.Equal(t, "investigate auth bug", state.Topic)
 	assert.Equal(t, 2, state.CheckpointIndex)
 }
@@ -134,7 +135,7 @@ func TestCompleteFocus(t *testing.T) {
 	require.NotEmpty(t, knowledgeRaw)
 
 	var kb KnowledgeBlock
-	require.NoError(t, json.Unmarshal([]byte(knowledgeRaw), &kb))
+	require.NoError(t, jsonv2.Unmarshal([]byte(knowledgeRaw), &kb))
 	require.Len(t, kb.Entries, 1)
 	assert.Equal(t, "debug auth", kb.Entries[0].Topic)
 	assert.Contains(t, kb.Entries[0].Summary, "token validation")
@@ -184,7 +185,7 @@ func TestCompleteFocus_MultipleKnowledgeEntries(t *testing.T) {
 
 	knowledgeRaw, _ := delegate.GetKV(ctx, focusAgentID, knowledgeKVPrefix+sk)
 	var kb KnowledgeBlock
-	require.NoError(t, json.Unmarshal([]byte(knowledgeRaw), &kb))
+	require.NoError(t, jsonv2.Unmarshal([]byte(knowledgeRaw), &kb))
 	require.Len(t, kb.Entries, 2)
 	assert.Equal(t, "topic A", kb.Entries[0].Topic)
 	assert.Equal(t, "topic B", kb.Entries[1].Topic)
@@ -286,7 +287,7 @@ func TestLoadKnowledgeBlock(t *testing.T) {
 			{Topic: "Test", Summary: "Test summary"},
 		},
 	}
-	data, _ := json.Marshal(kb)
+	data, _ := jsonv2.Marshal(kb)
 	_ = delegate.UpsertKV(ctx, focusAgentID, knowledgeKVPrefix+"test-session", string(data))
 
 	block = LoadKnowledgeBlock(ctx, delegate, "test-session")

@@ -2,7 +2,7 @@ package store
 
 import (
 	"context"
-	"encoding/json"
+	jsonv2 "github.com/go-json-experiment/json"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -22,7 +22,7 @@ func executeAndParse(t *testing.T, tool *MemoryTool, input string) *MemoryToolRe
 	require.NoError(t, err)
 
 	var resp MemoryToolResponse
-	require.NoError(t, json.Unmarshal([]byte(raw), &resp))
+	require.NoError(t, jsonv2.Unmarshal([]byte(raw), &resp))
 	return &resp
 }
 

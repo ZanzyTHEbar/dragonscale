@@ -2,8 +2,8 @@ package fantasy
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
+	jsonv2 "github.com/go-json-experiment/json"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -43,7 +43,7 @@ func (e *EchoTool) Run(ctx context.Context, params ToolCall) (ToolResponse, erro
 		Message string `json:"message"`
 	}
 
-	if err := json.Unmarshal([]byte(params.Input), &input); err != nil {
+	if err := jsonv2.Unmarshal([]byte(params.Input), &input); err != nil {
 		return NewTextErrorResponse("Invalid input: " + err.Error()), nil
 	}
 

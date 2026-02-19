@@ -1,7 +1,6 @@
 package jsonrepair
 
 import (
-	"encoding/json"
 	"reflect"
 	"strings"
 	"testing"
@@ -227,7 +226,7 @@ func TestLoads(t *testing.T) {
 			input: "{\"name\": \"John\", \"age\": 30, \"city\": \"New York\"}",
 			want: map[string]any{
 				"name": "John",
-				"age":  json.Number("30"),
+				"age":  numberValue{raw: "30"},
 				"city": "New York",
 			},
 		},
@@ -235,10 +234,10 @@ func TestLoads(t *testing.T) {
 			name:  "array_numbers",
 			input: "[1, 2, 3, 4]",
 			want: []any{
-				json.Number("1"),
-				json.Number("2"),
-				json.Number("3"),
-				json.Number("4"),
+				numberValue{raw: "1"},
+				numberValue{raw: "2"},
+				numberValue{raw: "3"},
+				numberValue{raw: "4"},
 			},
 		},
 		{
@@ -453,10 +452,10 @@ func TestParseArrayObjects(t *testing.T) {
 			name:  "numbers_array",
 			input: "[1, 2, 3, 4]",
 			want: []any{
-				json.Number("1"),
-				json.Number("2"),
-				json.Number("3"),
-				json.Number("4"),
+				numberValue{raw: "1"},
+				numberValue{raw: "2"},
+				numberValue{raw: "3"},
+				numberValue{raw: "4"},
 			},
 		},
 		{
@@ -721,25 +720,25 @@ func TestParseNumber(t *testing.T) {
 		{
 			name:  "integer",
 			input: "1",
-			want:  json.Number("1"),
+			want:  numberValue{raw: "1"},
 		},
 		{
 			name:  "float",
 			input: "1.2",
-			want:  json.Number("1.2"),
+			want:  numberValue{raw: "1.2"},
 		},
 		{
 			name:  "underscored_integer",
 			input: "{\"value\": 82_461_110}",
 			want: map[string]any{
-				"value": json.Number("82461110"),
+				"value": numberValue{raw: "82461110"},
 			},
 		},
 		{
 			name:  "underscored_float",
 			input: "{\"value\": 1_234.5_6}",
 			want: map[string]any{
-				"value": json.Number("1234.56"),
+				"value": numberValue{raw: "1234.56"},
 			},
 		},
 	}
@@ -879,7 +878,7 @@ func TestParseObjectObjects(t *testing.T) {
 			input: "{ \"key\": \"value\", \"key2\": 1, \"key3\": True }",
 			want: map[string]any{
 				"key":  "value",
-				"key2": json.Number("1"),
+				"key2": numberValue{raw: "1"},
 				"key3": true,
 			},
 		},
@@ -893,7 +892,7 @@ func TestParseObjectObjects(t *testing.T) {
 			input: "{ \"key\": value, \"key2\": 1 \"key3\": null }",
 			want: map[string]any{
 				"key":  "value",
-				"key2": json.Number("1"),
+				"key2": numberValue{raw: "1"},
 				"key3": nil,
 			},
 		},

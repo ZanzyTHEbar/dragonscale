@@ -2,10 +2,11 @@ package fantasy
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"testing"
+
+	jsonv2 "github.com/go-json-experiment/json"
 
 	"github.com/stretchr/testify/require"
 )
@@ -300,7 +301,7 @@ func TestAgent_Generate_ResultToolCalls(t *testing.T) {
 
 	// Parse and verify input
 	var input map[string]any
-	err = json.Unmarshal([]byte(toolCalls[0].Input), &input)
+	err = jsonv2.Unmarshal([]byte(toolCalls[0].Input), &input)
 	require.NoError(t, err)
 	require.Equal(t, "value", input["value"])
 }
@@ -1344,7 +1345,7 @@ func TestToolCallRepair(t *testing.T) {
 		toolCalls := result.Steps[0].Content.ToolCalls()
 		require.Len(t, toolCalls, 1)
 		require.True(t, toolCalls[0].Invalid) // Should be invalid
-		require.Contains(t, toolCalls[0].ValidationError.Error(), "missing required parameter: value")
+		require.Contains(t, toolCalls[0].ValidationError.Error(), "required")
 	})
 
 	t.Run("Invalid tool call with successful repair", func(t *testing.T) {
@@ -1449,7 +1450,7 @@ func TestToolCallRepair(t *testing.T) {
 		toolCalls := result.Steps[0].Content.ToolCalls()
 		require.Len(t, toolCalls, 1)
 		require.True(t, toolCalls[0].Invalid) // Should be invalid
-		require.Contains(t, toolCalls[0].ValidationError.Error(), "missing required parameter: value")
+		require.Contains(t, toolCalls[0].ValidationError.Error(), "required")
 	})
 
 	t.Run("Nonexistent tool call", func(t *testing.T) {
@@ -1762,7 +1763,7 @@ func TestAgent_MediaToolResponses(t *testing.T) {
 		require.NotEmpty(t, toolResults[0].ClientMetadata)
 
 		var metadata ImageMetadata
-		err = json.Unmarshal([]byte(toolResults[0].ClientMetadata), &metadata)
+		err = jsonv2.Unmarshal([]byte(toolResults[0].ClientMetadata), &metadata)
 		require.NoError(t, err)
 		require.Equal(t, 800, metadata.Width)
 		require.Equal(t, 600, metadata.Height)

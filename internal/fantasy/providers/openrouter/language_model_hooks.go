@@ -2,8 +2,8 @@ package openrouter
 
 import (
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
+	jsonv2 "github.com/go-json-experiment/json"
 	"maps"
 	"strings"
 
@@ -74,7 +74,7 @@ func languagePrepareModelCall(_ fantasy.LanguageModel, params *openaisdk.ChatCom
 func languageModelExtraContent(choice openaisdk.ChatCompletionChoice) []fantasy.Content {
 	content := make([]fantasy.Content, 0)
 	reasoningData := ReasoningData{}
-	err := json.Unmarshal([]byte(choice.Message.RawJSON()), &reasoningData)
+	err := jsonv2.Unmarshal([]byte(choice.Message.RawJSON()), &reasoningData)
 	if err != nil {
 		return content
 	}
@@ -212,7 +212,7 @@ func languageModelStreamExtra(chunk openaisdk.ChatCompletionChunk, yield func(fa
 	inx := 0
 	choice := chunk.Choices[inx]
 	reasoningData := ReasoningData{}
-	err := json.Unmarshal([]byte(choice.Delta.RawJSON()), &reasoningData)
+	err := jsonv2.Unmarshal([]byte(choice.Delta.RawJSON()), &reasoningData)
 	if err != nil {
 		yield(fantasy.StreamPart{
 			Type:  fantasy.StreamPartTypeError,
@@ -423,7 +423,7 @@ func languageModelUsage(response openaisdk.ChatCompletion) (fantasy.Usage, fanta
 	openrouterUsage := UsageAccounting{}
 	usage := response.Usage
 
-	_ = json.Unmarshal([]byte(usage.RawJSON()), &openrouterUsage)
+	_ = jsonv2.Unmarshal([]byte(usage.RawJSON()), &openrouterUsage)
 
 	completionTokenDetails := usage.CompletionTokensDetails
 	promptTokenDetails := usage.PromptTokensDetails
@@ -464,7 +464,7 @@ func languageModelStreamUsage(chunk openaisdk.ChatCompletionChunk, _ map[string]
 		}
 	}
 	openrouterUsage := UsageAccounting{}
-	_ = json.Unmarshal([]byte(usage.RawJSON()), &openrouterUsage)
+	_ = jsonv2.Unmarshal([]byte(usage.RawJSON()), &openrouterUsage)
 	streamProviderMetadata.Usage = openrouterUsage
 
 	if p, ok := chunk.JSON.ExtraFields["provider"]; ok {
@@ -810,9 +810,9 @@ func languageModelToPrompt(prompt fantasy.Prompt, _, model string) ([]openaisdk.
 							Text:      reasoningPart.Text,
 							Signature: metadata.Signature,
 						})
-						data, _ := json.Marshal(reasoningDetails)
+						data, _ := jsonv2.Marshal(reasoningDetails)
 						reasoningDetailsMap := []map[string]any{}
-						_ = json.Unmarshal(data, &reasoningDetailsMap)
+						_ = jsonv2.Unmarshal(data, &reasoningDetailsMap)
 						assistantMsg.SetExtraFields(map[string]any{
 							"reasoning_details": reasoningDetailsMap,
 							"reasoning":         reasoningPart.Text,
@@ -847,9 +847,9 @@ func languageModelToPrompt(prompt fantasy.Prompt, _, model string) ([]openaisdk.
 							Data:   *metadata.EncryptedContent,
 							ID:     metadata.ItemID,
 						})
-						data, _ := json.Marshal(reasoningDetails)
+						data, _ := jsonv2.Marshal(reasoningDetails)
 						reasoningDetailsMap := []map[string]any{}
-						_ = json.Unmarshal(data, &reasoningDetailsMap)
+						_ = jsonv2.Unmarshal(data, &reasoningDetailsMap)
 						assistantMsg.SetExtraFields(map[string]any{
 							"reasoning_details": reasoningDetailsMap,
 						})
@@ -883,9 +883,9 @@ func languageModelToPrompt(prompt fantasy.Prompt, _, model string) ([]openaisdk.
 							Data:   *metadata.EncryptedContent,
 							ID:     metadata.ItemID,
 						})
-						data, _ := json.Marshal(reasoningDetails)
+						data, _ := jsonv2.Marshal(reasoningDetails)
 						reasoningDetailsMap := []map[string]any{}
-						_ = json.Unmarshal(data, &reasoningDetailsMap)
+						_ = jsonv2.Unmarshal(data, &reasoningDetailsMap)
 						assistantMsg.SetExtraFields(map[string]any{
 							"reasoning_details": reasoningDetailsMap,
 						})
@@ -915,9 +915,9 @@ func languageModelToPrompt(prompt fantasy.Prompt, _, model string) ([]openaisdk.
 							Data:   metadata.Signature,
 							ID:     metadata.ToolID,
 						})
-						data, _ := json.Marshal(reasoningDetails)
+						data, _ := jsonv2.Marshal(reasoningDetails)
 						reasoningDetailsMap := []map[string]any{}
-						_ = json.Unmarshal(data, &reasoningDetailsMap)
+						_ = jsonv2.Unmarshal(data, &reasoningDetailsMap)
 						assistantMsg.SetExtraFields(map[string]any{
 							"reasoning_details": reasoningDetailsMap,
 						})
@@ -927,9 +927,9 @@ func languageModelToPrompt(prompt fantasy.Prompt, _, model string) ([]openaisdk.
 							Text:   reasoningPart.Text,
 							Format: "unknown",
 						})
-						data, _ := json.Marshal(reasoningDetails)
+						data, _ := jsonv2.Marshal(reasoningDetails)
 						reasoningDetailsMap := []map[string]any{}
-						_ = json.Unmarshal(data, &reasoningDetailsMap)
+						_ = jsonv2.Unmarshal(data, &reasoningDetailsMap)
 						assistantMsg.SetExtraFields(map[string]any{
 							"reasoning_details": reasoningDetailsMap,
 						})

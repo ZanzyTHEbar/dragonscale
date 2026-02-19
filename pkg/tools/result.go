@@ -1,6 +1,6 @@
 package tools
 
-import "encoding/json"
+import jsonv2 "github.com/go-json-experiment/json"
 
 // ToolResult represents the structured return value from tool execution.
 // It provides clear semantics for different types of results and supports
@@ -124,7 +124,7 @@ func UserResult(content string) *ToolResult {
 // The Err field is excluded from JSON output via the json:"-" tag.
 func (tr *ToolResult) MarshalJSON() ([]byte, error) {
 	type Alias ToolResult
-	return json.Marshal(&struct {
+	return jsonv2.Marshal(&struct {
 		*Alias
 	}{
 		Alias: (*Alias)(tr),

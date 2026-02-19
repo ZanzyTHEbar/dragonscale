@@ -2,7 +2,7 @@ package memory
 
 import (
 	"context"
-	"encoding/json"
+	jsonv2 "github.com/go-json-experiment/json"
 	"log"
 	"os"
 	"path/filepath"
@@ -10,8 +10,8 @@ import (
 )
 
 type legacyState struct {
-	LastChannel string    `json:"last_channel,omitempty"`
-	LastChatID  string    `json:"last_chat_id,omitempty"`
+	LastChannel string    `json:"last_channel,omitzero"`
+	LastChatID  string    `json:"last_chat_id,omitzero"`
 	Timestamp   time.Time `json:"timestamp"`
 }
 
@@ -39,7 +39,7 @@ func MigrateState(ctx context.Context, workspace string, delegate MemoryDelegate
 	}
 
 	var s legacyState
-	if err := json.Unmarshal(data, &s); err != nil {
+	if err := jsonv2.Unmarshal(data, &s); err != nil {
 		log.Printf("[WARN] migrate_state: failed to parse %s: %v", stateFile, err)
 		return nil
 	}

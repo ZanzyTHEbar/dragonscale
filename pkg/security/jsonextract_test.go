@@ -107,7 +107,7 @@ func TestExtractJSON_InjectionAttempts(t *testing.T) {
 			&ExtractJSONOptions{DisallowUnknownFields: true},
 			func(t *testing.T, err error) {
 				assert.Error(t, err)
-				assert.Contains(t, err.Error(), "unknown field")
+				assert.Contains(t, err.Error(), "unknown object member name")
 			},
 		},
 		{

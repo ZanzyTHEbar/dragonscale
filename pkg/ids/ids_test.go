@@ -1,8 +1,9 @@
 package ids
 
 import (
-	"encoding/json"
 	"testing"
+
+	jsonv2 "github.com/go-json-experiment/json"
 )
 
 func TestNew_IsV7(t *testing.T) {
@@ -159,14 +160,14 @@ func TestScan_InvalidType(t *testing.T) {
 func TestJSON_RoundTrip(t *testing.T) {
 	u := New()
 
-	b, err := json.Marshal(u)
+	b, err := jsonv2.Marshal(u)
 	if err != nil {
 		t.Fatalf("Marshal: %v", err)
 	}
 
 	// Should be a quoted string
 	var s string
-	if err := json.Unmarshal(b, &s); err != nil {
+	if err := jsonv2.Unmarshal(b, &s); err != nil {
 		t.Fatalf("Unmarshal to string: %v", err)
 	}
 	if s != u.String() {
@@ -174,7 +175,7 @@ func TestJSON_RoundTrip(t *testing.T) {
 	}
 
 	var parsed UUID
-	if err := json.Unmarshal(b, &parsed); err != nil {
+	if err := jsonv2.Unmarshal(b, &parsed); err != nil {
 		t.Fatalf("Unmarshal: %v", err)
 	}
 	if parsed != u {
@@ -184,7 +185,7 @@ func TestJSON_RoundTrip(t *testing.T) {
 
 func TestJSON_ZeroUUID(t *testing.T) {
 	var zero UUID
-	b, err := json.Marshal(zero)
+	b, err := jsonv2.Marshal(zero)
 	if err != nil {
 		t.Fatalf("Marshal zero: %v", err)
 	}
@@ -201,13 +202,13 @@ func TestJSON_InStruct(t *testing.T) {
 	}
 
 	r := record{ID: New(), Name: "test"}
-	b, err := json.Marshal(r)
+	b, err := jsonv2.Marshal(r)
 	if err != nil {
 		t.Fatalf("Marshal struct: %v", err)
 	}
 
 	var decoded record
-	if err := json.Unmarshal(b, &decoded); err != nil {
+	if err := jsonv2.Unmarshal(b, &decoded); err != nil {
 		t.Fatalf("Unmarshal struct: %v", err)
 	}
 	if decoded.ID != r.ID {

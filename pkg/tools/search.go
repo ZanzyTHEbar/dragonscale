@@ -2,10 +2,11 @@ package tools
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
+
+	jsonv2 "github.com/go-json-experiment/json"
 )
 
 // ToolSearchTool implements tool discovery via fuzzy search over the registry.
@@ -88,7 +89,7 @@ func (t *ToolSearchTool) Execute(_ context.Context, args map[string]interface{})
 		return &ToolResult{ForLLM: fmt.Sprintf("No tools match query: %q. Try a broader search or use tool_search with no query to list all.", query)}
 	}
 
-	b, _ := json.Marshal(results)
+	b, _ := jsonv2.Marshal(results)
 	return &ToolResult{ForLLM: string(b)}
 }
 
@@ -111,7 +112,7 @@ func (t *ToolSearchTool) listAll() *ToolResult {
 		return results[i].Name < results[j].Name
 	})
 
-	b, _ := json.Marshal(results)
+	b, _ := jsonv2.Marshal(results)
 	return &ToolResult{ForLLM: string(b)}
 }
 

@@ -1,12 +1,13 @@
 package migrate
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"unicode"
+
+	jsonv2 "github.com/go-json-experiment/json"
 
 	"github.com/sipeed/picoclaw/pkg/config"
 )
@@ -51,7 +52,7 @@ func LoadOpenClawConfig(configPath string) (map[string]interface{}, error) {
 	}
 
 	var raw map[string]interface{}
-	if err := json.Unmarshal(data, &raw); err != nil {
+	if err := jsonv2.Unmarshal(data, &raw); err != nil {
 		return nil, fmt.Errorf("parsing OpenClaw config: %w", err)
 	}
 

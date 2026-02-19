@@ -14,8 +14,8 @@
 package observation
 
 import (
-	"encoding/json"
 	"fmt"
+	jsonv2 "github.com/go-json-experiment/json"
 	"strings"
 	"time"
 )
@@ -25,8 +25,8 @@ type Priority string
 
 const (
 	PriorityCritical      Priority = "critical"      // 🔴
-	PriorityNotable       Priority = "notable"        // 🟡
-	PriorityInformational Priority = "informational"  // 🔵
+	PriorityNotable       Priority = "notable"       // 🟡
+	PriorityInformational Priority = "informational" // 🔵
 )
 
 func (p Priority) Emoji() string {
@@ -97,7 +97,7 @@ func FormatBlock(observations []Observation) string {
 
 // MarshalObservations serializes observations to JSON for KV storage.
 func MarshalObservations(obs []Observation) (string, error) {
-	data, err := json.Marshal(obs)
+	data, err := jsonv2.Marshal(obs)
 	if err != nil {
 		return "", fmt.Errorf("marshal observations: %w", err)
 	}
@@ -110,7 +110,7 @@ func UnmarshalObservations(data string) ([]Observation, error) {
 		return nil, nil
 	}
 	var obs []Observation
-	if err := json.Unmarshal([]byte(data), &obs); err != nil {
+	if err := jsonv2.Unmarshal([]byte(data), &obs); err != nil {
 		return nil, fmt.Errorf("unmarshal observations: %w", err)
 	}
 	return obs, nil

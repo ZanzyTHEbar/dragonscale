@@ -2,7 +2,7 @@
 package openai
 
 import (
-	"encoding/json"
+	jsonv2 "github.com/go-json-experiment/json"
 	"slices"
 
 	"charm.land/fantasy"
@@ -18,14 +18,14 @@ const (
 func init() {
 	fantasy.RegisterProviderType(TypeResponsesProviderOptions, func(data []byte) (fantasy.ProviderOptionsData, error) {
 		var v ResponsesProviderOptions
-		if err := json.Unmarshal(data, &v); err != nil {
+		if err := jsonv2.Unmarshal(data, &v); err != nil {
 			return nil, err
 		}
 		return &v, nil
 	})
 	fantasy.RegisterProviderType(TypeResponsesReasoningMetadata, func(data []byte) (fantasy.ProviderOptionsData, error) {
 		var v ResponsesReasoningMetadata
-		if err := json.Unmarshal(data, &v); err != nil {
+		if err := jsonv2.Unmarshal(data, &v); err != nil {
 			return nil, err
 		}
 		return &v, nil

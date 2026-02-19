@@ -2,12 +2,12 @@ package channels
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
 	"sync"
 	"time"
 
+	jsonv2 "github.com/go-json-experiment/json"
 	"github.com/gorilla/websocket"
 
 	"github.com/sipeed/picoclaw/pkg/bus"
@@ -92,7 +92,7 @@ func (c *WhatsAppChannel) Send(ctx context.Context, msg bus.OutboundMessage) err
 		"content": msg.Content,
 	}
 
-	data, err := json.Marshal(payload)
+	data, err := jsonv2.Marshal(payload)
 	if err != nil {
 		return fmt.Errorf("failed to marshal message: %w", err)
 	}
@@ -127,7 +127,7 @@ func (c *WhatsAppChannel) listen(ctx context.Context) {
 			}
 
 			var msg map[string]interface{}
-			if err := json.Unmarshal(message, &msg); err != nil {
+			if err := jsonv2.Unmarshal(message, &msg); err != nil {
 				log.Printf("Failed to unmarshal WhatsApp message: %v", err)
 				continue
 			}

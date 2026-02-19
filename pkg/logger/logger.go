@@ -1,7 +1,6 @@
 package logger
 
 import (
-	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -9,6 +8,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	jsonv2 "github.com/go-json-experiment/json"
 )
 
 type LogLevel int
@@ -43,10 +44,10 @@ type Logger struct {
 type LogEntry struct {
 	Level     string                 `json:"level"`
 	Timestamp string                 `json:"timestamp"`
-	Component string                 `json:"component,omitempty"`
+	Component string                 `json:"component,omitzero"`
 	Message   string                 `json:"message"`
-	Fields    map[string]interface{} `json:"fields,omitempty"`
-	Caller    string                 `json:"caller,omitempty"`
+	Fields    map[string]interface{} `json:"fields,omitzero"`
+	Caller    string                 `json:"caller,omitzero"`
 }
 
 func init() {
@@ -117,7 +118,7 @@ func logMessage(level LogLevel, component string, message string, fields map[str
 	}
 
 	if logger.file != nil {
-		jsonData, err := json.Marshal(entry)
+		jsonData, err := jsonv2.Marshal(entry)
 		if err == nil {
 			logger.file.WriteString(string(jsonData) + "\n")
 		}

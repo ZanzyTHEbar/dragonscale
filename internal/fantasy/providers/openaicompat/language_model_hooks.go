@@ -2,8 +2,8 @@ package openaicompat
 
 import (
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
+	jsonv2 "github.com/go-json-experiment/json"
 	"strings"
 
 	"charm.land/fantasy"
@@ -50,7 +50,7 @@ func PrepareCallFunc(_ fantasy.LanguageModel, params *openaisdk.ChatCompletionNe
 func ExtraContentFunc(choice openaisdk.ChatCompletionChoice) []fantasy.Content {
 	var content []fantasy.Content
 	reasoningData := ReasoningData{}
-	err := json.Unmarshal([]byte(choice.Message.RawJSON()), &reasoningData)
+	err := jsonv2.Unmarshal([]byte(choice.Message.RawJSON()), &reasoningData)
 	if err != nil {
 		return content
 	}
@@ -84,7 +84,7 @@ func StreamExtraFunc(chunk openaisdk.ChatCompletionChunk, yield func(fantasy.Str
 
 	for inx, choice := range chunk.Choices {
 		reasoningData := ReasoningData{}
-		err := json.Unmarshal([]byte(choice.Delta.RawJSON()), &reasoningData)
+		err := jsonv2.Unmarshal([]byte(choice.Delta.RawJSON()), &reasoningData)
 		if err != nil {
 			yield(fantasy.StreamPart{
 				Type:  fantasy.StreamPartTypeError,

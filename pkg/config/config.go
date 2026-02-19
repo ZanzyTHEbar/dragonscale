@@ -1,13 +1,14 @@
 package config
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
 
 	"github.com/caarlos0/env/v11"
+	jsonv2 "github.com/go-json-experiment/json"
+	"github.com/go-json-experiment/json/jsontext"
 )
 
 // FlexibleStringSlice is a []string that also accepts JSON numbers,
@@ -17,14 +18,14 @@ type FlexibleStringSlice []string
 func (f *FlexibleStringSlice) UnmarshalJSON(data []byte) error {
 	// Try []string first
 	var ss []string
-	if err := json.Unmarshal(data, &ss); err == nil {
+	if err := jsonv2.Unmarshal(data, &ss); err == nil {
 		*f = ss
 		return nil
 	}
 
 	// Try []interface{} to handle mixed types
 	var raw []interface{}
-	if err := json.Unmarshal(data, &raw); err != nil {
+	if err := jsonv2.Unmarshal(data, &raw); err != nil {
 		return err
 	}
 
@@ -251,10 +252,10 @@ type ProvidersConfig struct {
 type ProviderConfig struct {
 	APIKey      string `json:"api_key" env:"PICOCLAW_PROVIDERS_{{.Name}}_API_KEY"`
 	APIBase     string `json:"api_base" env:"PICOCLAW_PROVIDERS_{{.Name}}_API_BASE"`
-	Proxy       string `json:"proxy,omitempty" env:"PICOCLAW_PROVIDERS_{{.Name}}_PROXY"`
-	AuthMethod  string `json:"auth_method,omitempty" env:"PICOCLAW_PROVIDERS_{{.Name}}_AUTH_METHOD"`
-	Timeout     int    `json:"timeout,omitempty" env:"PICOCLAW_PROVIDERS_{{.Name}}_TIMEOUT"`           // seconds, 0 = default (120s)
-	ConnectMode string `json:"connect_mode,omitempty" env:"PICOCLAW_PROVIDERS_{{.Name}}_CONNECT_MODE"` // only for Github Copilot, `stdio` or `grpc`
+	Proxy       string `json:"proxy,omitzero" env:"PICOCLAW_PROVIDERS_{{.Name}}_PROXY"`
+	AuthMethod  string `json:"auth_method,omitzero" env:"PICOCLAW_PROVIDERS_{{.Name}}_AUTH_METHOD"`
+	Timeout     int    `json:"timeout,omitzero" env:"PICOCLAW_PROVIDERS_{{.Name}}_TIMEOUT"`           // seconds, 0 = default (120s)
+	ConnectMode string `json:"connect_mode,omitzero" env:"PICOCLAW_PROVIDERS_{{.Name}}_CONNECT_MODE"` // only for Github Copilot, `stdio` or `grpc`
 }
 
 type OpenAIProviderConfig struct {
@@ -450,7 +451,7 @@ func LoadConfig(path string) (*Config, error) {
 		return nil, err
 	}
 
-	if err := json.Unmarshal(data, cfg); err != nil {
+	if err := jsonv2.Unmarshal(data, cfg); err != nil {
 		return nil, err
 	}
 
@@ -522,7 +523,7 @@ func SaveConfig(path string, cfg *Config) error {
 	cfg.mu.RLock()
 	defer cfg.mu.RUnlock()
 
-	data, err := json.MarshalIndent(cfg, "", "  ")
+	data, err := jsonv2.Marshal(cfg, jsontext.WithIndent("  "))
 	if err != nil {
 		return err
 	}

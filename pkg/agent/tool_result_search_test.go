@@ -2,7 +2,7 @@ package agent_test
 
 import (
 	"context"
-	"encoding/json"
+	jsonv2 "github.com/go-json-experiment/json"
 	"strings"
 	"testing"
 
@@ -58,13 +58,13 @@ func invokeSearch(t *testing.T, tool fantasy.AgentTool, input agent.ToolResultSe
 	require.False(t, resp.IsError, "search tool must not error: %s", resp.Content)
 
 	var out map[string]any
-	require.NoError(t, json.Unmarshal([]byte(resp.Content), &out))
+	require.NoError(t, jsonv2.Unmarshal([]byte(resp.Content), &out))
 	return out
 }
 
 func marshalInput(t *testing.T, v any) string {
 	t.Helper()
-	b, err := json.Marshal(v)
+	b, err := jsonv2.Marshal(v)
 	require.NoError(t, err)
 	return string(b)
 }

@@ -3,8 +3,8 @@ package openai
 import (
 	"context"
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
+	jsonv2 "github.com/go-json-experiment/json"
 	"reflect"
 	"strings"
 
@@ -479,7 +479,7 @@ func toResponsesPrompt(prompt fantasy.Prompt, systemMessageMode string) (respons
 						continue
 					}
 
-					inputJSON, err := json.Marshal(toolCallPart.Input)
+					inputJSON, err := jsonv2.Marshal(toolCallPart.Input)
 					if err != nil {
 						warnings = append(warnings, fantasy.CallWarning{
 							Type:    fantasy.CallWarningTypeOther,

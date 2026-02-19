@@ -1,10 +1,10 @@
 package fantasy
 
-import "encoding/json"
+// No imports needed — json method signatures are defined inline.
 
 // ProviderOptionsData is an interface for provider-specific options data.
-// All implementations MUST also implement encoding/json.Marshaler and
-// encoding/json.Unmarshaler interfaces to ensure proper JSON serialization
+// All implementations MUST also implement jsonv2.MarshalerV2 and
+// jsonv2.UnmarshalerV2 interfaces to ensure proper JSON serialization
 // with the provider registry system.
 //
 // Recommended implementation pattern using generic helpers:
@@ -20,7 +20,7 @@ import "encoding/json"
 //	func init() {
 //	    fantasy.RegisterProviderType(TypeMyProviderOptions, func(data []byte) (fantasy.ProviderOptionsData, error) {
 //	        var opts MyProviderOptions
-//	        if err := json.Unmarshal(data, &opts); err != nil {
+//	        if err := jsonv2.Unmarshal(data, &opts); err != nil {
 //	            return nil, err
 //	        }
 //	        return &opts, nil
@@ -30,28 +30,27 @@ import "encoding/json"
 //	// Implement ProviderOptionsData interface
 //	func (*MyProviderOptions) Options() {}
 //
-//	// Implement json.Marshaler using the generic helper
-//	func (m MyProviderOptions) MarshalJSON() ([]byte, error) {
+//	// Implement jsonv2.MarshalerTo using the generic helper
+//	func (m MyProviderOptions) MarshalJSONTo(enc *jsontext.Encoder) error {
 //	    type plain MyProviderOptions
-//	    return fantasy.MarshalProviderType(TypeMyProviderOptions, plain(m))
+//	    return fantasy.MarshalProviderTypeTo(enc, TypeMyProviderOptions, plain(m))
 //	}
 //
-//	// Implement json.Unmarshaler using the generic helper
+//	// Implement jsonv2.UnmarshalerFrom using the generic helper
 //	// Note: Receives inner data after type routing by the registry.
-//	func (m *MyProviderOptions) UnmarshalJSON(data []byte) error {
+//	func (m *MyProviderOptions) UnmarshalJSONFrom(dec *jsontext.Decoder) error {
 //	    type plain MyProviderOptions
 //	    var p plain
-//	    if err := fantasy.UnmarshalProviderType(data, &p); err != nil {
+//	    if err := fantasy.UnmarshalProviderTypeFrom(dec, &p); err != nil {
 //	        return err
 //	    }
 //	    *m = MyProviderOptions(p)
 //	    return nil
 //	}
 type ProviderOptionsData interface {
-	// Options is a marker method that identifies types implementing this interface.
 	Options()
-	json.Marshaler
-	json.Unmarshaler
+	MarshalJSON() ([]byte, error)
+	UnmarshalJSON([]byte) error
 }
 
 // ProviderMetadata represents additional provider-specific metadata.
@@ -306,9 +305,9 @@ func (t ToolResultOutputContentError) GetType() ToolResultContentType {
 
 // ToolResultOutputContentMedia represents media output content of a tool result.
 type ToolResultOutputContentMedia struct {
-	Data      string `json:"data"`           // for media type (base64)
-	MediaType string `json:"media_type"`     // for media type
-	Text      string `json:"text,omitempty"` // optional text content accompanying the media
+	Data      string `json:"data"`          // for media type (base64)
+	MediaType string `json:"media_type"`    // for media type
+	Text      string `json:"text,omitzero"` // optional text content accompanying the media
 }
 
 // GetType returns the type of the tool result output content media.
@@ -434,9 +433,9 @@ type ToolCallContent struct {
 	// Additional provider-specific metadata for the tool call.
 	ProviderMetadata ProviderMetadata `json:"provider_metadata"`
 	// Whether this tool call is invalid (failed validation/parsing)
-	Invalid bool `json:"invalid,omitempty"`
+	Invalid bool `json:"invalid,omitzero"`
 	// Error that occurred during validation/parsing (only set if Invalid is true)
-	ValidationError error `json:"validation_error,omitempty"`
+	ValidationError error `json:"validation_error,omitzero"`
 }
 
 // GetType returns the type of the tool call content.

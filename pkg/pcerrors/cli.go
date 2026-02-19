@@ -1,12 +1,13 @@
 package pcerrors
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"regexp"
 	"strings"
+
+	jsonv2 "github.com/go-json-experiment/json"
 )
 
 // CLIHandler is the PicoClaw error lifecycle boundary for the CLI.
@@ -50,7 +51,7 @@ func (h CLIHandler) Handle(err error) int {
 		if h.Verbose {
 			record["detail"] = err.Error()
 		}
-		data, _ := json.Marshal(record)
+		data, _ := jsonv2.Marshal(record)
 		_, _ = fmt.Fprintln(w, string(data))
 	} else {
 		_, _ = fmt.Fprintln(w, msg)

@@ -1,9 +1,10 @@
 package security
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
+	jsonv2 "github.com/go-json-experiment/json"
+	"github.com/go-json-experiment/json/jsontext"
 	"os"
 	"path/filepath"
 	"sync"
@@ -132,7 +133,7 @@ func (ss *SecretStore) load() error {
 		return err
 	}
 	var entries []SecretEntry
-	if err := json.Unmarshal(data, &entries); err != nil {
+	if err := jsonv2.Unmarshal(data, &entries); err != nil {
 		return fmt.Errorf("parse secret store: %w", err)
 	}
 	for _, e := range entries {
@@ -150,7 +151,7 @@ func (ss *SecretStore) save() error {
 	}
 	ss.mu.RUnlock()
 
-	data, err := json.MarshalIndent(entries, "", "  ")
+	data, err := jsonv2.Marshal(entries, jsontext.WithIndent("  "))
 	if err != nil {
 		return fmt.Errorf("marshal secret store: %w", err)
 	}

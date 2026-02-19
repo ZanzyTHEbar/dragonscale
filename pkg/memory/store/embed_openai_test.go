@@ -2,7 +2,7 @@ package store
 
 import (
 	"context"
-	"encoding/json"
+	jsonv2 "github.com/go-json-experiment/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -20,16 +20,17 @@ func TestOpenAIEmbedder_Embed(t *testing.T) {
 		}
 
 		var req openAIEmbedRequest
-		json.NewDecoder(r.Body).Decode(&req)
+		jsonv2.UnmarshalRead(r.Body, &req)
 		if req.Model != "test-embed" {
 			t.Errorf("expected model 'test-embed', got %q", req.Model)
 		}
 
-		json.NewEncoder(w).Encode(openAIEmbedResponse{
+		respData, _ := jsonv2.Marshal(openAIEmbedResponse{
 			Data: []openAIEmbedData{
 				{Index: 0, Embedding: []float32{0.5, 0.6, 0.7}},
 			},
 		})
+		w.Write(respData)
 	}))
 	defer srv.Close()
 
@@ -57,7 +58,7 @@ func TestOpenAIEmbedder_Embed(t *testing.T) {
 func TestOpenAIEmbedder_EmbedBatch(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req openAIEmbedRequest
-		json.NewDecoder(r.Body).Decode(&req)
+		jsonv2.UnmarshalRead(r.Body, &req)
 
 		// Batch request should send array
 		texts, ok := req.Input.([]interface{})
@@ -73,7 +74,8 @@ func TestOpenAIEmbedder_EmbedBatch(t *testing.T) {
 			}
 		}
 
-		json.NewEncoder(w).Encode(openAIEmbedResponse{Data: data})
+		respData, _ := jsonv2.Marshal(openAIEmbedResponse{Data: data})
+		w.Write(respData)
 	}))
 	defer srv.Close()
 
@@ -94,16 +96,17 @@ func TestOpenAIEmbedder_EmbedBatch(t *testing.T) {
 func TestOpenAIEmbedder_SingleTextNotArray(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req openAIEmbedRequest
-		json.NewDecoder(r.Body).Decode(&req)
+		jsonv2.UnmarshalRead(r.Body, &req)
 
 		// Single text should be sent as string, not array
 		if _, ok := req.Input.(string); !ok {
 			t.Errorf("expected string input for single text, got %T", req.Input)
 		}
 
-		json.NewEncoder(w).Encode(openAIEmbedResponse{
+		respData, _ := jsonv2.Marshal(openAIEmbedResponse{
 			Data: []openAIEmbedData{{Index: 0, Embedding: []float32{1.0}}},
 		})
+		w.Write(respData)
 	}))
 	defer srv.Close()
 
@@ -140,9 +143,10 @@ func TestOpenAIEmbedder_NoAuth(t *testing.T) {
 		if r.Header.Get("Authorization") != "" {
 			t.Error("expected no auth header when key is empty")
 		}
-		json.NewEncoder(w).Encode(openAIEmbedResponse{
+		respData, _ := jsonv2.Marshal(openAIEmbedResponse{
 			Data: []openAIEmbedData{{Index: 0, Embedding: []float32{1.0}}},
 		})
+		w.Write(respData)
 	}))
 	defer srv.Close()
 

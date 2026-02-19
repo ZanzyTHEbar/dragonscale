@@ -3,8 +3,8 @@ package store
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
+	jsonv2 "github.com/go-json-experiment/json"
 	"io"
 	"net/http"
 	"time"
@@ -59,7 +59,7 @@ func NewOpenAIEmbedder(cfg OpenAIEmbedderConfig) *OpenAIEmbedder {
 type openAIEmbedRequest struct {
 	Input          interface{} `json:"input"` // string or []string
 	Model          string      `json:"model"`
-	EncodingFormat string      `json:"encoding_format,omitempty"`
+	EncodingFormat string      `json:"encoding_format,omitzero"`
 }
 
 type openAIEmbedResponse struct {
@@ -100,7 +100,7 @@ func (o *OpenAIEmbedder) call(ctx context.Context, texts []string) ([]memory.Emb
 		input = texts
 	}
 
-	body, err := json.Marshal(openAIEmbedRequest{
+	body, err := jsonv2.Marshal(openAIEmbedRequest{
 		Input:          input,
 		Model:          o.model,
 		EncodingFormat: "float",
@@ -130,7 +130,7 @@ func (o *OpenAIEmbedder) call(ctx context.Context, texts []string) ([]memory.Emb
 	}
 
 	var result openAIEmbedResponse
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+	if err := jsonv2.UnmarshalRead(resp.Body, &result); err != nil {
 		return nil, fmt.Errorf("decode response: %w", err)
 	}
 

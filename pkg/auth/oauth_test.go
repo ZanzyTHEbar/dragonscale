@@ -2,19 +2,20 @@ package auth
 
 import (
 	"encoding/base64"
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
+
+	jsonv2 "github.com/go-json-experiment/json"
 )
 
 func makeJWTForClaims(t *testing.T, claims map[string]interface{}) string {
 	t.Helper()
 
 	header := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"none","typ":"JWT"}`))
-	payloadJSON, err := json.Marshal(claims)
+	payloadJSON, err := jsonv2.Marshal(claims)
 	if err != nil {
 		t.Fatalf("marshal claims: %v", err)
 	}
@@ -95,7 +96,7 @@ func TestParseTokenResponse(t *testing.T) {
 		"expires_in":    3600,
 		"id_token":      "test-id-token",
 	}
-	body, _ := json.Marshal(resp)
+	body, _ := jsonv2.Marshal(resp)
 
 	cred, err := parseTokenResponse(body, "openai")
 	if err != nil {
@@ -127,7 +128,7 @@ func TestParseTokenResponseExtractsAccountIDFromIDToken(t *testing.T) {
 		"expires_in":    3600,
 		"id_token":      idToken,
 	}
-	body, _ := json.Marshal(resp)
+	body, _ := jsonv2.Marshal(resp)
 
 	cred, err := parseTokenResponse(body, "openai")
 	if err != nil {
@@ -166,7 +167,7 @@ func TestParseTokenResponseAccountIDFromIDToken(t *testing.T) {
 		"expires_in":    3600,
 		"id_token":      idToken,
 	}
-	body, _ := json.Marshal(resp)
+	body, _ := jsonv2.Marshal(resp)
 
 	cred, err := parseTokenResponse(body, "openai")
 	if err != nil {
@@ -206,7 +207,7 @@ func TestExchangeCodeForTokens(t *testing.T) {
 			"refresh_token": "mock-refresh-token",
 			"expires_in":    3600,
 		}
-		json.NewEncoder(w).Encode(resp)
+		jsonv2.MarshalWrite(w, resp)
 	}))
 	defer server.Close()
 
@@ -245,7 +246,7 @@ func TestRefreshAccessToken(t *testing.T) {
 			"refresh_token": "refreshed-refresh-token",
 			"expires_in":    3600,
 		}
-		json.NewEncoder(w).Encode(resp)
+		jsonv2.MarshalWrite(w, resp)
 	}))
 	defer server.Close()
 
@@ -294,7 +295,7 @@ func TestRefreshAccessTokenPreservesRefreshAndAccountID(t *testing.T) {
 			"access_token": "new-access-token-only",
 			"expires_in":   3600,
 		}
-		json.NewEncoder(w).Encode(resp)
+		jsonv2.MarshalWrite(w, resp)
 	}))
 	defer server.Close()
 

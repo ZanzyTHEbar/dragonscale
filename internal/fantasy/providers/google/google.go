@@ -3,9 +3,9 @@ package google
 import (
 	"cmp"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
+	jsonv2 "github.com/go-json-experiment/json"
 	"maps"
 	"net/http"
 	"reflect"
@@ -428,7 +428,7 @@ func toGooglePrompt(prompt fantasy.Prompt) (*genai.Content, []*genai.Content, []
 					}
 
 					var result map[string]any
-					err := json.Unmarshal([]byte(toolCall.Input), &result)
+					err := jsonv2.Unmarshal([]byte(toolCall.Input), &result)
 					if err != nil {
 						continue
 					}
@@ -750,7 +750,7 @@ func (g *languageModel) Stream(ctx context.Context, call fantasy.Call) (fantasy.
 								return
 							}
 						}
-						args, err := json.Marshal(part.FunctionCall.Args)
+						args, err := jsonv2.Marshal(part.FunctionCall.Args)
 						if err != nil {
 							yield(fantasy.StreamPart{
 								Type:  fantasy.StreamPartTypeError,
@@ -1380,7 +1380,7 @@ func (g languageModel) mapResponse(response *genai.GenerateContentResponse, warn
 				content = append(content, fantasy.TextContent{Text: part.Text})
 			}
 		case part.FunctionCall != nil:
-			input, err := json.Marshal(part.FunctionCall.Args)
+			input, err := jsonv2.Marshal(part.FunctionCall.Args)
 			if err != nil {
 				return nil, err
 			}

@@ -2,8 +2,10 @@ package securebus
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
+	jsonv2 "github.com/go-json-experiment/json"
+	"log"
+	"sync"
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/itr"
@@ -62,6 +64,7 @@ type Bus struct {
 	executor   ToolExecutor
 	toolSearch ToolSearchFunc // nil = no tool search support
 	done       chan struct{}
+	closeOnce  sync.Once
 }
 
 // New creates a Bus and starts background worker goroutines.
@@ -106,10 +109,12 @@ func (b *Bus) AuditLog() *AuditLog {
 	return b.audit
 }
 
-// Close shuts down the bus workers gracefully.
+// Close shuts down the bus workers gracefully. Safe to call multiple times.
 func (b *Bus) Close() {
-	b.transport.Close()
-	close(b.done)
+	b.closeOnce.Do(func() {
+		b.transport.Close()
+		close(b.done)
+	})
 }
 
 // Execute is a convenience method for in-process callers that don't want to
@@ -155,12 +160,16 @@ func (b *Bus) dispatch(ctx context.Context, req itr.ToolRequest) itr.ToolRespons
 	case itr.CmdToolSearch:
 		resp := b.handleToolSearch(ctx, req)
 		event.DurationMS = time.Since(start).Milliseconds()
-		_ = b.audit.Append(event)
+		if err := b.audit.Append(event); err != nil {
+			log.Printf("securebus: audit append failed: %v", err)
+		}
 		return resp
 	default:
 		resp := b.handleRLMCommand(ctx, req)
 		event.DurationMS = time.Since(start).Milliseconds()
-		_ = b.audit.Append(event)
+		if err := b.audit.Append(event); err != nil {
+			log.Printf("securebus: audit append failed: %v", err)
+		}
 		return resp
 	}
 
@@ -168,7 +177,9 @@ func (b *Bus) dispatch(ctx context.Context, req itr.ToolRequest) itr.ToolRespons
 	if !ok {
 		event.IsError = true
 		event.DurationMS = time.Since(start).Milliseconds()
-		_ = b.audit.Append(event)
+		if err := b.audit.Append(event); err != nil {
+			log.Printf("securebus: audit append failed: %v", err)
+		}
 		return itr.NewErrorResponse(req.ID, "internal: payload is not ToolExec")
 	}
 	event.ToolName = te.ToolName
@@ -184,17 +195,21 @@ func (b *Bus) dispatch(ctx context.Context, req itr.ToolRequest) itr.ToolRespons
 		event.IsError = true
 		event.PolicyViolation = err.Error()
 		event.DurationMS = time.Since(start).Milliseconds()
-		_ = b.audit.Append(event)
+		if err := b.audit.Append(event); err != nil {
+			log.Printf("securebus: audit append failed: %v", err)
+		}
 		return itr.NewErrorResponse(req.ID, "policy violation: "+err.Error())
 	}
 
 	// 3. Deserialise args — always produce a non-nil map for safe injection.
 	args := make(map[string]interface{})
 	if te.ArgsJSON != "" && te.ArgsJSON != "null" {
-		if err := json.Unmarshal([]byte(te.ArgsJSON), &args); err != nil {
+		if err := jsonv2.Unmarshal([]byte(te.ArgsJSON), &args); err != nil {
 			event.IsError = true
 			event.DurationMS = time.Since(start).Milliseconds()
-			_ = b.audit.Append(event)
+			if err := b.audit.Append(event); err != nil {
+				log.Printf("securebus: audit append failed: %v", err)
+			}
 			return itr.NewErrorResponse(req.ID, fmt.Sprintf("invalid args JSON: %v", err))
 		}
 	}
@@ -204,7 +219,9 @@ func (b *Bus) dispatch(ctx context.Context, req itr.ToolRequest) itr.ToolRespons
 	if err != nil {
 		event.IsError = true
 		event.DurationMS = time.Since(start).Milliseconds()
-		_ = b.audit.Append(event)
+		if err := b.audit.Append(event); err != nil {
+			log.Printf("securebus: audit append failed: %v", err)
+		}
 		return itr.NewErrorResponse(req.ID, "secret injection failed: "+err.Error())
 	}
 	event.SecretsAccessed = injectedSecrets
@@ -232,7 +249,9 @@ func (b *Bus) dispatch(ctx context.Context, req itr.ToolRequest) itr.ToolRespons
 
 	event.IsError = resp.IsError
 	event.DurationMS = time.Since(start).Milliseconds()
-	_ = b.audit.Append(event)
+	if err := b.audit.Append(event); err != nil {
+		log.Printf("securebus: audit append failed: %v", err)
+	}
 	return resp
 }
 
