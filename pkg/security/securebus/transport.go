@@ -38,6 +38,7 @@ type ChannelTransport struct {
 }
 
 type channelEnvelope struct {
+	ctx    context.Context
 	req    itr.ToolRequest
 	respCh chan channelResult
 }
@@ -70,7 +71,7 @@ func (ct *ChannelTransport) Requests() <-chan channelEnvelope {
 // Send enqueues req and blocks until the response arrives or ctx is cancelled.
 func (ct *ChannelTransport) Send(ctx context.Context, req itr.ToolRequest) (itr.ToolResponse, error) {
 	respCh := make(chan channelResult, 1)
-	env := channelEnvelope{req: req, respCh: respCh}
+	env := channelEnvelope{ctx: ctx, req: req, respCh: respCh}
 
 	select {
 	case ct.reqCh <- env:

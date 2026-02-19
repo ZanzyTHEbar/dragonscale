@@ -36,12 +36,45 @@ type PicoToolAdapter struct {
 var _ fantasy.AgentTool = (*PicoToolAdapter)(nil)
 
 // Info returns Fantasy-compatible tool metadata from the PicoClaw tool.
+// Fantasy's ToolInfo expects Parameters to be just the properties map and
+// Required to be a separate []string. PicoClaw tools return a full JSON
+// Schema object from Parameters() (with "type", "properties", "required"
+// keys), so we must unwrap it here to avoid double-wrapping in
+// agent.prepareTools() and agent.validateToolCall().
 func (a *PicoToolAdapter) Info() fantasy.ToolInfo {
+	params := a.inner.Parameters()
+	properties, required := unwrapSchema(params)
 	return fantasy.ToolInfo{
 		Name:        a.inner.Name(),
 		Description: a.inner.Description(),
-		Parameters:  a.inner.Parameters(),
+		Parameters:  properties,
+		Required:    required,
 	}
+}
+
+// unwrapSchema extracts the properties map and required slice from a full
+// JSON Schema object. If params already contains "type"+"properties" keys
+// (i.e. it's a complete schema), extract the inner fields. Otherwise treat
+// the whole map as a flat properties map (backward-compatible).
+func unwrapSchema(params map[string]interface{}) (map[string]interface{}, []string) {
+	props, hasProps := params["properties"].(map[string]interface{})
+	_, hasType := params["type"]
+	if !hasType || !hasProps {
+		return params, nil
+	}
+
+	var required []string
+	switch r := params["required"].(type) {
+	case []string:
+		required = r
+	case []interface{}:
+		for _, v := range r {
+			if s, ok := v.(string); ok {
+				required = append(required, s)
+			}
+		}
+	}
+	return props, required
 }
 
 // Run executes the PicoClaw tool and bridges the result to Fantasy.

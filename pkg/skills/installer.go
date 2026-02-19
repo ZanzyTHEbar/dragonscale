@@ -14,7 +14,7 @@ import (
 )
 
 type SkillInstaller struct {
-	workspace string
+	skillsDir string // directory where skills are installed
 }
 
 type AvailableSkill struct {
@@ -31,14 +31,16 @@ type BuiltinSkill struct {
 	Enabled bool   `json:"enabled"`
 }
 
-func NewSkillInstaller(workspace string) *SkillInstaller {
+// NewSkillInstaller creates an installer that manages skills in the given directory.
+// Callers should pass the XDG skills dir (config.SkillsDir()) for new installs.
+func NewSkillInstaller(skillsDir string) *SkillInstaller {
 	return &SkillInstaller{
-		workspace: workspace,
+		skillsDir: skillsDir,
 	}
 }
 
 func (si *SkillInstaller) InstallFromGitHub(ctx context.Context, repo string) error {
-	skillDir := filepath.Join(si.workspace, "skills", filepath.Base(repo))
+	skillDir := filepath.Join(si.skillsDir, filepath.Base(repo))
 
 	if _, err := os.Stat(skillDir); err == nil {
 		return fmt.Errorf("skill '%s' already exists", filepath.Base(repo))
@@ -80,7 +82,7 @@ func (si *SkillInstaller) InstallFromGitHub(ctx context.Context, repo string) er
 }
 
 func (si *SkillInstaller) Uninstall(skillName string) error {
-	skillDir := filepath.Join(si.workspace, "skills", skillName)
+	skillDir := filepath.Join(si.skillsDir, skillName)
 
 	if _, err := os.Stat(skillDir); os.IsNotExist(err) {
 		return fmt.Errorf("skill '%s' not found", skillName)
@@ -126,7 +128,7 @@ func (si *SkillInstaller) ListAvailableSkills(ctx context.Context) ([]AvailableS
 }
 
 func (si *SkillInstaller) ListBuiltinSkills() []BuiltinSkill {
-	builtinSkillsDir := filepath.Join(filepath.Dir(si.workspace), "picoclaw", "skills")
+	builtinSkillsDir := si.skillsDir
 
 	entries, err := os.ReadDir(builtinSkillsDir)
 	if err != nil {

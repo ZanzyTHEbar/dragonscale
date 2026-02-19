@@ -115,6 +115,45 @@ func TestAdapter_Info(t *testing.T) {
 	if info.Parameters == nil {
 		t.Error("Expected non-nil parameters")
 	}
+	// Verify schema unwrapping: Parameters should contain the properties map,
+	// not the full schema wrapper. The mock returns {"type":"object","properties":{...}}
+	// so after unwrapping, Parameters should have "input" as a direct key.
+	if _, ok := info.Parameters["input"]; !ok {
+		t.Errorf("Expected unwrapped properties with 'input' key, got keys: %v", info.Parameters)
+	}
+	if _, hasType := info.Parameters["type"]; hasType {
+		t.Error("Parameters should not contain 'type' key after unwrapping")
+	}
+}
+
+func TestAdapter_Info_UnwrapsSchemaWithRequired(t *testing.T) {
+	mock := &mockToolWithRequired{}
+	adapter := &PicoToolAdapter{inner: mock}
+	info := adapter.Info()
+
+	if _, ok := info.Parameters["path"]; !ok {
+		t.Errorf("Expected unwrapped 'path' property, got: %v", info.Parameters)
+	}
+	if len(info.Required) != 1 || info.Required[0] != "path" {
+		t.Errorf("Expected Required=[path], got: %v", info.Required)
+	}
+}
+
+type mockToolWithRequired struct{}
+
+func (t *mockToolWithRequired) Name() string        { return "required_tool" }
+func (t *mockToolWithRequired) Description() string { return "Tool with required fields" }
+func (t *mockToolWithRequired) Parameters() map[string]interface{} {
+	return map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"path": map[string]interface{}{"type": "string", "description": "file path"},
+		},
+		"required": []string{"path"},
+	}
+}
+func (t *mockToolWithRequired) Execute(_ context.Context, _ map[string]interface{}) *tools.ToolResult {
+	return &tools.ToolResult{ForLLM: "ok"}
 }
 
 // --- PicoToolAdapter.Run() Tests ---
@@ -284,6 +323,9 @@ func TestBuildAdaptedTools_WrapsAllTools(t *testing.T) {
 	registry.Register(&mockSilentTool{})
 	registry.Register(&mockDualChannelTool{})
 	registry.Register(&mockErrorTool{})
+	registry.MarkGateway("silent_tool")
+	registry.MarkGateway("dual_tool")
+	registry.MarkGateway("error_tool")
 
 	adapted := BuildAdaptedTools(registry, nil, "ch", "id")
 

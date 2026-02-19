@@ -12,7 +12,7 @@ func init() {
 	goose.AddMigrationContext(up009Jobs, down009Jobs)
 }
 
-func up009Jobs(_ context.Context, tx *sql.Tx) error {
+func up009Jobs(ctx context.Context, tx *sql.Tx) error {
 	stmts := []string{
 		`CREATE TABLE IF NOT EXISTS jobs (
     id BLOB PRIMARY KEY,
@@ -34,19 +34,19 @@ func up009Jobs(_ context.Context, tx *sql.Tx) error {
 		`CREATE UNIQUE INDEX IF NOT EXISTS idx_jobs_kind_dedupe ON jobs(kind, dedupe_key) WHERE dedupe_key IS NOT NULL`,
 	}
 	for _, s := range stmts {
-		if _, err := tx.ExecContext(context.Background(), s); err != nil {
+		if _, err := tx.ExecContext(ctx, s); err != nil {
 			return fmt.Errorf("009_jobs up: %w\nSQL: %s", err, s)
 		}
 	}
 	return nil
 }
 
-func down009Jobs(_ context.Context, tx *sql.Tx) error {
+func down009Jobs(ctx context.Context, tx *sql.Tx) error {
 	stmts := []string{
 		`DROP TABLE IF EXISTS jobs`,
 	}
 	for _, s := range stmts {
-		if _, err := tx.ExecContext(context.Background(), s); err != nil {
+		if _, err := tx.ExecContext(ctx, s); err != nil {
 			return fmt.Errorf("009_jobs down: %w\nSQL: %s", err, s)
 		}
 	}

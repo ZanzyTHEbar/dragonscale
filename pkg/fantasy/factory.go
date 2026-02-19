@@ -200,11 +200,8 @@ func CreateProvider(cfg *config.Config) (fantasy.Provider, error) {
 	if providerName != "" {
 		switch providerName {
 		case "claude-cli", "claudecode", "claude-code":
-			workspace := cfg.Agents.Defaults.Workspace
-			if workspace == "" {
-				workspace = "."
-			}
-			return newClaudeCliProvider(workspace), nil
+			sandbox := cfg.SandboxPath()
+			return newClaudeCliProvider(sandbox), nil
 		}
 	}
 

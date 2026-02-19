@@ -12,7 +12,7 @@ func init() {
 	goose.AddMigrationContext(up010ConversationGraph, down010ConversationGraph)
 }
 
-func up010ConversationGraph(_ context.Context, tx *sql.Tx) error {
+func up010ConversationGraph(ctx context.Context, tx *sql.Tx) error {
 	stmts := []string{
 		`CREATE TABLE IF NOT EXISTS agent_conversation_forks (
     id BLOB PRIMARY KEY,
@@ -86,14 +86,14 @@ func up010ConversationGraph(_ context.Context, tx *sql.Tx) error {
 		`CREATE INDEX IF NOT EXISTS idx_agent_message_revisions_message_id_created_at ON agent_message_revisions(message_id, created_at DESC)`,
 	}
 	for _, s := range stmts {
-		if _, err := tx.ExecContext(context.Background(), s); err != nil {
+		if _, err := tx.ExecContext(ctx, s); err != nil {
 			return fmt.Errorf("010_conversation_graph up: %w\nSQL: %s", err, s)
 		}
 	}
 	return nil
 }
 
-func down010ConversationGraph(_ context.Context, tx *sql.Tx) error {
+func down010ConversationGraph(ctx context.Context, tx *sql.Tx) error {
 	stmts := []string{
 		`DROP TABLE IF EXISTS agent_message_revisions`,
 		`DROP TABLE IF EXISTS agent_mentions`,
@@ -103,7 +103,7 @@ func down010ConversationGraph(_ context.Context, tx *sql.Tx) error {
 		`DROP TABLE IF EXISTS agent_conversation_forks`,
 	}
 	for _, s := range stmts {
-		if _, err := tx.ExecContext(context.Background(), s); err != nil {
+		if _, err := tx.ExecContext(ctx, s); err != nil {
 			return fmt.Errorf("010_conversation_graph down: %w\nSQL: %s", err, s)
 		}
 	}

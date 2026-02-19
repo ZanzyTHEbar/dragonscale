@@ -41,7 +41,6 @@ func NewDiscordChannel(cfg config.DiscordConfig, bus *bus.MessageBus) (*DiscordC
 		session:     session,
 		config:      cfg,
 		transcriber: nil,
-		ctx:         context.Background(),
 	}, nil
 }
 
@@ -51,7 +50,7 @@ func (c *DiscordChannel) SetTranscriber(transcriber *voice.GroqTranscriber) {
 
 func (c *DiscordChannel) getContext() context.Context {
 	if c.ctx == nil {
-		return context.Background()
+		return context.TODO()
 	}
 	return c.ctx
 }

@@ -59,29 +59,31 @@ func (info SkillInfo) validate() error {
 }
 
 type SkillsLoader struct {
-	workspace       string
-	workspaceSkills string // workspace skills (项目级别)
-	globalSkills    string // 全局 skills (~/.picoclaw/skills)
-	builtinSkills   string // 内置 skills
+	primarySkills string // primary skills directory (XDG data dir or workspace/skills)
+	globalSkills  string // user-level override skills (~/.config/picoclaw/skills)
+	builtinSkills string // built-in skills (bundled with binary)
 }
 
-func NewSkillsLoader(workspace string, globalSkills string, builtinSkills string) *SkillsLoader {
+// NewSkillsLoader creates a loader that searches for skills in three directories
+// with priority: primary > global > builtin. The primary directory is typically
+// $XDG_DATA_HOME/picoclaw/skills; the global directory allows user overrides;
+// and the builtin directory ships with the binary.
+func NewSkillsLoader(primarySkillsDir string, globalSkills string, builtinSkills string) *SkillsLoader {
 	return &SkillsLoader{
-		workspace:       workspace,
-		workspaceSkills: filepath.Join(workspace, "skills"),
-		globalSkills:    globalSkills, // ~/.picoclaw/skills
-		builtinSkills:   builtinSkills,
+		primarySkills: primarySkillsDir,
+		globalSkills:  globalSkills,
+		builtinSkills: builtinSkills,
 	}
 }
 
 func (sl *SkillsLoader) ListSkills() []SkillInfo {
 	skills := make([]SkillInfo, 0)
 
-	if sl.workspaceSkills != "" {
-		if dirs, err := os.ReadDir(sl.workspaceSkills); err == nil {
+	if sl.primarySkills != "" {
+		if dirs, err := os.ReadDir(sl.primarySkills); err == nil {
 			for _, dir := range dirs {
 				if dir.IsDir() {
-					skillFile := filepath.Join(sl.workspaceSkills, dir.Name(), "SKILL.md")
+					skillFile := filepath.Join(sl.primarySkills, dir.Name(), "SKILL.md")
 					if _, err := os.Stat(skillFile); err == nil {
 						info := SkillInfo{
 							Name:   dir.Name(),
@@ -193,9 +195,8 @@ func (sl *SkillsLoader) ListSkills() []SkillInfo {
 }
 
 func (sl *SkillsLoader) LoadSkill(name string) (string, bool) {
-	// 1. 优先从 workspace skills 加载（项目级别）
-	if sl.workspaceSkills != "" {
-		skillFile := filepath.Join(sl.workspaceSkills, name, "SKILL.md")
+	if sl.primarySkills != "" {
+		skillFile := filepath.Join(sl.primarySkills, name, "SKILL.md")
 		if content, err := os.ReadFile(skillFile); err == nil {
 			return sl.stripFrontmatter(string(content)), true
 		}

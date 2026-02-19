@@ -15,9 +15,7 @@ func TestNewFromConfig_LocalOnly_DefaultPath(t *testing.T) {
 	tmpDir := t.TempDir()
 	defaultPath := filepath.Join(tmpDir, "test.db")
 
-	cfg := config.MemoryConfig{
-		Enabled: true,
-	}
+	cfg := config.MemoryConfig{}
 
 	d, err := NewFromConfig(cfg, defaultPath)
 	if err != nil {
@@ -45,8 +43,7 @@ func TestNewFromConfig_LocalOnly_CustomPath(t *testing.T) {
 	customPath := filepath.Join(tmpDir, "custom.db")
 
 	cfg := config.MemoryConfig{
-		Enabled: true,
-		DBPath:  customPath,
+		DBPath: customPath,
 	}
 
 	d, err := NewFromConfig(cfg, filepath.Join(tmpDir, "default.db"))
@@ -70,7 +67,6 @@ func TestNewFromConfig_CustomDims(t *testing.T) {
 	dbPath := filepath.Join(tmpDir, "test.db")
 
 	cfg := config.MemoryConfig{
-		Enabled:       true,
 		EmbeddingDims: 384,
 	}
 
@@ -89,9 +85,7 @@ func TestNewFromConfig_DefaultDims(t *testing.T) {
 	tmpDir := t.TempDir()
 	dbPath := filepath.Join(tmpDir, "test.db")
 
-	cfg := config.MemoryConfig{
-		Enabled: true,
-	}
+	cfg := config.MemoryConfig{}
 
 	d, err := NewFromConfig(cfg, dbPath)
 	if err != nil {
@@ -109,7 +103,6 @@ func TestNewFromConfig_ReplicaFallback(t *testing.T) {
 	dbPath := filepath.Join(tmpDir, "test.db")
 
 	cfg := config.MemoryConfig{
-		Enabled: true,
 		Sync: config.MemorySyncConfig{
 			SyncURL:   "libsql://nonexistent-db.turso.io",
 			AuthToken: "invalid-token",
@@ -138,7 +131,6 @@ func TestNewFromConfig_LocalFullRoundTrip(t *testing.T) {
 	dbPath := filepath.Join(tmpDir, "roundtrip.db")
 
 	cfg := config.MemoryConfig{
-		Enabled:       true,
 		EmbeddingDims: 768,
 	}
 
@@ -189,9 +181,7 @@ func TestNewFromConfig_LocalFullRoundTrip(t *testing.T) {
 
 func TestSyncConfig_Defaults(t *testing.T) {
 	cfg := config.DefaultConfig()
-	if !cfg.Memory.Enabled {
-		t.Error("memory should be enabled by default")
-	}
+	// Memory is always enabled -- no Enabled field to check.
 	if cfg.Memory.EmbeddingDims != 768 {
 		t.Errorf("expected 768 default dims, got %d", cfg.Memory.EmbeddingDims)
 	}

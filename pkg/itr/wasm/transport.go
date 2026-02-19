@@ -3,6 +3,7 @@ package wasm
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/sipeed/picoclaw/pkg/itr"
 )
@@ -86,5 +87,7 @@ func (t *Transport) Send(ctx context.Context, req itr.ToolRequest) (itr.ToolResp
 
 // Close releases the WASM runtime resources.
 func (t *Transport) Close() error {
-	return t.runtime.Close(context.Background())
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	return t.runtime.Close(ctx)
 }

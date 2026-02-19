@@ -3,10 +3,11 @@ package securebus
 import (
 	"context"
 	"fmt"
-	jsonv2 "github.com/go-json-experiment/json"
 	"log"
 	"sync"
 	"time"
+
+	jsonv2 "github.com/go-json-experiment/json"
 
 	"github.com/sipeed/picoclaw/pkg/itr"
 	"github.com/sipeed/picoclaw/pkg/security"
@@ -131,7 +132,7 @@ func (b *Bus) runWorker() {
 			if !ok {
 				return
 			}
-			resp := b.dispatch(context.Background(), env.req)
+			resp := b.dispatch(env.ctx, env.req)
 			env.reply(resp, nil)
 		case <-b.done:
 			return

@@ -12,7 +12,7 @@ func init() {
 	goose.AddMigrationContext(up008AgentRuntimeState, down008AgentRuntimeState)
 }
 
-func up008AgentRuntimeState(_ context.Context, tx *sql.Tx) error {
+func up008AgentRuntimeState(ctx context.Context, tx *sql.Tx) error {
 	stmts := []string{
 		`CREATE TABLE IF NOT EXISTS agent_runs (
     id BLOB PRIMARY KEY,
@@ -83,14 +83,14 @@ func up008AgentRuntimeState(_ context.Context, tx *sql.Tx) error {
 		`CREATE INDEX IF NOT EXISTS idx_agent_tool_results_tool_name ON agent_tool_results(tool_name)`,
 	}
 	for _, s := range stmts {
-		if _, err := tx.ExecContext(context.Background(), s); err != nil {
+		if _, err := tx.ExecContext(ctx, s); err != nil {
 			return fmt.Errorf("008_agent_runtime_state up: %w\nSQL: %s", err, s)
 		}
 	}
 	return nil
 }
 
-func down008AgentRuntimeState(_ context.Context, tx *sql.Tx) error {
+func down008AgentRuntimeState(ctx context.Context, tx *sql.Tx) error {
 	stmts := []string{
 		`DROP TABLE IF EXISTS agent_tool_results`,
 		`DROP TABLE IF EXISTS agent_checkpoints`,
@@ -99,7 +99,7 @@ func down008AgentRuntimeState(_ context.Context, tx *sql.Tx) error {
 		`DROP TABLE IF EXISTS agent_runs`,
 	}
 	for _, s := range stmts {
-		if _, err := tx.ExecContext(context.Background(), s); err != nil {
+		if _, err := tx.ExecContext(ctx, s); err != nil {
 			return fmt.Errorf("008_agent_runtime_state down: %w\nSQL: %s", err, s)
 		}
 	}

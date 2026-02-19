@@ -105,7 +105,8 @@ func (d *LibSQLDelegate) IsReplica() bool {
 func newDelegateFromDB(db *sql.DB, connector *libsql.Connector) (*LibSQLDelegate, error) {
 	db.SetMaxOpenConns(1)
 
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 	var walMode string
 	if err := db.QueryRowContext(ctx, "PRAGMA journal_mode=WAL").Scan(&walMode); err != nil {
 		db.Close()

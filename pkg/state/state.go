@@ -88,7 +88,8 @@ func NewManager(workspace string, opts ...Option) *Manager {
 }
 
 func (sm *Manager) loadFromDelegate() {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 	if v, err := sm.delegate.GetKV(ctx, kvAgentID, "state:last_channel"); err == nil && v != "" {
 		sm.state.LastChannel = v
 	}
@@ -103,38 +104,37 @@ func (sm *Manager) loadFromDelegate() {
 }
 
 // SetLastChannel atomically updates the last channel and saves the state.
-func (sm *Manager) SetLastChannel(channel string) error {
+func (sm *Manager) SetLastChannel(ctx context.Context, channel string) error {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 
 	sm.state.LastChannel = channel
 	sm.state.Timestamp = time.Now()
 
-	return sm.persist()
+	return sm.persist(ctx)
 }
 
 // SetLastChatID atomically updates the last chat ID and saves the state.
-func (sm *Manager) SetLastChatID(chatID string) error {
+func (sm *Manager) SetLastChatID(ctx context.Context, chatID string) error {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 
 	sm.state.LastChatID = chatID
 	sm.state.Timestamp = time.Now()
 
-	return sm.persist()
+	return sm.persist(ctx)
 }
 
 // persist writes the current state to the delegate (KV) or file.
 // Must be called with the lock held.
-func (sm *Manager) persist() error {
+func (sm *Manager) persist(ctx context.Context) error {
 	if sm.delegate != nil {
-		return sm.persistToDelegate()
+		return sm.persistToDelegate(ctx)
 	}
 	return sm.saveAtomic()
 }
 
-func (sm *Manager) persistToDelegate() error {
-	ctx := context.Background()
+func (sm *Manager) persistToDelegate(ctx context.Context) error {
 	ts := sm.state.Timestamp.Format(time.RFC3339Nano)
 
 	if err := sm.delegate.UpsertKV(ctx, kvAgentID, "state:last_channel", sm.state.LastChannel); err != nil {
