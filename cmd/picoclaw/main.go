@@ -36,6 +36,8 @@ import (
 	picomemory "github.com/sipeed/picoclaw/pkg/memory"
 	"github.com/sipeed/picoclaw/pkg/memory/delegate"
 	"github.com/sipeed/picoclaw/pkg/migrate"
+	"github.com/sipeed/picoclaw/pkg/security"
+	"github.com/sipeed/picoclaw/pkg/security/securebus"
 	"github.com/sipeed/picoclaw/pkg/skills"
 	"github.com/sipeed/picoclaw/pkg/state"
 	"github.com/sipeed/picoclaw/pkg/tools"
@@ -420,6 +422,10 @@ func agentCmd() {
 	msgBus := bus.NewMessageBus()
 	agentLoop := agent.NewAgentLoop(cfg, msgBus, languageModel)
 
+	// Wire ITR SecureBus — routes all tool calls through capability enforcement.
+	closeBus := setupSecureBus(agentLoop)
+	defer closeBus()
+
 	// Print agent startup info (only for interactive mode)
 	startupInfo := agentLoop.GetStartupInfo()
 	logger.InfoCF("agent", "Agent initialized",
@@ -559,6 +565,10 @@ func gatewayCmd() {
 
 	msgBus := bus.NewMessageBus()
 	agentLoop := agent.NewAgentLoop(cfg, msgBus, languageModel)
+
+	// Wire ITR SecureBus — routes all tool calls through capability enforcement.
+	closeBus := setupSecureBus(agentLoop)
+	defer closeBus()
 
 	// Print agent startup info
 	fmt.Println("\n📦 Agent Status:")
@@ -1165,6 +1175,43 @@ func setupCronTool(agentLoop *agent.AgentLoop, msgBus *bus.MessageBus, workspace
 
 func loadConfig() (*config.Config, error) {
 	return config.LoadConfig(getConfigPath())
+}
+
+// setupSecureBus wires the Isolated Tool Runtime into an AgentLoop.
+// It loads (or lazily creates) the SecretStore from the picoclaw home directory
+// and calls agentLoop.SetupSecureBus so all tool calls are routed through
+// capability enforcement, secret injection, leak scanning, and audit logging.
+//
+// If ITR initialisation fails for any non-fatal reason it logs a warning and
+// returns without attaching the bus — the agent continues in direct-execution mode.
+// The returned closer must be called on shutdown when the bus is non-nil.
+func setupSecureBus(agentLoop *agent.AgentLoop) (closer func()) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		logger.WarnC("itr", "SecureBus: cannot determine home dir — running without ITR")
+		return func() {}
+	}
+
+	secretsPath := filepath.Join(home, ".picoclaw", "secrets.json")
+
+	// Use NoopKeyring by default; EnvKeyring when PICOCLAW_MASTER_KEY is set.
+	var keyring security.KeyringProvider
+	if mk := os.Getenv("PICOCLAW_MASTER_KEY"); mk != "" {
+		keyring = security.NewEnvKeyring("PICOCLAW_MASTER_KEY")
+	} else {
+		keyring = security.NewNoopKeyring(nil)
+	}
+
+	ss, err := security.NewSecretStore(secretsPath, keyring)
+	if err != nil {
+		logger.WarnCF("itr", "SecureBus: failed to load secret store — running without secret injection",
+			map[string]interface{}{"error": err.Error()})
+		ss = nil
+	}
+
+	bus := agentLoop.SetupSecureBus(ss, securebus.DefaultBusConfig())
+	logger.InfoC("itr", "SecureBus enabled — tool calls routed through ITR")
+	return bus.Close
 }
 
 func cronCmd() {

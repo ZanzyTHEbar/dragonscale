@@ -31,6 +31,8 @@ import (
 	"github.com/sipeed/picoclaw/pkg/memory/observation"
 	memstore "github.com/sipeed/picoclaw/pkg/memory/store"
 	"github.com/sipeed/picoclaw/pkg/messages"
+	"github.com/sipeed/picoclaw/pkg/security"
+	"github.com/sipeed/picoclaw/pkg/security/securebus"
 	"github.com/sipeed/picoclaw/pkg/session"
 	"github.com/sipeed/picoclaw/pkg/state"
 	"github.com/sipeed/picoclaw/pkg/tools"
@@ -51,6 +53,7 @@ type AgentLoop struct {
 	memoryStore       *memstore.MemoryStore // 3-tier MemGPT memory (nil if init failed)
 	memDelegate       memory.MemoryDelegate // DB delegate (nil if memory disabled)
 	obsManager        *observation.Manager  // Observational memory (nil if memory disabled)
+	secureBus         *securebus.Bus        // ITR SecureBus (nil = disabled, direct execution)
 	activeSessionKey  atomic.Value          // Current session key for tool access
 	running           atomic.Bool
 	summarizing       sync.Map       // Tracks which sessions are currently being summarized
@@ -371,6 +374,35 @@ func (al *AgentLoop) SetChannelManager(cm *channels.Manager) {
 	al.channelManager = cm
 }
 
+// SetSecureBus attaches a SecureBus to the agent loop. When set, all tool
+// calls are routed through the bus for capability enforcement, secret injection,
+// leak scanning, and audit logging. Call before the first message is processed.
+// Pass nil to disable SecureBus enforcement (direct execution, default).
+func (al *AgentLoop) SetSecureBus(b *securebus.Bus) {
+	al.secureBus = b
+}
+
+// SetupSecureBus creates a SecureBus wired to this loop's tool registry and
+// attaches it so all subsequent tool calls are routed through it.
+// ss may be nil — secret injection is then disabled but all other enforcement
+// (policy, leak scanning, audit) remains active.
+// The returned Bus must be closed on shutdown.
+func (al *AgentLoop) SetupSecureBus(ss *security.SecretStore, cfg securebus.BusConfig) *securebus.Bus {
+	capLookup := func(name string) (tools.ToolCapabilities, bool) {
+		t, ok := al.tools.Get(name)
+		if !ok {
+			return tools.ZeroCapabilities(), false
+		}
+		return tools.ExtractCapabilities(t), true
+	}
+	executor := func(ctx context.Context, name string, args map[string]interface{}) *tools.ToolResult {
+		return al.tools.Execute(ctx, name, args)
+	}
+	b := securebus.New(cfg, ss, capLookup, executor)
+	al.secureBus = b
+	return b
+}
+
 // RecordLastChannel records the last active channel for this workspace.
 // This uses the atomic state save mechanism to prevent data loss on crash.
 func (al *AgentLoop) RecordLastChannel(channel string) error {
@@ -628,6 +660,14 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, opts processOptions) (str
 	if systemPrompt != "" {
 		agentOpts = append(agentOpts, fantasy.WithSystemPrompt(systemPrompt))
 	}
+	// Attach SecureBusToolRuntime when ITR is enabled (non-nil bus).
+	if al.secureBus != nil {
+		sbrt := SecureBusToolRuntime{
+			Bus:        al.secureBus,
+			SessionKey: opts.SessionKey,
+		}
+		agentOpts = append(agentOpts, fantasy.WithToolRuntime(sbrt))
+	}
 	agent := fantasy.NewAgent(al.languageModel, agentOpts...)
 
 	logger.DebugCF("agent", "Fantasy agent created",
@@ -780,6 +820,14 @@ func (al *AgentLoop) runAgentLoopStreaming(ctx context.Context, opts processOpti
 	}
 	if systemPrompt != "" {
 		agentOpts = append(agentOpts, fantasy.WithSystemPrompt(systemPrompt))
+	}
+	// Attach SecureBusToolRuntime when ITR is enabled (non-nil bus).
+	if al.secureBus != nil {
+		sbrt := SecureBusToolRuntime{
+			Bus:        al.secureBus,
+			SessionKey: opts.SessionKey,
+		}
+		agentOpts = append(agentOpts, fantasy.WithToolRuntime(sbrt))
 	}
 	fantasyAgent := fantasy.NewAgent(al.languageModel, agentOpts...)
 
@@ -1262,6 +1310,52 @@ func (al *AgentLoop) applyDAGCompression(history []messages.Message) []messages.
 }
 
 // estimateTokens estimates the number of tokens in a message list.
+// listConfiguredModels returns a human-readable summary of which providers
+// have API credentials configured, and the current default model.
+func listConfiguredModels(cfg *config.Config) string {
+	if cfg == nil {
+		return "No configuration available."
+	}
+
+	type entry struct {
+		name string
+		key  string
+	}
+
+	// Ordered list of well-known providers.
+	candidates := []entry{
+		{"anthropic", cfg.Providers.Anthropic.APIKey},
+		{"openai", cfg.Providers.OpenAI.APIKey},
+		{"openrouter", cfg.Providers.OpenRouter.APIKey},
+		{"gemini", cfg.Providers.Gemini.APIKey},
+		{"groq", cfg.Providers.Groq.APIKey},
+		{"zhipu", cfg.Providers.Zhipu.APIKey},
+		{"deepseek", cfg.Providers.DeepSeek.APIKey},
+		{"moonshot", cfg.Providers.Moonshot.APIKey},
+		{"nvidia", cfg.Providers.Nvidia.APIKey},
+		{"shengsuanyun", cfg.Providers.ShengSuanYun.APIKey},
+		{"vllm", cfg.Providers.VLLM.APIBase}, // vllm uses base URL, not API key
+	}
+
+	var configured []string
+	for _, c := range candidates {
+		if c.key != "" {
+			configured = append(configured, c.name)
+		}
+	}
+
+	current := fmt.Sprintf("Current model: %s", cfg.Agents.Defaults.Model)
+	if cfg.Agents.Defaults.Provider != "" {
+		current += fmt.Sprintf(" (provider: %s)", cfg.Agents.Defaults.Provider)
+	}
+
+	if len(configured) == 0 {
+		return current + "\nNo providers configured — set API keys in config.json or environment variables."
+	}
+
+	return current + "\nConfigured providers: " + strings.Join(configured, ", ")
+}
+
 func (al *AgentLoop) estimateTokens(msgs []messages.Message) int {
 	totalChars := 0
 	for _, m := range msgs {
@@ -1304,8 +1398,7 @@ func (al *AgentLoop) handleCommand(_ context.Context, msg bus.InboundMessage) (s
 		}
 		switch args[0] {
 		case "models":
-			// TODO: Fetch available models dynamically if possible
-			return "Available models: glm-4.7, claude-3-5-sonnet, gpt-4o (configured in config.json/env)", true
+			return listConfiguredModels(al.cfg), true
 		case "channels":
 			if al.channelManager == nil {
 				return "Channel manager not initialized", true
