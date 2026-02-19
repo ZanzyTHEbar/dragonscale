@@ -1533,6 +1533,10 @@ func daemonStatus() {
 }
 
 func getConfigPath() string {
+	if p, err := config.DefaultConfigPath(); err == nil {
+		return p
+	}
+	// Fallback: legacy ~/.picoclaw/config.json for systems where XDG resolution fails.
 	home, _ := os.UserHomeDir()
 	return filepath.Join(home, ".picoclaw", "config.json")
 }
@@ -1568,13 +1572,18 @@ func loadConfig() (*config.Config, error) {
 // returns without attaching the bus — the agent continues in direct-execution mode.
 // The returned closer must be called on shutdown when the bus is non-nil.
 func setupSecureBus(agentLoop *agent.AgentLoop) (closer func()) {
-	home, err := os.UserHomeDir()
+	cfgDir, err := config.ConfigDir()
 	if err != nil {
-		logger.WarnC("itr", "SecureBus: cannot determine home dir — running without ITR")
-		return func() {}
+		// Fallback to ~/.picoclaw if XDG resolution fails.
+		home, herr := os.UserHomeDir()
+		if herr != nil {
+			logger.WarnC("itr", "SecureBus: cannot determine config dir — running without ITR")
+			return func() {}
+		}
+		cfgDir = filepath.Join(home, ".picoclaw")
 	}
 
-	secretsPath := filepath.Join(home, ".picoclaw", "secrets.json")
+	secretsPath := filepath.Join(cfgDir, "secrets.json")
 
 	// Use NoopKeyring by default; EnvKeyring when PICOCLAW_MASTER_KEY is set.
 	var keyring security.KeyringProvider

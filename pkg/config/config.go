@@ -602,3 +602,76 @@ func expandHome(path string) string {
 	}
 	return path
 }
+
+// ─── XDG / platform path helpers ─────────────────────────────────────────────
+
+const appName = "picoclaw"
+
+// ConfigDir returns the platform-appropriate user configuration directory for
+// picoclaw, following XDG Base Directory spec on Linux
+// (~/.config/picoclaw), Library/Application Support on macOS, and
+// %AppData%\picoclaw on Windows. The directory is created if it does not exist.
+func ConfigDir() (string, error) {
+	base, err := os.UserConfigDir()
+	if err != nil {
+		return "", fmt.Errorf("resolve user config dir: %w", err)
+	}
+	dir := filepath.Join(base, appName)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", fmt.Errorf("create config dir %q: %w", dir, err)
+	}
+	return dir, nil
+}
+
+// DataDir returns the platform-appropriate user data directory for picoclaw.
+// On Linux this is ~/.local/share/picoclaw (XDG_DATA_HOME); on macOS and
+// Windows it falls back to the same base as ConfigDir. The directory is
+// created if it does not exist.
+func DataDir() (string, error) {
+	// XDG_DATA_HOME is Linux-standard; os.UserHomeDir gives us the root we need.
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("resolve home dir: %w", err)
+	}
+	dir := filepath.Join(home, ".local", "share", appName)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", fmt.Errorf("create data dir %q: %w", dir, err)
+	}
+	return dir, nil
+}
+
+// CacheDir returns the platform-appropriate user cache directory for picoclaw
+// (XDG_CACHE_HOME on Linux → ~/.cache/picoclaw). The directory is created if
+// it does not exist.
+func CacheDir() (string, error) {
+	base, err := os.UserCacheDir()
+	if err != nil {
+		return "", fmt.Errorf("resolve user cache dir: %w", err)
+	}
+	dir := filepath.Join(base, appName)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", fmt.Errorf("create cache dir %q: %w", dir, err)
+	}
+	return dir, nil
+}
+
+// DefaultDBPath returns the canonical SQLite database path inside DataDir.
+// Callers that want to override this should check for a CLI flag or the
+// PICOCLAW_DB_PATH environment variable before falling back to this value.
+func DefaultDBPath() (string, error) {
+	dataDir, err := DataDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dataDir, appName+".db"), nil
+}
+
+// DefaultConfigPath returns the path to the primary JSON config file inside
+// ConfigDir (picoclaw/config.json).
+func DefaultConfigPath() (string, error) {
+	cfgDir, err := ConfigDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(cfgDir, "config.json"), nil
+}
