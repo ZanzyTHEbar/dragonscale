@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 
 	"github.com/caarlos0/env/v11"
@@ -57,10 +58,9 @@ type Config struct {
 }
 
 // MemoryConfig configures the 3-tier MemGPT memory system.
+// Memory is always enabled; there is no opt-out. Configuration controls
+// the database path, embedding dimensions, offloading threshold, and sync.
 type MemoryConfig struct {
-	// Enabled controls whether the memory system is initialized. Default: true.
-	Enabled bool `json:"enabled" env:"PICOCLAW_MEMORY_ENABLED"`
-
 	// DBPath overrides the default database path (workspace/memory/picoclaw.db).
 	// Empty string uses the default.
 	DBPath string `json:"db_path" env:"PICOCLAW_MEMORY_DB_PATH"`
@@ -126,13 +126,19 @@ type AgentsConfig struct {
 }
 
 type AgentDefaults struct {
-	Workspace           string  `json:"workspace" env:"PICOCLAW_AGENTS_DEFAULTS_WORKSPACE"`
-	RestrictToWorkspace bool    `json:"restrict_to_workspace" env:"PICOCLAW_AGENTS_DEFAULTS_RESTRICT_TO_WORKSPACE"`
-	Provider            string  `json:"provider" env:"PICOCLAW_AGENTS_DEFAULTS_PROVIDER"`
-	Model               string  `json:"model" env:"PICOCLAW_AGENTS_DEFAULTS_MODEL"`
-	MaxTokens           int     `json:"max_tokens" env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOKENS"`
-	Temperature         float64 `json:"temperature" env:"PICOCLAW_AGENTS_DEFAULTS_TEMPERATURE"`
-	MaxToolIterations   int     `json:"max_tool_iterations" env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOOL_ITERATIONS"`
+	// Sandbox is the directory for agent file operations (tools sandbox).
+	// Defaults to $XDG_DATA_HOME/picoclaw/sandbox when empty.
+	Sandbox           string  `json:"sandbox" env:"PICOCLAW_AGENTS_DEFAULTS_SANDBOX"`
+	RestrictToSandbox bool    `json:"restrict_to_sandbox" env:"PICOCLAW_AGENTS_DEFAULTS_RESTRICT_TO_SANDBOX"`
+	Provider          string  `json:"provider" env:"PICOCLAW_AGENTS_DEFAULTS_PROVIDER"`
+	Model             string  `json:"model" env:"PICOCLAW_AGENTS_DEFAULTS_MODEL"`
+	MaxTokens         int     `json:"max_tokens" env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOKENS"`
+	Temperature       float64 `json:"temperature" env:"PICOCLAW_AGENTS_DEFAULTS_TEMPERATURE"`
+	MaxToolIterations int     `json:"max_tool_iterations" env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOOL_ITERATIONS"`
+
+	// Deprecated: Use Sandbox instead. Kept for backward compatibility during migration.
+	Workspace           string `json:"workspace,omitempty" env:"PICOCLAW_AGENTS_DEFAULTS_WORKSPACE"`
+	RestrictToWorkspace bool   `json:"restrict_to_workspace,omitempty" env:"PICOCLAW_AGENTS_DEFAULTS_RESTRICT_TO_WORKSPACE"`
 }
 
 type ChannelsConfig struct {
@@ -296,22 +302,21 @@ type CronToolsConfig struct {
 }
 
 type ToolsConfig struct {
-	Web                   WebToolsConfig  `json:"web"`
-	ProgressiveDisclosure bool            `json:"progressive_disclosure" env:"PICOCLAW_TOOLS_PROGRESSIVE_DISCLOSURE"`
-	Cron                  CronToolsConfig `json:"cron"`
+	Web  WebToolsConfig  `json:"web"`
+	Cron CronToolsConfig `json:"cron"`
 }
 
 func DefaultConfig() *Config {
 	return &Config{
 		Agents: AgentsConfig{
 			Defaults: AgentDefaults{
-				Workspace:           "~/.picoclaw/workspace",
-				RestrictToWorkspace: true,
-				Provider:            "",
-				Model:               "glm-4.7",
-				MaxTokens:           8192,
-				Temperature:         0.7,
-				MaxToolIterations:   20,
+				Sandbox:           "", // empty → resolved via SandboxDir() at runtime
+				RestrictToSandbox: true,
+				Provider:          "",
+				Model:             "glm-4.7",
+				MaxTokens:         8192,
+				Temperature:       0.7,
+				MaxToolIterations: 20,
 			},
 		},
 		Channels: ChannelsConfig{
@@ -416,13 +421,11 @@ func DefaultConfig() *Config {
 					MaxResults: 5,
 				},
 			},
-			ProgressiveDisclosure: false,
 			Cron: CronToolsConfig{
 				ExecTimeoutMinutes: 5, // default 5 minutes for LLM operations
 			},
 		},
 		Memory: MemoryConfig{
-			Enabled:                true,
 			EmbeddingDims:          768,
 			OffloadThresholdTokens: 4000,
 			Sync: MemorySyncConfig{
@@ -498,22 +501,20 @@ func (c *Config) Validate() []string {
 		warnings = append(warnings, fmt.Sprintf("heartbeat.interval=%d: must be >= 0", c.Heartbeat.Interval))
 	}
 
-	// Memory config validation
-	if c.Memory.Enabled {
-		if c.Memory.Sync.SyncURL != "" && c.Memory.Sync.AuthToken == "" {
-			warnings = append(warnings, "memory.sync.sync_url is set but auth_token is empty: Turso replication will likely fail")
-		}
-		dims := c.Memory.EmbeddingDims
-		if dims != 0 && (dims < 64 || dims > 4096) {
-			warnings = append(warnings, fmt.Sprintf("memory.embedding_dims=%d: expected 64-4096 (common: 384, 768, 1536)", dims))
-		}
-		embProvider := c.Memory.Embedding.Provider
-		if embProvider != "" && embProvider != "ollama" && embProvider != "openai" {
-			warnings = append(warnings, fmt.Sprintf("memory.embedding.provider=%q: unknown (supported: ollama, openai)", embProvider))
-		}
-		if embProvider == "openai" && c.Memory.Embedding.APIKey == "" && c.Providers.OpenAI.APIKey == "" {
-			warnings = append(warnings, "memory.embedding.provider=openai but no API key found in memory.embedding.api_key or providers.openai.api_key")
-		}
+	// Memory config validation (memory is always enabled)
+	if c.Memory.Sync.SyncURL != "" && c.Memory.Sync.AuthToken == "" {
+		warnings = append(warnings, "memory.sync.sync_url is set but auth_token is empty: Turso replication will likely fail")
+	}
+	dims := c.Memory.EmbeddingDims
+	if dims != 0 && (dims < 64 || dims > 4096) {
+		warnings = append(warnings, fmt.Sprintf("memory.embedding_dims=%d: expected 64-4096 (common: 384, 768, 1536)", dims))
+	}
+	embProvider := c.Memory.Embedding.Provider
+	if embProvider != "" && embProvider != "ollama" && embProvider != "openai" {
+		warnings = append(warnings, fmt.Sprintf("memory.embedding.provider=%q: unknown (supported: ollama, openai)", embProvider))
+	}
+	if embProvider == "openai" && c.Memory.Embedding.APIKey == "" && c.Providers.OpenAI.APIKey == "" {
+		warnings = append(warnings, "memory.embedding.provider=openai but no API key found in memory.embedding.api_key or providers.openai.api_key")
 	}
 
 	return warnings
@@ -536,10 +537,51 @@ func SaveConfig(path string, cfg *Config) error {
 	return os.WriteFile(path, data, 0600)
 }
 
+// SandboxPath returns the resolved sandbox directory for agent file operations.
+// Priority: explicit Sandbox config > XDG SandboxDir().
+func (c *Config) SandboxPath() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if c.Agents.Defaults.Sandbox != "" {
+		return expandHome(c.Agents.Defaults.Sandbox)
+	}
+	if dir, err := SandboxDir(); err == nil {
+		return dir
+	}
+	return expandHome("~/.local/share/picoclaw/sandbox")
+}
+
+// RestrictToSandbox returns whether tool file operations should be restricted
+// to the sandbox directory. Also checks the deprecated RestrictToWorkspace field.
+func (c *Config) RestrictToSandbox() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.Agents.Defaults.RestrictToSandbox || c.Agents.Defaults.RestrictToWorkspace
+}
+
+// WorkspacePath returns the legacy workspace path for backward compatibility.
+// Deprecated: callers should migrate to SandboxPath().
 func (c *Config) WorkspacePath() string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	return expandHome(c.Agents.Defaults.Workspace)
+	if c.Agents.Defaults.Workspace != "" {
+		return expandHome(c.Agents.Defaults.Workspace)
+	}
+	return c.SandboxPath()
+}
+
+// DBPath returns the resolved database path.
+// Priority: explicit Memory.DBPath config > XDG DefaultDBPath().
+func (c *Config) DBPath() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if c.Memory.DBPath != "" {
+		return expandHome(c.Memory.DBPath)
+	}
+	if p, err := DefaultDBPath(); err == nil {
+		return p
+	}
+	return expandHome("~/.local/share/picoclaw/picoclaw.db")
 }
 
 func (c *Config) GetAPIKey() string {
@@ -625,18 +667,79 @@ func ConfigDir() (string, error) {
 }
 
 // DataDir returns the platform-appropriate user data directory for picoclaw.
-// On Linux this is ~/.local/share/picoclaw (XDG_DATA_HOME); on macOS and
-// Windows it falls back to the same base as ConfigDir. The directory is
-// created if it does not exist.
+// On Linux this respects XDG_DATA_HOME (default ~/.local/share/picoclaw).
+// On macOS it uses ~/Library/Application Support/picoclaw; on Windows
+// %LOCALAPPDATA%\picoclaw. The directory is created if it does not exist.
 func DataDir() (string, error) {
-	// XDG_DATA_HOME is Linux-standard; os.UserHomeDir gives us the root we need.
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", fmt.Errorf("resolve home dir: %w", err)
+	var base string
+	switch runtime.GOOS {
+	case "linux", "freebsd", "openbsd", "netbsd":
+		if xdg := os.Getenv("XDG_DATA_HOME"); xdg != "" {
+			base = xdg
+		} else {
+			home, err := os.UserHomeDir()
+			if err != nil {
+				return "", fmt.Errorf("resolve home dir: %w", err)
+			}
+			base = filepath.Join(home, ".local", "share")
+		}
+	default:
+		// macOS, Windows: data and config share a base directory.
+		cfgBase, err := os.UserConfigDir()
+		if err != nil {
+			return "", fmt.Errorf("resolve user config dir: %w", err)
+		}
+		base = cfgBase
 	}
-	dir := filepath.Join(home, ".local", "share", appName)
+	dir := filepath.Join(base, appName)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", fmt.Errorf("create data dir %q: %w", dir, err)
+	}
+	return dir, nil
+}
+
+// IdentityDir returns the directory containing human-editable identity files
+// (AGENT.md, IDENTITY.md, SOUL.md, USER.md) inside ConfigDir. These files
+// are the user-facing surface for agent configuration; a sync layer mirrors
+// their content into the database at runtime.
+func IdentityDir() (string, error) {
+	cfgDir, err := ConfigDir()
+	if err != nil {
+		return "", err
+	}
+	dir := filepath.Join(cfgDir, "identity")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", fmt.Errorf("create identity dir %q: %w", dir, err)
+	}
+	return dir, nil
+}
+
+// SkillsDir returns the directory for installed skills inside DataDir.
+// Skills are filesystem-native artifacts (SKILL.md + scripts + references)
+// and remain on disk rather than being synced to the database.
+func SkillsDir() (string, error) {
+	dataDir, err := DataDir()
+	if err != nil {
+		return "", err
+	}
+	dir := filepath.Join(dataDir, "skills")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", fmt.Errorf("create skills dir %q: %w", dir, err)
+	}
+	return dir, nil
+}
+
+// SandboxDir returns the directory used as the agent's filesystem operations
+// workspace inside DataDir. Tool file I/O (read, write, edit, shell) is
+// restricted to this directory when restrict_to_sandbox is enabled.
+func SandboxDir() (string, error) {
+	dataDir, err := DataDir()
+	if err != nil {
+		return "", err
+	}
+	dir := filepath.Join(dataDir, "sandbox")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", fmt.Errorf("create sandbox dir %q: %w", dir, err)
 	}
 	return dir, nil
 }

@@ -17,14 +17,12 @@ func TestDefaultConfig_HeartbeatEnabled(t *testing.T) {
 	}
 }
 
-// TestDefaultConfig_WorkspacePath verifies workspace path is correctly set
-func TestDefaultConfig_WorkspacePath(t *testing.T) {
+// TestDefaultConfig_SandboxPath verifies sandbox path is resolvable
+func TestDefaultConfig_SandboxPath(t *testing.T) {
 	cfg := DefaultConfig()
-
-	// Just verify the workspace is set, don't compare exact paths
-	// since expandHome behavior may differ based on environment
-	if cfg.Agents.Defaults.Workspace == "" {
-		t.Error("Workspace should not be empty")
+	path := cfg.SandboxPath()
+	if path == "" {
+		t.Error("SandboxPath should not be empty")
 	}
 }
 
@@ -180,8 +178,8 @@ func TestConfig_Complete(t *testing.T) {
 	cfg := DefaultConfig()
 
 	// Verify complete config structure
-	if cfg.Agents.Defaults.Workspace == "" {
-		t.Error("Workspace should not be empty")
+	if cfg.SandboxPath() == "" {
+		t.Error("SandboxPath should not be empty")
 	}
 	if cfg.Agents.Defaults.Model == "" {
 		t.Error("Model should not be empty")
@@ -238,7 +236,6 @@ func TestValidate_MemoryConfig(t *testing.T) {
 		{
 			name: "sync_url without auth_token",
 			mutate: func(c *Config) {
-				c.Memory.Enabled = true
 				c.Memory.Sync.SyncURL = "libsql://test.turso.io"
 			},
 			wantWarn: "auth_token is empty",
@@ -246,7 +243,6 @@ func TestValidate_MemoryConfig(t *testing.T) {
 		{
 			name: "invalid embedding dims",
 			mutate: func(c *Config) {
-				c.Memory.Enabled = true
 				c.Memory.EmbeddingDims = 10
 			},
 			wantWarn: "expected 64-4096",
@@ -254,7 +250,6 @@ func TestValidate_MemoryConfig(t *testing.T) {
 		{
 			name: "unknown embedding provider",
 			mutate: func(c *Config) {
-				c.Memory.Enabled = true
 				c.Memory.Embedding.Provider = "nonexistent"
 			},
 			wantWarn: "unknown",
@@ -262,7 +257,6 @@ func TestValidate_MemoryConfig(t *testing.T) {
 		{
 			name: "openai without key",
 			mutate: func(c *Config) {
-				c.Memory.Enabled = true
 				c.Memory.Embedding.Provider = "openai"
 			},
 			wantWarn: "no API key found",
@@ -270,18 +264,8 @@ func TestValidate_MemoryConfig(t *testing.T) {
 		{
 			name: "valid openai with fallback key",
 			mutate: func(c *Config) {
-				c.Memory.Enabled = true
 				c.Memory.Embedding.Provider = "openai"
 				c.Providers.OpenAI.APIKey = "sk-test"
-			},
-			wantWarn: "",
-		},
-		{
-			name: "disabled memory skips all checks",
-			mutate: func(c *Config) {
-				c.Memory.Enabled = false
-				c.Memory.EmbeddingDims = -999
-				c.Memory.Sync.SyncURL = "bad"
 			},
 			wantWarn: "",
 		},
