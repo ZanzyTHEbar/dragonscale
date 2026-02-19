@@ -3,7 +3,8 @@
     "progressive_disclosure": true
   },
   "memory": {
-    "enabled": true
+    "enabled": true,
+    "db_path": ":memory:"
   },
   "agents": {
     "defaults": {

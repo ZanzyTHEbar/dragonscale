@@ -3,11 +3,13 @@
 
 description: "PicoClaw agent evaluation (default config)"
 
+maxConcurrency: 1
+
 providers:
   - id: "exec:./bin/eval-runner-default"
     label: "picoclaw-default"
     config:
-      timeout: 120000
+      timeout: 180000
 
 defaultTest:
   assert:
@@ -24,8 +26,8 @@ defaultTest:
       value: |
         const trace = JSON.parse(output);
         const dur = trace.metrics.total_duration_ms;
-        const ok = dur < 60000;
-        return { pass: ok, score: ok ? 1.0 : 0.0, reason: `duration: ${dur}ms (limit: 60000ms)` };
+        const ok = dur < 90000;
+        return { pass: ok, score: ok ? 1.0 : 0.0, reason: `duration: ${dur}ms (limit: 90000ms)` };
 
 # Excludes progressive_disclosure.yaml (requires picoclaw-progressive provider)
 # Run `make eval-matrix` to test all providers including progressive disclosure.

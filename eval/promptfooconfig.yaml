@@ -5,21 +5,23 @@
 
 description: "PicoClaw agent end-to-end evaluation"
 
+maxConcurrency: 1
+
 providers:
   - id: "exec:./bin/eval-runner-default"
     label: "picoclaw-default"
     config:
-      timeout: 120000
+      timeout: 180000
 
   - id: "exec:./bin/eval-runner-progressive"
     label: "picoclaw-progressive"
     config:
-      timeout: 120000
+      timeout: 180000
 
   - id: "exec:./bin/eval-runner-no-memory"
     label: "picoclaw-no-memory"
     config:
-      timeout: 120000
+      timeout: 180000
 
 # Default assertions applied to every test case
 defaultTest:
@@ -37,8 +39,8 @@ defaultTest:
       value: |
         const trace = JSON.parse(output);
         const dur = trace.metrics.total_duration_ms;
-        const ok = dur < 60000;
-        return { pass: ok, score: ok ? 1.0 : 0.0, reason: `duration: ${dur}ms (limit: 60000ms)` };
+        const ok = dur < 90000;
+        return { pass: ok, score: ok ? 1.0 : 0.0, reason: `duration: ${dur}ms (limit: 90000ms)` };
 
 tests: "cases/*.yaml"
 

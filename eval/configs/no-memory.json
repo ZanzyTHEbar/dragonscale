@@ -4,7 +4,8 @@
   },
   "memory": {
     "embedding_dims": 384,
-    "offload_threshold_tokens": 100000
+    "offload_threshold_tokens": 100000,
+    "db_path": ":memory:"
   },
   "agents": {
     "defaults": {
