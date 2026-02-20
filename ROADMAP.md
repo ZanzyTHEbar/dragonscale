@@ -228,23 +228,31 @@ flowchart LR
 
 ## Ideas and improvements
 
+- [ ] Add performance metrics to the eval harness
+  - [ ] Raw metrics of tool calls, LLM calls, token counts, duration, etc
+  - [ ] Per-test scores
+  - [ ] Side-by-side comparison matrix
+  - [ ] Compare to other agent runtimes
+  - [ ] Compare to upstream origin picoclaw
+  - [ ] What benchmarks should we be running?
+  - [ ] What are the key performance metrics we should be tracking?
 - [ ] Add a new tool for the agent to use: `focus_search`
 - [ ] Clean up the main.go and extract to modules
 - [ ] Create a pure Application API that I/O calls into
-  - [ ] cli
-  - [ ] daemon
-  - [ ] web
-  - [ ] grpc
-  - [ ] http
-  - [ ] websocket
-  - [ ] tcp
-  - [ ] udp
-  - [ ] serial
-  - [ ] i2c
-  - [ ] spi
-  - [ ] pwm
-  - [ ] etc
   - [ ] all of these should be able to be configured and plugged in/out at runtime
+    - [ ] cli
+    - [ ] daemon
+    - [ ] web
+    - [ ] grpc
+    - [ ] http
+    - [ ] websocket
+    - [ ] tcp
+    - [ ] udp
+    - [ ] serial
+    - [ ] i2c
+    - [ ] spi
+    - [ ] pwm
+    - [ ] etc
 - [ ] Migrate to Cobra CLI framework
   - [ ] Use command-palette pattern for subcommands
   - [ ] keep cli commands as pure cli that calls into the application

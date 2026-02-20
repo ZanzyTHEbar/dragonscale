@@ -21,6 +21,14 @@ make eval-test
 make eval-compare
 ```
 
+## Runtime Invariants
+
+The current agent architecture has these always-on behaviors:
+
+- Memory is always enabled.
+- Meta tools are always registered (`tool_search`, `tool_call`).
+- Eval runs against a single runtime profile via `eval/bin/eval-runner`.
+
 ## Architecture
 
 ```
@@ -30,7 +38,13 @@ eval/
 │   ├── tool_calling.yaml
 │   ├── token_efficiency.yaml
 │   ├── multi_step.yaml
-│   └── edge_cases.yaml
+│   ├── edge_cases.yaml
+│   ├── memory_ops.yaml
+│   ├── meta_tools.yaml
+│   ├── skills.yaml
+│   ├── subagent.yaml
+│   ├── reasoning.yaml
+│   └── error_recovery.yaml
 ├── go_evals/            # Go-native component tests (memory, tools)
 ├── scripts/             # CI/comparison scripts
 │   └── compare.sh
@@ -41,11 +55,9 @@ eval/
 
 ## How It Works
 
-1. **eval-runner** wraps picoclaw with an instrumented language model that captures
-   every LLM call, tool invocation, token count, and timing.
+1. **eval-runner** wraps picoclaw with an instrumented language model that captures every LLM call, tool invocation, token count, and timing.
 
-2. **promptfoo** invokes `eval-runner` via `exec:` provider, sending prompts as JSON
-   on stdin and parsing the structured trace JSON from stdout.
+2. **promptfoo** invokes `eval-runner` via `exec:` provider, sending prompts as JSON on stdin and parsing the structured trace JSON from stdout.
 
 3. **Assertions** are JavaScript functions that inspect the trace to score:
    - Tool selection correctness
@@ -98,9 +110,7 @@ Create a new YAML file in `eval/cases/` following this pattern:
 
 ## A/B Comparison
 
-`make eval-compare` builds both your current branch and main, then runs the
-identical test suite against both. Results show a side-by-side comparison
-matrix with per-test scores.
+`make eval-compare` builds both your current branch and main, then runs the identical test suite against both. Results show a side-by-side comparison matrix with per-test scores.
 
 ## Environment Variables
 
