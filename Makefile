@@ -220,22 +220,11 @@ eval-build: generate
 	@echo "Building eval runner..."
 	@mkdir -p eval/bin
 	@$(GO) build $(GOFLAGS) $(LDFLAGS) -o eval/bin/eval-runner ./eval/cmd/eval-runner
-	@printf '#!/bin/sh\nSCRIPT_DIR="$$(cd "$$(dirname "$$0")" && pwd)"\nPICOCLAW_EVAL_CONFIG="$$SCRIPT_DIR/../configs/default.json" exec "$$SCRIPT_DIR/eval-runner" "$$@"\n' > eval/bin/eval-runner-default
-	@printf '#!/bin/sh\nSCRIPT_DIR="$$(cd "$$(dirname "$$0")" && pwd)"\nPICOCLAW_EVAL_CONFIG="$$SCRIPT_DIR/../configs/progressive.json" exec "$$SCRIPT_DIR/eval-runner" "$$@"\n' > eval/bin/eval-runner-progressive
-	@printf '#!/bin/sh\nSCRIPT_DIR="$$(cd "$$(dirname "$$0")" && pwd)"\nPICOCLAW_EVAL_CONFIG="$$SCRIPT_DIR/../configs/no-memory.json" exec "$$SCRIPT_DIR/eval-runner" "$$@"\n' > eval/bin/eval-runner-no-memory
-	@chmod +x eval/bin/eval-runner-default eval/bin/eval-runner-progressive eval/bin/eval-runner-no-memory
 	@echo "Eval runner built: eval/bin/eval-runner"
 
-## eval: Run the eval suite (default config only) against the current build
+## eval: Run the eval suite against the current build
 eval: eval-build eval-fixtures
-	@echo "Running eval suite (default config)..."
-	@cd eval && npx promptfoo eval --config promptfooconfig-default.yaml --no-cache --no-progress-bar
-	@echo "Results: eval/results/latest.json"
-	@echo "View: cd eval && npx promptfoo view"
-
-## eval-matrix: Run eval suite against all config variants (default, progressive, no-memory)
-eval-matrix: eval-build eval-fixtures
-	@echo "Running eval matrix (all config variants)..."
+	@echo "Running eval suite..."
 	@cd eval && npx promptfoo eval --config promptfooconfig.yaml --no-cache --no-progress-bar
 	@echo "Results: eval/results/latest.json"
 	@echo "View: cd eval && npx promptfoo view"
@@ -246,7 +235,13 @@ eval-fixtures:
 	@mkdir -p $(HOME)/.local/share/picoclaw/sandbox
 	@rm -f $(HOME)/.local/share/picoclaw/sandbox/eval_test_output.txt \
 	       $(HOME)/.local/share/picoclaw/sandbox/test_steps.txt \
-	       $(HOME)/.local/share/picoclaw/sandbox/eval_checkpoint.txt
+	       $(HOME)/.local/share/picoclaw/sandbox/eval_checkpoint.txt \
+	       $(HOME)/.local/share/picoclaw/sandbox/chain_test.txt \
+	       $(HOME)/.local/share/picoclaw/sandbox/current_year.txt \
+	       $(HOME)/.local/share/picoclaw/sandbox/result.txt \
+	       $(HOME)/.local/share/picoclaw/sandbox/progressive_test.txt \
+	       $(HOME)/.local/share/picoclaw/sandbox/os_name.txt
+	@rm -rf $(HOME)/.local/share/picoclaw/sandbox/project
 	@printf 'picoclaw eval fixture — hello from the eval harness\nThis is line two of the fixture file.\n' > $(HOME)/.local/share/picoclaw/sandbox/eval_fixture.txt
 	@cp -f eval/fixtures/sample_data.txt $(HOME)/.local/share/picoclaw/sandbox/sample_data.txt
 	@mkdir -p $(HOME)/.local/share/picoclaw/skills
