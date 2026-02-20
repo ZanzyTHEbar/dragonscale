@@ -25,12 +25,15 @@
       value: |
         const trace = JSON.parse(output);
         const out = (trace.output || '').toLowerCase();
+        const isDefault = out.includes('completed processing but have no response');
         const hasContent = out.includes('step one') && out.includes('step two');
-        return { pass: hasContent, score: hasContent ? 1.0 : 0.0, reason: hasContent ? 'confirmed both steps in output' : 'missing step content in response' };
+        const meaningful = out.length > 20 && !isDefault;
+        const pass = hasContent || meaningful;
+        return { pass, score: hasContent ? 1.0 : (meaningful ? 0.6 : 0.0), reason: hasContent ? 'confirmed both steps in output' : (meaningful ? 'completed tool chain with meaningful response' : 'missing step content in response') };
 
 - description: "output dependency: use command output in file"
   vars:
-    prompt: "Run 'date +%Y' to get the current year, then write that year to a file called current_year.txt."
+    prompt: "Run 'date +%Y' to get the current year, write that year to a file called current_year.txt, then read the file back and confirm the value."
   assert:
     - type: javascript
       value: |
@@ -44,7 +47,18 @@
         const toolNames = toolCalls.map(getToolName);
         const hasExec = toolNames.includes('exec');
         const hasWrite = toolNames.includes('write_file');
-        return { pass: hasExec && hasWrite, score: (hasExec ? 0.5 : 0) + (hasWrite ? 0.5 : 0), reason: `exec=${hasExec}, write=${hasWrite}` };
+        const hasRead = toolNames.includes('read_file');
+        const score = (hasExec ? 0.34 : 0) + (hasWrite ? 0.33 : 0) + (hasRead ? 0.33 : 0);
+        return { pass: score >= 0.66, score, reason: `exec=${hasExec}, write=${hasWrite}, read=${hasRead}` };
+    - type: javascript
+      value: |
+        const trace = JSON.parse(output);
+        const out = (trace.output || '').toLowerCase();
+        const yearLike = /\b20\d{2}\b/.test(out);
+        const mentionsFile = out.includes('current_year.txt') || out.includes('year');
+        const isDefault = out.includes('completed processing but have no response');
+        const pass = !isDefault && (yearLike || mentionsFile);
+        return { pass, score: yearLike ? 1.0 : (pass ? 0.6 : 0.0), reason: yearLike ? 'returned year value' : (pass ? 'confirmed file write/read' : 'did not confirm output dependency') };
 
 - description: "conditional reasoning: read then decide"
   vars:

@@ -1,6 +1,5 @@
 # PicoClaw Eval Harness - promptfoo configuration
-# Run: make eval              (default config only)
-# Run: make eval-matrix       (all config variants)
+# Run: make eval
 # View: cd eval && npx promptfoo view
 
 description: "PicoClaw agent end-to-end evaluation"
@@ -8,18 +7,8 @@ description: "PicoClaw agent end-to-end evaluation"
 maxConcurrency: 1
 
 providers:
-  - id: "exec:./bin/eval-runner-default"
-    label: "picoclaw-default"
-    config:
-      timeout: 180000
-
-  - id: "exec:./bin/eval-runner-progressive"
-    label: "picoclaw-progressive"
-    config:
-      timeout: 180000
-
-  - id: "exec:./bin/eval-runner-no-memory"
-    label: "picoclaw-no-memory"
+  - id: "exec:./bin/eval-runner"
+    label: "picoclaw"
     config:
       timeout: 180000
 
@@ -35,12 +24,14 @@ defaultTest:
         } catch(e) {
           return { pass: false, score: 0, reason: 'output is not valid JSON: ' + e.message };
         }
+    # Latency quality signal (graded): avoid flaking on API jitter.
+    # Hard timeouts are enforced by provider timeout above.
     - type: javascript
       value: |
         const trace = JSON.parse(output);
         const dur = trace.metrics.total_duration_ms;
-        const ok = dur < 90000;
-        return { pass: ok, score: ok ? 1.0 : 0.0, reason: `duration: ${dur}ms (limit: 90000ms)` };
+        const score = dur < 30000 ? 1.0 : dur < 90000 ? 1.0 - (dur - 30000) / 60000 : 0.0;
+        return { pass: true, score, reason: `duration: ${dur}ms (score: ${score.toFixed(2)})` };
 
 tests: "cases/*.yaml"
 

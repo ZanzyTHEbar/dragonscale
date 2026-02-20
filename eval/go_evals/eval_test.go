@@ -477,8 +477,6 @@ func TestConfig_LoadEvalConfigs(t *testing.T) {
 		expectIterations int
 	}{
 		{"default", "default.json", 20},
-		{"progressive", "progressive.json", 20},
-		{"no-memory", "no-memory.json", 10},
 	}
 
 	for _, tc := range tests {
