@@ -12,6 +12,7 @@ import (
 	"time"
 
 	fantasy "charm.land/fantasy"
+	"github.com/ZanzyTHEbar/dragonscale/pkg"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/bus"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/config"
 	memsqlc "github.com/ZanzyTHEbar/dragonscale/pkg/memory/sqlc"
@@ -827,13 +828,13 @@ func TestForceCompression_PersistsProvenance(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	al.forceCompression(ctx, sessionKey)
+	al.forceCompression(ctx, sessionKey, "", "")
 
 	del := al.MemoryDelegate()
 	if del == nil {
 		t.Fatal("MemoryDelegate is nil")
 	}
-	entries, err := del.ListAuditEntriesByAction(ctx, "dragonscale", "emergency_compression", 50)
+	entries, err := del.ListAuditEntriesByAction(ctx, pkg.NAME, "emergency_compression", 50)
 	if err != nil {
 		t.Fatalf("ListAuditEntriesByAction: %v", err)
 	}
@@ -913,7 +914,7 @@ func TestPersistOversizedRecoveryRefs_CreatesRecoverableReferences(t *testing.T)
 
 	dagTool := tools.NewDagExpandTool(tools.DAGToolDeps{
 		Delegate: al.MemoryDelegate(),
-		AgentID:  "dragonscale",
+		AgentID:  pkg.NAME,
 		SessionFn: func() string {
 			return "recovery-session"
 		},

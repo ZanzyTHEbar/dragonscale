@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ZanzyTHEbar/dragonscale/pkg"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/config"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/logger"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/memory"
@@ -273,7 +274,7 @@ func (cb *ContextBuilder) LoadBootstrapFiles() string {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	docs, err := cb.delegate.ListDocumentsByCategory(ctx, "dragonscale", "bootstrap")
+	docs, err := cb.delegate.ListDocumentsByCategory(ctx, pkg.NAME, "bootstrap")
 	if err != nil || len(docs) == 0 {
 		return ""
 	}
@@ -299,7 +300,7 @@ func (cb *ContextBuilder) buildWorkingContextSection() string {
 	var parts []string
 
 	// Inject working context (hot tier)
-	wc, err := cb.memoryStore.GetWorkingContext(ctx, "dragonscale", "default")
+	wc, err := cb.memoryStore.GetWorkingContext(ctx, pkg.NAME, "default")
 	if err == nil && wc != "" {
 		parts = append(parts, "## Working Context\n\n"+wc)
 	}

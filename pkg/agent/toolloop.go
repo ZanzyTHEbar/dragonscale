@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	fantasy "charm.land/fantasy"
+	"github.com/ZanzyTHEbar/dragonscale/pkg"
 	picofantasy "github.com/ZanzyTHEbar/dragonscale/pkg/fantasy"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/logger"
 	memstore "github.com/ZanzyTHEbar/dragonscale/pkg/memory/store"
@@ -91,7 +92,7 @@ func runToolLoopWithRuntime(
 
 	adaptCfg := picofantasy.AdaptedToolsConfig{
 		MemStore:   ms,
-		AgentID:    "dragonscale",
+		AgentID:    pkg.NAME,
 		SessionKey: sessionKey,
 	}
 	adaptedTools := picofantasy.BuildAdaptedTools(config.Tools, config.Bus, channel, chatID, adaptCfg)
