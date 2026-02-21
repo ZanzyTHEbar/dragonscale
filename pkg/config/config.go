@@ -7,6 +7,7 @@ import (
 	"runtime"
 	"sync"
 
+	"github.com/ZanzyTHEbar/dragonscale/pkg"
 	"github.com/caarlos0/env/v11"
 	jsonv2 "github.com/go-json-experiment/json"
 	"github.com/go-json-experiment/json/jsontext"
@@ -741,8 +742,6 @@ func expandHome(path string) string {
 
 // ─── XDG / platform path helpers ─────────────────────────────────────────────
 
-const appName = "dragonscale"
-
 // ConfigDir returns the platform-appropriate user configuration directory for
 // dragonscale, following XDG Base Directory spec on Linux
 // (~/.config/dragonscale), Library/Application Support on macOS, and
@@ -752,7 +751,7 @@ func ConfigDir() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("resolve user config dir: %w", err)
 	}
-	dir := filepath.Join(base, appName)
+	dir := filepath.Join(base, pkg.NAME)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", fmt.Errorf("create config dir %q: %w", dir, err)
 	}
@@ -784,7 +783,7 @@ func DataDir() (string, error) {
 		}
 		base = cfgBase
 	}
-	dir := filepath.Join(base, appName)
+	dir := filepath.Join(base, pkg.NAME)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", fmt.Errorf("create data dir %q: %w", dir, err)
 	}
@@ -845,7 +844,7 @@ func CacheDir() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("resolve user cache dir: %w", err)
 	}
-	dir := filepath.Join(base, appName)
+	dir := filepath.Join(base, pkg.NAME)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", fmt.Errorf("create cache dir %q: %w", dir, err)
 	}
@@ -860,7 +859,7 @@ func DefaultDBPath() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(dataDir, appName+".db"), nil
+	return filepath.Join(dataDir, pkg.NAME+".db"), nil
 }
 
 // DefaultConfigPath returns the path to the primary JSON config file inside
