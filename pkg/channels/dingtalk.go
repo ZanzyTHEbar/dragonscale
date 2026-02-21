@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/ZanzyTHEbar/dragonscale/pkg"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/bus"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/config"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/logger"
@@ -175,7 +176,7 @@ func (c *DingTalkChannel) SendDirectReply(ctx context.Context, sessionWebhook, c
 
 	// Convert string content to []byte for the API
 	contentBytes := []byte(content)
-	titleBytes := []byte("DragonScale")
+	titleBytes := []byte(pkg.NAME)
 
 	// Send markdown formatted reply
 	err := replier.SimpleReplyMarkdown(

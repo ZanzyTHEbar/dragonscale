@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ZanzyTHEbar/dragonscale/pkg"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/bus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -31,7 +32,7 @@ func TestResolveBaseConfigPath_PrefersXDGOverLegacy(t *testing.T) {
 	t.Setenv("HOME", home)
 	t.Setenv("XDG_CONFIG_HOME", xdg)
 
-	xdgPath := filepath.Join(xdg, "dragonscale", "config.json")
+	xdgPath := filepath.Join(xdg, pkg.NAME, "config.json")
 	legacyPath := filepath.Join(home, ".dragonscale", "config.json")
 	require.NoError(t, os.MkdirAll(filepath.Dir(xdgPath), 0o755))
 	require.NoError(t, os.MkdirAll(filepath.Dir(legacyPath), 0o755))

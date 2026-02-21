@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/ZanzyTHEbar/dragonscale/pkg"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/bus"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/ids"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/memory/delegate"
@@ -76,7 +77,7 @@ func newMapRuntimeForTest(t *testing.T, llm fantasy.LanguageModel, manager *Suba
 	require.NoError(t, d.Init(context.Background()))
 	t.Cleanup(func() { _ = d.Close() })
 
-	return NewMapRuntime(d.Queries(), "dragonscale", llm, "mock-map-llm", manager)
+	return NewMapRuntime(d.Queries(), pkg.NAME, llm, "mock-map-llm", manager)
 }
 
 func decodeResultMap(t *testing.T, result *ToolResult) map[string]interface{} {

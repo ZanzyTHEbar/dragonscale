@@ -21,6 +21,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ZanzyTHEbar/dragonscale/pkg"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/agent"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/auth"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/bus"
@@ -159,7 +160,7 @@ func main() {
 		installer := skills.NewSkillInstaller(skillsDir)
 		cfgDir, _ := config.ConfigDir()
 		globalSkillsDir := filepath.Join(cfgDir, "skills")
-		builtinSkillsDir := filepath.Join(cfgDir, "dragonscale", "skills")
+		builtinSkillsDir := filepath.Join(cfgDir, pkg.NAME, "skills")
 		skillsLoader := skills.NewSkillsLoader(skillsDir, globalSkillsDir, builtinSkillsDir)
 
 		switch subcommand {
@@ -611,7 +612,7 @@ func gatewayCmd() {
 	execTimeout := time.Duration(cfg.Tools.Cron.ExecTimeoutMinutes) * time.Minute
 	var cronOpts []cron.CronOption
 	if del := agentLoop.MemoryDelegate(); del != nil {
-		cronOpts = append(cronOpts, cron.WithCronDelegate(del, "dragonscale"))
+		cronOpts = append(cronOpts, cron.WithCronDelegate(del, pkg.NAME))
 	}
 	cronService := setupCronTool(appCtx, agentLoop, msgBus, cfg.SandboxPath(), cfg.RestrictToSandbox(), execTimeout, cronOpts...)
 
@@ -644,7 +645,7 @@ func gatewayCmd() {
 		return tools.SilentResult(response)
 	})
 	if del := agentLoop.MemoryDelegate(); del != nil {
-		obligations := tools.NewObligationTool(del, "dragonscale")
+		obligations := tools.NewObligationTool(del, pkg.NAME)
 		heartbeatService.SetDueContextProvider(func(now time.Time) (string, error) {
 			ctx, cancel := context.WithTimeout(appCtx, 10*time.Second)
 			defer cancel()
@@ -685,7 +686,7 @@ func gatewayCmd() {
 	}
 
 	// Inject channel manager into agent loop for command handling
-	agentLoop.SetChannelManager(channelManager)
+	agent.WithChannelManager(channelManager)(agentLoop)
 
 	var transcriber *voice.GroqTranscriber
 	if cfg.Providers.Groq.APIKey != "" {
@@ -832,7 +833,7 @@ func memoryMigrateSessions() {
 	}
 
 	sessionsDir := filepath.Join(cfg.SandboxPath(), "sessions")
-	stats, err := picomemory.MigrateFileSessions(ctx, del, "dragonscale", sessionsDir)
+	stats, err := picomemory.MigrateFileSessions(ctx, del, pkg.NAME, sessionsDir)
 	if err != nil {
 		fmt.Printf("Migration error: %v\n", err)
 		os.Exit(1)

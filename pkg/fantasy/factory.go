@@ -15,6 +15,7 @@ import (
 
 	"charm.land/fantasy"
 	"charm.land/fantasy/providers/openaicompat"
+	"github.com/ZanzyTHEbar/dragonscale/pkg"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/config"
 	"github.com/openai/openai-go/v2/option"
 )
@@ -333,7 +334,7 @@ func defaultIfEmpty(val, fallback string) string {
 
 func providerNameOrDefault(name string) string {
 	if name == "" {
-		return "dragonscale"
+		return pkg.NAME
 	}
 	return name
 }

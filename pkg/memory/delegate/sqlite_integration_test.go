@@ -2,9 +2,11 @@ package delegate
 
 import (
 	"context"
-	jsonv2 "github.com/go-json-experiment/json"
 	"testing"
 
+	jsonv2 "github.com/go-json-experiment/json"
+
+	"github.com/ZanzyTHEbar/dragonscale/pkg"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/ids"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/memory"
 	"github.com/stretchr/testify/assert"
@@ -14,7 +16,7 @@ import (
 func TestCronKVBackend_Roundtrip(t *testing.T) {
 	d := newTestDelegate(t)
 	ctx := context.Background()
-	agentID := "dragonscale"
+	agentID := pkg.NAME
 	kvKey := "cron:store"
 
 	type cronStore struct {
@@ -61,7 +63,7 @@ func TestCronKVBackend_Roundtrip(t *testing.T) {
 func TestCronKVBackend_UpdatePreservesShape(t *testing.T) {
 	d := newTestDelegate(t)
 	ctx := context.Background()
-	agentID := "dragonscale"
+	agentID := pkg.NAME
 	kvKey := "cron:store"
 
 	v1 := `{"version":1,"jobs":[{"id":"j1","name":"test","enabled":true}]}`
@@ -78,7 +80,7 @@ func TestCronKVBackend_UpdatePreservesShape(t *testing.T) {
 func TestCronKVBackend_PrefixScan(t *testing.T) {
 	d := newTestDelegate(t)
 	ctx := context.Background()
-	agentID := "dragonscale"
+	agentID := pkg.NAME
 
 	require.NoError(t, d.UpsertKV(ctx, agentID, "cron:store", "{}"))
 	require.NoError(t, d.UpsertKV(ctx, agentID, "cron:lock", "held"))

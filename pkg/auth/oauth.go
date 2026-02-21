@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ZanzyTHEbar/dragonscale/pkg"
 	jsonv2 "github.com/go-json-experiment/json"
 	"github.com/go-json-experiment/json/jsontext"
 )
@@ -313,7 +314,7 @@ func buildAuthorizeURL(cfg OAuthProviderConfig, pkce PKCECodes, state, redirectU
 		"state":                      {state},
 	}
 	if strings.Contains(strings.ToLower(cfg.Issuer), "auth.openai.com") {
-		params.Set("originator", "dragonscale")
+		params.Set("originator", pkg.NAME)
 	}
 	if cfg.Originator != "" {
 		params.Set("originator", cfg.Originator)

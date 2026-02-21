@@ -8,6 +8,7 @@ import (
 
 	jsonv2 "github.com/go-json-experiment/json"
 
+	"github.com/ZanzyTHEbar/dragonscale/pkg"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/logger"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/messages"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/session"
@@ -23,8 +24,9 @@ type KVStore interface {
 const (
 	focusKVPrefix     = "focus:"
 	knowledgeKVPrefix = "knowledge:"
-	focusAgentID      = "dragonscale"
 )
+
+var focusAgentID = pkg.NAME
 
 // FocusState tracks an active focus investigation.
 type FocusState struct {
