@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"strings"
 	"testing"
 )
 
@@ -63,19 +64,6 @@ func TestToolCallTool_DispatchesToTool(t *testing.T) {
 	}
 	if result.ForLLM != "executed read_file" {
 		t.Errorf("expected 'executed read_file', got %s", result.ForLLM)
-	}
-}
-
-func TestToolCallTool_ToolNotFound(t *testing.T) {
-	r := NewToolRegistry()
-	tc := NewToolCallTool(r)
-
-	result := tc.Execute(context.Background(), map[string]interface{}{
-		"tool_name": "nonexistent",
-	})
-
-	if !result.IsError {
-		t.Error("expected error for nonexistent tool")
 	}
 }
 
@@ -141,15 +129,57 @@ func TestToolCallTool_NilArguments(t *testing.T) {
 
 func TestToolCallTool_InvalidJSONArguments(t *testing.T) {
 	r := NewToolRegistry()
+	r.Register(&stubToolWithSchema{name: "read_file", desc: "Read a file"})
 	tc := NewToolCallTool(r)
 
 	result := tc.Execute(context.Background(), map[string]interface{}{
-		"tool_name": "anything",
+		"tool_name": "read_file",
 		"arguments": "not-json",
 	})
 
 	if !result.IsError {
 		t.Error("expected error for invalid JSON arguments")
+	}
+	// Should include schema hint
+	if !strings.Contains(result.ForLLM, "path") {
+		t.Errorf("expected schema hint with 'path' parameter, got: %s", result.ForLLM)
+	}
+}
+
+func TestToolCallTool_MissingRequiredArgs_IncludesSchemaHint(t *testing.T) {
+	r := NewToolRegistry()
+	r.Register(&stubToolWithSchema{name: "read_file", desc: "Read a file"})
+	tc := NewToolCallTool(r)
+
+	result := tc.Execute(context.Background(), map[string]interface{}{
+		"tool_name": "read_file",
+		"arguments": map[string]interface{}{},
+	})
+
+	if !result.IsError {
+		t.Error("expected error for missing required args")
+	}
+	if !strings.Contains(result.ForLLM, "missing required") {
+		t.Errorf("expected 'missing required' in error, got: %s", result.ForLLM)
+	}
+	if !strings.Contains(result.ForLLM, "path") {
+		t.Errorf("expected 'path' in schema hint, got: %s", result.ForLLM)
+	}
+}
+
+func TestToolCallTool_ToolNotFoundSuggestsSearch(t *testing.T) {
+	r := NewToolRegistry()
+	tc := NewToolCallTool(r)
+
+	result := tc.Execute(context.Background(), map[string]interface{}{
+		"tool_name": "nonexistent",
+	})
+
+	if !result.IsError {
+		t.Error("expected error for nonexistent tool")
+	}
+	if !strings.Contains(result.ForLLM, "tool_search") {
+		t.Errorf("expected suggestion to use tool_search, got: %s", result.ForLLM)
 	}
 }
 
@@ -197,6 +227,43 @@ func TestToolCallTool_ResourceProvider_LoadsResources(t *testing.T) {
 	}
 	if rt.receivedResources["schema:users"] == "" {
 		t.Error("expected 'schema:users' resource")
+	}
+}
+
+func TestToolCallTool_NormalizesCommaSeparatedToolName(t *testing.T) {
+	r := NewToolRegistry()
+	r.Register(&stubTool{name: "write_file", desc: "write"})
+	r.Register(&stubTool{name: "read_file", desc: "read"})
+	tc := NewToolCallTool(r)
+
+	result := tc.Execute(context.Background(), map[string]interface{}{
+		"tool_name": "write_file, read_file",
+		"arguments": map[string]interface{}{"path": "x.txt"},
+	})
+
+	if result.IsError {
+		t.Fatalf("unexpected error: %s", result.ForLLM)
+	}
+	if result.ForLLM != "executed write_file" {
+		t.Fatalf("expected normalized dispatch to write_file, got %q", result.ForLLM)
+	}
+}
+
+func TestToolCallTool_NormalizesEmbeddedToolName(t *testing.T) {
+	r := NewToolRegistry()
+	r.Register(&stubTool{name: "exec", desc: "exec"})
+	tc := NewToolCallTool(r)
+
+	result := tc.Execute(context.Background(), map[string]interface{}{
+		"tool_name": "exec_tool_search_query_exec_run_shell_command_return_output_caution",
+		"arguments": map[string]interface{}{"command": "echo hi"},
+	})
+
+	if result.IsError {
+		t.Fatalf("unexpected error: %s", result.ForLLM)
+	}
+	if result.ForLLM != "executed exec" {
+		t.Fatalf("expected normalized dispatch to exec, got %q", result.ForLLM)
 	}
 }
 

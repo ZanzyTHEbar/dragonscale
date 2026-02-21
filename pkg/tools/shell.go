@@ -131,6 +131,9 @@ func buildDenyPatterns() []*regexp.Regexp {
 
 		// Command obfuscation via eval
 		`\beval\s+.*\$\(`,
+
+		// Host identity exfiltration shortcut
+		`\bhostname\b`,
 	}
 
 	compiled := make([]*regexp.Regexp, 0, len(patterns))

@@ -244,7 +244,14 @@ func (t *WriteFileTool) Execute(ctx context.Context, args map[string]interface{}
 		return ErrorResult(fmt.Sprintf("failed to write file: %v", err))
 	}
 
-	return SilentResult(fmt.Sprintf("File written: %s", path))
+	preview := strings.TrimSpace(content)
+	if len(preview) > 80 {
+		preview = preview[:80] + "..."
+	}
+	if preview == "" {
+		return SilentResult(fmt.Sprintf("File written: %s (empty content)", path))
+	}
+	return SilentResult(fmt.Sprintf("File written: %s (content preview: %q)", path, preview))
 }
 
 type ListDirTool struct {
