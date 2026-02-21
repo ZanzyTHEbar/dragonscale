@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	fantasy "charm.land/fantasy"
-	"github.com/sipeed/picoclaw/pkg/bus"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/bus"
 )
 
 // MockLanguageModel is a test implementation of fantasy.LanguageModel
@@ -121,6 +121,24 @@ func TestSubagentTool_Parameters(t *testing.T) {
 	}
 	if label["type"] != "string" {
 		t.Errorf("Label type should be 'string', got: %v", label["type"])
+	}
+
+	// Verify delegated_scope parameter
+	delegatedScope, ok := props["delegated_scope"].(map[string]interface{})
+	if !ok {
+		t.Fatal("delegated_scope parameter should exist")
+	}
+	if delegatedScope["type"] != "string" {
+		t.Errorf("delegated_scope type should be 'string', got: %v", delegatedScope["type"])
+	}
+
+	// Verify kept_work parameter
+	keptWork, ok := props["kept_work"].(map[string]interface{})
+	if !ok {
+		t.Fatal("kept_work parameter should exist")
+	}
+	if keptWork["type"] != "string" {
+		t.Errorf("kept_work type should be 'string', got: %v", keptWork["type"])
 	}
 
 	// Check required fields
@@ -314,6 +332,52 @@ func TestSubagentTool_Execute_ContextPassing(t *testing.T) {
 
 	// The context is used internally; we can't directly test it
 	// but execution success indicates context was handled properly
+}
+
+func TestSubagentTool_Execute_NestedDelegationRequiresScopeAndKeptWork(t *testing.T) {
+	provider := &MockLanguageModel{}
+	msgBus := bus.NewMessageBus()
+	manager := NewSubagentManager(provider, "test-model", "/tmp/test", msgBus)
+	manager.SetRunLoop(func(_ context.Context, _ ToolLoopConfig, _, userPrompt, _, _ string) (*ToolLoopResult, error) {
+		return &ToolLoopResult{Content: "Task completed: " + userPrompt, Iterations: 1}, nil
+	})
+	tool := NewSubagentTool(manager)
+
+	// Simulate nested delegation (depth > 0) without delegated scope metadata.
+	ctx := withDelegationContext(context.Background(), "parent-task", 1)
+	result := tool.Execute(ctx, map[string]interface{}{
+		"task":  "nested task",
+		"label": "nested",
+	})
+
+	if !result.IsError {
+		t.Fatal("Expected nested delegation without delegated_scope/kept_work to fail")
+	}
+	if !strings.Contains(result.ForLLM, "nested delegation requires delegated_scope and kept_work") {
+		t.Fatalf("unexpected error: %s", result.ForLLM)
+	}
+}
+
+func TestSubagentTool_Execute_NestedDelegationWithMetadataSucceeds(t *testing.T) {
+	provider := &MockLanguageModel{}
+	msgBus := bus.NewMessageBus()
+	manager := NewSubagentManager(provider, "test-model", "/tmp/test", msgBus)
+	manager.SetRunLoop(func(_ context.Context, _ ToolLoopConfig, _, userPrompt, _, _ string) (*ToolLoopResult, error) {
+		return &ToolLoopResult{Content: "Task completed: " + userPrompt, Iterations: 2}, nil
+	})
+	tool := NewSubagentTool(manager)
+
+	ctx := withDelegationContext(context.Background(), "parent-task", 1)
+	result := tool.Execute(ctx, map[string]interface{}{
+		"task":            "nested task",
+		"label":           "nested",
+		"delegated_scope": "collect additional facts",
+		"kept_work":       "final synthesis",
+	})
+
+	if result.IsError {
+		t.Fatalf("Expected nested delegation with metadata to succeed, got: %s", result.ForLLM)
+	}
 }
 
 // TestSubagentTool_ForUserTruncation verifies long content is truncated for user

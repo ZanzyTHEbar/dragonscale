@@ -61,17 +61,17 @@ type Config struct {
 // Memory is always enabled; there is no opt-out. Configuration controls
 // the database path, embedding dimensions, offloading threshold, and sync.
 type MemoryConfig struct {
-	// DBPath overrides the default database path (workspace/memory/picoclaw.db).
+	// DBPath overrides the default database path (workspace/memory/dragonscale.db).
 	// Empty string uses the default.
-	DBPath string `json:"db_path" env:"PICOCLAW_MEMORY_DB_PATH"`
+	DBPath string `json:"db_path" env:"DRAGONSCALE_MEMORY_DB_PATH"`
 
 	// EmbeddingDims is the vector dimensionality for archival embeddings.
 	// Default: 768 (sentence-transformers). Use 1536 for OpenAI ada-002, 384 for MiniLM.
-	EmbeddingDims int `json:"embedding_dims" env:"PICOCLAW_MEMORY_EMBEDDING_DIMS"`
+	EmbeddingDims int `json:"embedding_dims" env:"DRAGONSCALE_MEMORY_EMBEDDING_DIMS"`
 
 	// OffloadThresholdTokens is the token count above which tool results
 	// are automatically offloaded to archival memory. Default: 4000.
-	OffloadThresholdTokens int `json:"offload_threshold_tokens" env:"PICOCLAW_MEMORY_OFFLOAD_THRESHOLD_TOKENS"`
+	OffloadThresholdTokens int `json:"offload_threshold_tokens" env:"DRAGONSCALE_MEMORY_OFFLOAD_THRESHOLD_TOKENS"`
 
 	// Embedding configures the embedding provider for archival vector search.
 	Embedding EmbeddingConfig `json:"embedding"`
@@ -85,21 +85,21 @@ type MemoryConfig struct {
 type EmbeddingConfig struct {
 	// Provider selects the embedding backend: "ollama", "openai", or "".
 	// Empty string disables embeddings (FTS5-only search).
-	Provider string `json:"provider" env:"PICOCLAW_MEMORY_EMBEDDING_PROVIDER"`
+	Provider string `json:"provider" env:"DRAGONSCALE_MEMORY_EMBEDDING_PROVIDER"`
 
 	// Model is the embedding model name (e.g., "nomic-embed-text", "text-embedding-3-small").
 	// Defaults depend on provider: "nomic-embed-text" for Ollama, "text-embedding-3-small" for OpenAI.
-	Model string `json:"model" env:"PICOCLAW_MEMORY_EMBEDDING_MODEL"`
+	Model string `json:"model" env:"DRAGONSCALE_MEMORY_EMBEDDING_MODEL"`
 
 	// APIBase overrides the provider's API base URL.
 	// For Ollama defaults to "http://localhost:11434".
 	// For OpenAI defaults to "https://api.openai.com/v1".
 	// Empty string uses the default for the selected provider.
-	APIBase string `json:"api_base" env:"PICOCLAW_MEMORY_EMBEDDING_API_BASE"`
+	APIBase string `json:"api_base" env:"DRAGONSCALE_MEMORY_EMBEDDING_API_BASE"`
 
 	// APIKey for the embedding provider. Required for OpenAI, optional for Ollama.
 	// If empty, falls back to the matching provider's key from providers config.
-	APIKey string `json:"api_key" env:"PICOCLAW_MEMORY_EMBEDDING_API_KEY"`
+	APIKey string `json:"api_key" env:"DRAGONSCALE_MEMORY_EMBEDDING_API_KEY"`
 }
 
 // MemorySyncConfig configures Turso embedded replica synchronization.
@@ -107,38 +107,57 @@ type EmbeddingConfig struct {
 type MemorySyncConfig struct {
 	// SyncURL is the Turso primary database URL (e.g., "libsql://mydb.turso.io").
 	// Empty string disables replication (local-only mode).
-	SyncURL string `json:"sync_url" env:"PICOCLAW_MEMORY_SYNC_URL"`
+	SyncURL string `json:"sync_url" env:"DRAGONSCALE_MEMORY_SYNC_URL"`
 
 	// AuthToken is the Turso authentication token for the remote database.
-	AuthToken string `json:"auth_token" env:"PICOCLAW_MEMORY_SYNC_AUTH_TOKEN"`
+	AuthToken string `json:"auth_token" env:"DRAGONSCALE_MEMORY_SYNC_AUTH_TOKEN"`
 
 	// SyncIntervalSeconds is how often to sync with the remote primary (in seconds).
 	// Zero means manual sync only. Default: 60.
-	SyncIntervalSeconds int `json:"sync_interval_seconds" env:"PICOCLAW_MEMORY_SYNC_INTERVAL_SECONDS"`
+	SyncIntervalSeconds int `json:"sync_interval_seconds" env:"DRAGONSCALE_MEMORY_SYNC_INTERVAL_SECONDS"`
 
 	// EncryptionKey enables encryption-at-rest on the local database file.
 	// Empty string means no encryption.
-	EncryptionKey string `json:"encryption_key" env:"PICOCLAW_MEMORY_SYNC_ENCRYPTION_KEY"`
+	EncryptionKey string `json:"encryption_key" env:"DRAGONSCALE_MEMORY_SYNC_ENCRYPTION_KEY"`
 }
 
 type AgentsConfig struct {
 	Defaults AgentDefaults `json:"defaults"`
 }
 
+type ContinuityRetentionConfig struct {
+	// MinMessages is the minimum number of recent messages always retained
+	// unsummarized for conversational continuity.
+	MinMessages int `json:"min_messages" env:"DRAGONSCALE_AGENTS_DEFAULTS_CONTINUITY_RETENTION_MIN_MESSAGES"`
+
+	// MaxMessages is the upper bound on retained recent messages, even when
+	// the token budget would allow more.
+	MaxMessages int `json:"max_messages" env:"DRAGONSCALE_AGENTS_DEFAULTS_CONTINUITY_RETENTION_MAX_MESSAGES"`
+
+	// TargetContextRatio is the target fraction of model context window reserved
+	// for retained recent messages.
+	TargetContextRatio float64 `json:"target_context_ratio" env:"DRAGONSCALE_AGENTS_DEFAULTS_CONTINUITY_RETENTION_TARGET_CONTEXT_RATIO"`
+
+	// FailureKeepMessages is the fallback retained-message count used when
+	// summarization repeatedly fails.
+	FailureKeepMessages int `json:"failure_keep_messages" env:"DRAGONSCALE_AGENTS_DEFAULTS_CONTINUITY_RETENTION_FAILURE_KEEP_MESSAGES"`
+}
+
 type AgentDefaults struct {
 	// Sandbox is the directory for agent file operations (tools sandbox).
-	// Defaults to $XDG_DATA_HOME/picoclaw/sandbox when empty.
-	Sandbox           string  `json:"sandbox" env:"PICOCLAW_AGENTS_DEFAULTS_SANDBOX"`
-	RestrictToSandbox bool    `json:"restrict_to_sandbox" env:"PICOCLAW_AGENTS_DEFAULTS_RESTRICT_TO_SANDBOX"`
-	Provider          string  `json:"provider" env:"PICOCLAW_AGENTS_DEFAULTS_PROVIDER"`
-	Model             string  `json:"model" env:"PICOCLAW_AGENTS_DEFAULTS_MODEL"`
-	MaxTokens         int     `json:"max_tokens" env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOKENS"`
-	Temperature       float64 `json:"temperature" env:"PICOCLAW_AGENTS_DEFAULTS_TEMPERATURE"`
-	MaxToolIterations int     `json:"max_tool_iterations" env:"PICOCLAW_AGENTS_DEFAULTS_MAX_TOOL_ITERATIONS"`
+	// Defaults to $XDG_DATA_HOME/dragonscale/sandbox when empty.
+	Sandbox             string                    `json:"sandbox" env:"DRAGONSCALE_AGENTS_DEFAULTS_SANDBOX"`
+	RestrictToSandbox   bool                      `json:"restrict_to_sandbox" env:"DRAGONSCALE_AGENTS_DEFAULTS_RESTRICT_TO_SANDBOX"`
+	Provider            string                    `json:"provider" env:"DRAGONSCALE_AGENTS_DEFAULTS_PROVIDER"`
+	Model               string                    `json:"model" env:"DRAGONSCALE_AGENTS_DEFAULTS_MODEL"`
+	MaxTokens           int                       `json:"max_tokens" env:"DRAGONSCALE_AGENTS_DEFAULTS_MAX_TOKENS"`
+	Temperature         float64                   `json:"temperature" env:"DRAGONSCALE_AGENTS_DEFAULTS_TEMPERATURE"`
+	MaxToolIterations   int                       `json:"max_tool_iterations" env:"DRAGONSCALE_AGENTS_DEFAULTS_MAX_TOOL_ITERATIONS"`
+	ContinuityRetention ContinuityRetentionConfig `json:"continuity_retention"`
 
 	// Deprecated: Use Sandbox instead. Kept for backward compatibility during migration.
-	Workspace           string `json:"workspace,omitempty" env:"PICOCLAW_AGENTS_DEFAULTS_WORKSPACE"`
-	RestrictToWorkspace bool   `json:"restrict_to_workspace,omitempty" env:"PICOCLAW_AGENTS_DEFAULTS_RESTRICT_TO_WORKSPACE"`
+	Workspace           string `json:"workspace,omitempty" env:"DRAGONSCALE_AGENTS_DEFAULTS_WORKSPACE"`
+	RestrictToWorkspace bool   `json:"restrict_to_workspace,omitempty" env:"DRAGONSCALE_AGENTS_DEFAULTS_RESTRICT_TO_WORKSPACE"`
 }
 
 type ChannelsConfig struct {
@@ -155,88 +174,88 @@ type ChannelsConfig struct {
 }
 
 type WhatsAppConfig struct {
-	Enabled   bool                `json:"enabled" env:"PICOCLAW_CHANNELS_WHATSAPP_ENABLED"`
-	BridgeURL string              `json:"bridge_url" env:"PICOCLAW_CHANNELS_WHATSAPP_BRIDGE_URL"`
-	AllowFrom FlexibleStringSlice `json:"allow_from" env:"PICOCLAW_CHANNELS_WHATSAPP_ALLOW_FROM"`
+	Enabled   bool                `json:"enabled" env:"DRAGONSCALE_CHANNELS_WHATSAPP_ENABLED"`
+	BridgeURL string              `json:"bridge_url" env:"DRAGONSCALE_CHANNELS_WHATSAPP_BRIDGE_URL"`
+	AllowFrom FlexibleStringSlice `json:"allow_from" env:"DRAGONSCALE_CHANNELS_WHATSAPP_ALLOW_FROM"`
 }
 
 type TelegramConfig struct {
-	Enabled   bool                `json:"enabled" env:"PICOCLAW_CHANNELS_TELEGRAM_ENABLED"`
-	Token     string              `json:"token" env:"PICOCLAW_CHANNELS_TELEGRAM_TOKEN"`
-	Proxy     string              `json:"proxy" env:"PICOCLAW_CHANNELS_TELEGRAM_PROXY"`
-	AllowFrom FlexibleStringSlice `json:"allow_from" env:"PICOCLAW_CHANNELS_TELEGRAM_ALLOW_FROM"`
+	Enabled   bool                `json:"enabled" env:"DRAGONSCALE_CHANNELS_TELEGRAM_ENABLED"`
+	Token     string              `json:"token" env:"DRAGONSCALE_CHANNELS_TELEGRAM_TOKEN"`
+	Proxy     string              `json:"proxy" env:"DRAGONSCALE_CHANNELS_TELEGRAM_PROXY"`
+	AllowFrom FlexibleStringSlice `json:"allow_from" env:"DRAGONSCALE_CHANNELS_TELEGRAM_ALLOW_FROM"`
 }
 
 type FeishuConfig struct {
-	Enabled           bool                `json:"enabled" env:"PICOCLAW_CHANNELS_FEISHU_ENABLED"`
-	AppID             string              `json:"app_id" env:"PICOCLAW_CHANNELS_FEISHU_APP_ID"`
-	AppSecret         string              `json:"app_secret" env:"PICOCLAW_CHANNELS_FEISHU_APP_SECRET"`
-	EncryptKey        string              `json:"encrypt_key" env:"PICOCLAW_CHANNELS_FEISHU_ENCRYPT_KEY"`
-	VerificationToken string              `json:"verification_token" env:"PICOCLAW_CHANNELS_FEISHU_VERIFICATION_TOKEN"`
-	AllowFrom         FlexibleStringSlice `json:"allow_from" env:"PICOCLAW_CHANNELS_FEISHU_ALLOW_FROM"`
+	Enabled           bool                `json:"enabled" env:"DRAGONSCALE_CHANNELS_FEISHU_ENABLED"`
+	AppID             string              `json:"app_id" env:"DRAGONSCALE_CHANNELS_FEISHU_APP_ID"`
+	AppSecret         string              `json:"app_secret" env:"DRAGONSCALE_CHANNELS_FEISHU_APP_SECRET"`
+	EncryptKey        string              `json:"encrypt_key" env:"DRAGONSCALE_CHANNELS_FEISHU_ENCRYPT_KEY"`
+	VerificationToken string              `json:"verification_token" env:"DRAGONSCALE_CHANNELS_FEISHU_VERIFICATION_TOKEN"`
+	AllowFrom         FlexibleStringSlice `json:"allow_from" env:"DRAGONSCALE_CHANNELS_FEISHU_ALLOW_FROM"`
 }
 
 type DiscordConfig struct {
-	Enabled   bool                `json:"enabled" env:"PICOCLAW_CHANNELS_DISCORD_ENABLED"`
-	Token     string              `json:"token" env:"PICOCLAW_CHANNELS_DISCORD_TOKEN"`
-	AllowFrom FlexibleStringSlice `json:"allow_from" env:"PICOCLAW_CHANNELS_DISCORD_ALLOW_FROM"`
+	Enabled   bool                `json:"enabled" env:"DRAGONSCALE_CHANNELS_DISCORD_ENABLED"`
+	Token     string              `json:"token" env:"DRAGONSCALE_CHANNELS_DISCORD_TOKEN"`
+	AllowFrom FlexibleStringSlice `json:"allow_from" env:"DRAGONSCALE_CHANNELS_DISCORD_ALLOW_FROM"`
 }
 
 type MaixCamConfig struct {
-	Enabled   bool                `json:"enabled" env:"PICOCLAW_CHANNELS_MAIXCAM_ENABLED"`
-	Host      string              `json:"host" env:"PICOCLAW_CHANNELS_MAIXCAM_HOST"`
-	Port      int                 `json:"port" env:"PICOCLAW_CHANNELS_MAIXCAM_PORT"`
-	AllowFrom FlexibleStringSlice `json:"allow_from" env:"PICOCLAW_CHANNELS_MAIXCAM_ALLOW_FROM"`
+	Enabled   bool                `json:"enabled" env:"DRAGONSCALE_CHANNELS_MAIXCAM_ENABLED"`
+	Host      string              `json:"host" env:"DRAGONSCALE_CHANNELS_MAIXCAM_HOST"`
+	Port      int                 `json:"port" env:"DRAGONSCALE_CHANNELS_MAIXCAM_PORT"`
+	AllowFrom FlexibleStringSlice `json:"allow_from" env:"DRAGONSCALE_CHANNELS_MAIXCAM_ALLOW_FROM"`
 }
 
 type QQConfig struct {
-	Enabled   bool                `json:"enabled" env:"PICOCLAW_CHANNELS_QQ_ENABLED"`
-	AppID     string              `json:"app_id" env:"PICOCLAW_CHANNELS_QQ_APP_ID"`
-	AppSecret string              `json:"app_secret" env:"PICOCLAW_CHANNELS_QQ_APP_SECRET"`
-	AllowFrom FlexibleStringSlice `json:"allow_from" env:"PICOCLAW_CHANNELS_QQ_ALLOW_FROM"`
+	Enabled   bool                `json:"enabled" env:"DRAGONSCALE_CHANNELS_QQ_ENABLED"`
+	AppID     string              `json:"app_id" env:"DRAGONSCALE_CHANNELS_QQ_APP_ID"`
+	AppSecret string              `json:"app_secret" env:"DRAGONSCALE_CHANNELS_QQ_APP_SECRET"`
+	AllowFrom FlexibleStringSlice `json:"allow_from" env:"DRAGONSCALE_CHANNELS_QQ_ALLOW_FROM"`
 }
 
 type DingTalkConfig struct {
-	Enabled      bool                `json:"enabled" env:"PICOCLAW_CHANNELS_DINGTALK_ENABLED"`
-	ClientID     string              `json:"client_id" env:"PICOCLAW_CHANNELS_DINGTALK_CLIENT_ID"`
-	ClientSecret string              `json:"client_secret" env:"PICOCLAW_CHANNELS_DINGTALK_CLIENT_SECRET"`
-	AllowFrom    FlexibleStringSlice `json:"allow_from" env:"PICOCLAW_CHANNELS_DINGTALK_ALLOW_FROM"`
+	Enabled      bool                `json:"enabled" env:"DRAGONSCALE_CHANNELS_DINGTALK_ENABLED"`
+	ClientID     string              `json:"client_id" env:"DRAGONSCALE_CHANNELS_DINGTALK_CLIENT_ID"`
+	ClientSecret string              `json:"client_secret" env:"DRAGONSCALE_CHANNELS_DINGTALK_CLIENT_SECRET"`
+	AllowFrom    FlexibleStringSlice `json:"allow_from" env:"DRAGONSCALE_CHANNELS_DINGTALK_ALLOW_FROM"`
 }
 
 type SlackConfig struct {
-	Enabled   bool                `json:"enabled" env:"PICOCLAW_CHANNELS_SLACK_ENABLED"`
-	BotToken  string              `json:"bot_token" env:"PICOCLAW_CHANNELS_SLACK_BOT_TOKEN"`
-	AppToken  string              `json:"app_token" env:"PICOCLAW_CHANNELS_SLACK_APP_TOKEN"`
-	AllowFrom FlexibleStringSlice `json:"allow_from" env:"PICOCLAW_CHANNELS_SLACK_ALLOW_FROM"`
+	Enabled   bool                `json:"enabled" env:"DRAGONSCALE_CHANNELS_SLACK_ENABLED"`
+	BotToken  string              `json:"bot_token" env:"DRAGONSCALE_CHANNELS_SLACK_BOT_TOKEN"`
+	AppToken  string              `json:"app_token" env:"DRAGONSCALE_CHANNELS_SLACK_APP_TOKEN"`
+	AllowFrom FlexibleStringSlice `json:"allow_from" env:"DRAGONSCALE_CHANNELS_SLACK_ALLOW_FROM"`
 }
 
 type LINEConfig struct {
-	Enabled            bool                `json:"enabled" env:"PICOCLAW_CHANNELS_LINE_ENABLED"`
-	ChannelSecret      string              `json:"channel_secret" env:"PICOCLAW_CHANNELS_LINE_CHANNEL_SECRET"`
-	ChannelAccessToken string              `json:"channel_access_token" env:"PICOCLAW_CHANNELS_LINE_CHANNEL_ACCESS_TOKEN"`
-	WebhookHost        string              `json:"webhook_host" env:"PICOCLAW_CHANNELS_LINE_WEBHOOK_HOST"`
-	WebhookPort        int                 `json:"webhook_port" env:"PICOCLAW_CHANNELS_LINE_WEBHOOK_PORT"`
-	WebhookPath        string              `json:"webhook_path" env:"PICOCLAW_CHANNELS_LINE_WEBHOOK_PATH"`
-	AllowFrom          FlexibleStringSlice `json:"allow_from" env:"PICOCLAW_CHANNELS_LINE_ALLOW_FROM"`
+	Enabled            bool                `json:"enabled" env:"DRAGONSCALE_CHANNELS_LINE_ENABLED"`
+	ChannelSecret      string              `json:"channel_secret" env:"DRAGONSCALE_CHANNELS_LINE_CHANNEL_SECRET"`
+	ChannelAccessToken string              `json:"channel_access_token" env:"DRAGONSCALE_CHANNELS_LINE_CHANNEL_ACCESS_TOKEN"`
+	WebhookHost        string              `json:"webhook_host" env:"DRAGONSCALE_CHANNELS_LINE_WEBHOOK_HOST"`
+	WebhookPort        int                 `json:"webhook_port" env:"DRAGONSCALE_CHANNELS_LINE_WEBHOOK_PORT"`
+	WebhookPath        string              `json:"webhook_path" env:"DRAGONSCALE_CHANNELS_LINE_WEBHOOK_PATH"`
+	AllowFrom          FlexibleStringSlice `json:"allow_from" env:"DRAGONSCALE_CHANNELS_LINE_ALLOW_FROM"`
 }
 
 type OneBotConfig struct {
-	Enabled            bool                `json:"enabled" env:"PICOCLAW_CHANNELS_ONEBOT_ENABLED"`
-	WSUrl              string              `json:"ws_url" env:"PICOCLAW_CHANNELS_ONEBOT_WS_URL"`
-	AccessToken        string              `json:"access_token" env:"PICOCLAW_CHANNELS_ONEBOT_ACCESS_TOKEN"`
-	ReconnectInterval  int                 `json:"reconnect_interval" env:"PICOCLAW_CHANNELS_ONEBOT_RECONNECT_INTERVAL"`
-	GroupTriggerPrefix []string            `json:"group_trigger_prefix" env:"PICOCLAW_CHANNELS_ONEBOT_GROUP_TRIGGER_PREFIX"`
-	AllowFrom          FlexibleStringSlice `json:"allow_from" env:"PICOCLAW_CHANNELS_ONEBOT_ALLOW_FROM"`
+	Enabled            bool                `json:"enabled" env:"DRAGONSCALE_CHANNELS_ONEBOT_ENABLED"`
+	WSUrl              string              `json:"ws_url" env:"DRAGONSCALE_CHANNELS_ONEBOT_WS_URL"`
+	AccessToken        string              `json:"access_token" env:"DRAGONSCALE_CHANNELS_ONEBOT_ACCESS_TOKEN"`
+	ReconnectInterval  int                 `json:"reconnect_interval" env:"DRAGONSCALE_CHANNELS_ONEBOT_RECONNECT_INTERVAL"`
+	GroupTriggerPrefix []string            `json:"group_trigger_prefix" env:"DRAGONSCALE_CHANNELS_ONEBOT_GROUP_TRIGGER_PREFIX"`
+	AllowFrom          FlexibleStringSlice `json:"allow_from" env:"DRAGONSCALE_CHANNELS_ONEBOT_ALLOW_FROM"`
 }
 
 type HeartbeatConfig struct {
-	Enabled  bool `json:"enabled" env:"PICOCLAW_HEARTBEAT_ENABLED"`
-	Interval int  `json:"interval" env:"PICOCLAW_HEARTBEAT_INTERVAL"` // minutes, min 5
+	Enabled  bool `json:"enabled" env:"DRAGONSCALE_HEARTBEAT_ENABLED"`
+	Interval int  `json:"interval" env:"DRAGONSCALE_HEARTBEAT_INTERVAL"` // minutes, min 5
 }
 
 type DevicesConfig struct {
-	Enabled    bool `json:"enabled" env:"PICOCLAW_DEVICES_ENABLED"`
-	MonitorUSB bool `json:"monitor_usb" env:"PICOCLAW_DEVICES_MONITOR_USB"`
+	Enabled    bool `json:"enabled" env:"DRAGONSCALE_DEVICES_ENABLED"`
+	MonitorUSB bool `json:"monitor_usb" env:"DRAGONSCALE_DEVICES_MONITOR_USB"`
 }
 
 type ProvidersConfig struct {
@@ -255,40 +274,70 @@ type ProvidersConfig struct {
 	GitHubCopilot ProviderConfig       `json:"github_copilot"`
 }
 
+// ConfiguredNames returns the names of providers that have credentials set
+// (either an API key or an API base URL for local inference servers).
+func (p ProvidersConfig) ConfiguredNames() []string {
+	entries := []struct {
+		name string
+		key  string
+	}{
+		{"anthropic", p.Anthropic.APIKey},
+		{"openai", p.OpenAI.APIKey},
+		{"openrouter", p.OpenRouter.APIKey},
+		{"gemini", p.Gemini.APIKey},
+		{"groq", p.Groq.APIKey},
+		{"zhipu", p.Zhipu.APIKey},
+		{"deepseek", p.DeepSeek.APIKey},
+		{"moonshot", p.Moonshot.APIKey},
+		{"nvidia", p.Nvidia.APIKey},
+		{"shengsuanyun", p.ShengSuanYun.APIKey},
+		{"ollama", p.Ollama.APIBase},
+		{"vllm", p.VLLM.APIBase},
+		{"github_copilot", p.GitHubCopilot.APIKey},
+	}
+	var names []string
+	for _, e := range entries {
+		if e.key != "" {
+			names = append(names, e.name)
+		}
+	}
+	return names
+}
+
 type ProviderConfig struct {
-	APIKey      string `json:"api_key" env:"PICOCLAW_PROVIDERS_{{.Name}}_API_KEY"`
-	APIBase     string `json:"api_base" env:"PICOCLAW_PROVIDERS_{{.Name}}_API_BASE"`
-	Proxy       string `json:"proxy,omitzero" env:"PICOCLAW_PROVIDERS_{{.Name}}_PROXY"`
-	AuthMethod  string `json:"auth_method,omitzero" env:"PICOCLAW_PROVIDERS_{{.Name}}_AUTH_METHOD"`
-	Timeout     int    `json:"timeout,omitzero" env:"PICOCLAW_PROVIDERS_{{.Name}}_TIMEOUT"`           // seconds, 0 = default (120s)
-	ConnectMode string `json:"connect_mode,omitzero" env:"PICOCLAW_PROVIDERS_{{.Name}}_CONNECT_MODE"` // only for Github Copilot, `stdio` or `grpc`
+	APIKey      string `json:"api_key" env:"DRAGONSCALE_PROVIDERS_{{.Name}}_API_KEY"`
+	APIBase     string `json:"api_base" env:"DRAGONSCALE_PROVIDERS_{{.Name}}_API_BASE"`
+	Proxy       string `json:"proxy,omitzero" env:"DRAGONSCALE_PROVIDERS_{{.Name}}_PROXY"`
+	AuthMethod  string `json:"auth_method,omitzero" env:"DRAGONSCALE_PROVIDERS_{{.Name}}_AUTH_METHOD"`
+	Timeout     int    `json:"timeout,omitzero" env:"DRAGONSCALE_PROVIDERS_{{.Name}}_TIMEOUT"`           // seconds, 0 = default (120s)
+	ConnectMode string `json:"connect_mode,omitzero" env:"DRAGONSCALE_PROVIDERS_{{.Name}}_CONNECT_MODE"` // only for Github Copilot, `stdio` or `grpc`
 }
 
 type OpenAIProviderConfig struct {
 	ProviderConfig
-	WebSearch bool `json:"web_search" env:"PICOCLAW_PROVIDERS_OPENAI_WEB_SEARCH"`
+	WebSearch bool `json:"web_search" env:"DRAGONSCALE_PROVIDERS_OPENAI_WEB_SEARCH"`
 }
 
 type GatewayConfig struct {
-	Host string `json:"host" env:"PICOCLAW_GATEWAY_HOST"`
-	Port int    `json:"port" env:"PICOCLAW_GATEWAY_PORT"`
+	Host string `json:"host" env:"DRAGONSCALE_GATEWAY_HOST"`
+	Port int    `json:"port" env:"DRAGONSCALE_GATEWAY_PORT"`
 }
 
 type BraveConfig struct {
-	Enabled    bool   `json:"enabled" env:"PICOCLAW_TOOLS_WEB_BRAVE_ENABLED"`
-	APIKey     string `json:"api_key" env:"PICOCLAW_TOOLS_WEB_BRAVE_API_KEY"`
-	MaxResults int    `json:"max_results" env:"PICOCLAW_TOOLS_WEB_BRAVE_MAX_RESULTS"`
+	Enabled    bool   `json:"enabled" env:"DRAGONSCALE_TOOLS_WEB_BRAVE_ENABLED"`
+	APIKey     string `json:"api_key" env:"DRAGONSCALE_TOOLS_WEB_BRAVE_API_KEY"`
+	MaxResults int    `json:"max_results" env:"DRAGONSCALE_TOOLS_WEB_BRAVE_MAX_RESULTS"`
 }
 
 type DuckDuckGoConfig struct {
-	Enabled    bool `json:"enabled" env:"PICOCLAW_TOOLS_WEB_DUCKDUCKGO_ENABLED"`
-	MaxResults int  `json:"max_results" env:"PICOCLAW_TOOLS_WEB_DUCKDUCKGO_MAX_RESULTS"`
+	Enabled    bool `json:"enabled" env:"DRAGONSCALE_TOOLS_WEB_DUCKDUCKGO_ENABLED"`
+	MaxResults int  `json:"max_results" env:"DRAGONSCALE_TOOLS_WEB_DUCKDUCKGO_MAX_RESULTS"`
 }
 
 type PerplexityConfig struct {
-	Enabled    bool   `json:"enabled" env:"PICOCLAW_TOOLS_WEB_PERPLEXITY_ENABLED"`
-	APIKey     string `json:"api_key" env:"PICOCLAW_TOOLS_WEB_PERPLEXITY_API_KEY"`
-	MaxResults int    `json:"max_results" env:"PICOCLAW_TOOLS_WEB_PERPLEXITY_MAX_RESULTS"`
+	Enabled    bool   `json:"enabled" env:"DRAGONSCALE_TOOLS_WEB_PERPLEXITY_ENABLED"`
+	APIKey     string `json:"api_key" env:"DRAGONSCALE_TOOLS_WEB_PERPLEXITY_API_KEY"`
+	MaxResults int    `json:"max_results" env:"DRAGONSCALE_TOOLS_WEB_PERPLEXITY_MAX_RESULTS"`
 }
 
 type WebToolsConfig struct {
@@ -298,7 +347,7 @@ type WebToolsConfig struct {
 }
 
 type CronToolsConfig struct {
-	ExecTimeoutMinutes int `json:"exec_timeout_minutes" env:"PICOCLAW_TOOLS_CRON_EXEC_TIMEOUT_MINUTES"` // 0 means no timeout
+	ExecTimeoutMinutes int `json:"exec_timeout_minutes" env:"DRAGONSCALE_TOOLS_CRON_EXEC_TIMEOUT_MINUTES"` // 0 means no timeout
 }
 
 type ToolsConfig struct {
@@ -317,6 +366,12 @@ func DefaultConfig() *Config {
 				MaxTokens:         8192,
 				Temperature:       0.7,
 				MaxToolIterations: 20,
+				ContinuityRetention: ContinuityRetentionConfig{
+					MinMessages:         4,
+					MaxMessages:         24,
+					TargetContextRatio:  0.10,
+					FailureKeepMessages: 10,
+				},
 			},
 		},
 		Channels: ChannelsConfig{
@@ -493,6 +548,23 @@ func (c *Config) Validate() []string {
 		warnings = append(warnings, fmt.Sprintf("agents.defaults.max_tool_iterations=%d: should be > 0", c.Agents.Defaults.MaxToolIterations))
 	}
 
+	continuity := c.Agents.Defaults.ContinuityRetention
+	if continuity.MinMessages <= 0 {
+		warnings = append(warnings, fmt.Sprintf("agents.defaults.continuity_retention.min_messages=%d: should be > 0", continuity.MinMessages))
+	}
+	if continuity.MaxMessages <= 0 {
+		warnings = append(warnings, fmt.Sprintf("agents.defaults.continuity_retention.max_messages=%d: should be > 0", continuity.MaxMessages))
+	}
+	if continuity.MaxMessages > 0 && continuity.MinMessages > continuity.MaxMessages {
+		warnings = append(warnings, fmt.Sprintf("agents.defaults.continuity_retention.min_messages=%d exceeds max_messages=%d", continuity.MinMessages, continuity.MaxMessages))
+	}
+	if continuity.TargetContextRatio <= 0 || continuity.TargetContextRatio > 0.5 {
+		warnings = append(warnings, fmt.Sprintf("agents.defaults.continuity_retention.target_context_ratio=%.4f: expected (0, 0.5]", continuity.TargetContextRatio))
+	}
+	if continuity.FailureKeepMessages <= 0 {
+		warnings = append(warnings, fmt.Sprintf("agents.defaults.continuity_retention.failure_keep_messages=%d: should be > 0", continuity.FailureKeepMessages))
+	}
+
 	if c.Gateway.Port < 0 || c.Gateway.Port > 65535 {
 		warnings = append(warnings, fmt.Sprintf("gateway.port=%d: must be in range 1-65535", c.Gateway.Port))
 	}
@@ -569,7 +641,7 @@ func (c *Config) SandboxPath() string {
 	if dir, err := SandboxDir(); err == nil {
 		return dir
 	}
-	return expandHome("~/.local/share/picoclaw/sandbox")
+	return expandHome("~/.local/share/dragonscale/sandbox")
 }
 
 // RestrictToSandbox returns whether tool file operations should be restricted
@@ -602,7 +674,7 @@ func (c *Config) DBPath() string {
 	if p, err := DefaultDBPath(); err == nil {
 		return p
 	}
-	return expandHome("~/.local/share/picoclaw/picoclaw.db")
+	return expandHome("~/.local/share/dragonscale/dragonscale.db")
 }
 
 func (c *Config) GetAPIKey() string {
@@ -669,12 +741,12 @@ func expandHome(path string) string {
 
 // ─── XDG / platform path helpers ─────────────────────────────────────────────
 
-const appName = "picoclaw"
+const appName = "dragonscale"
 
 // ConfigDir returns the platform-appropriate user configuration directory for
-// picoclaw, following XDG Base Directory spec on Linux
-// (~/.config/picoclaw), Library/Application Support on macOS, and
-// %AppData%\picoclaw on Windows. The directory is created if it does not exist.
+// dragonscale, following XDG Base Directory spec on Linux
+// (~/.config/dragonscale), Library/Application Support on macOS, and
+// %AppData%\dragonscale on Windows. The directory is created if it does not exist.
 func ConfigDir() (string, error) {
 	base, err := os.UserConfigDir()
 	if err != nil {
@@ -687,10 +759,10 @@ func ConfigDir() (string, error) {
 	return dir, nil
 }
 
-// DataDir returns the platform-appropriate user data directory for picoclaw.
-// On Linux this respects XDG_DATA_HOME (default ~/.local/share/picoclaw).
-// On macOS it uses ~/Library/Application Support/picoclaw; on Windows
-// %LOCALAPPDATA%\picoclaw. The directory is created if it does not exist.
+// DataDir returns the platform-appropriate user data directory for dragonscale.
+// On Linux this respects XDG_DATA_HOME (default ~/.local/share/dragonscale).
+// On macOS it uses ~/Library/Application Support/dragonscale; on Windows
+// %LOCALAPPDATA%\dragonscale. The directory is created if it does not exist.
 func DataDir() (string, error) {
 	var base string
 	switch runtime.GOOS {
@@ -765,8 +837,8 @@ func SandboxDir() (string, error) {
 	return dir, nil
 }
 
-// CacheDir returns the platform-appropriate user cache directory for picoclaw
-// (XDG_CACHE_HOME on Linux → ~/.cache/picoclaw). The directory is created if
+// CacheDir returns the platform-appropriate user cache directory for dragonscale
+// (XDG_CACHE_HOME on Linux → ~/.cache/dragonscale). The directory is created if
 // it does not exist.
 func CacheDir() (string, error) {
 	base, err := os.UserCacheDir()
@@ -782,7 +854,7 @@ func CacheDir() (string, error) {
 
 // DefaultDBPath returns the canonical SQLite database path inside DataDir.
 // Callers that want to override this should check for a CLI flag or the
-// PICOCLAW_DB_PATH environment variable before falling back to this value.
+// DRAGONSCALE_DB_PATH environment variable before falling back to this value.
 func DefaultDBPath() (string, error) {
 	dataDir, err := DataDir()
 	if err != nil {
@@ -792,7 +864,7 @@ func DefaultDBPath() (string, error) {
 }
 
 // DefaultConfigPath returns the path to the primary JSON config file inside
-// ConfigDir (picoclaw/config.json).
+// ConfigDir (dragonscale/config.json).
 func DefaultConfigPath() (string, error) {
 	cfgDir, err := ConfigDir()
 	if err != nil {

@@ -2,20 +2,29 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	fantasy "charm.land/fantasy"
-	"github.com/sipeed/picoclaw/pkg/bus"
-	"github.com/sipeed/picoclaw/pkg/config"
-	"github.com/sipeed/picoclaw/pkg/tools"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/bus"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/config"
+	memsqlc "github.com/ZanzyTHEbar/dragonscale/pkg/memory/sqlc"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/messages"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/tools"
 )
 
 // mustNewAgentLoop wraps NewAgentLoop and fails the test on error.
 func mustNewAgentLoop(t *testing.T, cfg *config.Config, msgBus *bus.MessageBus, model fantasy.LanguageModel) *AgentLoop {
 	t.Helper()
+	if cfg != nil && cfg.Memory.DBPath == "" && strings.TrimSpace(cfg.Agents.Defaults.Workspace) != "" {
+		cfg.Memory.DBPath = filepath.Join(cfg.Agents.Defaults.Workspace, "agent-loop-test.db")
+	}
 	al, err := NewAgentLoop(context.Background(), cfg, msgBus, model)
 	if err != nil {
 		t.Fatalf("NewAgentLoop: %v", err)
@@ -61,6 +70,125 @@ func (m *mockLanguageModel) StreamObject(_ context.Context, _ fantasy.ObjectCall
 
 func (m *mockLanguageModel) Provider() string { return "mock" }
 func (m *mockLanguageModel) Model() string    { return "mock-model" }
+
+func TestContinuityKeepCount_UsesConfiguredPolicy(t *testing.T) {
+	buildHistory := func(n int, content string) []messages.Message {
+		history := make([]messages.Message, 0, n)
+		for i := 0; i < n; i++ {
+			role := "user"
+			if i%2 == 1 {
+				role = "assistant"
+			}
+			history = append(history, messages.Message{
+				Role:    role,
+				Content: content,
+			})
+		}
+		return history
+	}
+
+	cfg := config.DefaultConfig()
+	cfg.Agents.Defaults.ContinuityRetention.MinMessages = 3
+	cfg.Agents.Defaults.ContinuityRetention.MaxMessages = 7
+	cfg.Agents.Defaults.ContinuityRetention.TargetContextRatio = 0.01
+
+	al := &AgentLoop{
+		cfg:           cfg,
+		contextWindow: 256,
+	}
+
+	history := buildHistory(24, strings.Repeat("long message token payload ", 12))
+	keepSmallBudget := al.continuityKeepCount(history)
+	if keepSmallBudget != 3 {
+		t.Fatalf("expected keep count to respect min_messages=3 under tight budget, got %d", keepSmallBudget)
+	}
+
+	cfg.Agents.Defaults.ContinuityRetention.TargetContextRatio = 0.40
+	al.contextWindow = 8192
+	keepLargeBudget := al.continuityKeepCount(history)
+	if keepLargeBudget != 7 {
+		t.Fatalf("expected keep count to cap at max_messages=7 under large budget, got %d", keepLargeBudget)
+	}
+}
+
+func TestPrepareRuntimeState_ConcurrentSameSessionUsesSingleConversation(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				Model:             "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	model := newMockLanguageModel("")
+	al := mustNewAgentLoop(t, cfg, msgBus, model)
+	beforeConversations, err := al.queries.ListAgentConversations(context.Background(), memsqlc.ListAgentConversationsParams{
+		Limit: 10000,
+	})
+	if err != nil {
+		t.Fatalf("ListAgentConversations (before) failed: %v", err)
+	}
+	beforeCount := len(beforeConversations)
+
+	const workers = 12
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	conversationIDs := make(chan string, workers)
+	errorsCh := make(chan error, workers)
+
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			conversationID, _, prepareErr := al.prepareRuntimeState(context.Background(), "race-session")
+			if prepareErr != nil {
+				errorsCh <- prepareErr
+				return
+			}
+			conversationIDs <- conversationID.String()
+		}()
+	}
+
+	close(start)
+	wg.Wait()
+	close(errorsCh)
+	close(conversationIDs)
+
+	for prepareErr := range errorsCh {
+		if prepareErr != nil {
+			t.Fatalf("unexpected prepareRuntimeState error: %v", prepareErr)
+		}
+	}
+
+	uniqueConversationIDs := make(map[string]struct{})
+	for id := range conversationIDs {
+		uniqueConversationIDs[id] = struct{}{}
+	}
+	if len(uniqueConversationIDs) != 1 {
+		t.Fatalf("expected one conversation id, got %d (%v)", len(uniqueConversationIDs), uniqueConversationIDs)
+	}
+
+	conversations, err := al.queries.ListAgentConversations(context.Background(), memsqlc.ListAgentConversationsParams{
+		Limit: 10000,
+	})
+	if err != nil {
+		t.Fatalf("ListAgentConversations failed: %v", err)
+	}
+	if len(conversations) != beforeCount+1 {
+		t.Fatalf("expected conversation count delta +1, got before=%d after=%d", beforeCount, len(conversations))
+	}
+}
 
 func TestRecordLastChannel(t *testing.T) {
 	// Create temp workspace
@@ -180,6 +308,36 @@ func TestNewAgentLoop_StateInitialized(t *testing.T) {
 	// Verify state manager is initialized (delegate-backed via always-on memory)
 	if al.state == nil {
 		t.Error("Expected state manager to be initialized")
+	}
+}
+
+func TestNewAgentLoop_UnifiedKernelDependenciesInitialized(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				Model:             "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	model := newMockLanguageModel("")
+	al := mustNewAgentLoop(t, cfg, msgBus, model)
+
+	if !al.HasSecureBus() {
+		t.Fatal("Expected secure bus to be configured")
+	}
+	if !al.HasUnifiedRuntimeDeps() {
+		t.Fatal("Expected unified runtime dependencies to be configured")
 	}
 }
 
@@ -611,5 +769,163 @@ func TestResolveFinalContent_RecoversFromToolResultText(t *testing.T) {
 	}
 	if got != "progressive-test-marker" {
 		t.Fatalf("expected tool result text, got %q", got)
+	}
+}
+
+// TestForceCompression_PersistsProvenance verifies that emergency compression
+// cycles persist provenance metadata to the audit log for postmortem.
+func TestForceCompression_PersistsProvenance(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-provenance-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	// Small context window so we can exceed 95% threshold with modest history
+	// 1000 * 0.95 = 950 tokens; estimateTokens = chars*2/5, so need chars > 2375
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				Model:             "test-model",
+				MaxTokens:         1000,
+				MaxToolIterations: 10,
+				ContinuityRetention: config.ContinuityRetentionConfig{
+					MinMessages:         3,
+					MaxMessages:         8,
+					TargetContextRatio:  0.05,
+					FailureKeepMessages: 8,
+				},
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	model := newMockLanguageModel("Summary of conversation.")
+	al := mustNewAgentLoop(t, cfg, msgBus, model)
+	al.contextWindow = 1000
+	sessionKey := "provenance-test-session"
+
+	// Seed history to exceed critical threshold by a wide margin so this test
+	// stays deterministic across tokenizer/estimator behavior changes.
+	const charsPerMsg = 900
+	for i := 0; i < 16; i++ {
+		content := fmt.Sprintf("user message %d: %s", i, strings.Repeat("x", charsPerMsg-20))
+		al.sessions.AddMessage(sessionKey, "user", content)
+		al.sessions.AddMessage(sessionKey, "assistant", "short reply")
+	}
+	al.sessions.Save(sessionKey)
+	history := al.sessions.GetHistory(sessionKey)
+	keep := al.continuityKeepCount(history)
+	if len(history) <= keep {
+		t.Fatalf("test precondition failed: history=%d keep=%d", len(history), keep)
+	}
+	tokenEstimate := al.estimateTokens(history)
+	criticalThreshold := al.contextWindow * 95 / 100
+	if tokenEstimate <= criticalThreshold {
+		t.Fatalf("test precondition failed: token_estimate=%d threshold=%d", tokenEstimate, criticalThreshold)
+	}
+
+	ctx := context.Background()
+	al.forceCompression(ctx, sessionKey)
+
+	del := al.MemoryDelegate()
+	if del == nil {
+		t.Fatal("MemoryDelegate is nil")
+	}
+	entries, err := del.ListAuditEntriesByAction(ctx, "dragonscale", "emergency_compression", 50)
+	if err != nil {
+		t.Fatalf("ListAuditEntriesByAction: %v", err)
+	}
+	matching := make([]EmergencyProvenance, 0, len(entries))
+	for _, entry := range entries {
+		var prov EmergencyProvenance
+		if err := json.Unmarshal([]byte(entry.Input), &prov); err != nil {
+			continue
+		}
+		if prov.SessionKey == sessionKey {
+			matching = append(matching, prov)
+		}
+	}
+	if len(matching) == 0 {
+		t.Fatal("Expected at least one emergency_compression audit entry")
+	}
+
+	// Verify metadata shape: session_key, cycle, token_estimate, critical_budget
+	prov := matching[0]
+	if prov.SessionKey != sessionKey {
+		t.Errorf("session_key: want %q, got %q", sessionKey, prov.SessionKey)
+	}
+	if prov.Cycle < 1 || prov.Cycle > 3 {
+		t.Errorf("cycle: want 1..3, got %d", prov.Cycle)
+	}
+	if prov.TokenEstimate <= 0 {
+		t.Errorf("token_estimate: want > 0, got %d", prov.TokenEstimate)
+	}
+	if prov.CriticalBudget != 950 {
+		t.Errorf("critical_budget: want 950, got %d", prov.CriticalBudget)
+	}
+	if prov.HistoryMsgCount < 8 {
+		t.Errorf("history_msg_count: want >= 8, got %d", prov.HistoryMsgCount)
+	}
+}
+
+func TestPersistOversizedRecoveryRefs_CreatesRecoverableReferences(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-recovery-ref-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				Model:             "test-model",
+				MaxTokens:         2048,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	model := newMockLanguageModel("ok")
+	al := mustNewAgentLoop(t, cfg, msgBus, model)
+
+	omitted := []oversizedRecoveryCandidate{
+		{
+			Message: messages.Message{
+				Role:    "user",
+				Content: "omitted oversized content for recovery",
+			},
+			OriginalIndex: 2,
+			TokenEstimate: 9999,
+		},
+	}
+
+	refs, err := al.persistOversizedRecoveryRefs(context.Background(), "recovery-session", omitted)
+	if err != nil {
+		t.Fatalf("persistOversizedRecoveryRefs failed: %v", err)
+	}
+	if len(refs) != 1 {
+		t.Fatalf("expected one recovery ref, got %d", len(refs))
+	}
+
+	dagTool := tools.NewDagExpandTool(tools.DAGToolDeps{
+		Delegate: al.MemoryDelegate(),
+		AgentID:  "dragonscale",
+		SessionFn: func() string {
+			return "recovery-session"
+		},
+	})
+	res := dagTool.Execute(context.Background(), map[string]interface{}{
+		"node_id":     refs[0],
+		"session_key": "recovery-session",
+	})
+	if res.IsError {
+		t.Fatalf("expected recovery ref expansion to succeed, got: %s", res.ForLLM)
+	}
+	if !strings.Contains(res.ForLLM, "omitted oversized content for recovery") {
+		t.Fatalf("expected recovered content in output, got: %s", res.ForLLM)
 	}
 }

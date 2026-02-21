@@ -3,69 +3,150 @@ package tools
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
 	fantasy "charm.land/fantasy"
-	"github.com/sipeed/picoclaw/pkg/bus"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/bus"
 )
 
 type SubagentTask struct {
-	ID            string
-	Task          string
-	Label         string
-	OriginChannel string
-	OriginChatID  string
-	Status        string
-	Result        string
-	Created       int64
+	ID             string
+	ParentTaskID   string
+	Depth          int
+	Task           string
+	Label          string
+	DelegatedScope string
+	KeptWork       string
+	OriginChannel  string
+	OriginChatID   string
+	Status         string
+	Result         string
+	Created        int64
 }
 
 // RunLoopFunc executes an agent tool loop. Injected from pkg/agent to break
 // the import cycle between pkg/tools and pkg/fantasy.
 type RunLoopFunc func(ctx context.Context, config ToolLoopConfig, systemPrompt, userPrompt, channel, chatID string) (*ToolLoopResult, error)
 
+type delegationCtxKey string
+
+const (
+	delegationTaskIDKey delegationCtxKey = "delegation_task_id"
+	delegationDepthKey  delegationCtxKey = "delegation_depth"
+)
+
+func delegationTaskIDFromContext(ctx context.Context) string {
+	if v, ok := ctx.Value(delegationTaskIDKey).(string); ok {
+		return v
+	}
+	return ""
+}
+
+func delegationDepthFromContext(ctx context.Context) int {
+	if v, ok := ctx.Value(delegationDepthKey).(int); ok {
+		return v
+	}
+	return 0
+}
+
+func withDelegationContext(ctx context.Context, taskID string, depth int) context.Context {
+	ctx = context.WithValue(ctx, delegationTaskIDKey, taskID)
+	ctx = context.WithValue(ctx, delegationDepthKey, depth)
+	return ctx
+}
+
+// DelegationAuditEvent captures lineage and outcomes for delegated work.
+type DelegationAuditEvent struct {
+	TaskID         string
+	ParentTaskID   string
+	Mode           string
+	Depth          int
+	Status         string
+	Label          string
+	DelegatedScope string
+	KeptWork       string
+	Iterations     int
+	ResultChars    int
+	Error          string
+	OriginChannel  string
+	OriginChatID   string
+}
+
 type SubagentManager struct {
-	tasks         map[string]*SubagentTask
-	mu            sync.RWMutex
-	model         fantasy.LanguageModel
-	defaultModel  string
-	bus           *bus.MessageBus
-	workspace     string
-	tools         *ToolRegistry
-	maxIterations int
-	nextID        int
-	runLoop       RunLoopFunc
+	tasks          map[string]*SubagentTask
+	mu             sync.RWMutex
+	model          fantasy.LanguageModel
+	defaultModel   string
+	bus            *bus.MessageBus
+	workspace      string
+	tools          *ToolRegistry
+	maxIterations  int
+	maxDepth       int
+	maxFanout      int
+	activeChildren map[string]int
+	nextID         int
+	runLoop        RunLoopFunc
+	auditHook      func(context.Context, DelegationAuditEvent)
 }
 
 func NewSubagentManager(model fantasy.LanguageModel, defaultModel, workspace string, bus *bus.MessageBus) *SubagentManager {
 	return &SubagentManager{
-		tasks:         make(map[string]*SubagentTask),
-		model:         model,
-		defaultModel:  defaultModel,
-		bus:           bus,
-		workspace:     workspace,
-		tools:         NewToolRegistry(),
-		maxIterations: 10,
-		nextID:        1,
+		tasks:          make(map[string]*SubagentTask),
+		model:          model,
+		defaultModel:   defaultModel,
+		bus:            bus,
+		workspace:      workspace,
+		tools:          NewToolRegistry(),
+		maxIterations:  10,
+		maxDepth:       3,
+		maxFanout:      4,
+		activeChildren: make(map[string]int),
+		nextID:         1,
 	}
 }
 
 // SetRunLoop injects the loop runner function. Must be called before any
-// subagent execution. When nil, falls back to the local RunToolLoop.
+// subagent execution.
 func (sm *SubagentManager) SetRunLoop(fn RunLoopFunc) {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 	sm.runLoop = fn
 }
 
+// SetDelegationLimits configures nested delegation guardrails.
+func (sm *SubagentManager) SetDelegationLimits(maxDepth, maxFanout int) {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	if maxDepth > 0 {
+		sm.maxDepth = maxDepth
+	}
+	if maxFanout > 0 {
+		sm.maxFanout = maxFanout
+	}
+}
+
+// SetAuditHook registers a callback for delegation lineage/events.
+func (sm *SubagentManager) SetAuditHook(hook func(context.Context, DelegationAuditEvent)) {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	sm.auditHook = hook
+}
+
+func (sm *SubagentManager) emitAudit(ctx context.Context, evt DelegationAuditEvent) {
+	sm.mu.RLock()
+	hook := sm.auditHook
+	sm.mu.RUnlock()
+	if hook != nil {
+		hook(ctx, evt)
+	}
+}
+
 func (sm *SubagentManager) getRunLoop() RunLoopFunc {
 	sm.mu.RLock()
 	defer sm.mu.RUnlock()
-	if sm.runLoop != nil {
-		return sm.runLoop
-	}
-	return RunToolLoop
+	return sm.runLoop
 }
 
 // SetTools sets the tool registry for subagent execution.
@@ -82,23 +163,66 @@ func (sm *SubagentManager) RegisterTool(tool Tool) {
 	sm.tools.Register(tool)
 }
 
-func (sm *SubagentManager) Spawn(ctx context.Context, task, label, originChannel, originChatID string, callback AsyncCallback) (string, error) {
+func (sm *SubagentManager) Spawn(ctx context.Context, task, label, delegatedScope, keptWork, originChannel, originChatID string, callback AsyncCallback) (string, error) {
 	sm.mu.Lock()
-	defer sm.mu.Unlock()
+	parentTaskID := delegationTaskIDFromContext(ctx)
+	if parentTaskID == "" {
+		parentTaskID = "root"
+	}
+	parentDepth := delegationDepthFromContext(ctx)
+	childDepth := parentDepth + 1
+
+	if childDepth > sm.maxDepth {
+		sm.mu.Unlock()
+		return "", fmt.Errorf("delegation depth exceeded: %d > %d", childDepth, sm.maxDepth)
+	}
+	if sm.activeChildren[parentTaskID] >= sm.maxFanout {
+		sm.mu.Unlock()
+		return "", fmt.Errorf("delegation fanout exceeded for %s: %d >= %d", parentTaskID, sm.activeChildren[parentTaskID], sm.maxFanout)
+	}
+	if parentDepth > 0 {
+		if strings.TrimSpace(delegatedScope) == "" || strings.TrimSpace(keptWork) == "" {
+			sm.mu.Unlock()
+			return "", fmt.Errorf("nested delegation requires delegated_scope and kept_work")
+		}
+	}
+	if sm.runLoop == nil {
+		sm.mu.Unlock()
+		return "", ErrRunLoopNotConfigured
+	}
 
 	taskID := fmt.Sprintf("subagent-%d", sm.nextID)
 	sm.nextID++
+	sm.activeChildren[parentTaskID]++
 
 	subagentTask := &SubagentTask{
-		ID:            taskID,
-		Task:          task,
-		Label:         label,
-		OriginChannel: originChannel,
-		OriginChatID:  originChatID,
-		Status:        "running",
-		Created:       time.Now().UnixMilli(),
+		ID:             taskID,
+		ParentTaskID:   parentTaskID,
+		Depth:          childDepth,
+		Task:           task,
+		Label:          label,
+		DelegatedScope: delegatedScope,
+		KeptWork:       keptWork,
+		OriginChannel:  originChannel,
+		OriginChatID:   originChatID,
+		Status:         "running",
+		Created:        time.Now().UnixMilli(),
 	}
 	sm.tasks[taskID] = subagentTask
+	sm.mu.Unlock()
+
+	sm.emitAudit(ctx, DelegationAuditEvent{
+		TaskID:         taskID,
+		ParentTaskID:   parentTaskID,
+		Mode:           "spawn",
+		Depth:          childDepth,
+		Status:         "created",
+		Label:          label,
+		DelegatedScope: delegatedScope,
+		KeptWork:       keptWork,
+		OriginChannel:  originChannel,
+		OriginChatID:   originChatID,
+	})
 
 	// Start task in background with context cancellation support
 	go sm.runTask(ctx, subagentTask, callback)
@@ -110,12 +234,10 @@ func (sm *SubagentManager) Spawn(ctx context.Context, task, label, originChannel
 }
 
 func (sm *SubagentManager) runTask(ctx context.Context, task *SubagentTask, callback AsyncCallback) {
-	task.Status = "running"
-	task.Created = time.Now().UnixMilli()
-
-	systemPrompt := `You are a subagent. Complete the given task independently and report the result.
-You have access to tools - use them as needed to complete your task.
-After completing the task, provide a clear summary of what was done.`
+	systemPrompt := `You are a subagent operating under the same runtime discipline as the main agent.
+Use tools for actions. Do not claim actions without tool execution.
+When discovering tools, call discovered tools directly; use tool_call only as fallback.
+Complete the task independently and provide a clear summary of what was done.`
 
 	// Check if context is already cancelled before starting
 	select {
@@ -135,18 +257,51 @@ After completing the task, provide a clear summary of what was done.`
 	sm.mu.RUnlock()
 
 	runLoop := sm.getRunLoop()
-	loopResult, err := runLoop(ctx, ToolLoopConfig{
-		Model:         sm.model,
-		ModelID:       sm.defaultModel,
-		Tools:         tools,
-		Bus:           sm.bus,
-		MaxIterations: maxIter,
-	}, systemPrompt, task.Task, task.OriginChannel, task.OriginChatID)
+	var loopResult *ToolLoopResult
+	var err error
+	if runLoop == nil {
+		err = ErrRunLoopNotConfigured
+	} else {
+		taskCtx := withDelegationContext(ctx, task.ID, task.Depth)
+		loopResult, err = runLoop(taskCtx, ToolLoopConfig{
+			Model:         sm.model,
+			ModelID:       sm.defaultModel,
+			Tools:         tools,
+			Bus:           sm.bus,
+			MaxIterations: maxIter,
+		}, systemPrompt, task.Task, task.OriginChannel, task.OriginChatID)
+	}
 
 	sm.mu.Lock()
 	var result *ToolResult
+	iterations := 0
+	resultChars := 0
+	errText := ""
+	finalStatus := task.Status
 	defer func() {
+		if n := sm.activeChildren[task.ParentTaskID]; n <= 1 {
+			delete(sm.activeChildren, task.ParentTaskID)
+		} else {
+			sm.activeChildren[task.ParentTaskID] = n - 1
+		}
+		finalStatus = task.Status
+		resultChars = len(task.Result)
 		sm.mu.Unlock()
+		sm.emitAudit(ctx, DelegationAuditEvent{
+			TaskID:         task.ID,
+			ParentTaskID:   task.ParentTaskID,
+			Mode:           "spawn",
+			Depth:          task.Depth,
+			Status:         finalStatus,
+			Label:          task.Label,
+			DelegatedScope: task.DelegatedScope,
+			KeptWork:       task.KeptWork,
+			Iterations:     iterations,
+			ResultChars:    resultChars,
+			Error:          errText,
+			OriginChannel:  task.OriginChannel,
+			OriginChatID:   task.OriginChatID,
+		})
 		if callback != nil && result != nil {
 			callback(ctx, result)
 		}
@@ -155,6 +310,7 @@ After completing the task, provide a clear summary of what was done.`
 	if err != nil {
 		task.Status = "failed"
 		task.Result = fmt.Sprintf("Error: %v", err)
+		errText = err.Error()
 		if ctx.Err() != nil {
 			task.Status = "cancelled"
 			task.Result = "Task cancelled during execution"
@@ -170,6 +326,7 @@ After completing the task, provide a clear summary of what was done.`
 	} else {
 		task.Status = "completed"
 		task.Result = loopResult.Content
+		iterations = loopResult.Iterations
 		result = &ToolResult{
 			ForLLM:  fmt.Sprintf("Subagent '%s' completed (iterations: %d): %s", task.Label, loopResult.Iterations, loopResult.Content),
 			ForUser: loopResult.Content,
@@ -195,7 +352,11 @@ func (sm *SubagentManager) GetTask(taskID string) (*SubagentTask, bool) {
 	sm.mu.RLock()
 	defer sm.mu.RUnlock()
 	task, ok := sm.tasks[taskID]
-	return task, ok
+	if !ok || task == nil {
+		return nil, false
+	}
+	copied := *task
+	return &copied, true
 }
 
 func (sm *SubagentManager) ListTasks() []*SubagentTask {
@@ -204,7 +365,11 @@ func (sm *SubagentManager) ListTasks() []*SubagentTask {
 
 	tasks := make([]*SubagentTask, 0, len(sm.tasks))
 	for _, task := range sm.tasks {
-		tasks = append(tasks, task)
+		if task == nil {
+			continue
+		}
+		copied := *task
+		tasks = append(tasks, &copied)
 	}
 	return tasks
 }
@@ -244,6 +409,14 @@ func (t *SubagentTool) Parameters() map[string]interface{} {
 				"type":        "string",
 				"description": "Optional short label for the task (for display)",
 			},
+			"delegated_scope": map[string]interface{}{
+				"type":        "string",
+				"description": "What part of the parent task is being delegated. Required for nested delegation.",
+			},
+			"kept_work": map[string]interface{}{
+				"type":        "string",
+				"description": "What work remains with the delegator. Required for nested delegation.",
+			},
 		},
 		"required": []string{"task"},
 	}
@@ -261,21 +434,73 @@ func (t *SubagentTool) Execute(ctx context.Context, args map[string]interface{})
 	}
 
 	label, _ := args["label"].(string)
+	delegatedScope, _ := args["delegated_scope"].(string)
+	keptWork, _ := args["kept_work"].(string)
 
 	if t.manager == nil {
 		return ErrorResult("Subagent manager not configured").WithError(fmt.Errorf("manager is nil"))
 	}
 
-	systemPrompt := "You are a subagent. Complete the given task independently and provide a clear, concise result."
-
 	sm := t.manager
+	parentTaskID := delegationTaskIDFromContext(ctx)
+	if parentTaskID == "" {
+		parentTaskID = "root"
+	}
+	parentDepth := delegationDepthFromContext(ctx)
+	childDepth := parentDepth + 1
 	sm.mu.RLock()
 	tools := sm.tools
 	maxIter := sm.maxIterations
+	maxDepth := sm.maxDepth
 	sm.mu.RUnlock()
+	if childDepth > maxDepth {
+		return ErrorResult(fmt.Sprintf("delegation depth exceeded: %d > %d", childDepth, maxDepth))
+	}
+	if parentDepth > 0 {
+		if strings.TrimSpace(delegatedScope) == "" || strings.TrimSpace(keptWork) == "" {
+			return ErrorResult("nested delegation requires delegated_scope and kept_work")
+		}
+	}
+
+	systemPrompt := "You are a subagent operating with main-loop control flow. Execute actions via tools, call discovered tools directly, and provide a clear concise result."
+
+	sm.mu.Lock()
+	if sm.activeChildren[parentTaskID] >= sm.maxFanout {
+		sm.mu.Unlock()
+		return ErrorResult(fmt.Sprintf("delegation fanout exceeded for %s: %d >= %d", parentTaskID, sm.activeChildren[parentTaskID], sm.maxFanout))
+	}
+	sm.activeChildren[parentTaskID]++
+	sm.mu.Unlock()
+	defer func() {
+		sm.mu.Lock()
+		if n := sm.activeChildren[parentTaskID]; n <= 1 {
+			delete(sm.activeChildren, parentTaskID)
+		} else {
+			sm.activeChildren[parentTaskID] = n - 1
+		}
+		sm.mu.Unlock()
+	}()
+
+	taskID := fmt.Sprintf("subagent-sync-%d", time.Now().UnixNano())
+	taskCtx := withDelegationContext(ctx, taskID, childDepth)
+	sm.emitAudit(ctx, DelegationAuditEvent{
+		TaskID:         taskID,
+		ParentTaskID:   parentTaskID,
+		Mode:           "sync",
+		Depth:          childDepth,
+		Status:         "created",
+		Label:          label,
+		DelegatedScope: delegatedScope,
+		KeptWork:       keptWork,
+		OriginChannel:  t.originChannel,
+		OriginChatID:   t.originChatID,
+	})
 
 	runLoop := sm.getRunLoop()
-	loopResult, err := runLoop(ctx, ToolLoopConfig{
+	if runLoop == nil {
+		return ErrorResult("Subagent runtime is not configured").WithError(ErrRunLoopNotConfigured)
+	}
+	loopResult, err := runLoop(taskCtx, ToolLoopConfig{
 		Model:         sm.model,
 		ModelID:       sm.defaultModel,
 		Tools:         tools,
@@ -284,6 +509,19 @@ func (t *SubagentTool) Execute(ctx context.Context, args map[string]interface{})
 	}, systemPrompt, task, t.originChannel, t.originChatID)
 
 	if err != nil {
+		sm.emitAudit(ctx, DelegationAuditEvent{
+			TaskID:         taskID,
+			ParentTaskID:   parentTaskID,
+			Mode:           "sync",
+			Depth:          childDepth,
+			Status:         "failed",
+			Label:          label,
+			DelegatedScope: delegatedScope,
+			KeptWork:       keptWork,
+			Error:          err.Error(),
+			OriginChannel:  t.originChannel,
+			OriginChatID:   t.originChatID,
+		})
 		return ErrorResult(fmt.Sprintf("Subagent execution failed: %v", err)).WithError(err)
 	}
 
@@ -301,6 +539,20 @@ func (t *SubagentTool) Execute(ctx context.Context, args map[string]interface{})
 	}
 	llmContent := fmt.Sprintf("Subagent task completed:\nLabel: %s\nIterations: %d\nResult: %s",
 		labelStr, loopResult.Iterations, loopResult.Content)
+	sm.emitAudit(ctx, DelegationAuditEvent{
+		TaskID:         taskID,
+		ParentTaskID:   parentTaskID,
+		Mode:           "sync",
+		Depth:          childDepth,
+		Status:         "completed",
+		Label:          label,
+		DelegatedScope: delegatedScope,
+		KeptWork:       keptWork,
+		Iterations:     loopResult.Iterations,
+		ResultChars:    len(loopResult.Content),
+		OriginChannel:  t.originChannel,
+		OriginChatID:   t.originChatID,
+	})
 
 	return &ToolResult{
 		ForLLM:  llmContent,

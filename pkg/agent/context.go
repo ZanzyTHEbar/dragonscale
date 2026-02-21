@@ -9,12 +9,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sipeed/picoclaw/pkg/config"
-	"github.com/sipeed/picoclaw/pkg/logger"
-	"github.com/sipeed/picoclaw/pkg/memory"
-	"github.com/sipeed/picoclaw/pkg/messages"
-	"github.com/sipeed/picoclaw/pkg/skills"
-	"github.com/sipeed/picoclaw/pkg/tools"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/config"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/logger"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/memory"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/memory/observation"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/messages"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/skills"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/tools"
 )
 
 type ContextBuilder struct {
@@ -37,7 +38,7 @@ func NewContextBuilder(workspace string) *ContextBuilder {
 		primarySkillsDir = dir
 	}
 
-	// Global skills: ~/.config/picoclaw/skills (user-level overrides).
+	// Global skills: ~/.config/dragonscale/skills (user-level overrides).
 	globalSkillsDir := ""
 	if dir, err := config.ConfigDir(); err == nil {
 		globalSkillsDir = filepath.Join(dir, "skills")
@@ -99,9 +100,9 @@ func (cb *ContextBuilder) getIdentity() string {
 	// Build tools section dynamically
 	toolsSection := cb.buildToolsSection()
 
-	return fmt.Sprintf(`# picoclaw 🦞
+	return fmt.Sprintf(`# dragonscale 🦞
 
-You are picoclaw, a helpful AI assistant.
+You are dragonscale, a helpful AI assistant.
 
 ## Current Time
 %s
@@ -153,12 +154,6 @@ func (cb *ContextBuilder) buildToolsSection() string {
 	return sb.String()
 }
 
-// roughTokenEstimate gives a conservative char-to-token ratio for budget checks.
-// ~4 chars per token for English text is a standard heuristic.
-// FIXME: This is a rough estimate and may not be accurate for all languages.
-// FIXME: Implement a proper token estimator.
-const charsPerToken = 4
-
 func (cb *ContextBuilder) BuildSystemPrompt() string {
 	type section struct {
 		name     string
@@ -183,8 +178,8 @@ func (cb *ContextBuilder) BuildSystemPrompt() string {
 
 The following skills extend your capabilities. To use a skill:
 1. Use **skill_search** to find relevant skills by keyword
-2. Use **skill_read** via tool_call to load the full skill content
-3. Use **skill_traverse** via tool_call to explore related skills
+2. Call **skill_read** directly to load the full skill content
+3. Call **skill_traverse** directly to explore related skills
 
 Do NOT assume skill content — always load before applying.
 
@@ -215,23 +210,25 @@ Do NOT assume skill content — always load before applying.
 
 	// Token budget enforcement: if we exceed ~40% of context window for the
 	// system prompt, trim lowest-priority sections first.
-	budgetChars := cb.tokenBudgetChars()
-	totalChars := 0
-	for _, s := range sections {
-		totalChars += len(s.content)
+	budgetTokens := cb.tokenBudgetTokens()
+	totalTokens := 0
+	sectionTokens := make([]int, len(sections))
+	for i, s := range sections {
+		sectionTokens[i] = observation.EstimateTokens(s.content)
+		totalTokens += sectionTokens[i]
 	}
 
-	if budgetChars > 0 && totalChars > budgetChars {
+	if budgetTokens > 0 && totalTokens > budgetTokens {
 		logger.WarnCF("context", "System prompt exceeds token budget, trimming low-priority sections",
 			map[string]interface{}{
-				"total_chars":  totalChars,
-				"budget_chars": budgetChars,
-				"sections":     len(sections),
+				"total_tokens":  totalTokens,
+				"budget_tokens": budgetTokens,
+				"sections":      len(sections),
 			})
 		// Trim from lowest priority (highest number) first
-		for i := len(sections) - 1; i >= 0 && totalChars > budgetChars; i-- {
+		for i := len(sections) - 1; i >= 0 && totalTokens > budgetTokens; i-- {
 			if sections[i].priority >= 5 { // only trim P5+ (knowledge, dag)
-				totalChars -= len(sections[i].content)
+				totalTokens -= sectionTokens[i]
 				sections[i].content = ""
 			}
 		}
@@ -247,7 +244,7 @@ Do NOT assume skill content — always load before applying.
 	prompt := strings.Join(parts, "\n\n---\n\n")
 
 	// Log token estimate for observability
-	tokenEst := len(prompt) / charsPerToken
+	tokenEst := observation.EstimateTokens(prompt)
 	logger.DebugCF("context", "System prompt token estimate",
 		map[string]interface{}{
 			"chars":      len(prompt),
@@ -258,14 +255,14 @@ Do NOT assume skill content — always load before applying.
 	return prompt
 }
 
-// tokenBudgetChars returns the maximum character count for the system prompt,
+// tokenBudgetTokens returns the maximum token count for the system prompt,
 // derived from the context window size. Returns 0 if no limit is configured.
-func (cb *ContextBuilder) tokenBudgetChars() int {
+func (cb *ContextBuilder) tokenBudgetTokens() int {
 	if cb.contextWindow <= 0 {
 		return 0
 	}
 	// Reserve ~40% of context window for system prompt
-	return int(float64(cb.contextWindow) * 0.4 * charsPerToken)
+	return int(float64(cb.contextWindow) * 0.4)
 }
 
 func (cb *ContextBuilder) LoadBootstrapFiles() string {
@@ -276,7 +273,7 @@ func (cb *ContextBuilder) LoadBootstrapFiles() string {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	docs, err := cb.delegate.ListDocumentsByCategory(ctx, "picoclaw", "bootstrap")
+	docs, err := cb.delegate.ListDocumentsByCategory(ctx, "dragonscale", "bootstrap")
 	if err != nil || len(docs) == 0 {
 		return ""
 	}
@@ -302,7 +299,7 @@ func (cb *ContextBuilder) buildWorkingContextSection() string {
 	var parts []string
 
 	// Inject working context (hot tier)
-	wc, err := cb.memoryStore.GetWorkingContext(ctx, "picoclaw", "default")
+	wc, err := cb.memoryStore.GetWorkingContext(ctx, "dragonscale", "default")
 	if err == nil && wc != "" {
 		parts = append(parts, "## Working Context\n\n"+wc)
 	}

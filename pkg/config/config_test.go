@@ -53,6 +53,23 @@ func TestDefaultConfig_MaxToolIterations(t *testing.T) {
 	}
 }
 
+func TestDefaultConfig_ContinuityRetention(t *testing.T) {
+	cfg := DefaultConfig()
+
+	if cfg.Agents.Defaults.ContinuityRetention.MinMessages <= 0 {
+		t.Error("ContinuityRetention.MinMessages should be > 0")
+	}
+	if cfg.Agents.Defaults.ContinuityRetention.MaxMessages < cfg.Agents.Defaults.ContinuityRetention.MinMessages {
+		t.Error("ContinuityRetention.MaxMessages should be >= MinMessages")
+	}
+	if cfg.Agents.Defaults.ContinuityRetention.TargetContextRatio <= 0 {
+		t.Error("ContinuityRetention.TargetContextRatio should be > 0")
+	}
+	if cfg.Agents.Defaults.ContinuityRetention.FailureKeepMessages < cfg.Agents.Defaults.ContinuityRetention.MinMessages {
+		t.Error("ContinuityRetention.FailureKeepMessages should be >= MinMessages")
+	}
+}
+
 // TestDefaultConfig_Temperature verifies temperature has default value
 func TestDefaultConfig_Temperature(t *testing.T) {
 	cfg := DefaultConfig()
@@ -297,6 +314,26 @@ func TestValidate_MemoryConfig(t *testing.T) {
 				t.Errorf("expected warning containing %q, got: %v", tt.wantWarn, warnings)
 			}
 		})
+	}
+}
+
+func TestValidate_ContinuityRetentionConfig(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Agents.Defaults.ContinuityRetention.MinMessages = 8
+	cfg.Agents.Defaults.ContinuityRetention.MaxMessages = 4
+	cfg.Agents.Defaults.ContinuityRetention.TargetContextRatio = 0
+	cfg.Agents.Defaults.ContinuityRetention.FailureKeepMessages = 0
+
+	warnings := cfg.Validate()
+	joined := strings.Join(warnings, "\n")
+	if !strings.Contains(joined, "continuity_retention.min_messages") {
+		t.Fatalf("expected continuity retention min/max warning, got: %v", warnings)
+	}
+	if !strings.Contains(joined, "continuity_retention.target_context_ratio") {
+		t.Fatalf("expected continuity retention ratio warning, got: %v", warnings)
+	}
+	if !strings.Contains(joined, "continuity_retention.failure_keep_messages") {
+		t.Fatalf("expected continuity retention failure keep warning, got: %v", warnings)
 	}
 }
 
