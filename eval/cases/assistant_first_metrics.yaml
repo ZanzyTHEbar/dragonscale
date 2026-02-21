@@ -1,0 +1,65 @@
+# Assistant-First Metric-Oriented Eval Cases
+# These are proxy metrics for commitment miss rate, reminder latency,
+# proactive usefulness, and continuity quality.
+
+- description: "metric proxy: commitment miss-rate (capture completeness)"
+  vars:
+    prompt: "Track these commitments exactly: send rent receipt tonight, book vet appointment tomorrow, and submit sprint notes by Friday. Return a commitment register and verification checklist."
+  assert:
+    - type: javascript
+      value: |
+        const trace = JSON.parse(output);
+        if (trace.error && !trace.output) return { pass: false, score: 0, reason: 'crashed: ' + trace.error };
+        const out = (trace.output || '').toLowerCase();
+        const captured = [
+          out.includes('rent'),
+          out.includes('vet'),
+          out.includes('sprint notes') || out.includes('notes')
+        ].filter(Boolean).length;
+        const missRate = 1 - (captured / 3);
+        const pass = captured >= 2;
+        return { pass, score: captured / 3, reason: `captured=${captured}/3, miss_rate_proxy=${missRate.toFixed(2)}` };
+
+- description: "metric proxy: reminder latency (first reminder timing specificity)"
+  vars:
+    prompt: "I must send a proposal in 4 hours. Give me a reminder schedule and specify when the first reminder should fire."
+  assert:
+    - type: javascript
+      value: |
+        const trace = JSON.parse(output);
+        if (trace.error && !trace.output) return { pass: false, score: 0, reason: 'crashed: ' + trace.error };
+        const out = (trace.output || '').toLowerCase();
+        const hasFirstReminder = out.includes('first reminder') || out.includes('first check') || out.includes('first alert');
+        const hasTiming = out.includes('hour') || out.includes('min') || out.includes('30') || out.includes('15');
+        const pass = hasFirstReminder && hasTiming;
+        return { pass, score: pass ? 1.0 : (hasTiming ? 0.5 : 0.0), reason: `first_reminder=${hasFirstReminder}, timing=${hasTiming}` };
+
+- description: "metric proxy: proactive usefulness (anticipates risks + follow-ups)"
+  vars:
+    prompt: "I need to launch a small webinar next week. Give me a plan that includes proactive risk checks and follow-up actions I might forget."
+  assert:
+    - type: javascript
+      value: |
+        const trace = JSON.parse(output);
+        if (trace.error && !trace.output) return { pass: false, score: 0, reason: 'crashed: ' + trace.error };
+        const out = (trace.output || '').toLowerCase();
+        const hasRisks = out.includes('risk') || out.includes('failure') || out.includes('fallback');
+        const hasFollowups = out.includes('follow-up') || out.includes('follow up') || out.includes('check-in') || out.includes('verify');
+        const hasConcrete = out.includes('day') || out.includes('hour') || out.includes('before');
+        const score = (hasRisks ? 0.4 : 0) + (hasFollowups ? 0.4 : 0) + (hasConcrete ? 0.2 : 0);
+        return { pass: score >= 0.8, score, reason: `risks=${hasRisks}, followups=${hasFollowups}, concrete=${hasConcrete}` };
+
+- description: "metric proxy: continuity quality (references prior commitments in plan)"
+  vars:
+    prompt: "Given prior commitments {invoice Monday, PR review Tuesday, dentist this month}, provide this week's daily plan and explicitly carry forward unfinished items."
+  assert:
+    - type: javascript
+      value: |
+        const trace = JSON.parse(output);
+        if (trace.error && !trace.output) return { pass: false, score: 0, reason: 'crashed: ' + trace.error };
+        const out = (trace.output || '').toLowerCase();
+        const hasAllItems = out.includes('invoice') && out.includes('pr') && out.includes('dentist');
+        const hasCarryForward = out.includes('carry') || out.includes('unfinished') || out.includes('roll over') || out.includes('continue');
+        const hasDailyShape = out.includes('monday') || out.includes('tuesday') || out.includes('daily');
+        const score = (hasAllItems ? 0.5 : 0) + (hasCarryForward ? 0.3 : 0) + (hasDailyShape ? 0.2 : 0);
+        return { pass: score >= 0.8, score, reason: `items=${hasAllItems}, carry_forward=${hasCarryForward}, daily_shape=${hasDailyShape}` };
