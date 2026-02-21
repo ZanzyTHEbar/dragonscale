@@ -397,6 +397,104 @@ func TestToolToSchema_WithoutExamples(t *testing.T) {
 	}
 }
 
+// --- Discovery tracking tests ---
+
+func TestToolSearchTool_DiscoveryTracking(t *testing.T) {
+	r := NewToolRegistry()
+	r.Register(&stubToolWithSchema{name: "edit_file", desc: "Edit a file"})
+	r.Register(&stubToolWithSchema{name: "web_search", desc: "Search the web"})
+
+	s := NewToolSearchTool(r)
+	s.Execute(context.Background(), map[string]interface{}{"query": "edit"})
+
+	discovered := r.DrainDiscovered()
+	if len(discovered) != 1 {
+		t.Fatalf("expected 1 discovered tool, got %d", len(discovered))
+	}
+	if discovered[0].Name() != "edit_file" {
+		t.Errorf("expected edit_file, got %s", discovered[0].Name())
+	}
+
+	// Second drain should be empty
+	discovered2 := r.DrainDiscovered()
+	if len(discovered2) != 0 {
+		t.Errorf("expected 0 after drain, got %d", len(discovered2))
+	}
+}
+
+func TestToolSearchTool_DiscoverySkipsGateway(t *testing.T) {
+	r := NewToolRegistry()
+	r.Register(&stubToolWithSchema{name: "read_file", desc: "Read a file"})
+	r.MarkGateway("read_file")
+
+	s := NewToolSearchTool(r)
+	s.Execute(context.Background(), map[string]interface{}{"query": "read"})
+
+	discovered := r.DrainDiscovered()
+	if len(discovered) != 0 {
+		t.Errorf("gateway tools should not appear in discovered set, got %d", len(discovered))
+	}
+}
+
+func TestToolSearchTool_DiscoverySkipsMetaTools(t *testing.T) {
+	r := NewToolRegistry()
+	r.RegisterMetaTools()
+
+	s, _ := r.Get("tool_search")
+	s.Execute(context.Background(), map[string]interface{}{})
+
+	discovered := r.DrainDiscovered()
+	for _, d := range discovered {
+		if d.Name() == "tool_search" || d.Name() == "tool_call" {
+			t.Errorf("meta-tool %s should not be in discovered set", d.Name())
+		}
+	}
+}
+
+// --- Schema in search results tests ---
+
+func TestToolSearchTool_ReturnsSchema(t *testing.T) {
+	r := NewToolRegistry()
+	r.Register(&stubToolWithSchema{name: "read_file", desc: "Read a file"})
+
+	s := NewToolSearchTool(r)
+	result := s.Execute(context.Background(), map[string]interface{}{"query": "read"})
+
+	var results []toolSearchResult
+	jsonv2.Unmarshal([]byte(result.ForLLM), &results)
+
+	if len(results) == 0 {
+		t.Fatal("expected at least one result")
+	}
+	if results[0].Parameters == nil {
+		t.Error("expected parameters in search result")
+	}
+	if _, ok := results[0].Parameters["path"]; !ok {
+		t.Error("expected 'path' in parameters")
+	}
+	if len(results[0].Required) == 0 || results[0].Required[0] != "path" {
+		t.Errorf("expected required=['path'], got %v", results[0].Required)
+	}
+}
+
+func TestToolSearchTool_ListAll_ReturnsSchema(t *testing.T) {
+	r := NewToolRegistry()
+	r.Register(&stubToolWithSchema{name: "read_file", desc: "Read a file"})
+
+	s := NewToolSearchTool(r)
+	result := s.Execute(context.Background(), map[string]interface{}{})
+
+	var results []toolSearchResult
+	jsonv2.Unmarshal([]byte(result.ForLLM), &results)
+
+	if len(results) == 0 {
+		t.Fatal("expected at least one result")
+	}
+	if results[0].Parameters == nil {
+		t.Error("expected parameters in listAll result")
+	}
+}
+
 // --- stubTool for testing ---
 type stubTool struct {
 	name string
@@ -407,6 +505,30 @@ func (s *stubTool) Name() string                       { return s.name }
 func (s *stubTool) Description() string                { return s.desc }
 func (s *stubTool) Parameters() map[string]interface{} { return map[string]interface{}{} }
 func (s *stubTool) Execute(_ context.Context, args map[string]interface{}) *ToolResult {
+	return &ToolResult{ForLLM: "executed " + s.name}
+}
+
+// stubToolWithSchema returns a realistic JSON Schema parameters object.
+type stubToolWithSchema struct {
+	name string
+	desc string
+}
+
+func (s *stubToolWithSchema) Name() string        { return s.name }
+func (s *stubToolWithSchema) Description() string { return s.desc }
+func (s *stubToolWithSchema) Parameters() map[string]interface{} {
+	return map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"path": map[string]interface{}{
+				"type":        "string",
+				"description": "Absolute path to the file",
+			},
+		},
+		"required": []string{"path"},
+	}
+}
+func (s *stubToolWithSchema) Execute(_ context.Context, args map[string]interface{}) *ToolResult {
 	return &ToolResult{ForLLM: "executed " + s.name}
 }
 

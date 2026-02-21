@@ -15,12 +15,18 @@ type ToolRegistry struct {
 	// gatewayTools are always visible to the LLM; all other tools are
 	// discovered via tool_search + tool_call (progressive disclosure).
 	gatewayTools map[string]bool
+	// discoveredTools tracks tools that tool_search has returned as results
+	// in the current session. PrepareStep drains this set to dynamically
+	// promote discovered tools to native callables.
+	discoveredTools map[string]bool
+	discoveredMu    sync.Mutex
 }
 
 func NewToolRegistry() *ToolRegistry {
 	return &ToolRegistry{
-		tools:        make(map[string]Tool),
-		gatewayTools: make(map[string]bool),
+		tools:           make(map[string]Tool),
+		gatewayTools:    make(map[string]bool),
+		discoveredTools: make(map[string]bool),
 	}
 }
 
@@ -196,4 +202,61 @@ func (r *ToolRegistry) GetSummaries() []string {
 		summaries = append(summaries, fmt.Sprintf("- `%s` - %s", tool.Name(), tool.Description()))
 	}
 	return summaries
+}
+
+// MarkDiscovered records that a tool was returned by tool_search.
+// Thread-safe; called from tool_search's Execute path.
+func (r *ToolRegistry) MarkDiscovered(names ...string) {
+	r.discoveredMu.Lock()
+	defer r.discoveredMu.Unlock()
+	for _, name := range names {
+		if name == "tool_search" || name == "tool_call" {
+			continue
+		}
+		if r.gatewayTools[name] {
+			continue
+		}
+		r.discoveredTools[name] = true
+	}
+}
+
+// DrainDiscovered atomically returns and clears the set of tools discovered
+// since the last drain. PrepareStep calls this to promote discovered tools
+// to native callables for the next inference step.
+func (r *ToolRegistry) DrainDiscovered() []Tool {
+	r.discoveredMu.Lock()
+	names := make([]string, 0, len(r.discoveredTools))
+	for name := range r.discoveredTools {
+		names = append(names, name)
+	}
+	r.discoveredTools = make(map[string]bool)
+	r.discoveredMu.Unlock()
+
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	promoted := make([]Tool, 0, len(names))
+	for _, name := range names {
+		if tool, ok := r.tools[name]; ok {
+			promoted = append(promoted, tool)
+		}
+	}
+	return promoted
+}
+
+// IsGateway returns true if the named tool is a gateway tool.
+func (r *ToolRegistry) IsGateway(name string) bool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.gatewayTools[name]
+}
+
+// GetSchema returns the full parameter schema for a named tool, or nil if not found.
+func (r *ToolRegistry) GetSchema(name string) map[string]interface{} {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	tool, ok := r.tools[name]
+	if !ok {
+		return nil
+	}
+	return tool.Parameters()
 }

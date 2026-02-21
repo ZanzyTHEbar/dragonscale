@@ -31,7 +31,7 @@ func (t *ToolSearchTool) SetSkillsLoader(sl *skills.SkillsLoader) {
 func (t *ToolSearchTool) Name() string { return "tool_search" }
 
 func (t *ToolSearchTool) Description() string {
-	return "Search for available tools and skills by keyword. Returns names, descriptions, and kind (tool or skill). Use this to discover capabilities before invoking them with tool_call (tools) or skill_read (skills)."
+	return "Search for available tools and skills by keyword. Returns names, descriptions, parameter schemas, and kind (tool or skill). Discovered tools become directly callable in your next step — no need to use tool_call. For skills, use skill_read to load full content."
 }
 
 func (t *ToolSearchTool) Parameters() map[string]interface{} {
@@ -48,12 +48,14 @@ func (t *ToolSearchTool) Parameters() map[string]interface{} {
 }
 
 type toolSearchResult struct {
-	Name        string   `json:"name"`
-	Description string   `json:"description"`
-	Kind        string   `json:"kind"`
-	Score       int      `json:"score,omitempty"`
-	Tags        []string `json:"tags,omitempty"`
-	Domain      string   `json:"domain,omitempty"`
+	Name        string                 `json:"name"`
+	Description string                 `json:"description"`
+	Kind        string                 `json:"kind"`
+	Score       int                    `json:"score,omitempty"`
+	Tags        []string               `json:"tags,omitempty"`
+	Domain      string                 `json:"domain,omitempty"`
+	Parameters  map[string]interface{} `json:"parameters,omitempty"`
+	Required    []string               `json:"required,omitempty"`
 }
 
 func (t *ToolSearchTool) Execute(_ context.Context, args map[string]interface{}) *ToolResult {
@@ -67,7 +69,7 @@ func (t *ToolSearchTool) Execute(_ context.Context, args map[string]interface{})
 
 	var results []toolSearchResult
 
-	// Search tools
+	// Search tools — include parameter schemas so the LLM can call them correctly
 	t.registry.mu.RLock()
 	for _, tool := range t.registry.tools {
 		if tool.Name() == "tool_search" || tool.Name() == "tool_call" {
@@ -75,11 +77,14 @@ func (t *ToolSearchTool) Execute(_ context.Context, args map[string]interface{})
 		}
 		score := fuzzyScore(tool.Name(), tool.Description(), queryTerms)
 		if score > 0 {
+			params, required := extractSchemaFields(tool.Parameters())
 			results = append(results, toolSearchResult{
 				Name:        tool.Name(),
 				Description: tool.Description(),
 				Kind:        "tool",
 				Score:       score,
+				Parameters:  params,
+				Required:    required,
 			})
 		}
 	}
@@ -115,8 +120,40 @@ func (t *ToolSearchTool) Execute(_ context.Context, args map[string]interface{})
 		return &ToolResult{ForLLM: fmt.Sprintf("No tools or skills match query: %q. Try a broader search or use tool_search with no query to list all.", query)}
 	}
 
+	// Record discovered tool names so PrepareStep can promote them to native callables.
+	discoveredNames := make([]string, 0, len(results))
+	for _, r := range results {
+		if r.Kind == "tool" {
+			discoveredNames = append(discoveredNames, r.Name)
+		}
+	}
+	if len(discoveredNames) > 0 {
+		t.registry.MarkDiscovered(discoveredNames...)
+	}
+
 	b, _ := jsonv2.Marshal(results)
 	return &ToolResult{ForLLM: string(b)}
+}
+
+// extractSchemaFields pulls the properties map and required list from a
+// tool's full JSON Schema parameters object.
+func extractSchemaFields(params map[string]interface{}) (map[string]interface{}, []string) {
+	props, hasProps := params["properties"].(map[string]interface{})
+	if !hasProps {
+		return nil, nil
+	}
+	var required []string
+	switch r := params["required"].(type) {
+	case []string:
+		required = r
+	case []interface{}:
+		for _, v := range r {
+			if s, ok := v.(string); ok {
+				required = append(required, s)
+			}
+		}
+	}
+	return props, required
 }
 
 func (t *ToolSearchTool) listAll() *ToolResult {
@@ -127,10 +164,13 @@ func (t *ToolSearchTool) listAll() *ToolResult {
 		if tool.Name() == "tool_search" || tool.Name() == "tool_call" {
 			continue
 		}
+		params, required := extractSchemaFields(tool.Parameters())
 		results = append(results, toolSearchResult{
 			Name:        tool.Name(),
 			Description: tool.Description(),
 			Kind:        "tool",
+			Parameters:  params,
+			Required:    required,
 		})
 	}
 	t.registry.mu.RUnlock()
@@ -150,6 +190,17 @@ func (t *ToolSearchTool) listAll() *ToolResult {
 	sort.Slice(results, func(i, j int) bool {
 		return results[i].Name < results[j].Name
 	})
+
+	// Record all tool names for promotion
+	discoveredNames := make([]string, 0)
+	for _, r := range results {
+		if r.Kind == "tool" {
+			discoveredNames = append(discoveredNames, r.Name)
+		}
+	}
+	if len(discoveredNames) > 0 {
+		t.registry.MarkDiscovered(discoveredNames...)
+	}
 
 	b, _ := jsonv2.Marshal(results)
 	return &ToolResult{ForLLM: string(b)}

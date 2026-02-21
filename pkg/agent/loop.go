@@ -66,16 +66,15 @@ type AgentLoop struct {
 
 // processOptions configures how a message is processed
 type processOptions struct {
-	SessionKey      string // Session identifier for history/context
-	Channel         string // Target channel for tool execution
-	ChatID          string // Target chat ID for tool execution
-	SenderID        string // Originating sender identifier (for logging/audit)
-	UserMessage     string // User message content (may include prefix)
-	DefaultResponse string // Response when LLM returns empty
-	EnableSummary   bool   // Whether to trigger summarization
-	SendResponse    bool   // Whether to send response via bus
-	NoHistory       bool   // If true, don't load session history (for heartbeat)
-	Streaming       bool   // If true, stream token deltas to bus via OnTextDelta
+	SessionKey    string // Session identifier for history/context
+	Channel       string // Target channel for tool execution
+	ChatID        string // Target chat ID for tool execution
+	SenderID      string // Originating sender identifier (for logging/audit)
+	UserMessage   string // User message content (may include prefix)
+	EnableSummary bool   // Whether to trigger summarization
+	SendResponse  bool   // Whether to send response via bus
+	NoHistory     bool   // If true, don't load session history (for heartbeat)
+	Streaming     bool   // If true, stream token deltas to bus via OnTextDelta
 }
 
 // createToolRegistry creates a tool registry with common tools.
@@ -242,10 +241,22 @@ func NewAgentLoop(ctx context.Context, cfg *config.Config, msgBus *bus.MessageBu
 	sessionsDir := filepath.Join(workspace, "sessions")
 	sessionsManager := session.NewSessionManager(sessionsDir, session.WithSessionDelegate(memDelegate, "picoclaw"))
 
-	// Meta-tools for progressive disclosure (tool_search + tool_call)
+	// Meta-tools for progressive disclosure (tool_search + tool_call).
+	// tool_search returns full parameter schemas; discovered tools are
+	// dynamically promoted to native callables via PrepareStep.
 	toolsRegistry.RegisterMetaTools()
-	toolsRegistry.MarkGateway("memory")
-	toolsRegistry.MarkGateway("skill_search")
+
+	// Gateway tools: always visible to the LLM. Keep this set minimal —
+	// dynamic promotion handles everything else after tool_search.
+	for _, name := range []string{
+		"memory",
+		"read_file",
+		"write_file",
+		"list_dir",
+		"exec",
+	} {
+		toolsRegistry.MarkGateway(name)
+	}
 
 	// Wire skills loader into tool_search for unified discovery
 	if ts, ok := toolsRegistry.Get("tool_search"); ok {
@@ -437,15 +448,14 @@ func (al *AgentLoop) ProcessDirectStreaming(ctx context.Context, content, sessio
 	}
 
 	return al.runAgentLoop(ctx, processOptions{
-		SessionKey:      msg.SessionKey,
-		Channel:         msg.Channel,
-		ChatID:          msg.ChatID,
-		SenderID:        msg.SenderID,
-		UserMessage:     msg.Content,
-		DefaultResponse: "I've completed processing but have no response to give.",
-		EnableSummary:   true,
-		SendResponse:    false,
-		Streaming:       true,
+		SessionKey:    msg.SessionKey,
+		Channel:       msg.Channel,
+		ChatID:        msg.ChatID,
+		SenderID:      msg.SenderID,
+		UserMessage:   msg.Content,
+		EnableSummary: true,
+		SendResponse:  false,
+		Streaming:     true,
 	})
 }
 
@@ -453,14 +463,13 @@ func (al *AgentLoop) ProcessDirectStreaming(ctx context.Context, content, sessio
 // Each heartbeat is independent and doesn't accumulate context.
 func (al *AgentLoop) ProcessHeartbeat(ctx context.Context, content, channel, chatID string) (string, error) {
 	return al.runAgentLoop(ctx, processOptions{
-		SessionKey:      "heartbeat",
-		Channel:         channel,
-		ChatID:          chatID,
-		UserMessage:     content,
-		DefaultResponse: "I've completed processing but have no response to give.",
-		EnableSummary:   false,
-		SendResponse:    false,
-		NoHistory:       true, // Don't load session history for heartbeat
+		SessionKey:    "heartbeat",
+		Channel:       channel,
+		ChatID:        chatID,
+		UserMessage:   content,
+		EnableSummary: false,
+		SendResponse:  false,
+		NoHistory:     true, // Don't load session history for heartbeat
 	})
 }
 
@@ -492,13 +501,12 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 
 	// Process as user message
 	return al.runAgentLoop(ctx, processOptions{
-		SessionKey:      msg.SessionKey,
-		Channel:         msg.Channel,
-		ChatID:          msg.ChatID,
-		UserMessage:     msg.Content,
-		DefaultResponse: "I've completed processing but have no response to give.",
-		EnableSummary:   true,
-		SendResponse:    false,
+		SessionKey:    msg.SessionKey,
+		Channel:       msg.Channel,
+		ChatID:        msg.ChatID,
+		UserMessage:   msg.Content,
+		EnableSummary: true,
+		SendResponse:  false,
 	})
 }
 
@@ -631,9 +639,56 @@ func (al *AgentLoop) assembleContext(ctx context.Context, opts processOptions) a
 	}
 	adaptedTools := picofantasy.BuildAdaptedTools(al.tools, al.bus, opts.Channel, opts.ChatID, adaptCfg)
 
+	// Dynamic tool promotion via PrepareStep: after tool_search discovers tools,
+	// they become native callables in the next inference step — no tool_call needed.
+	promotedSet := make(map[string]bool)
+	for _, at := range adaptedTools {
+		promotedSet[at.Info().Name] = true
+	}
+	registry := al.tools
+	msgBus := al.bus
+	channel := opts.Channel
+	chatID := opts.ChatID
+
+	prepareStep := func(ctx context.Context, psOpts fantasy.PrepareStepFunctionOptions) (context.Context, fantasy.PrepareStepResult, error) {
+		discovered := registry.DrainDiscovered()
+		if len(discovered) == 0 {
+			return ctx, fantasy.PrepareStepResult{}, nil
+		}
+
+		var newTools []tools.Tool
+		for _, t := range discovered {
+			if promotedSet[t.Name()] {
+				continue
+			}
+			newTools = append(newTools, t)
+			promotedSet[t.Name()] = true
+		}
+
+		if len(newTools) == 0 {
+			return ctx, fantasy.PrepareStepResult{}, nil
+		}
+
+		newAdapted := picofantasy.AdaptTools(newTools, msgBus, channel, chatID, adaptCfg)
+		expanded := append(adaptedTools, newAdapted...)
+		adaptedTools = expanded
+
+		logger.InfoCF("agent", "Dynamic tool promotion via PrepareStep",
+			map[string]interface{}{
+				"promoted":    len(newTools),
+				"total_tools": len(expanded),
+				"names":       toolNames(newTools),
+			})
+
+		return ctx, fantasy.PrepareStepResult{
+			Tools: expanded,
+		}, nil
+	}
+
 	agentOpts := []fantasy.AgentOption{
 		fantasy.WithTools(adaptedTools...),
 		fantasy.WithStopConditions(fantasy.StepCountIs(al.maxIterations)),
+		fantasy.WithPrepareStep(prepareStep),
 	}
 	if systemPrompt != "" {
 		agentOpts = append(agentOpts, fantasy.WithSystemPrompt(systemPrompt))
@@ -668,10 +723,6 @@ func (al *AgentLoop) assembleContext(ctx context.Context, opts processOptions) a
 // postProcess handles the common finalization after Generate or Stream:
 // extract final text, save session, summarize, observe, optionally send response.
 func (al *AgentLoop) postProcess(ctx context.Context, opts processOptions, finalContent string, stepCount int) string {
-	if finalContent == "" {
-		finalContent = opts.DefaultResponse
-	}
-
 	al.sessions.Save(opts.SessionKey)
 
 	if opts.EnableSummary {
@@ -698,6 +749,98 @@ func (al *AgentLoop) postProcess(ctx context.Context, opts processOptions, final
 		})
 
 	return finalContent
+}
+
+// resolveFinalContent normalizes the final assistant response from an agent run.
+// Some providers return an empty final response even though an earlier step
+// already produced text. In that case, recover the latest non-empty text from
+// steps. If no text exists at all, return a deterministic error.
+func (al *AgentLoop) resolveFinalContent(finalContent string, steps []fantasy.StepResult) (string, error) {
+	trimmed := strings.TrimSpace(finalContent)
+	if trimmed != "" {
+		return trimmed, nil
+	}
+
+	for i := len(steps) - 1; i >= 0; i-- {
+		stepText := strings.TrimSpace(steps[i].Content.Text())
+		if stepText != "" {
+			logger.WarnCF("agent", "Recovered empty final response from prior step text",
+				map[string]interface{}{
+					"step_index": i,
+				})
+			return stepText, nil
+		}
+	}
+
+	type candidate struct {
+		text  string
+		score int
+	}
+	candidates := make([]candidate, 0, 8)
+	for i := len(steps) - 1; i >= 0; i-- {
+		toolResults := steps[i].Content.ToolResults()
+		for j := len(toolResults) - 1; j >= 0; j-- {
+			tr := toolResults[j]
+			switch out := tr.Result.(type) {
+			case fantasy.ToolResultOutputContentText:
+				txt := strings.TrimSpace(out.Text)
+				if txt != "" {
+					score := 2
+					if tr.ToolName == "tool_search" || strings.Contains(strings.ToLower(txt), "\"kind\":\"tool\"") {
+						score = 0
+					}
+					if strings.Contains(strings.ToLower(txt), "tool not found") ||
+						strings.Contains(strings.ToLower(txt), "path is required") {
+						score = -1
+					}
+					candidates = append(candidates, candidate{text: txt, score: score})
+				}
+			case fantasy.ToolResultOutputContentError:
+				if out.Error != nil {
+					txt := strings.TrimSpace(out.Error.Error())
+					if txt != "" {
+						candidates = append(candidates, candidate{text: txt, score: -1})
+					}
+				}
+			case fantasy.ToolResultOutputContentMedia:
+				txt := strings.TrimSpace(out.Text)
+				if txt != "" {
+					candidates = append(candidates, candidate{text: txt, score: 1})
+				}
+			}
+			if len(candidates) >= 8 {
+				break
+			}
+		}
+		if len(candidates) >= 8 {
+			break
+		}
+	}
+
+	bestText := ""
+	bestScore := -1000
+	for _, c := range candidates {
+		if c.score > bestScore {
+			bestScore = c.score
+			bestText = c.text
+		}
+	}
+
+	if bestText != "" && bestScore > 0 {
+		logger.WarnCF("agent", "Recovered empty final response from tool results",
+			map[string]interface{}{
+				"candidates": len(candidates),
+				"score":      bestScore,
+			})
+		return bestText, nil
+	}
+
+	toolCalls := 0
+	for _, step := range steps {
+		toolCalls += len(step.Content.ToolCalls())
+	}
+
+	return "", fmt.Errorf("agent produced no final response text (steps=%d, tool_calls=%d)", len(steps), toolCalls)
 }
 
 // runAgentLoop is the core message processing logic.
@@ -730,7 +873,15 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, opts processOptions) (str
 		al.auditStep(ctx, step, opts.SessionKey)
 	}
 
-	finalContent := result.Response.Content.Text()
+	finalContent, err := al.resolveFinalContent(result.Response.Content.Text(), result.Steps)
+	if err != nil {
+		logger.ErrorCF("agent", "Agent finished without final response text",
+			map[string]interface{}{
+				"error": err.Error(),
+				"steps": len(result.Steps),
+			})
+		return "", err
+	}
 	return al.postProcess(ctx, opts, finalContent, len(result.Steps)), nil
 }
 
@@ -779,7 +930,15 @@ func (al *AgentLoop) runStreaming(ctx context.Context, opts processOptions, ac a
 		return "", fmt.Errorf("agent Stream failed: %w", err)
 	}
 
-	finalContent := result.Response.Content.Text()
+	finalContent, err := al.resolveFinalContent(result.Response.Content.Text(), result.Steps)
+	if err != nil {
+		logger.ErrorCF("agent", "Streaming agent finished without final response text",
+			map[string]interface{}{
+				"error": err.Error(),
+				"steps": len(result.Steps),
+			})
+		return "", err
+	}
 	return al.postProcess(ctx, opts, finalContent, len(result.Steps)), nil
 }
 
@@ -1301,4 +1460,12 @@ func (al *AgentLoop) handleCommand(_ context.Context, msg bus.InboundMessage) (s
 	}
 
 	return "", false
+}
+
+func toolNames(tt []tools.Tool) []string {
+	names := make([]string, len(tt))
+	for i, t := range tt {
+		names[i] = t.Name()
+	}
+	return names
 }

@@ -196,6 +196,24 @@ func BuildAdaptedTools(registry *tools.ToolRegistry, msgBus *bus.MessageBus, cha
 	return adapted
 }
 
+// AdaptTools wraps specific Tool instances as Fantasy AgentTools.
+// Used by PrepareStep to promote discovered tools to native callables.
+func AdaptTools(picoTools []tools.Tool, msgBus *bus.MessageBus, channel, chatID string, cfg AdaptedToolsConfig) []fantasy.AgentTool {
+	adapted := make([]fantasy.AgentTool, 0, len(picoTools))
+	for _, tool := range picoTools {
+		adapted = append(adapted, &PicoToolAdapter{
+			inner:      tool,
+			bus:        msgBus,
+			channel:    channel,
+			chatID:     chatID,
+			memStore:   cfg.MemStore,
+			agentID:    cfg.AgentID,
+			sessionKey: cfg.SessionKey,
+		})
+	}
+	return adapted
+}
+
 // parseToolArgs deserializes a JSON string into a map.
 // Handles both JSON objects and empty inputs gracefully.
 func parseToolArgs(input string) (map[string]interface{}, error) {
