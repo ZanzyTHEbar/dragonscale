@@ -1,8 +1,27 @@
 
-# PicoClaw Roadmap
+# DragonScale Roadmap
 
 > **Vision**: Ultra-lightweight, secure, fully autonomous AI agent infrastructure.
 > Automate the mundane, unleash your creativity.
+
+---
+
+## Unified Kernel Plan Status (2026-02)
+
+Reference blueprint: `docs/execution/unified-kernel-blueprint.md`
+
+- [x] Single always-on runtime path (SecureBus + offloading + run-state persistence).
+- [x] Fail-fast boot invariants for kernel dependencies.
+- [x] Deterministic session continuity with projection pointers + integrity validation.
+- [x] Emergency-only recursive compression and provenance persistence.
+- [x] Persistent DAG snapshots + lossless DAG tools (`dag_expand`, `dag_describe`, `dag_grep`).
+- [x] Subagent runtime parity with delegation scope/lineage/depth/fanout guardrails.
+- [x] Assistant-focused proactive eval suite (commitments/reminders/follow-ups/continuity).
+- [x] Legacy backfill for session projection pointers and missing DAG snapshots.
+- [x] Next phase delivered: dual-state memory contracts, map operators, obligation engine, hybrid retrieval router, shadow-mode proof gates, promotion-on-win, and fast rollback.
+- [x] Map operators are now FlatBuffers-first end to end for persisted run/item state (`spec_fb`, `input_fb`, `output_fb`).
+- [x] Worker identity and deduplication for map jobs now resolve via deterministic keys (`map:{runID}:{itemIndex}`), with idempotent run reuse under concurrency.
+- [x] Devcontainer + `flatc` + `sqlc` generation pipeline is active (`make devcontainer-build`, `make devcontainer-up`, `make devcontainer-generate`, `make devcontainer-verify`).
 
 ---
 
@@ -233,13 +252,13 @@ flowchart LR
   - [ ] Per-test scores
   - [ ] Side-by-side comparison matrix
   - [ ] Compare to other agent runtimes
-  - [ ] Compare to upstream origin picoclaw
+- [ ] Compare to upstream origin implementation
   - [ ] What benchmarks should we be running?
   - [ ] What are the key performance metrics we should be tracking?
 - [ ] Add a new tool for the agent to use: `focus_search`
 - [ ] Clean up the main.go and extract to modules
 - [ ] Create a pure Application API that I/O calls into
-  - [ ] all of these should be able to be configured and plugged in/out at runtime
+  - [ ] I/O adapters should be pluggable; kernel execution path remains single and always-on
     - [ ] cli
     - [ ] daemon
     - [ ] web
@@ -256,6 +275,24 @@ flowchart LR
 - [ ] Migrate to Cobra CLI framework
   - [ ] Use command-palette pattern for subcommands
   - [ ] keep cli commands as pure cli that calls into the application
+- [ ] Migrate to errbuilder-go (ZanzyTHEbar)
+- [ ] Migrate to assert-lib (ZanzyTHEbar)
+- [ ] Implement SubAgent Profiles
+  - [ ] SubAgent Profiles are a way to define the behavior of a subagent:
+    - [ ] Tools & Skills to use
+    - [ ] Models to use
+    - [ ] Configuration
+    - [ ] etc.
+- [ ] Adopt agentfs
+  - [ ] Migrate away from the custom file system and use agentfs instead
+  - [ ] Keep our same sandboxing and permissions model, but use agentfs to enforce it
+  - [ ] Use clever engineering for optimum performance
+    - [ ] Users can still upload files to the agent's workspace, but they will be stored in the agentfs namespace and not the main filesystem
+    - [ ] Agentfs supports POSIX operations
+      - [ ] Support further:
+        - [ ] .oc-nodes, .oc-temp, etc.
+        - [ ] Support proper NFS
+  - [ ] https://grok.com/share/bGVnYWN5LWNvcHk_311a0d3d-0dec-4af1-943a-bbd18f7d4fec
 - [ ] Consolidate tool signatures: 
   - [ ] fold tools that operate on the same data into a single tool with a "mode"/"action"/"event" parameter
   - [ ] move the "mode"/"action"/"event" parameter to the beginning of the tool signature
@@ -282,3 +319,15 @@ flowchart LR
   - [ ] Dynamic tool registration: `RegisterTool(Tool)` function
     - [ ] Event-based tool discovery: tool registration triggers `ToolDiscovery` event
     - [ ] Tools have a manifest: `ToolInfo` struct with name, description, capabilities, metadata
+- [ ] Since entire agent is sqlite based, we can export the entire state of the agent as a single sqlite database and import it back in to a new agent instance
+  - [ ] This would allow for easy backup and restore of the agent's state
+  - [ ] This would allow for easy migration of the agent's state between different machines
+  - [ ] This would allow for easy sharing of the agent's state with other agents
+  - [ ] With clever planning, we could even have a "snapshot" of the agent's state at a given time and then restore to that snapshot later
+    - [ ] This would allow for easy rollback of the agent's state to a previous version
+    - [ ] Replay, snapshot, restore, etc.
+    - [ ] As well as a "diff" of the agent's state between two snapshots
+    - [ ] Advanced learning features become available
+    - [ ] We could even have a "learn" mode where the agent learns from the state of the world and then saves the state of the world to the database
+    - [ ] We could even have "learn" and "teach" modes where we can "download" and "upload" knowledge and trajectories across agents from learned experiences (trajectories, memories, etc.)
+      - [ ] Would need to ensure no PII in the state is exported or imported

@@ -1,0 +1,23 @@
+{
+  "name": "picoclaw-dev",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "context": ".."
+  },
+  "remoteUser": "vscode",
+  "workspaceFolder": "/workspaces/picoclaw",
+  "postCreateCommand": "make deps",
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "editor.formatOnSave": true,
+        "go.formatTool": "gofmt"
+      },
+      "extensions": [
+        "golang.Go",
+        "ms-vscode.makefile-tools",
+        "ms-azuretools.vscode-docker"
+      ]
+    }
+  }
+}

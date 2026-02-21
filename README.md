@@ -1,8 +1,9 @@
-# PicoClaw
+# DragonScale
 
-A managed fork of [sipeed/picoclaw](https://github.com/sipeed/picoclaw) — an ultra-lightweight AI agent runtime written in Go.
+DragonScale is a compact AI agent runtime for Linux and embedded environments, focused on
+memory-aware context management, secure tool execution, and practical local-first deployment.
 
-This fork diverges from upstream with its own architectural decisions:
+DragonScale diverges from upstream with its own architectural decisions:
  
 - vendored LLM SDK
 - MemGPT-style tiered memory
@@ -16,9 +17,9 @@ This fork diverges from upstream with its own architectural decisions:
 
 ---
 
-## Why This Fork Exists
+## Why DragonScale Exists
 
-The upstream PicoClaw project is a solid foundation — a single-binary AI agent that runs on $10 hardware with <10MB RAM. But it has architectural gaps that limit extensibility:
+The original project is a solid foundation — a single-binary AI agent designed for constrained devices. But it has architectural gaps that limit extensibility:
 
 - **No privilege boundary** between the LLM and tool execution — a compromised tool has full process access
 - **No structured memory** beyond flat markdown files
@@ -26,7 +27,7 @@ The upstream PicoClaw project is a solid foundation — a single-binary AI agent
 - **Sequential tool calling only** — each tool call requires a full inference pass
 - **Hand-rolled LLM provider implementations** with no streaming, retry, or multi-provider support
 
-This fork addresses all of those while preserving the original's strengths: small binary, low memory, single-process deployment.
+This project addresses those gaps while preserving strengths: a small binary, low memory footprint, and single-process deployment.
 
 ## Architecture
 
@@ -131,7 +132,7 @@ flowchart TB
 ## Project Layout
 
 ```
-cmd/picoclaw/              # CLI entrypoint
+cmd/dragonscale/              # CLI entrypoint
 internal/fantasy/          # Vendored charm.land/fantasy SDK
 docs/adr/                  # Architecture Decision Records
 eval/                      # Promptfoo-based evaluation harness
@@ -164,7 +165,7 @@ pkg/
 │   ├── sqlc/              # sqlc config + generated code
 │   └── store/             # MemoryStore, retrieval, chunking, scoring, queuing
 ├── messages/              # Canonical message/tool-call types
-├── pcerrors/              # Structured error types
+├── dserrors/               # Structured error types
 ├── rlm/                   # Recursive Language Model engine (rope, fanout, strategy)
 ├── security/              # Vault, SecretStore, Redactor, URL guard, Schnorr ZKP
 │   └── securebus/         # SecureBus (policy, audit, transport, socket transport)
@@ -185,8 +186,8 @@ config/                    # Example configuration files
 > Requires `CGO_ENABLED=1` — the go-libsql driver links against glibc.
 
 ```bash
-git clone https://github.com/ZanzyTHEbar/picoclaw.git
-cd picoclaw
+git clone https://github.com/ZanzyTHEbar/dragonscale.git
+cd dragonscale
 make build
 ```
 
@@ -194,12 +195,12 @@ make build
 ### Configure
 
 ```bash
-./bin/picoclaw onboard
+./bin/dragonscale onboard
 ```
 
 The onboard wizard initializes config, workspace, and optionally sets up encrypted secret storage.
 
-Edit `~/.picoclaw/config.json`:
+Edit `~/.dragonscale/config.json`:
 
 ```json
 {
@@ -230,13 +231,13 @@ Edit `~/.picoclaw/config.json`:
 
 ```bash
 # One-shot
-picoclaw agent -m "What is 2+2?"
+dragonscale agent -m "What is 2+2?"
 
 # Interactive REPL
-picoclaw agent
+dragonscale agent
 
 # Gateway (Telegram, Discord, etc.)
-picoclaw gateway
+dragonscale gateway
 ```
 
 ### Docker
@@ -244,18 +245,18 @@ picoclaw gateway
 ```bash
 cp config/config.example.json config/config.json
 docker compose --profile gateway up -d
-docker compose logs -f picoclaw-gateway
+docker compose logs -f dragonscale-gateway
 ```
 
 ## Secret Management
 
-PicoClaw encrypts secrets at rest with XChaCha20-Poly1305. The master key is sourced from an environment variable, OS keyring, or file.
+DragonScale encrypts secrets at rest with XChaCha20-Poly1305. The master key is sourced from an environment variable, OS keyring, or file.
 
 ```bash
-picoclaw secret init           # Generate a master key
-picoclaw secret add <name>     # Store a secret (interactive prompt)
-picoclaw secret list            # List secret names
-picoclaw secret delete <name>  # Remove a secret
+dragonscale secret init           # Generate a master key
+dragonscale secret add <name>     # Store a secret (interactive prompt)
+dragonscale secret list            # List secret names
+dragonscale secret delete <name>  # Remove a secret
 ```
 
 > [!WARNING]
@@ -263,7 +264,7 @@ picoclaw secret delete <name>  # Remove a secret
 > You should should NEVER store the master key in a file or environment variable if possible.
 
 
-Set the master key: `export PICOCLAW_MASTER_KEY=<hex>`
+Set the master key: `export DRAGONSCALE_MASTER_KEY=<hex>`
 
 Tools declare which secrets they need via `CapableTool.Capabilities()`. The SecureBus injects secrets into tool execution context at runtime — the LLM never sees them. Tool output is scanned for leaked patterns before it reaches the agent loop.
 
@@ -272,9 +273,9 @@ Tools declare which secrets they need via `CapableTool.Capabilities()`. The Secu
 For non-embedded deployments, the SecureBus can run in a separate privileged daemon process. The agent connects as an unprivileged client over a Unix domain socket.
 
 ```bash
-picoclaw daemon start          # Start daemon (foreground, Ctrl+C to stop)
-picoclaw daemon status         # Check if running
-picoclaw daemon stop           # Stop a running daemon
+dragonscale daemon start          # Start daemon (foreground, Ctrl+C to stop)
+dragonscale daemon status         # Check if running
+dragonscale daemon stop           # Stop a running daemon
 ```
 
 ## LLM Providers
@@ -321,7 +322,7 @@ API key links: [OpenRouter](https://openrouter.ai/keys) · [Anthropic](https://c
 }
 ```
 
-4. Run `picoclaw gateway`
+4. Run `dragonscale gateway`
 </details>
 
 <details>
@@ -345,7 +346,7 @@ API key links: [OpenRouter](https://openrouter.ai/keys) · [Anthropic](https://c
 ```
 
 5. Invite bot: OAuth2 → URL Generator → Scopes: `bot` → Permissions: `Send Messages`, `Read Message History`
-6. Run `picoclaw gateway`
+6. Run `dragonscale gateway`
 </details>
 
 <details>
@@ -367,7 +368,7 @@ API key links: [OpenRouter](https://openrouter.ai/keys) · [Anthropic](https://c
 }
 ```
 
-3. Run `picoclaw gateway`
+3. Run `dragonscale gateway`
 </details>
 
 <details>
@@ -389,7 +390,7 @@ API key links: [OpenRouter](https://openrouter.ai/keys) · [Anthropic](https://c
 }
 ```
 
-3. Run `picoclaw gateway`
+3. Run `dragonscale gateway`
 </details>
 
 <details>
@@ -415,12 +416,12 @@ API key links: [OpenRouter](https://openrouter.ai/keys) · [Anthropic](https://c
 ```
 
 3. Set up HTTPS webhook (e.g., `ngrok http 18791`) and configure the URL in LINE console
-4. Run `picoclaw gateway`
+4. Run `dragonscale gateway`
 </details>
 
 ## Memory System
 
-PicoClaw implements a multi-tier memory system combining MemGPT-style tiered storage with observational memory compression:
+DragonScale implements a multi-tier memory system combining MemGPT-style tiered storage with observational memory compression:
 
 | Tier | Purpose | Storage | Search |
 |------|---------|---------|--------|
@@ -438,17 +439,17 @@ Schema is managed by Goose with 10 versioned migrations.
 
 | Command | Description |
 |---------|-------------|
-| `picoclaw onboard` | Initialize config, workspace, and secret storage |
-| `picoclaw agent -m "..."` | One-shot chat |
-| `picoclaw agent` | Interactive REPL |
-| `picoclaw gateway` | Start message bus gateway |
-| `picoclaw status` | Show system status (incl. memory) |
-| `picoclaw memory` | Memory system management |
-| `picoclaw secret <sub>` | Secret management (init, add, list, delete) |
-| `picoclaw daemon <sub>` | Daemon management (start, stop, status) |
-| `picoclaw cron list` | List scheduled jobs |
-| `picoclaw cron add ...` | Add a scheduled job |
-| `picoclaw skills <sub>` | Skill management (install, list, remove) |
+| `dragonscale onboard` | Initialize config, workspace, and secret storage |
+| `dragonscale agent -m "..."` | One-shot chat |
+| `dragonscale agent` | Interactive REPL |
+| `dragonscale gateway` | Start message bus gateway |
+| `dragonscale status` | Show system status (incl. memory) |
+| `dragonscale memory` | Memory system management |
+| `dragonscale secret <sub>` | Secret management (init, add, list, delete) |
+| `dragonscale daemon <sub>` | Daemon management (start, stop, status) |
+| `dragonscale cron list` | List scheduled jobs |
+| `dragonscale cron add ...` | Add a scheduled job |
+| `dragonscale skills <sub>` | Skill management (install, list, remove) |
 
 ## Security
 
@@ -479,15 +480,51 @@ make deps           # go get -u + go mod tidy
 make clean          # Remove build artifacts
 ```
 
+### Devcontainer (flatc + sqlc ready)
+
+If your host is missing `flatc`/`sqlc`, use the project devcontainer.
+
+```bash
+make devcontainer-build
+make devcontainer-up
+make devcontainer-generate
+make devcontainer-verify
+```
+
+These targets use `npx @devcontainers/cli`.
+- `devcontainer-generate`: runs generation inside the container (`go generate` for FlatBuffers + `sqlc generate`).
+- `devcontainer-verify`: verifies generators are idempotent for the current branch state (`make flatc-check sqlc-check`).
+
+### FlatBuffers
+
+FlatBuffers schemas are authoritative and codegen is required:
+
+```bash
+go generate ./pkg/itr ./pkg/tools
+make flatc-check
+```
+
+Schema/codegen mapping:
+- `pkg/itr/commands.fbs` → `pkg/itr/itrfb/*`
+- `pkg/tools/map_payloads.fbs` → `pkg/tools/mapopsfb/*`
+
+`go:generate` hooks are defined in:
+- `pkg/itr/generate_flatbuffers.go`
+- `pkg/tools/generate_flatbuffers.go`
+
+Generated files are committed. After schema changes, regenerate and commit updated generated output.
+
 ### sqlc
 
 Memory queries are generated by sqlc. After modifying SQL files:
 
 ```bash
-cd pkg/memory/sqlc && sqlc generate
+sqlc generate -f pkg/memory/sqlc/sqlc.yaml
+make sqlc-check
 ```
 
-CI enforces that generated code matches: `sqlc generate` + `git diff --exit-code`.
+CI enforces generated code consistency through `make flatc-check` and `make sqlc-check`.
+Both checks compare pre/post generation fingerprints (tracked diffs + untracked file hashes) on their target directories, so they work in active (dirty) worktrees while still failing when generated output is stale.
 
 ### Migrations
 
@@ -516,7 +553,7 @@ See [ROADMAP.md](ROADMAP.md) for the full project roadmap covering context manag
 
 ## Upstream
 
-This is a fork of [sipeed/picoclaw](https://github.com/sipeed/picoclaw), originally inspired by [nanobot](https://github.com/HKUDS/nanobot). The upstream project targets $10 RISC-V hardware with <10MB RAM — a constraint this fork respects while extending the agent's cognitive and security architecture.
+This project is based on [sipeed/picoclaw](https://github.com/sipeed/picoclaw), originally inspired by [nanobot](https://github.com/HKUDS/nanobot). It keeps the lightweight, single-binary ergonomics while extending agent cognition, security boundaries, and operational capabilities.
 
 ## License
 

@@ -1,7 +1,7 @@
 # Identity
 
 ## Name
-PicoClaw 🦞
+DragonScale 🦞
 
 ## Description
 Ultra-lightweight personal AI assistant written in Go, inspired by nanobot.
@@ -44,11 +44,11 @@ Ultra-lightweight personal AI assistant written in Go, inspired by nanobot.
 MIT License - Free and open source
 
 ## Repository
-https://github.com/sipeed/picoclaw
+https://github.com/ZanzyTHEbar/dragonscale
 
 ## Contact
-Issues: https://github.com/sipeed/picoclaw/issues
-Discussions: https://github.com/sipeed/picoclaw/discussions
+Issues: https://github.com/ZanzyTHEbar/dragonscale/issues
+Discussions: https://github.com/ZanzyTHEbar/dragonscale/discussions
 
 ---
 
