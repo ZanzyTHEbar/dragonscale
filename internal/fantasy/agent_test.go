@@ -145,7 +145,7 @@ func TestAgent_Generate_ResultContent_AllTypes(t *testing.T) {
 	}
 
 	agent := NewAgent(model, WithTools(tool1))
-	result, err := agent.Generate(context.Background(), AgentCall{
+	result, err := agent.Generate(t.Context(), AgentCall{
 		Prompt: "prompt",
 	})
 
@@ -209,7 +209,7 @@ func TestAgent_Generate_ResultText(t *testing.T) {
 	}
 
 	agent := NewAgent(model)
-	result, err := agent.Generate(context.Background(), AgentCall{
+	result, err := agent.Generate(t.Context(), AgentCall{
 		Prompt: "prompt",
 	})
 
@@ -279,7 +279,7 @@ func TestAgent_Generate_ResultToolCalls(t *testing.T) {
 	}
 
 	agent := NewAgent(model, WithTools(tool1, tool2))
-	result, err := agent.Generate(context.Background(), AgentCall{
+	result, err := agent.Generate(t.Context(), AgentCall{
 		Prompt: "test-input",
 	})
 
@@ -353,7 +353,7 @@ func TestAgent_Generate_ResultToolResults(t *testing.T) {
 	}
 
 	agent := NewAgent(model, WithTools(tool1))
-	result, err := agent.Generate(context.Background(), AgentCall{
+	result, err := agent.Generate(t.Context(), AgentCall{
 		Prompt: "test-input",
 	})
 
@@ -440,7 +440,7 @@ func TestAgent_Generate_MultipleSteps(t *testing.T) {
 	}
 
 	agent := NewAgent(model, WithTools(tool1))
-	result, err := agent.Generate(context.Background(), AgentCall{
+	result, err := agent.Generate(t.Context(), AgentCall{
 		Prompt: "test-input",
 	})
 
@@ -499,7 +499,7 @@ func TestAgent_Generate_BasicText(t *testing.T) {
 	}
 
 	agent := NewAgent(model)
-	result, err := agent.Generate(context.Background(), AgentCall{
+	result, err := agent.Generate(t.Context(), AgentCall{
 		Prompt: "test prompt",
 	})
 
@@ -531,7 +531,7 @@ func TestAgent_Generate_EmptyPrompt(t *testing.T) {
 	model := &mockLanguageModel{}
 	agent := NewAgent(model)
 
-	result, err := agent.Generate(context.Background(), AgentCall{
+	result, err := agent.Generate(t.Context(), AgentCall{
 		Prompt: "", // Empty prompt should cause error
 	})
 
@@ -570,7 +570,7 @@ func TestAgent_Generate_WithSystemPrompt(t *testing.T) {
 	}
 
 	agent := NewAgent(model, WithSystemPrompt("You are a helpful assistant"))
-	result, err := agent.Generate(context.Background(), AgentCall{
+	result, err := agent.Generate(t.Context(), AgentCall{
 		Prompt: "test prompt",
 	})
 
@@ -623,7 +623,7 @@ func TestAgent_Generate_OptionsActiveTools(t *testing.T) {
 	}
 
 	agent := NewAgent(model, WithTools(tool1, tool2))
-	result, err := agent.Generate(context.Background(), AgentCall{
+	result, err := agent.Generate(t.Context(), AgentCall{
 		Prompt:      "test-input",
 		ActiveTools: []string{"tool1"}, // Only tool1 should be active
 	})
@@ -872,7 +872,7 @@ func TestStopConditions_Integration(t *testing.T) {
 
 		agent := NewAgent(model, WithStopConditions(StepCountIs(1)))
 
-		result, err := agent.Generate(context.Background(), AgentCall{
+		result, err := agent.Generate(t.Context(), AgentCall{
 			Prompt: "test prompt",
 		})
 
@@ -904,7 +904,7 @@ func TestStopConditions_Integration(t *testing.T) {
 			FinishReasonIs(FinishReasonStop), // Or stop on finish reason
 		))
 
-		result, err := agent.Generate(context.Background(), AgentCall{
+		result, err := agent.Generate(t.Context(), AgentCall{
 			Prompt: "test prompt",
 		})
 
@@ -952,7 +952,7 @@ func TestPrepareStep(t *testing.T) {
 
 		agent := NewAgent(model, WithSystemPrompt("Original system prompt"))
 
-		result, err := agent.Generate(context.Background(), AgentCall{
+		result, err := agent.Generate(t.Context(), AgentCall{
 			Prompt:      "test prompt",
 			PrepareStep: prepareStepFunc,
 		})
@@ -989,7 +989,7 @@ func TestPrepareStep(t *testing.T) {
 
 		agent := NewAgent(model)
 
-		result, err := agent.Generate(context.Background(), AgentCall{
+		result, err := agent.Generate(t.Context(), AgentCall{
 			Prompt:      "test prompt",
 			PrepareStep: prepareStepFunc,
 		})
@@ -1034,7 +1034,7 @@ func TestPrepareStep(t *testing.T) {
 
 		agent := NewAgent(model, WithTools(tool1, tool2, tool3))
 
-		result, err := agent.Generate(context.Background(), AgentCall{
+		result, err := agent.Generate(t.Context(), AgentCall{
 			Prompt:      "test prompt",
 			PrepareStep: prepareStepFunc,
 		})
@@ -1073,7 +1073,7 @@ func TestPrepareStep(t *testing.T) {
 
 		agent := NewAgent(model, WithTools(tool1))
 
-		result, err := agent.Generate(context.Background(), AgentCall{
+		result, err := agent.Generate(t.Context(), AgentCall{
 			Prompt:      "test prompt",
 			PrepareStep: prepareStepFunc,
 		})
@@ -1133,7 +1133,7 @@ func TestPrepareStep(t *testing.T) {
 
 		agent := NewAgent(model, WithSystemPrompt("Original system"), WithTools(tool1, tool2))
 
-		result, err := agent.Generate(context.Background(), AgentCall{
+		result, err := agent.Generate(t.Context(), AgentCall{
 			Prompt:      "test prompt",
 			PrepareStep: prepareStepFunc,
 		})
@@ -1194,7 +1194,7 @@ func TestPrepareStep(t *testing.T) {
 
 		agent := NewAgent(model, WithSystemPrompt("Parent system"), WithTools(tool1))
 
-		result, err := agent.Generate(context.Background(), AgentCall{
+		result, err := agent.Generate(t.Context(), AgentCall{
 			Prompt:      "test prompt",
 			PrepareStep: prepareStepFunc,
 		})
@@ -1240,7 +1240,7 @@ func TestPrepareStep(t *testing.T) {
 
 		agent := NewAgent(model, WithTools(tool1, tool2))
 
-		result, err := agent.Generate(context.Background(), AgentCall{
+		result, err := agent.Generate(t.Context(), AgentCall{
 			Prompt:      "test prompt",
 			PrepareStep: prepareStepFunc,
 		})
@@ -1289,7 +1289,7 @@ func TestToolCallRepair(t *testing.T) {
 
 		agent := NewAgent(model, WithTools(tool), WithStopConditions(StepCountIs(2))) // Limit steps
 
-		result, err := agent.Generate(context.Background(), AgentCall{
+		result, err := agent.Generate(t.Context(), AgentCall{
 			Prompt: "test prompt",
 		})
 
@@ -1333,7 +1333,7 @@ func TestToolCallRepair(t *testing.T) {
 
 		agent := NewAgent(model, WithTools(tool), WithStopConditions(StepCountIs(2))) // Limit steps
 
-		result, err := agent.Generate(context.Background(), AgentCall{
+		result, err := agent.Generate(t.Context(), AgentCall{
 			Prompt: "test prompt",
 		})
 
@@ -1388,7 +1388,7 @@ func TestToolCallRepair(t *testing.T) {
 
 		agent := NewAgent(model, WithTools(tool), WithRepairToolCall(repairFunc), WithStopConditions(StepCountIs(2)))
 
-		result, err := agent.Generate(context.Background(), AgentCall{
+		result, err := agent.Generate(t.Context(), AgentCall{
 			Prompt: "test prompt",
 		})
 
@@ -1438,7 +1438,7 @@ func TestToolCallRepair(t *testing.T) {
 
 		agent := NewAgent(model, WithTools(tool), WithRepairToolCall(repairFunc), WithStopConditions(StepCountIs(2)))
 
-		result, err := agent.Generate(context.Background(), AgentCall{
+		result, err := agent.Generate(t.Context(), AgentCall{
 			Prompt: "test prompt",
 		})
 
@@ -1476,7 +1476,7 @@ func TestToolCallRepair(t *testing.T) {
 
 		agent := NewAgent(model, WithTools(tool), WithStopConditions(StepCountIs(2)))
 
-		result, err := agent.Generate(context.Background(), AgentCall{
+		result, err := agent.Generate(t.Context(), AgentCall{
 			Prompt: "test prompt",
 		})
 
@@ -1521,7 +1521,7 @@ func TestToolCallRepair(t *testing.T) {
 
 		agent := NewAgent(model, WithTools(tool), WithStopConditions(StepCountIs(2)))
 
-		result, err := agent.Generate(context.Background(), AgentCall{
+		result, err := agent.Generate(t.Context(), AgentCall{
 			Prompt: "test prompt",
 		})
 
@@ -1582,7 +1582,7 @@ func TestAgent_MediaToolResponses(t *testing.T) {
 
 		agent := NewAgent(model, WithTools(imageTool), WithStopConditions(StepCountIs(3)))
 
-		result, err := agent.Generate(context.Background(), AgentCall{
+		result, err := agent.Generate(t.Context(), AgentCall{
 			Prompt: "Generate an image",
 		})
 
@@ -1636,7 +1636,7 @@ func TestAgent_MediaToolResponses(t *testing.T) {
 
 		agent := NewAgent(model, WithTools(audioTool), WithStopConditions(StepCountIs(3)))
 
-		result, err := agent.Generate(context.Background(), AgentCall{
+		result, err := agent.Generate(t.Context(), AgentCall{
 			Prompt: "Generate audio",
 		})
 
@@ -1690,7 +1690,7 @@ func TestAgent_MediaToolResponses(t *testing.T) {
 
 		agent := NewAgent(model, WithTools(imageTool), WithStopConditions(StepCountIs(3)))
 
-		result, err := agent.Generate(context.Background(), AgentCall{
+		result, err := agent.Generate(t.Context(), AgentCall{
 			Prompt: "Take a screenshot",
 		})
 
@@ -1749,7 +1749,7 @@ func TestAgent_MediaToolResponses(t *testing.T) {
 
 		agent := NewAgent(model, WithTools(imageTool), WithStopConditions(StepCountIs(3)))
 
-		result, err := agent.Generate(context.Background(), AgentCall{
+		result, err := agent.Generate(t.Context(), AgentCall{
 			Prompt: "Generate image",
 		})
 

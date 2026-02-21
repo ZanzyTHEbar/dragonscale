@@ -8,7 +8,10 @@ import (
 )
 
 func TestEnumSupport(t *testing.T) {
+	t.Parallel(
 	// Test enum via struct tags
+	)
+
 	type WeatherInput struct {
 		Location string `json:"location" description:"City name"`
 		Units    string `json:"units" enum:"celsius,fahrenheit,kelvin" description:"Temperature units"`
@@ -34,6 +37,7 @@ func TestEnumSupport(t *testing.T) {
 }
 
 func TestSchemaToParameters(t *testing.T) {
+	t.Parallel()
 	testSchema := Schema{
 		Type: "object",
 		Properties: map[string]*Schema{

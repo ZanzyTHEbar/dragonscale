@@ -10,12 +10,14 @@ import (
 )
 
 func TestRope_EmptyRope(t *testing.T) {
+	t.Parallel()
 	r := rlm.NewRope("")
 	assert.Equal(t, 0, r.Len())
 	assert.Equal(t, "", r.String())
 }
 
 func TestRope_BasicAppendAndString(t *testing.T) {
+	t.Parallel()
 	r := rlm.NewRope("hello")
 	r.Append(" world")
 	assert.Equal(t, 11, r.Len())
@@ -23,6 +25,7 @@ func TestRope_BasicAppendAndString(t *testing.T) {
 }
 
 func TestRope_LargeContent(t *testing.T) {
+	t.Parallel()
 	content := strings.Repeat("abcdefghij", 1000) // 10000 bytes
 	r := rlm.NewRope(content)
 	assert.Equal(t, 10000, r.Len())
@@ -30,6 +33,7 @@ func TestRope_LargeContent(t *testing.T) {
 }
 
 func TestRope_Slice_ValidRange(t *testing.T) {
+	t.Parallel()
 	r := rlm.NewRope("hello world")
 	s, err := r.Slice(6, 11)
 	require.NoError(t, err)
@@ -37,6 +41,7 @@ func TestRope_Slice_ValidRange(t *testing.T) {
 }
 
 func TestRope_Slice_ZeroLength(t *testing.T) {
+	t.Parallel()
 	r := rlm.NewRope("hello")
 	s, err := r.Slice(2, 2)
 	require.NoError(t, err)
@@ -44,12 +49,14 @@ func TestRope_Slice_ZeroLength(t *testing.T) {
 }
 
 func TestRope_Slice_OutOfRange(t *testing.T) {
+	t.Parallel()
 	r := rlm.NewRope("hello")
 	_, err := r.Slice(3, 10)
 	assert.Error(t, err)
 }
 
 func TestRope_Slice_AcrossAppendBoundary(t *testing.T) {
+	t.Parallel()
 	r := rlm.NewRope("hello")
 	r.Append(" world")
 	s, err := r.Slice(3, 8)
@@ -58,12 +65,14 @@ func TestRope_Slice_AcrossAppendBoundary(t *testing.T) {
 }
 
 func TestRope_Lines(t *testing.T) {
+	t.Parallel()
 	r := rlm.NewRope("line1\nline2\nline3")
 	lines := r.Lines()
 	assert.Equal(t, []string{"line1", "line2", "line3"}, lines)
 }
 
 func TestRope_GrepLines_CaseSensitive(t *testing.T) {
+	t.Parallel()
 	r := rlm.NewRope("apple\nBanana\napricot\ncherry")
 	matches := r.GrepLines("ap", 0, false)
 	require.Len(t, matches, 2)
@@ -72,6 +81,7 @@ func TestRope_GrepLines_CaseSensitive(t *testing.T) {
 }
 
 func TestRope_GrepLines_CaseInsensitive(t *testing.T) {
+	t.Parallel()
 	r := rlm.NewRope("Apple\nbanana\nAPRICOT")
 	matches := r.GrepLines("apple", 0, true)
 	require.Len(t, matches, 1)
@@ -79,18 +89,21 @@ func TestRope_GrepLines_CaseInsensitive(t *testing.T) {
 }
 
 func TestRope_GrepLines_MaxMatches(t *testing.T) {
+	t.Parallel()
 	r := rlm.NewRope("aa\naa\naa\naa\naa")
 	matches := r.GrepLines("aa", 3, false)
 	assert.Len(t, matches, 3)
 }
 
 func TestRope_GrepLines_NoMatches(t *testing.T) {
+	t.Parallel()
 	r := rlm.NewRope("hello world")
 	matches := r.GrepLines("xyz", 0, false)
 	assert.Empty(t, matches)
 }
 
 func TestRope_Partition_Even(t *testing.T) {
+	t.Parallel()
 	r := rlm.NewRope("12345678")
 	parts := r.Partition(4)
 	assert.Len(t, parts, 4)
@@ -98,6 +111,7 @@ func TestRope_Partition_Even(t *testing.T) {
 }
 
 func TestRope_Partition_MoreThanContent(t *testing.T) {
+	t.Parallel()
 	r := rlm.NewRope("hi")
 	parts := r.Partition(10)
 	assert.Len(t, parts, 10)
@@ -107,6 +121,7 @@ func TestRope_Partition_MoreThanContent(t *testing.T) {
 }
 
 func TestRope_Partition_Empty(t *testing.T) {
+	t.Parallel()
 	r := rlm.NewRope("")
 	parts := r.Partition(4)
 	assert.Len(t, parts, 4)
@@ -116,7 +131,10 @@ func TestRope_Partition_Empty(t *testing.T) {
 }
 
 func TestRope_RuneLen(t *testing.T) {
+	t.Parallel(
 	// Multi-byte Unicode characters.
+	)
+
 	r := rlm.NewRope("héllo") // 'é' is 2 bytes
 	assert.Equal(t, 5, r.RuneLen())
 	assert.Equal(t, 6, r.Len()) // bytes

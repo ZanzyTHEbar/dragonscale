@@ -1,7 +1,6 @@
 package tools
 
 import (
-	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -9,6 +8,7 @@ import (
 )
 
 func TestKeywordSearchTool_Metadata(t *testing.T) {
+	t.Parallel()
 	tool := &KeywordSearchTool{agentID: "test"}
 	assert.Equal(t, "keyword_search", tool.Name())
 	assert.Contains(t, tool.Description(), "FTS5")
@@ -21,12 +21,14 @@ func TestKeywordSearchTool_Metadata(t *testing.T) {
 }
 
 func TestKeywordSearchTool_MissingQuery(t *testing.T) {
+	t.Parallel()
 	tool := &KeywordSearchTool{agentID: "test"}
-	result := tool.Execute(context.Background(), map[string]interface{}{})
+	result := tool.Execute(t.Context(), map[string]interface{}{})
 	assert.Contains(t, result.ForLLM, "query is required")
 }
 
 func TestSemanticSearchTool_Metadata(t *testing.T) {
+	t.Parallel()
 	tool := &SemanticSearchTool{agentID: "test"}
 	assert.Equal(t, "semantic_search", tool.Name())
 	assert.Contains(t, tool.Description(), "semantic similarity")
@@ -35,12 +37,14 @@ func TestSemanticSearchTool_Metadata(t *testing.T) {
 }
 
 func TestSemanticSearchTool_MissingQuery(t *testing.T) {
+	t.Parallel()
 	tool := &SemanticSearchTool{agentID: "test"}
-	result := tool.Execute(context.Background(), map[string]interface{}{})
+	result := tool.Execute(t.Context(), map[string]interface{}{})
 	assert.Contains(t, result.ForLLM, "query is required")
 }
 
 func TestChunkReadTool_Metadata(t *testing.T) {
+	t.Parallel()
 	tool := &ChunkReadTool{agentID: "test"}
 	assert.Equal(t, "chunk_read", tool.Name())
 	assert.Contains(t, tool.Description(), "full content")
@@ -49,17 +53,20 @@ func TestChunkReadTool_Metadata(t *testing.T) {
 }
 
 func TestChunkReadTool_MissingID(t *testing.T) {
+	t.Parallel()
 	tool := &ChunkReadTool{agentID: "test"}
-	result := tool.Execute(context.Background(), map[string]interface{}{})
+	result := tool.Execute(t.Context(), map[string]interface{}{})
 	assert.Contains(t, result.ForLLM, "id is required")
 }
 
 func TestFormatSearchResults_Empty(t *testing.T) {
+	t.Parallel()
 	output := formatSearchResults("keyword", "query", nil)
 	assert.Contains(t, output, "No keyword results found")
 }
 
 func TestFormatSearchResults_WithResults(t *testing.T) {
+	t.Parallel()
 	results := []struct {
 		id      string
 		content string

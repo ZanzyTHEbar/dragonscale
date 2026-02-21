@@ -24,6 +24,7 @@ func makeJWTForClaims(t *testing.T, claims map[string]interface{}) string {
 }
 
 func TestBuildAuthorizeURL(t *testing.T) {
+	t.Parallel()
 	cfg := OAuthProviderConfig{
 		Issuer:     "https://auth.example.com",
 		ClientID:   "test-client-id",
@@ -68,6 +69,7 @@ func TestBuildAuthorizeURL(t *testing.T) {
 }
 
 func TestBuildAuthorizeURLOpenAIExtras(t *testing.T) {
+	t.Parallel()
 	cfg := OpenAIOAuthConfig()
 	pkce := PKCECodes{CodeVerifier: "test-verifier", CodeChallenge: "test-challenge"}
 
@@ -90,6 +92,7 @@ func TestBuildAuthorizeURLOpenAIExtras(t *testing.T) {
 }
 
 func TestParseTokenResponse(t *testing.T) {
+	t.Parallel()
 	resp := map[string]interface{}{
 		"access_token":  "test-access-token",
 		"refresh_token": "test-refresh-token",
@@ -121,6 +124,7 @@ func TestParseTokenResponse(t *testing.T) {
 }
 
 func TestParseTokenResponseExtractsAccountIDFromIDToken(t *testing.T) {
+	t.Parallel()
 	idToken := makeJWTForClaims(t, map[string]interface{}{"chatgpt_account_id": "acc-id-from-id-token"})
 	resp := map[string]interface{}{
 		"access_token":  "opaque-access-token",
@@ -140,6 +144,7 @@ func TestParseTokenResponseExtractsAccountIDFromIDToken(t *testing.T) {
 }
 
 func TestExtractAccountIDFromOrganizationsFallback(t *testing.T) {
+	t.Parallel()
 	token := makeJWTForClaims(t, map[string]interface{}{
 		"organizations": []interface{}{
 			map[string]interface{}{"id": "org_from_orgs"},
@@ -152,6 +157,7 @@ func TestExtractAccountIDFromOrganizationsFallback(t *testing.T) {
 }
 
 func TestParseTokenResponseNoAccessToken(t *testing.T) {
+	t.Parallel()
 	body := []byte(`{"refresh_token": "test"}`)
 	_, err := parseTokenResponse(body, "openai")
 	if err == nil {
@@ -160,6 +166,7 @@ func TestParseTokenResponseNoAccessToken(t *testing.T) {
 }
 
 func TestParseTokenResponseAccountIDFromIDToken(t *testing.T) {
+	t.Parallel()
 	idToken := makeJWTWithAccountID("acc-from-id")
 	resp := map[string]interface{}{
 		"access_token":  "not-a-jwt",
@@ -186,6 +193,7 @@ func makeJWTWithAccountID(accountID string) string {
 }
 
 func TestExchangeCodeForTokens(t *testing.T) {
+	t.Parallel()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/oauth/token" {
 			http.Error(w, "not found", http.StatusNotFound)
@@ -229,6 +237,7 @@ func TestExchangeCodeForTokens(t *testing.T) {
 }
 
 func TestRefreshAccessToken(t *testing.T) {
+	t.Parallel()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/oauth/token" {
 			http.Error(w, "not found", http.StatusNotFound)
@@ -276,6 +285,7 @@ func TestRefreshAccessToken(t *testing.T) {
 }
 
 func TestRefreshAccessTokenNoRefreshToken(t *testing.T) {
+	t.Parallel()
 	cfg := OpenAIOAuthConfig()
 	cred := &AuthCredential{
 		AccessToken: "old-token",
@@ -290,6 +300,7 @@ func TestRefreshAccessTokenNoRefreshToken(t *testing.T) {
 }
 
 func TestRefreshAccessTokenPreservesRefreshAndAccountID(t *testing.T) {
+	t.Parallel()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		resp := map[string]interface{}{
 			"access_token": "new-access-token-only",
@@ -321,6 +332,7 @@ func TestRefreshAccessTokenPreservesRefreshAndAccountID(t *testing.T) {
 }
 
 func TestOpenAIOAuthConfig(t *testing.T) {
+	t.Parallel()
 	cfg := OpenAIOAuthConfig()
 	if cfg.Issuer != "https://auth.openai.com" {
 		t.Errorf("Issuer = %q, want %q", cfg.Issuer, "https://auth.openai.com")
@@ -334,6 +346,7 @@ func TestOpenAIOAuthConfig(t *testing.T) {
 }
 
 func TestParseDeviceCodeResponseIntervalAsNumber(t *testing.T) {
+	t.Parallel()
 	body := []byte(`{"device_auth_id":"abc","user_code":"DEF-1234","interval":5}`)
 
 	resp, err := parseDeviceCodeResponse(body)
@@ -353,6 +366,7 @@ func TestParseDeviceCodeResponseIntervalAsNumber(t *testing.T) {
 }
 
 func TestParseDeviceCodeResponseIntervalAsString(t *testing.T) {
+	t.Parallel()
 	body := []byte(`{"device_auth_id":"abc","user_code":"DEF-1234","interval":"5"}`)
 
 	resp, err := parseDeviceCodeResponse(body)
@@ -366,6 +380,7 @@ func TestParseDeviceCodeResponseIntervalAsString(t *testing.T) {
 }
 
 func TestParseDeviceCodeResponseInvalidInterval(t *testing.T) {
+	t.Parallel()
 	body := []byte(`{"device_auth_id":"abc","user_code":"DEF-1234","interval":"abc"}`)
 
 	if _, err := parseDeviceCodeResponse(body); err == nil {

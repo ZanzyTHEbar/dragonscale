@@ -45,7 +45,7 @@ func TestDAGToolRuntime_IndependentToolsRunConcurrently(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		res, err = rt.Execute(context.Background(), []AgentTool{tool}, toolCalls, nil)
+		res, err = rt.Execute(t.Context(), []AgentTool{tool}, toolCalls, nil)
 	}()
 
 	// Both tools should start before we release.
@@ -100,7 +100,7 @@ func TestDAGToolRuntime_DependenciesWaitAndInputIsResolved(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		res, err = rt.Execute(context.Background(), []AgentTool{toolA, toolB}, toolCalls, nil)
+		res, err = rt.Execute(t.Context(), []AgentTool{toolA, toolB}, toolCalls, nil)
 	}()
 
 	<-startA
@@ -138,7 +138,7 @@ func TestDAGToolRuntime_CycleDetected(t *testing.T) {
 		{ToolCallID: "b", ToolName: "p", Input: `{"x":"$tool.a"}`},
 	}
 
-	res, err := rt.Execute(context.Background(), []AgentTool{tool}, toolCalls, nil)
+	res, err := rt.Execute(t.Context(), []AgentTool{tool}, toolCalls, nil)
 	require.Error(t, err)
 	require.Nil(t, res)
 }
@@ -172,7 +172,7 @@ func TestDAGToolRuntime_OnToolResultSerialized(t *testing.T) {
 		return nil
 	}
 
-	res, err := rt.Execute(context.Background(), []AgentTool{tool}, toolCalls, cb)
+	res, err := rt.Execute(t.Context(), []AgentTool{tool}, toolCalls, cb)
 	require.NoError(t, err)
 	require.Len(t, res, 2)
 
@@ -206,7 +206,7 @@ func TestDAGToolRuntime_MetricsAndLogHooks(t *testing.T) {
 	toolCalls := []ToolCallContent{
 		{ToolCallID: "a", ToolName: "p", Input: `{}`},
 	}
-	res, err := rt.Execute(context.Background(), []AgentTool{tool}, toolCalls, nil)
+	res, err := rt.Execute(t.Context(), []AgentTool{tool}, toolCalls, nil)
 	require.NoError(t, err)
 	require.Len(t, res, 1)
 	require.True(t, metricsCalled)

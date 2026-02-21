@@ -20,7 +20,7 @@ func newTestDB(t *testing.T) *sqlc.Queries {
 	t.Helper()
 	d, err := delegate.NewLibSQLInMemory()
 	require.NoError(t, err)
-	require.NoError(t, d.Init(context.Background()))
+	require.NoError(t, d.Init(t.Context()))
 	t.Cleanup(func() { _ = d.Close() })
 	return d.Queries()
 }
@@ -28,7 +28,7 @@ func newTestDB(t *testing.T) *sqlc.Queries {
 func enqueueJob(t *testing.T, q *sqlc.Queries, kind, dedupeKey string, maxAttempts int64) sqlc.Job {
 	t.Helper()
 	past := time.Now().UTC().Add(-time.Second)
-	job, err := q.EnqueueJob(context.Background(), sqlc.EnqueueJobParams{
+	job, err := q.EnqueueJob(t.Context(), sqlc.EnqueueJobParams{
 		ID:          ids.New(),
 		Kind:        kind,
 		DedupeKey:   &dedupeKey,
@@ -41,14 +41,16 @@ func enqueueJob(t *testing.T, q *sqlc.Queries, kind, dedupeKey string, maxAttemp
 }
 
 func TestWorker_RunOnce_NoJobs(t *testing.T) {
+	t.Parallel()
 	q := newTestDB(t)
-	err := worker.RunOnce(context.Background(), q, nil)
+	err := worker.RunOnce(t.Context(), q, nil)
 	assert.NoError(t, err, "empty queue should not error")
 }
 
 func TestWorker_RunOnce_HandlerCalled(t *testing.T) {
+	t.Parallel()
 	q := newTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	enqueueJob(t, q, "greet", "greet-1", 3)
 
@@ -69,8 +71,9 @@ func TestWorker_RunOnce_HandlerCalled(t *testing.T) {
 }
 
 func TestWorker_RunOnce_JobMarkedSucceeded(t *testing.T) {
+	t.Parallel()
 	q := newTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	job := enqueueJob(t, q, "ping", "ping-1", 3)
 
@@ -91,8 +94,9 @@ func TestWorker_RunOnce_JobMarkedSucceeded(t *testing.T) {
 }
 
 func TestWorker_RunOnce_HandlerError_Requeued(t *testing.T) {
+	t.Parallel()
 	q := newTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	job := enqueueJob(t, q, "fail", "fail-1", 3)
 
@@ -116,8 +120,9 @@ func TestWorker_RunOnce_HandlerError_Requeued(t *testing.T) {
 }
 
 func TestWorker_RunOnce_MaxAttemptsExhausted_MarkedFailed(t *testing.T) {
+	t.Parallel()
 	q := newTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	enqueueJob(t, q, "exhaust", "exhaust-1", 1)
 
@@ -145,8 +150,9 @@ func TestWorker_RunOnce_MaxAttemptsExhausted_MarkedFailed(t *testing.T) {
 }
 
 func TestWorker_RunOnce_UnknownKind_MarkedFailed(t *testing.T) {
+	t.Parallel()
 	q := newTestDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	enqueueJob(t, q, "unknown-kind", "unk-1", 3)
 
@@ -169,13 +175,15 @@ func TestWorker_RunOnce_UnknownKind_MarkedFailed(t *testing.T) {
 }
 
 func TestWorker_RunOnce_NilQueries(t *testing.T) {
-	err := worker.RunOnce(context.Background(), nil, nil)
+	t.Parallel()
+	err := worker.RunOnce(t.Context(), nil, nil)
 	assert.Error(t, err, "nil queries should return an error")
 }
 
 func TestWorker_RunLoop_StopsOnCancel(t *testing.T) {
+	t.Parallel()
 	q := newTestDB(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	ctx, cancel := context.WithTimeout(t.Context(), 200*time.Millisecond)
 	defer cancel()
 
 	opts := &worker.Options{
@@ -189,6 +197,7 @@ func TestWorker_RunLoop_StopsOnCancel(t *testing.T) {
 }
 
 func TestWorker_RunLoop_ProcessesJobs(t *testing.T) {
+	t.Parallel()
 	q := newTestDB(t)
 
 	var processed atomic.Int32
@@ -197,7 +206,7 @@ func TestWorker_RunLoop_ProcessesJobs(t *testing.T) {
 		enqueueJob(t, q, "batch", "batch-"+string(rune('A'+i)), 3)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
 	defer cancel()
 
 	opts := &worker.Options{

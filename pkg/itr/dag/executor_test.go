@@ -3,8 +3,9 @@ package dag_test
 import (
 	"context"
 	"fmt"
-	jsonv2 "github.com/go-json-experiment/json"
 	"testing"
+
+	jsonv2 "github.com/go-json-experiment/json"
 
 	"github.com/ZanzyTHEbar/dragonscale/pkg/itr"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/itr/dag"
@@ -51,6 +52,7 @@ func (s *staticTool) Execute(_ context.Context, args map[string]interface{}) *to
 }
 
 func TestExecutor_LinearDependencyChain(t *testing.T) {
+	t.Parallel()
 	toolMap := map[string]tools.Tool{
 		"step1": &staticTool{name: "step1", result: "r1"},
 		"step2": &staticTool{name: "step2", result: "r2"},
@@ -67,13 +69,14 @@ func TestExecutor_LinearDependencyChain(t *testing.T) {
 		},
 	}
 
-	result, err := executor.Execute(context.Background(), "test-sess", plan)
+	result, err := executor.Execute(t.Context(), "test-sess", plan)
 	require.NoError(t, err)
 	assert.Contains(t, result.NodeResults["a"], "r1")
 	assert.Contains(t, result.NodeResults["b"], "r2")
 }
 
 func TestExecutor_ParallelNodes(t *testing.T) {
+	t.Parallel()
 	toolMap := map[string]tools.Tool{
 		"alpha": &staticTool{name: "alpha", result: "a-result"},
 		"beta":  &staticTool{name: "beta", result: "b-result"},
@@ -90,13 +93,14 @@ func TestExecutor_ParallelNodes(t *testing.T) {
 		},
 	}
 
-	result, err := executor.Execute(context.Background(), "test-sess", plan)
+	result, err := executor.Execute(t.Context(), "test-sess", plan)
 	require.NoError(t, err)
 	assert.Equal(t, "a-result", result.NodeResults["n1"])
 	assert.Equal(t, "b-result", result.NodeResults["n2"])
 }
 
 func TestExecutor_CycleDetection(t *testing.T) {
+	t.Parallel()
 	bus := makeBus(t, map[string]tools.Tool{})
 	defer bus.Close()
 
@@ -109,12 +113,13 @@ func TestExecutor_CycleDetection(t *testing.T) {
 		},
 	}
 
-	_, err := executor.Execute(context.Background(), "test-sess", plan)
+	_, err := executor.Execute(t.Context(), "test-sess", plan)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "cycle")
 }
 
 func TestExecutor_WithJoiner(t *testing.T) {
+	t.Parallel()
 	toolMap := map[string]tools.Tool{
 		"tool1": &staticTool{name: "tool1", result: "data-A"},
 		"tool2": &staticTool{name: "tool2", result: "data-B"},
@@ -140,24 +145,26 @@ func TestExecutor_WithJoiner(t *testing.T) {
 		JoinerQuery: "Combine the results into a summary",
 	}
 
-	result, err := executor.Execute(context.Background(), "test-sess", plan)
+	result, err := executor.Execute(t.Context(), "test-sess", plan)
 	require.NoError(t, err)
 	assert.Contains(t, result.FinalAnswer, "synthesized:")
 	assert.Equal(t, uint32(50), result.TotalTokens)
 }
 
 func TestExecutor_EmptyPlan(t *testing.T) {
+	t.Parallel()
 	bus := makeBus(t, map[string]tools.Tool{})
 	defer bus.Close()
 
 	executor := dag.NewExecutor(bus, nil)
 
-	result, err := executor.Execute(context.Background(), "test-sess", &itr.DAGPlan{})
+	result, err := executor.Execute(t.Context(), "test-sess", &itr.DAGPlan{})
 	require.NoError(t, err)
 	assert.Empty(t, result.NodeResults)
 }
 
 func TestResolver_NodeRefSubstitution(t *testing.T) {
+	t.Parallel()
 	argsJSON := `{"query": "search for #nodeprev results"}`
 	toolMap := map[string]tools.Tool{
 		"search": &staticTool{name: "search", result: "found"},
@@ -175,31 +182,35 @@ func TestResolver_NodeRefSubstitution(t *testing.T) {
 		},
 	}
 
-	result, err := executor.Execute(context.Background(), "test-sess", plan)
+	result, err := executor.Execute(t.Context(), "test-sess", plan)
 	require.NoError(t, err)
 	assert.Contains(t, result.NodeResults["prev"], "previous-output")
 	assert.Contains(t, result.NodeResults["search"], "found")
 }
 
 func TestRouter_SimpleQuerySelectsReAct(t *testing.T) {
+	t.Parallel()
 	cfg := dag.DefaultRouterConfig()
 	mode := dag.Route(dag.ModeAuto, "What is the weather?", cfg)
 	assert.Equal(t, dag.ModeReAct, mode)
 }
 
 func TestRouter_ComplexQuerySelectsDAG(t *testing.T) {
+	t.Parallel()
 	cfg := dag.DefaultRouterConfig()
 	mode := dag.Route(dag.ModeAuto, "Search for the latest news about AI, read the top 3 articles, and compare their viewpoints to create a summary report with aggregate statistics", cfg)
 	assert.Equal(t, dag.ModeDAG, mode)
 }
 
 func TestRouter_ExplicitModeOverridesAuto(t *testing.T) {
+	t.Parallel()
 	cfg := dag.DefaultRouterConfig()
 	mode := dag.Route(dag.ModeReAct, "Do many complex parallel things simultaneously", cfg)
 	assert.Equal(t, dag.ModeReAct, mode)
 }
 
 func TestPlanner_ValidatePlan(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name    string
 		plan    string
@@ -238,7 +249,7 @@ func TestPlanner_ValidatePlan(t *testing.T) {
 				return tt.plan, 10, nil
 			}
 			planner := dag.NewPlanner(mockModel, nil, dag.DefaultPlannerConfig())
-			_, _, planErr := planner.Plan(context.Background(), "test query", nil)
+			_, _, planErr := planner.Plan(t.Context(), "test query", nil)
 			if tt.wantErr {
 				assert.Error(t, planErr)
 			} else {

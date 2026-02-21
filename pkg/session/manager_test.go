@@ -1,7 +1,6 @@
 package session
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -9,6 +8,8 @@ import (
 	"time"
 
 	jsonv2 "github.com/go-json-experiment/json"
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -17,6 +18,7 @@ import (
 )
 
 func TestSanitizeFilename(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		input    string
 		expected string
@@ -40,6 +42,7 @@ func TestSanitizeFilename(t *testing.T) {
 }
 
 func TestSave_WithColonInKey(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 	sm := NewSessionManager(tmpDir)
 
@@ -71,6 +74,7 @@ func TestSave_WithColonInKey(t *testing.T) {
 }
 
 func TestSave_RejectsPathTraversal(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 	sm := NewSessionManager(tmpDir)
 
@@ -84,6 +88,7 @@ func TestSave_RejectsPathTraversal(t *testing.T) {
 }
 
 func TestTruncateHistory_ToolCallAware(t *testing.T) {
+	t.Parallel()
 	sm := NewSessionManager("") // in-memory only
 
 	key := "test-tool-truncation"
@@ -129,6 +134,7 @@ func TestTruncateHistory_ToolCallAware(t *testing.T) {
 }
 
 func TestTruncateHistory_NoToolCalls(t *testing.T) {
+	t.Parallel()
 	sm := NewSessionManager("")
 
 	key := "test-no-tools"
@@ -151,6 +157,7 @@ func TestTruncateHistory_NoToolCalls(t *testing.T) {
 }
 
 func TestAddFullMessage_NoHardCapTruncation(t *testing.T) {
+	t.Parallel()
 	sm := NewSessionManager("")
 
 	key := "test-hard-cap"
@@ -167,6 +174,7 @@ func TestAddFullMessage_NoHardCapTruncation(t *testing.T) {
 }
 
 func TestCleanupStale(t *testing.T) {
+	t.Parallel()
 	sm := NewSessionManager("")
 
 	sm.AddFullMessage("active", messages.Message{Role: "user", Content: "hi"})
@@ -195,11 +203,12 @@ func TestCleanupStale(t *testing.T) {
 }
 
 func TestSessionManager_DelegatePersistence(t *testing.T) {
+	t.Parallel()
 	del, err := delegate.NewLibSQLInMemory()
 	if err != nil {
 		t.Fatalf("NewLibSQLInMemory: %v", err)
 	}
-	if err := del.Init(context.Background()); err != nil {
+	if err := del.Init(t.Context()); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
 	defer del.Close()
@@ -215,7 +224,7 @@ func TestSessionManager_DelegatePersistence(t *testing.T) {
 		t.Fatalf("expected 2 messages in-memory, got %d", len(history))
 	}
 
-	items, err := del.ListRecallItems(context.Background(), "test-agent", key, 100, 0)
+	items, err := del.ListRecallItems(t.Context(), "test-agent", key, 100, 0)
 	if err != nil {
 		t.Fatalf("ListRecallItems: %v", err)
 	}
@@ -228,11 +237,12 @@ func TestSessionManager_DelegatePersistence(t *testing.T) {
 }
 
 func TestSessionManager_DelegateSaveIsNoop(t *testing.T) {
+	t.Parallel()
 	del, err := delegate.NewLibSQLInMemory()
 	if err != nil {
 		t.Fatalf("NewLibSQLInMemory: %v", err)
 	}
-	if err := del.Init(context.Background()); err != nil {
+	if err := del.Init(t.Context()); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
 	defer del.Close()
@@ -256,11 +266,12 @@ func TestSessionManager_DelegateSaveIsNoop(t *testing.T) {
 }
 
 func TestSessionManager_DelegateBootstrapPaginationAndOrder(t *testing.T) {
+	t.Parallel()
 	del, err := delegate.NewLibSQLInMemory()
 	if err != nil {
 		t.Fatalf("NewLibSQLInMemory: %v", err)
 	}
-	if err := del.Init(context.Background()); err != nil {
+	if err := del.Init(t.Context()); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
 	defer del.Close()
@@ -291,9 +302,10 @@ func TestSessionManager_DelegateBootstrapPaginationAndOrder(t *testing.T) {
 }
 
 func TestSessionManager_ProjectionPointerPersistedAndRestored(t *testing.T) {
+	t.Parallel()
 	del, err := delegate.NewLibSQLInMemory()
 	require.NoError(t, err)
-	require.NoError(t, del.Init(context.Background()))
+	require.NoError(t, del.Init(t.Context()))
 	defer del.Close()
 
 	sessionKey := "ptr-persist"
@@ -303,35 +315,34 @@ func TestSessionManager_ProjectionPointerPersistedAndRestored(t *testing.T) {
 	sm.AddMessage(sessionKey, "user", "third")
 
 	// Read persisted pointer from KV
-	raw, err := del.GetKV(context.Background(), "test-agent", projectionPointerKey(sessionKey))
+	raw, err := del.GetKV(t.Context(), "test-agent", projectionPointerKey(sessionKey))
 	require.NoError(t, err)
 	require.NotEmpty(t, raw)
 	var ptr ProjectionPointer
 	require.NoError(t, jsonv2.Unmarshal([]byte(raw), &ptr))
-	assert.Equal(t, 3, ptr.Count)
-	assert.False(t, ptr.FirstMessageID.IsZero())
-	assert.False(t, ptr.LastMessageID.IsZero())
+	assert.NotZero(t, ptr.FirstMessageID)
+	assert.NotZero(t, ptr.LastMessageID)
 	assert.False(t, ptr.FirstCreatedAt.IsZero())
 	assert.False(t, ptr.LastCreatedAt.IsZero())
+	assert.Equal(t, 3, ptr.Count)
 
 	// New manager restores; pointer is re-persisted (same values)
 	sm2 := NewSessionManager("", WithSessionDelegate(del, "test-agent"))
 	history := sm2.GetHistory(sessionKey)
 	require.Len(t, history, 3)
-	raw2, err := del.GetKV(context.Background(), "test-agent", projectionPointerKey(sessionKey))
+	raw2, err := del.GetKV(t.Context(), "test-agent", projectionPointerKey(sessionKey))
 	require.NoError(t, err)
 	require.NotEmpty(t, raw2)
 	var ptr2 ProjectionPointer
 	require.NoError(t, jsonv2.Unmarshal([]byte(raw2), &ptr2))
-	assert.Equal(t, ptr.Count, ptr2.Count)
-	assert.Equal(t, ptr.FirstMessageID, ptr2.FirstMessageID)
-	assert.Equal(t, ptr.LastMessageID, ptr2.LastMessageID)
+	assert.Empty(t, cmp.Diff(ptr, ptr2, cmpopts.IgnoreFields(ProjectionPointer{}, "FirstCreatedAt", "LastCreatedAt")))
 }
 
 func TestSessionManager_ProjectionPointerUpdatedOnAppend(t *testing.T) {
+	t.Parallel()
 	del, err := delegate.NewLibSQLInMemory()
 	require.NoError(t, err)
-	require.NoError(t, del.Init(context.Background()))
+	require.NoError(t, del.Init(t.Context()))
 	defer del.Close()
 
 	sessionKey := "ptr-append"
@@ -339,7 +350,7 @@ func TestSessionManager_ProjectionPointerUpdatedOnAppend(t *testing.T) {
 
 	for i := 0; i < 4; i++ {
 		sm.AddMessage(sessionKey, "user", fmt.Sprintf("msg-%d", i))
-		raw, err := del.GetKV(context.Background(), "test-agent", projectionPointerKey(sessionKey))
+		raw, err := del.GetKV(t.Context(), "test-agent", projectionPointerKey(sessionKey))
 		require.NoError(t, err)
 		require.NotEmpty(t, raw)
 		var ptr ProjectionPointer
@@ -349,9 +360,10 @@ func TestSessionManager_ProjectionPointerUpdatedOnAppend(t *testing.T) {
 }
 
 func TestSessionManager_IntegrityMismatchRestoreStillSucceeds(t *testing.T) {
+	t.Parallel()
 	del, err := delegate.NewLibSQLInMemory()
 	require.NoError(t, err)
-	require.NoError(t, del.Init(context.Background()))
+	require.NoError(t, del.Init(t.Context()))
 	defer del.Close()
 
 	sessionKey := "integrity-mismatch"
@@ -362,7 +374,7 @@ func TestSessionManager_IntegrityMismatchRestoreStillSucceeds(t *testing.T) {
 	// Corrupt the stored pointer to simulate prior state mismatch
 	corrupt := ProjectionPointer{Count: 0}
 	data, _ := jsonv2.Marshal(corrupt)
-	require.NoError(t, del.UpsertKV(context.Background(), "test-agent", projectionPointerKey(sessionKey), string(data)))
+	require.NoError(t, del.UpsertKV(t.Context(), "test-agent", projectionPointerKey(sessionKey), string(data)))
 
 	// New manager restores; should succeed (lossless) despite mismatch
 	sm2 := NewSessionManager("", WithSessionDelegate(del, "test-agent"))
@@ -372,7 +384,7 @@ func TestSessionManager_IntegrityMismatchRestoreStillSucceeds(t *testing.T) {
 	assert.Equal(t, "b", history[1].Content)
 
 	// Pointer should now reflect restored state
-	raw, err := del.GetKV(context.Background(), "test-agent", projectionPointerKey(sessionKey))
+	raw, err := del.GetKV(t.Context(), "test-agent", projectionPointerKey(sessionKey))
 	require.NoError(t, err)
 	require.NotEmpty(t, raw)
 	var ptr ProjectionPointer
@@ -381,9 +393,10 @@ func TestSessionManager_IntegrityMismatchRestoreStillSucceeds(t *testing.T) {
 }
 
 func TestSessionManager_ProjectionBackfillStatusPersistedOnBootstrap(t *testing.T) {
+	t.Parallel()
 	del, err := delegate.NewLibSQLInMemory()
 	require.NoError(t, err)
-	require.NoError(t, del.Init(context.Background()))
+	require.NoError(t, del.Init(t.Context()))
 	defer del.Close()
 
 	writer := NewSessionManager("", WithSessionDelegate(del, "test-agent"))
@@ -393,7 +406,7 @@ func TestSessionManager_ProjectionBackfillStatusPersistedOnBootstrap(t *testing.
 
 	_ = NewSessionManager("", WithSessionDelegate(del, "test-agent"))
 
-	raw, err := del.GetKV(context.Background(), "test-agent", projectionBackfillStatusKey())
+	raw, err := del.GetKV(t.Context(), "test-agent", projectionBackfillStatusKey())
 	require.NoError(t, err)
 	require.NotEmpty(t, raw)
 

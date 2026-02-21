@@ -1,7 +1,6 @@
 package tools
 
 import (
-	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -13,6 +12,7 @@ import (
 
 // TestWebTool_WebFetch_Success verifies successful URL fetching
 func TestWebTool_WebFetch_Success(t *testing.T) {
+	t.Parallel()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		w.WriteHeader(http.StatusOK)
@@ -21,7 +21,7 @@ func TestWebTool_WebFetch_Success(t *testing.T) {
 	defer server.Close()
 
 	tool := NewWebFetchTool(50000)
-	ctx := context.Background()
+	ctx := t.Context()
 	args := map[string]interface{}{
 		"url": server.URL,
 	}
@@ -46,6 +46,7 @@ func TestWebTool_WebFetch_Success(t *testing.T) {
 
 // TestWebTool_WebFetch_JSON verifies JSON content handling
 func TestWebTool_WebFetch_JSON(t *testing.T) {
+	t.Parallel()
 	testData := map[string]string{"key": "value", "number": "123"}
 	expectedJSON, _ := jsonv2.Marshal(testData, jsontext.WithIndent("  "))
 
@@ -57,7 +58,7 @@ func TestWebTool_WebFetch_JSON(t *testing.T) {
 	defer server.Close()
 
 	tool := NewWebFetchTool(50000)
-	ctx := context.Background()
+	ctx := t.Context()
 	args := map[string]interface{}{
 		"url": server.URL,
 	}
@@ -77,8 +78,9 @@ func TestWebTool_WebFetch_JSON(t *testing.T) {
 
 // TestWebTool_WebFetch_InvalidURL verifies error handling for invalid URL
 func TestWebTool_WebFetch_InvalidURL(t *testing.T) {
+	t.Parallel()
 	tool := NewWebFetchTool(50000)
-	ctx := context.Background()
+	ctx := t.Context()
 	args := map[string]interface{}{
 		"url": "not-a-valid-url",
 	}
@@ -98,8 +100,9 @@ func TestWebTool_WebFetch_InvalidURL(t *testing.T) {
 
 // TestWebTool_WebFetch_UnsupportedScheme verifies error handling for non-http URLs
 func TestWebTool_WebFetch_UnsupportedScheme(t *testing.T) {
+	t.Parallel()
 	tool := NewWebFetchTool(50000)
-	ctx := context.Background()
+	ctx := t.Context()
 	args := map[string]interface{}{
 		"url": "ftp://example.com/file.txt",
 	}
@@ -119,8 +122,9 @@ func TestWebTool_WebFetch_UnsupportedScheme(t *testing.T) {
 
 // TestWebTool_WebFetch_MissingURL verifies error handling for missing URL
 func TestWebTool_WebFetch_MissingURL(t *testing.T) {
+	t.Parallel()
 	tool := NewWebFetchTool(50000)
-	ctx := context.Background()
+	ctx := t.Context()
 	args := map[string]interface{}{}
 
 	result := tool.Execute(ctx, args)
@@ -138,6 +142,7 @@ func TestWebTool_WebFetch_MissingURL(t *testing.T) {
 
 // TestWebTool_WebFetch_Truncation verifies content truncation
 func TestWebTool_WebFetch_Truncation(t *testing.T) {
+	t.Parallel()
 	longContent := strings.Repeat("x", 20000)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -148,7 +153,7 @@ func TestWebTool_WebFetch_Truncation(t *testing.T) {
 	defer server.Close()
 
 	tool := NewWebFetchTool(1000) // Limit to 1000 chars
-	ctx := context.Background()
+	ctx := t.Context()
 	args := map[string]interface{}{
 		"url": server.URL,
 	}
@@ -177,6 +182,7 @@ func TestWebTool_WebFetch_Truncation(t *testing.T) {
 
 // TestWebTool_WebSearch_NoApiKey verifies that no tool is created when API key is missing
 func TestWebTool_WebSearch_NoApiKey(t *testing.T) {
+	t.Parallel()
 	tool := NewWebSearchTool(WebSearchToolOptions{BraveEnabled: true, BraveAPIKey: ""})
 	if tool != nil {
 		t.Errorf("Expected nil tool when Brave API key is empty")
@@ -191,8 +197,9 @@ func TestWebTool_WebSearch_NoApiKey(t *testing.T) {
 
 // TestWebTool_WebSearch_MissingQuery verifies error handling for missing query
 func TestWebTool_WebSearch_MissingQuery(t *testing.T) {
+	t.Parallel()
 	tool := NewWebSearchTool(WebSearchToolOptions{BraveEnabled: true, BraveAPIKey: "test-key", BraveMaxResults: 5})
-	ctx := context.Background()
+	ctx := t.Context()
 	args := map[string]interface{}{}
 
 	result := tool.Execute(ctx, args)
@@ -205,6 +212,7 @@ func TestWebTool_WebSearch_MissingQuery(t *testing.T) {
 
 // TestWebTool_WebFetch_HTMLExtraction verifies HTML text extraction
 func TestWebTool_WebFetch_HTMLExtraction(t *testing.T) {
+	t.Parallel()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		w.WriteHeader(http.StatusOK)
@@ -213,7 +221,7 @@ func TestWebTool_WebFetch_HTMLExtraction(t *testing.T) {
 	defer server.Close()
 
 	tool := NewWebFetchTool(50000)
-	ctx := context.Background()
+	ctx := t.Context()
 	args := map[string]interface{}{
 		"url": server.URL,
 	}
@@ -238,8 +246,9 @@ func TestWebTool_WebFetch_HTMLExtraction(t *testing.T) {
 
 // TestWebTool_WebFetch_MissingDomain verifies error handling for URL without domain
 func TestWebTool_WebFetch_MissingDomain(t *testing.T) {
+	t.Parallel()
 	tool := NewWebFetchTool(50000)
-	ctx := context.Background()
+	ctx := t.Context()
 	args := map[string]interface{}{
 		"url": "https://",
 	}

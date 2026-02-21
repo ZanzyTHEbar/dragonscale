@@ -9,6 +9,7 @@ import (
 )
 
 func TestExtractJSON_RawJSON(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name    string
 		input   string
@@ -30,6 +31,7 @@ func TestExtractJSON_RawJSON(t *testing.T) {
 }
 
 func TestExtractJSON_CodeFence(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name  string
 		input string
@@ -58,6 +60,7 @@ func TestExtractJSON_CodeFence(t *testing.T) {
 }
 
 func TestExtractJSON_EmbeddedInProse(t *testing.T) {
+	t.Parallel()
 	input := `Based on my analysis, the result is {"importance": 0.9, "sector": "semantic"} which indicates high relevance.`
 	var result struct {
 		Importance float64 `json:"importance"`
@@ -70,6 +73,7 @@ func TestExtractJSON_EmbeddedInProse(t *testing.T) {
 }
 
 func TestExtractJSON_NestedBracesInStrings(t *testing.T) {
+	t.Parallel()
 	input := `{"content": "function() { return {}; }", "count": 1}`
 	var result map[string]interface{}
 	err := ExtractJSON(input, &result, nil)
@@ -79,6 +83,7 @@ func TestExtractJSON_NestedBracesInStrings(t *testing.T) {
 }
 
 func TestExtractJSON_InjectionAttempts(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name  string
 		input string
@@ -131,12 +136,14 @@ func TestExtractJSON_InjectionAttempts(t *testing.T) {
 }
 
 func TestExtractJSON_EmptyInput(t *testing.T) {
+	t.Parallel()
 	var result map[string]interface{}
 	err := ExtractJSON("", &result, nil)
 	assert.ErrorIs(t, err, ErrNoJSON)
 }
 
 func TestExtractJSON_MultipleFences_TakesFirst(t *testing.T) {
+	t.Parallel()
 	input := "```json\n{\"first\": true}\n```\nmore text\n```json\n{\"second\": true}\n```"
 	var result map[string]interface{}
 	err := ExtractJSON(input, &result, nil)
@@ -147,6 +154,7 @@ func TestExtractJSON_MultipleFences_TakesFirst(t *testing.T) {
 }
 
 func TestSanitizeToolArgs_ValidInput(t *testing.T) {
+	t.Parallel()
 	schema := map[string]ArgSpec{
 		"path":    {Type: ArgString, Required: true, MaxLength: 256},
 		"content": {Type: ArgString, Required: true},
@@ -166,6 +174,7 @@ func TestSanitizeToolArgs_ValidInput(t *testing.T) {
 }
 
 func TestSanitizeToolArgs_MissingRequired(t *testing.T) {
+	t.Parallel()
 	schema := map[string]ArgSpec{
 		"path": {Type: ArgString, Required: true},
 	}
@@ -176,6 +185,7 @@ func TestSanitizeToolArgs_MissingRequired(t *testing.T) {
 }
 
 func TestSanitizeToolArgs_ExceedsMaxLength(t *testing.T) {
+	t.Parallel()
 	schema := map[string]ArgSpec{
 		"cmd": {Type: ArgString, Required: true, MaxLength: 10},
 	}
@@ -186,6 +196,7 @@ func TestSanitizeToolArgs_ExceedsMaxLength(t *testing.T) {
 }
 
 func TestSanitizeToolArgs_TypeCoercion(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		argType  ArgType
@@ -220,12 +231,14 @@ func TestSanitizeToolArgs_TypeCoercion(t *testing.T) {
 }
 
 func TestExtractFirstBraced_EscapedQuotes(t *testing.T) {
+	t.Parallel()
 	input := `{"msg": "say \"hello\" world"}`
 	result := extractFirstBraced(input)
 	assert.Equal(t, input, result)
 }
 
 func TestExtractFirstBraced_UnbalancedBraces(t *testing.T) {
+	t.Parallel()
 	input := `text { not closed`
 	result := extractFirstBraced(input)
 	assert.Empty(t, result)

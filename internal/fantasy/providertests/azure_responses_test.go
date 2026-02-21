@@ -14,6 +14,7 @@ import (
 )
 
 func TestAzureResponsesCommon(t *testing.T) {
+	t.Parallel()
 	var pairs []builderPair
 	models := []testModel{
 		{"azure-gpt-5-mini", "gpt-5-mini", true},
@@ -41,6 +42,7 @@ func azureReasoningBuilder(model string) builderFunc {
 }
 
 func TestAzureResponsesWithSummaryThinking(t *testing.T) {
+	t.Parallel()
 	opts := fantasy.ProviderOptions{
 		openai.Name: &openai.ResponsesProviderOptions{
 			Include: []openai.IncludeType{

@@ -1,7 +1,6 @@
 package dag_test
 
 import (
-	"context"
 	"fmt"
 	"testing"
 	"time"
@@ -18,7 +17,8 @@ import (
 )
 
 func TestBackfillMissingSessionDAGs_CreatesSnapshotsAndPersistsStatus(t *testing.T) {
-	ctx := context.Background()
+	t.Parallel()
+	ctx := t.Context()
 	d, err := delegate.NewLibSQLInMemory()
 	require.NoError(t, err)
 	require.NoError(t, d.Init(ctx))

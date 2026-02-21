@@ -1,14 +1,15 @@
 package store
 
 import (
-	"context"
-	jsonv2 "github.com/go-json-experiment/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	jsonv2 "github.com/go-json-experiment/json"
 )
 
 func TestOpenAIEmbedder_Embed(t *testing.T) {
+	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/embeddings" {
 			t.Errorf("expected /embeddings, got %s", r.URL.Path)
@@ -40,7 +41,7 @@ func TestOpenAIEmbedder_Embed(t *testing.T) {
 		APIKey: "test-key",
 	})
 
-	vec, err := e.Embed(context.Background(), "hello")
+	vec, err := e.Embed(t.Context(), "hello")
 	if err != nil {
 		t.Fatalf("Embed: %v", err)
 	}
@@ -56,6 +57,7 @@ func TestOpenAIEmbedder_Embed(t *testing.T) {
 }
 
 func TestOpenAIEmbedder_EmbedBatch(t *testing.T) {
+	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req openAIEmbedRequest
 		jsonv2.UnmarshalRead(r.Body, &req)
@@ -84,7 +86,7 @@ func TestOpenAIEmbedder_EmbedBatch(t *testing.T) {
 		APIKey: "k",
 	})
 
-	vecs, err := e.EmbedBatch(context.Background(), []string{"a", "b", "c"})
+	vecs, err := e.EmbedBatch(t.Context(), []string{"a", "b", "c"})
 	if err != nil {
 		t.Fatalf("EmbedBatch: %v", err)
 	}
@@ -94,6 +96,7 @@ func TestOpenAIEmbedder_EmbedBatch(t *testing.T) {
 }
 
 func TestOpenAIEmbedder_SingleTextNotArray(t *testing.T) {
+	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req openAIEmbedRequest
 		jsonv2.UnmarshalRead(r.Body, &req)
@@ -111,13 +114,14 @@ func TestOpenAIEmbedder_SingleTextNotArray(t *testing.T) {
 	defer srv.Close()
 
 	e := NewOpenAIEmbedder(OpenAIEmbedderConfig{Base: srv.URL, APIKey: "k"})
-	_, err := e.Embed(context.Background(), "single")
+	_, err := e.Embed(t.Context(), "single")
 	if err != nil {
 		t.Fatalf("Embed: %v", err)
 	}
 }
 
 func TestOpenAIEmbedder_ServerError(t *testing.T) {
+	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
 		w.Write([]byte(`{"error":{"message":"invalid api key"}}`))
@@ -125,13 +129,14 @@ func TestOpenAIEmbedder_ServerError(t *testing.T) {
 	defer srv.Close()
 
 	e := NewOpenAIEmbedder(OpenAIEmbedderConfig{Base: srv.URL, APIKey: "bad"})
-	_, err := e.Embed(context.Background(), "test")
+	_, err := e.Embed(t.Context(), "test")
 	if err == nil {
 		t.Error("expected error for 401 response")
 	}
 }
 
 func TestOpenAIEmbedder_DefaultModel(t *testing.T) {
+	t.Parallel()
 	e := NewOpenAIEmbedder(OpenAIEmbedderConfig{APIKey: "k"})
 	if e.Model() != defaultOpenAIModel {
 		t.Errorf("expected %q, got %q", defaultOpenAIModel, e.Model())
@@ -139,6 +144,7 @@ func TestOpenAIEmbedder_DefaultModel(t *testing.T) {
 }
 
 func TestOpenAIEmbedder_NoAuth(t *testing.T) {
+	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != "" {
 			t.Error("expected no auth header when key is empty")
@@ -151,7 +157,7 @@ func TestOpenAIEmbedder_NoAuth(t *testing.T) {
 	defer srv.Close()
 
 	e := NewOpenAIEmbedder(OpenAIEmbedderConfig{Base: srv.URL})
-	_, err := e.Embed(context.Background(), "test")
+	_, err := e.Embed(t.Context(), "test")
 	if err != nil {
 		t.Fatalf("Embed: %v", err)
 	}

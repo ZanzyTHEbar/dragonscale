@@ -13,6 +13,7 @@ import (
 )
 
 func TestAgenticMapTool_Execute_Success(t *testing.T) {
+	t.Parallel()
 	provider := &MockLanguageModel{}
 	manager := NewSubagentManager(provider, "test-model", "/tmp/test", bus.NewMessageBus())
 	manager.SetRunLoop(func(_ context.Context, _ ToolLoopConfig, _, userPrompt, _, _ string) (*ToolLoopResult, error) {
@@ -20,7 +21,7 @@ func TestAgenticMapTool_Execute_Success(t *testing.T) {
 	})
 
 	tool := NewAgenticMapTool(manager)
-	result := tool.Execute(context.Background(), map[string]interface{}{
+	result := tool.Execute(t.Context(), map[string]interface{}{
 		"items": []interface{}{
 			map[string]interface{}{"name": "a"},
 			map[string]interface{}{"name": "b"},
@@ -46,6 +47,7 @@ func TestAgenticMapTool_Execute_Success(t *testing.T) {
 }
 
 func TestAgenticMapTool_Execute_RetriesFailedItems(t *testing.T) {
+	t.Parallel()
 	provider := &MockLanguageModel{}
 	manager := NewSubagentManager(provider, "test-model", "/tmp/test", bus.NewMessageBus())
 	callCount := 0
@@ -58,7 +60,7 @@ func TestAgenticMapTool_Execute_RetriesFailedItems(t *testing.T) {
 	})
 
 	tool := NewAgenticMapTool(manager)
-	result := tool.Execute(context.Background(), map[string]interface{}{
+	result := tool.Execute(t.Context(), map[string]interface{}{
 		"items":         []interface{}{map[string]interface{}{"name": "retry-me"}},
 		"task_template": "Retry item {{index}} => {{item_json}}",
 		"max_retries":   float64(2),
@@ -80,11 +82,12 @@ func TestAgenticMapTool_Execute_RetriesFailedItems(t *testing.T) {
 }
 
 func TestAgenticMapTool_Execute_RequiresPlaceholders(t *testing.T) {
+	t.Parallel()
 	provider := &MockLanguageModel{}
 	manager := NewSubagentManager(provider, "test-model", "/tmp/test", bus.NewMessageBus())
 	tool := NewAgenticMapTool(manager)
 
-	result := tool.Execute(context.Background(), map[string]interface{}{
+	result := tool.Execute(t.Context(), map[string]interface{}{
 		"items":         []interface{}{map[string]interface{}{"name": "x"}},
 		"task_template": "Handle item without placeholders",
 	})
@@ -95,11 +98,12 @@ func TestAgenticMapTool_Execute_RequiresPlaceholders(t *testing.T) {
 }
 
 func TestAgenticMapTool_Execute_ContextCancelled(t *testing.T) {
+	t.Parallel()
 	provider := &MockLanguageModel{}
 	manager := NewSubagentManager(provider, "test-model", "/tmp/test", bus.NewMessageBus())
 	tool := NewAgenticMapTool(manager)
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 
 	result := tool.Execute(ctx, map[string]interface{}{

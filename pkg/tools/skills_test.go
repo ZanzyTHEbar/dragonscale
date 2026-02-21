@@ -1,7 +1,6 @@
 package tools
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -59,80 +58,83 @@ No links.
 }
 
 func TestSkillSearchTool(t *testing.T) {
+	t.Parallel()
 	loader := setupTestSkills(t)
 	tool := NewSkillSearchTool(loader)
 
 	assert.Equal(t, "skill_search", tool.Name())
 
 	t.Run("finds matching skills", func(t *testing.T) {
-		result := tool.Execute(context.Background(), map[string]interface{}{"query": "trading"})
+		result := tool.Execute(t.Context(), map[string]interface{}{"query": "trading"})
 		assert.False(t, result.IsError)
 		assert.Contains(t, result.ForLLM, "risk-management")
 		assert.Contains(t, result.ForLLM, "position-sizing")
 	})
 
 	t.Run("no results for unmatched query", func(t *testing.T) {
-		result := tool.Execute(context.Background(), map[string]interface{}{"query": "kubernetes"})
+		result := tool.Execute(t.Context(), map[string]interface{}{"query": "kubernetes"})
 		assert.False(t, result.IsError)
 		assert.Contains(t, result.ForLLM, "No skills matched")
 	})
 
 	t.Run("error on empty query", func(t *testing.T) {
-		result := tool.Execute(context.Background(), map[string]interface{}{"query": ""})
+		result := tool.Execute(t.Context(), map[string]interface{}{"query": ""})
 		assert.True(t, result.IsError)
 	})
 }
 
 func TestSkillReadTool(t *testing.T) {
+	t.Parallel()
 	loader := setupTestSkills(t)
 	tool := NewSkillReadTool(loader)
 
 	assert.Equal(t, "skill_read", tool.Name())
 
 	t.Run("reads existing skill", func(t *testing.T) {
-		result := tool.Execute(context.Background(), map[string]interface{}{"name": "risk-management"})
+		result := tool.Execute(t.Context(), map[string]interface{}{"name": "risk-management"})
 		assert.False(t, result.IsError)
 		assert.Contains(t, result.ForLLM, "Risk Management")
 		assert.Contains(t, result.ForLLM, "position-sizing")
 	})
 
 	t.Run("error on missing skill", func(t *testing.T) {
-		result := tool.Execute(context.Background(), map[string]interface{}{"name": "nonexistent"})
+		result := tool.Execute(t.Context(), map[string]interface{}{"name": "nonexistent"})
 		assert.True(t, result.IsError)
 		assert.Contains(t, result.ForLLM, "not found")
 	})
 
 	t.Run("error on empty name", func(t *testing.T) {
-		result := tool.Execute(context.Background(), map[string]interface{}{"name": ""})
+		result := tool.Execute(t.Context(), map[string]interface{}{"name": ""})
 		assert.True(t, result.IsError)
 	})
 }
 
 func TestSkillTraverseTool(t *testing.T) {
+	t.Parallel()
 	loader := setupTestSkills(t)
 	tool := NewSkillTraverseTool(loader)
 
 	assert.Equal(t, "skill_traverse", tool.Name())
 
 	t.Run("traverses links at depth 1", func(t *testing.T) {
-		result := tool.Execute(context.Background(), map[string]interface{}{"name": "risk-management"})
+		result := tool.Execute(t.Context(), map[string]interface{}{"name": "risk-management"})
 		assert.False(t, result.IsError)
 		assert.Contains(t, result.ForLLM, "position-sizing")
 	})
 
 	t.Run("no links found", func(t *testing.T) {
-		result := tool.Execute(context.Background(), map[string]interface{}{"name": "code-review"})
+		result := tool.Execute(t.Context(), map[string]interface{}{"name": "code-review"})
 		assert.False(t, result.IsError)
 		assert.Contains(t, result.ForLLM, "no outgoing links")
 	})
 
 	t.Run("error on missing skill", func(t *testing.T) {
-		result := tool.Execute(context.Background(), map[string]interface{}{"name": "nonexistent"})
+		result := tool.Execute(t.Context(), map[string]interface{}{"name": "nonexistent"})
 		assert.True(t, result.IsError)
 	})
 
 	t.Run("custom depth", func(t *testing.T) {
-		result := tool.Execute(context.Background(), map[string]interface{}{
+		result := tool.Execute(t.Context(), map[string]interface{}{
 			"name":  "risk-management",
 			"depth": float64(2),
 		})

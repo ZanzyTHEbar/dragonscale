@@ -1,7 +1,6 @@
 package tools
 
 import (
-	"context"
 	"encoding/json"
 	"strconv"
 	"testing"
@@ -16,7 +15,7 @@ import (
 func setupDAGTools(t *testing.T) (DAGToolDeps, *delegate.LibSQLDelegate) {
 	d, err := delegate.NewLibSQLInMemory()
 	require.NoError(t, err)
-	require.NoError(t, d.Init(context.Background()))
+	require.NoError(t, d.Init(t.Context()))
 
 	// Insert session messages so dag_expand/dag_grep have data
 	agentID, sessionKey := "test-agent", "test-session"
@@ -26,7 +25,7 @@ func setupDAGTools(t *testing.T) (DAGToolDeps, *delegate.LibSQLDelegate) {
 			role = "assistant"
 		}
 		content := "Message number " + strconv.Itoa(i)
-		require.NoError(t, d.InsertSessionMessage(context.Background(), agentID, sessionKey, role, content))
+		require.NoError(t, d.InsertSessionMessage(t.Context(), agentID, sessionKey, role, content))
 	}
 
 	// Persist a DAG snapshot
@@ -40,7 +39,7 @@ func setupDAGTools(t *testing.T) (DAGToolDeps, *delegate.LibSQLDelegate) {
 		msgs[i] = dag.Message{Role: role, Content: "Message " + string(rune('A'+i%26))}
 	}
 	dagOut := compressor.Compress(msgs)
-	require.NoError(t, d.PersistDAG(context.Background(), agentID, sessionKey, &dag.PersistSnapshot{
+	require.NoError(t, d.PersistDAG(t.Context(), agentID, sessionKey, &dag.PersistSnapshot{
 		FromMsgIdx: 0,
 		ToMsgIdx:   16,
 		MsgCount:   16,
@@ -66,11 +65,12 @@ func setupDAGTools(t *testing.T) (DAGToolDeps, *delegate.LibSQLDelegate) {
 }
 
 func TestDagDescribeTool(t *testing.T) {
+	t.Parallel()
 	deps, del := setupDAGTools(t)
 	defer del.Close()
 
 	tool := NewDagDescribeTool(deps)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// Describe an existing node (chunk-1 from default config with 16 msgs)
 	res := tool.Execute(ctx, map[string]interface{}{"node_id": "chunk-1", "session_key": "test-session"})
@@ -80,10 +80,11 @@ func TestDagDescribeTool(t *testing.T) {
 }
 
 func TestDagDescribeTool_NoSnapshot(t *testing.T) {
+	t.Parallel()
 	d, err := delegate.NewLibSQLInMemory()
 	require.NoError(t, err)
 	defer d.Close()
-	require.NoError(t, d.Init(context.Background()))
+	require.NoError(t, d.Init(t.Context()))
 
 	tool := NewDagDescribeTool(DAGToolDeps{
 		Queries:   d.Queries(),
@@ -91,17 +92,18 @@ func TestDagDescribeTool_NoSnapshot(t *testing.T) {
 		AgentID:   "x",
 		SessionFn: func() string { return "nonexistent" },
 	})
-	res := tool.Execute(context.Background(), map[string]interface{}{"node_id": "chunk-1"})
+	res := tool.Execute(t.Context(), map[string]interface{}{"node_id": "chunk-1"})
 	assert.True(t, res.IsError)
 	assert.Contains(t, res.ForLLM, "no DAG snapshot")
 }
 
 func TestDagGrepTool(t *testing.T) {
+	t.Parallel()
 	deps, del := setupDAGTools(t)
 	defer del.Close()
 
 	tool := NewDagGrepTool(deps)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	res := tool.Execute(ctx, map[string]interface{}{"query": "Message", "session_key": "test-session"})
 	assert.False(t, res.IsError)
@@ -110,11 +112,12 @@ func TestDagGrepTool(t *testing.T) {
 }
 
 func TestDagGrepTool_ScopedByNode(t *testing.T) {
+	t.Parallel()
 	deps, del := setupDAGTools(t)
 	defer del.Close()
 
 	tool := NewDagGrepTool(deps)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	res := tool.Execute(ctx, map[string]interface{}{
 		"query":       "number",
@@ -126,11 +129,12 @@ func TestDagGrepTool_ScopedByNode(t *testing.T) {
 }
 
 func TestDagExpandTool(t *testing.T) {
+	t.Parallel()
 	deps, del := setupDAGTools(t)
 	defer del.Close()
 
 	tool := NewDagExpandTool(deps)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// Expand chunk-1; needs Lister to return messages
 	res := tool.Execute(ctx, map[string]interface{}{"node_id": "chunk-1", "session_key": "test-session"})
@@ -143,16 +147,17 @@ func TestDagExpandTool(t *testing.T) {
 }
 
 func TestDagExpandTool_NoReader(t *testing.T) {
+	t.Parallel()
 	d, err := delegate.NewLibSQLInMemory()
 	require.NoError(t, err)
 	defer d.Close()
-	require.NoError(t, d.Init(context.Background()))
+	require.NoError(t, d.Init(t.Context()))
 
 	// Persist minimal DAG
 	compressor := dag.NewCompressor(dag.DefaultCompressorConfig())
 	msgs := []dag.Message{{Role: "user", Content: "x"}}
 	dagOut := compressor.Compress(msgs)
-	require.NoError(t, d.PersistDAG(context.Background(), "a", "s", &dag.PersistSnapshot{
+	require.NoError(t, d.PersistDAG(t.Context(), "a", "s", &dag.PersistSnapshot{
 		FromMsgIdx: 0, ToMsgIdx: 1, MsgCount: 1, DAG: dagOut,
 	}))
 
@@ -162,16 +167,17 @@ func TestDagExpandTool_NoReader(t *testing.T) {
 		AgentID:   "a",
 		SessionFn: func() string { return "s" },
 	})
-	res := tool.Execute(context.Background(), map[string]interface{}{"node_id": "chunk-1", "session_key": "s"})
+	res := tool.Execute(t.Context(), map[string]interface{}{"node_id": "chunk-1", "session_key": "s"})
 	assert.True(t, res.IsError)
 	assert.Contains(t, res.ForLLM, "dag query store is not configured")
 }
 
 func TestDagExpandTool_RecoveryReference(t *testing.T) {
+	t.Parallel()
 	deps, del := setupDAGTools(t)
 	defer del.Close()
 
-	ctx := context.Background()
+	ctx := t.Context()
 	record := DAGRecoveryRecord{
 		NodeID:        DAGRecoveryNodePrefix + "test-recovery",
 		SessionKey:    "test-session",

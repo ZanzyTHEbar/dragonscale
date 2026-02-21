@@ -17,6 +17,7 @@ var anthropicTestModels = []testModel{
 }
 
 func TestAnthropicCommon(t *testing.T) {
+	t.Parallel()
 	var pairs []builderPair
 	for _, m := range anthropicTestModels {
 		pairs = append(pairs, builderPair{m.name, anthropicBuilder(m.model), nil, nil})
@@ -56,6 +57,7 @@ func addAnthropicCaching(ctx context.Context, options fantasy.PrepareStepFunctio
 }
 
 func TestAnthropicCommonWithCacheControl(t *testing.T) {
+	t.Parallel()
 	var pairs []builderPair
 	for _, m := range anthropicTestModels {
 		pairs = append(pairs, builderPair{m.name, anthropicBuilder(m.model), nil, addAnthropicCaching})
@@ -64,6 +66,7 @@ func TestAnthropicCommonWithCacheControl(t *testing.T) {
 }
 
 func TestAnthropicThinking(t *testing.T) {
+	t.Parallel()
 	opts := fantasy.ProviderOptions{
 		anthropic.Name: &anthropic.ProviderOptions{
 			Thinking: &anthropic.ThinkingProviderOption{
@@ -82,6 +85,7 @@ func TestAnthropicThinking(t *testing.T) {
 }
 
 func TestAnthropicThinkingWithCacheControl(t *testing.T) {
+	t.Parallel()
 	opts := fantasy.ProviderOptions{
 		anthropic.Name: &anthropic.ProviderOptions{
 			Thinking: &anthropic.ThinkingProviderOption{
@@ -100,6 +104,7 @@ func TestAnthropicThinkingWithCacheControl(t *testing.T) {
 }
 
 func TestAnthropicObjectGeneration(t *testing.T) {
+	t.Parallel()
 	var pairs []builderPair
 	for _, m := range anthropicTestModels {
 		pairs = append(pairs, builderPair{m.name, anthropicBuilder(m.model), nil, nil})

@@ -9,6 +9,7 @@ import (
 )
 
 func TestSpawnTool_Execute_NestedDelegationGuardrails(t *testing.T) {
+	t.Parallel()
 	provider := &MockLanguageModel{}
 	manager := NewSubagentManager(provider, "test-model", "/tmp/test", bus.NewMessageBus())
 	manager.SetRunLoop(func(_ context.Context, _ ToolLoopConfig, _, _, _, _ string) (*ToolLoopResult, error) {
@@ -16,7 +17,7 @@ func TestSpawnTool_Execute_NestedDelegationGuardrails(t *testing.T) {
 	})
 
 	tool := NewSpawnTool(manager)
-	ctx := withDelegationContext(context.Background(), "parent", 1)
+	ctx := withDelegationContext(t.Context(), "parent", 1)
 
 	missingMetadata := tool.Execute(ctx, map[string]interface{}{
 		"task":  "nested task",

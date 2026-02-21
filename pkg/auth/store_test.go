@@ -8,6 +8,7 @@ import (
 )
 
 func TestAuthCredentialIsExpired(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name      string
 		expiresAt time.Time
@@ -29,6 +30,7 @@ func TestAuthCredentialIsExpired(t *testing.T) {
 }
 
 func TestAuthCredentialNeedsRefresh(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name      string
 		expiresAt time.Time
@@ -51,6 +53,7 @@ func TestAuthCredentialNeedsRefresh(t *testing.T) {
 }
 
 func TestStoreRoundtrip(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 	origHome := os.Getenv("HOME")
 	t.Setenv("HOME", tmpDir)
@@ -114,6 +117,7 @@ func TestStoreFilePermissions(t *testing.T) {
 }
 
 func TestStoreMultiProvider(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 	origHome := os.Getenv("HOME")
 	t.Setenv("HOME", tmpDir)
@@ -147,6 +151,7 @@ func TestStoreMultiProvider(t *testing.T) {
 }
 
 func TestDeleteCredential(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 	origHome := os.Getenv("HOME")
 	t.Setenv("HOME", tmpDir)
@@ -171,6 +176,7 @@ func TestDeleteCredential(t *testing.T) {
 }
 
 func TestLoadStoreEmpty(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 	origHome := os.Getenv("HOME")
 	t.Setenv("HOME", tmpDir)

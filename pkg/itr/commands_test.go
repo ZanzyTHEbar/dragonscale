@@ -1,14 +1,17 @@
 package itr
 
 import (
-	jsonv2 "github.com/go-json-experiment/json"
 	"testing"
+
+	jsonv2 "github.com/go-json-experiment/json"
+	"github.com/google/go-cmp/cmp"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestToolRequestMarshalRoundTrip(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		req  ToolRequest
@@ -68,16 +71,13 @@ func TestToolRequestMarshalRoundTrip(t *testing.T) {
 			decoded, err := UnmarshalRequest(data)
 			require.NoError(t, err)
 
-			assert.Equal(t, tt.req.ID, decoded.ID)
-			assert.Equal(t, tt.req.Type, decoded.Type)
-			assert.Equal(t, tt.req.SessionKey, decoded.SessionKey)
-			assert.Equal(t, tt.req.Depth, decoded.Depth)
-			assert.Equal(t, tt.req.ToolCallID, decoded.ToolCallID)
+			assert.Empty(t, cmp.Diff(tt.req, decoded))
 		})
 	}
 }
 
 func TestToolExecPayloadPreservation(t *testing.T) {
+	t.Parallel()
 	req := NewToolExecRequest("id-1", "s", "tc", "shell", `{"cmd":"ls -la"}`)
 	data, err := req.Marshal()
 	require.NoError(t, err)
@@ -92,6 +92,7 @@ func TestToolExecPayloadPreservation(t *testing.T) {
 }
 
 func TestGrepPayloadPreservation(t *testing.T) {
+	t.Parallel()
 	req := NewGrepRequest("g1", "s", 2, "error.*fatal", 25, true)
 	data, err := req.Marshal()
 	require.NoError(t, err)
@@ -107,6 +108,7 @@ func TestGrepPayloadPreservation(t *testing.T) {
 }
 
 func TestDAGPlanPayloadPreservation(t *testing.T) {
+	t.Parallel()
 	plan := DAGPlan{
 		Nodes: []DAGNode{
 			{ID: "a", Type: CmdToolSearch, Payload: ToolSearch{Query: "files", MaxResults: 5}, DependsOn: nil},
@@ -143,6 +145,7 @@ func TestDAGPlanPayloadPreservation(t *testing.T) {
 }
 
 func TestToolResponseMarshalRoundTrip(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		resp ToolResponse
@@ -169,17 +172,13 @@ func TestToolResponseMarshalRoundTrip(t *testing.T) {
 			decoded, err := UnmarshalResponse(data)
 			require.NoError(t, err)
 
-			assert.Equal(t, tt.resp.ID, decoded.ID)
-			assert.Equal(t, tt.resp.Result, decoded.Result)
-			assert.Equal(t, tt.resp.IsError, decoded.IsError)
-			assert.Equal(t, tt.resp.LeakDetected, decoded.LeakDetected)
-			assert.Equal(t, tt.resp.CostTokens, decoded.CostTokens)
-			assert.Equal(t, tt.resp.RedactedKeys, decoded.RedactedKeys)
+			assert.Empty(t, cmp.Diff(tt.resp, decoded))
 		})
 	}
 }
 
 func TestUnmarshalRequestJSON_UnknownType(t *testing.T) {
+	t.Parallel()
 	data, _ := jsonv2.Marshal(map[string]interface{}{
 		"id":   "bad",
 		"type": "nonexistent_command",
@@ -190,21 +189,25 @@ func TestUnmarshalRequestJSON_UnknownType(t *testing.T) {
 }
 
 func TestUnmarshalRequestJSON_InvalidJSON(t *testing.T) {
+	t.Parallel()
 	_, err := UnmarshalRequestJSON([]byte(`{invalid`))
 	assert.Error(t, err)
 }
 
 func TestMarshalRequestFB_UnknownType(t *testing.T) {
+	t.Parallel()
 	_, err := MarshalRequestFB(ToolRequest{ID: "bad", Type: CommandType("bogus")})
 	assert.Error(t, err)
 }
 
 func TestUnmarshalRequestFB_Garbage(t *testing.T) {
+	t.Parallel()
 	_, err := UnmarshalRequestFB([]byte{0, 0, 0, 0})
 	assert.Error(t, err)
 }
 
 func TestRequestJSON_Roundtrip(t *testing.T) {
+	t.Parallel()
 	orig := NewToolExecRequest("j1", "s", "tc", "shell", `{"cmd":"ls"}`)
 	data, err := jsonv2.Marshal(orig)
 	require.NoError(t, err)
@@ -217,6 +220,7 @@ func TestRequestJSON_Roundtrip(t *testing.T) {
 }
 
 func TestResponseJSON_Roundtrip(t *testing.T) {
+	t.Parallel()
 	orig := NewSuccessResponse("j2", "ok", 10)
 	data, err := jsonv2.Marshal(orig)
 	require.NoError(t, err)

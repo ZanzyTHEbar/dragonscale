@@ -30,6 +30,7 @@ func makeRecallItem(agentID, sessionKey, role, content, tags string) *memory.Rec
 }
 
 func TestLibSQLDelegate_InsertSessionMessage(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name       string
 		agentID    string
@@ -70,7 +71,7 @@ func TestLibSQLDelegate_InsertSessionMessage(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			d := newTestDelegate(t)
-			ctx := context.Background()
+			ctx := t.Context()
 
 			require.NoError(t, d.InsertSessionMessage(ctx, tt.agentID, tt.sessionKey, tt.role, tt.content))
 
@@ -82,6 +83,7 @@ func TestLibSQLDelegate_InsertSessionMessage(t *testing.T) {
 }
 
 func TestLibSQLDelegate_ListSessionMessages(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name       string
 		setup      func(t *testing.T, d *LibSQLDelegate, ctx context.Context)
@@ -182,7 +184,7 @@ func TestLibSQLDelegate_ListSessionMessages(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			d := newTestDelegate(t)
-			ctx := context.Background()
+			ctx := t.Context()
 			if tt.setup != nil {
 				tt.setup(t, d, ctx)
 			}
@@ -206,6 +208,7 @@ func TestLibSQLDelegate_ListSessionMessages(t *testing.T) {
 }
 
 func TestLibSQLDelegate_CountSessionMessages(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name       string
 		setup      func(t *testing.T, d *LibSQLDelegate, ctx context.Context)
@@ -257,7 +260,7 @@ func TestLibSQLDelegate_CountSessionMessages(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			d := newTestDelegate(t)
-			ctx := context.Background()
+			ctx := t.Context()
 			if tt.setup != nil {
 				tt.setup(t, d, ctx)
 			}

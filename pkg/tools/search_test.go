@@ -10,6 +10,7 @@ import (
 )
 
 func TestToolSearchTool_Name(t *testing.T) {
+	t.Parallel()
 	r := NewToolRegistry()
 	s := NewToolSearchTool(r)
 	if s.Name() != "tool_search" {
@@ -18,6 +19,7 @@ func TestToolSearchTool_Name(t *testing.T) {
 }
 
 func TestToolSearchTool_Description(t *testing.T) {
+	t.Parallel()
 	r := NewToolRegistry()
 	s := NewToolSearchTool(r)
 	if s.Description() == "" {
@@ -26,6 +28,7 @@ func TestToolSearchTool_Description(t *testing.T) {
 }
 
 func TestToolSearchTool_Parameters(t *testing.T) {
+	t.Parallel()
 	r := NewToolRegistry()
 	s := NewToolSearchTool(r)
 	params := s.Parameters()
@@ -42,13 +45,14 @@ func TestToolSearchTool_Parameters(t *testing.T) {
 }
 
 func TestToolSearchTool_ListAll(t *testing.T) {
+	t.Parallel()
 	r := NewToolRegistry()
 	r.Register(&stubTool{name: "read_file", desc: "Read a file from disk"})
 	r.Register(&stubTool{name: "write_file", desc: "Write content to a file"})
 	r.Register(&stubTool{name: "web_search", desc: "Search the internet"})
 
 	s := NewToolSearchTool(r)
-	result := s.Execute(context.Background(), map[string]interface{}{})
+	result := s.Execute(t.Context(), map[string]interface{}{})
 
 	if result.IsError {
 		t.Fatalf("unexpected error: %s", result.ForLLM)
@@ -65,12 +69,13 @@ func TestToolSearchTool_ListAll(t *testing.T) {
 }
 
 func TestToolSearchTool_EmptyQuery_ListsAll(t *testing.T) {
+	t.Parallel()
 	r := NewToolRegistry()
 	r.Register(&stubTool{name: "alpha", desc: "First tool"})
 	r.Register(&stubTool{name: "beta", desc: "Second tool"})
 
 	s := NewToolSearchTool(r)
-	result := s.Execute(context.Background(), map[string]interface{}{"query": ""})
+	result := s.Execute(t.Context(), map[string]interface{}{"query": ""})
 
 	var results []toolSearchResult
 	if err := jsonv2.Unmarshal([]byte(result.ForLLM), &results); err != nil {
@@ -88,13 +93,14 @@ func TestToolSearchTool_EmptyQuery_ListsAll(t *testing.T) {
 }
 
 func TestToolSearchTool_ExactNameMatch(t *testing.T) {
+	t.Parallel()
 	r := NewToolRegistry()
 	r.Register(&stubTool{name: "read_file", desc: "Read a file"})
 	r.Register(&stubTool{name: "write_file", desc: "Write a file"})
 	r.Register(&stubTool{name: "list_dir", desc: "List directory contents"})
 
 	s := NewToolSearchTool(r)
-	result := s.Execute(context.Background(), map[string]interface{}{"query": "read_file"})
+	result := s.Execute(t.Context(), map[string]interface{}{"query": "read_file"})
 
 	var results []toolSearchResult
 	jsonv2.Unmarshal([]byte(result.ForLLM), &results)
@@ -110,13 +116,14 @@ func TestToolSearchTool_ExactNameMatch(t *testing.T) {
 }
 
 func TestToolSearchTool_PartialMatch(t *testing.T) {
+	t.Parallel()
 	r := NewToolRegistry()
 	r.Register(&stubTool{name: "read_file", desc: "Read contents of a file from filesystem"})
 	r.Register(&stubTool{name: "write_file", desc: "Write content to a file on filesystem"})
 	r.Register(&stubTool{name: "web_search", desc: "Search the web for information"})
 
 	s := NewToolSearchTool(r)
-	result := s.Execute(context.Background(), map[string]interface{}{"query": "file"})
+	result := s.Execute(t.Context(), map[string]interface{}{"query": "file"})
 
 	var results []toolSearchResult
 	jsonv2.Unmarshal([]byte(result.ForLLM), &results)
@@ -128,12 +135,13 @@ func TestToolSearchTool_PartialMatch(t *testing.T) {
 }
 
 func TestToolSearchTool_DescriptionMatch(t *testing.T) {
+	t.Parallel()
 	r := NewToolRegistry()
 	r.Register(&stubTool{name: "alpha", desc: "Search the internet for information"})
 	r.Register(&stubTool{name: "beta", desc: "Read a local file"})
 
 	s := NewToolSearchTool(r)
-	result := s.Execute(context.Background(), map[string]interface{}{"query": "internet"})
+	result := s.Execute(t.Context(), map[string]interface{}{"query": "internet"})
 
 	var results []toolSearchResult
 	jsonv2.Unmarshal([]byte(result.ForLLM), &results)
@@ -147,13 +155,14 @@ func TestToolSearchTool_DescriptionMatch(t *testing.T) {
 }
 
 func TestToolSearchTool_MultiTermQuery(t *testing.T) {
+	t.Parallel()
 	r := NewToolRegistry()
 	r.Register(&stubTool{name: "read_file", desc: "Read contents of a file from disk"})
 	r.Register(&stubTool{name: "web_search", desc: "Search the web for information"})
 	r.Register(&stubTool{name: "web_fetch", desc: "Fetch content from a URL"})
 
 	s := NewToolSearchTool(r)
-	result := s.Execute(context.Background(), map[string]interface{}{"query": "web search"})
+	result := s.Execute(t.Context(), map[string]interface{}{"query": "web search"})
 
 	var results []toolSearchResult
 	jsonv2.Unmarshal([]byte(result.ForLLM), &results)
@@ -169,11 +178,12 @@ func TestToolSearchTool_MultiTermQuery(t *testing.T) {
 }
 
 func TestToolSearchTool_NoMatch(t *testing.T) {
+	t.Parallel()
 	r := NewToolRegistry()
 	r.Register(&stubTool{name: "read_file", desc: "Read a file"})
 
 	s := NewToolSearchTool(r)
-	result := s.Execute(context.Background(), map[string]interface{}{"query": "zzzznonexistent"})
+	result := s.Execute(t.Context(), map[string]interface{}{"query": "zzzznonexistent"})
 
 	if result.IsError {
 		t.Error("should not be an error, just empty results message")
@@ -184,12 +194,13 @@ func TestToolSearchTool_NoMatch(t *testing.T) {
 }
 
 func TestToolSearchTool_ExcludesMetaTools(t *testing.T) {
+	t.Parallel()
 	r := NewToolRegistry()
 	r.RegisterMetaTools() // registers tool_search + tool_call
 	r.Register(&stubTool{name: "read_file", desc: "Read a file"})
 
 	s, _ := r.Get("tool_search")
-	result := s.Execute(context.Background(), map[string]interface{}{})
+	result := s.Execute(t.Context(), map[string]interface{}{})
 
 	var results []toolSearchResult
 	jsonv2.Unmarshal([]byte(result.ForLLM), &results)
@@ -202,6 +213,7 @@ func TestToolSearchTool_ExcludesMetaTools(t *testing.T) {
 }
 
 func TestToolSearchTool_UnifiedSearch_IncludesSkills(t *testing.T) {
+	t.Parallel()
 	r := NewToolRegistry()
 	r.Register(&stubTool{name: "read_file", desc: "Read a file"})
 	r.Register(&stubTool{name: "web_search", desc: "Search the web"})
@@ -216,7 +228,7 @@ func TestToolSearchTool_UnifiedSearch_IncludesSkills(t *testing.T) {
 	s.SetSkillsLoader(sl)
 
 	// Search for "git" — should find the skill but not the tools
-	result := s.Execute(context.Background(), map[string]interface{}{"query": "git"})
+	result := s.Execute(t.Context(), map[string]interface{}{"query": "git"})
 
 	var results []toolSearchResult
 	jsonv2.Unmarshal([]byte(result.ForLLM), &results)
@@ -233,6 +245,7 @@ func TestToolSearchTool_UnifiedSearch_IncludesSkills(t *testing.T) {
 }
 
 func TestToolSearchTool_UnifiedSearch_MixesToolsAndSkills(t *testing.T) {
+	t.Parallel()
 	r := NewToolRegistry()
 	r.Register(&stubTool{name: "web_search", desc: "Search the web for information"})
 
@@ -244,7 +257,7 @@ func TestToolSearchTool_UnifiedSearch_MixesToolsAndSkills(t *testing.T) {
 	s := NewToolSearchTool(r)
 	s.SetSkillsLoader(sl)
 
-	result := s.Execute(context.Background(), map[string]interface{}{"query": "web"})
+	result := s.Execute(t.Context(), map[string]interface{}{"query": "web"})
 
 	var results []toolSearchResult
 	jsonv2.Unmarshal([]byte(result.ForLLM), &results)
@@ -265,6 +278,7 @@ func TestToolSearchTool_UnifiedSearch_MixesToolsAndSkills(t *testing.T) {
 }
 
 func TestToolSearchTool_ListAll_IncludesSkills(t *testing.T) {
+	t.Parallel()
 	r := NewToolRegistry()
 	r.Register(&stubTool{name: "alpha", desc: "First tool"})
 
@@ -276,7 +290,7 @@ func TestToolSearchTool_ListAll_IncludesSkills(t *testing.T) {
 	s := NewToolSearchTool(r)
 	s.SetSkillsLoader(sl)
 
-	result := s.Execute(context.Background(), map[string]interface{}{})
+	result := s.Execute(t.Context(), map[string]interface{}{})
 
 	var results []toolSearchResult
 	jsonv2.Unmarshal([]byte(result.ForLLM), &results)
@@ -304,6 +318,7 @@ func createTestSkillsDir(t *testing.T, baseDir string, skillContents map[string]
 // --- fuzzyScore tests ---
 
 func TestFuzzyScore_ExactMatch(t *testing.T) {
+	t.Parallel()
 	score := fuzzyScore("read_file", "Read a file", []string{"read_file"})
 	if score < 100 {
 		t.Errorf("expected score >= 100 for exact match, got %d", score)
@@ -311,6 +326,7 @@ func TestFuzzyScore_ExactMatch(t *testing.T) {
 }
 
 func TestFuzzyScore_ContainsMatch(t *testing.T) {
+	t.Parallel()
 	score := fuzzyScore("read_file", "Read a file", []string{"read"})
 	if score < 50 {
 		t.Errorf("expected score >= 50 for name contains, got %d", score)
@@ -318,6 +334,7 @@ func TestFuzzyScore_ContainsMatch(t *testing.T) {
 }
 
 func TestFuzzyScore_DescriptionMatch(t *testing.T) {
+	t.Parallel()
 	score := fuzzyScore("alpha_tool", "Search the internet", []string{"internet"})
 	if score < 20 {
 		t.Errorf("expected score >= 20 for description match, got %d", score)
@@ -325,6 +342,7 @@ func TestFuzzyScore_DescriptionMatch(t *testing.T) {
 }
 
 func TestFuzzyScore_NoMatch(t *testing.T) {
+	t.Parallel()
 	score := fuzzyScore("read_file", "Read a file", []string{"zzzzz"})
 	if score != 0 {
 		t.Errorf("expected 0 for no match, got %d", score)
@@ -334,6 +352,7 @@ func TestFuzzyScore_NoMatch(t *testing.T) {
 // --- subsequenceMatch tests ---
 
 func TestSubsequenceMatch_True(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		haystack, needle string
 		expected         bool
@@ -352,6 +371,7 @@ func TestSubsequenceMatch_True(t *testing.T) {
 }
 
 func TestSubsequenceMatch_False(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		haystack, needle string
 	}{
@@ -368,6 +388,7 @@ func TestSubsequenceMatch_False(t *testing.T) {
 }
 
 func TestToolToSchema_WithExamples(t *testing.T) {
+	t.Parallel()
 	tool := &stubToolWithExamples{
 		stubTool: stubTool{name: "create_ticket", desc: "Create a support ticket"},
 		examples: []map[string]interface{}{
@@ -389,6 +410,7 @@ func TestToolToSchema_WithExamples(t *testing.T) {
 }
 
 func TestToolToSchema_WithoutExamples(t *testing.T) {
+	t.Parallel()
 	tool := &stubTool{name: "read_file", desc: "Read a file"}
 	schema := ToolToSchema(tool)
 	fn := schema["function"].(map[string]interface{})
@@ -400,12 +422,13 @@ func TestToolToSchema_WithoutExamples(t *testing.T) {
 // --- Discovery tracking tests ---
 
 func TestToolSearchTool_DiscoveryTracking(t *testing.T) {
+	t.Parallel()
 	r := NewToolRegistry()
 	r.Register(&stubToolWithSchema{name: "edit_file", desc: "Edit a file"})
 	r.Register(&stubToolWithSchema{name: "web_search", desc: "Search the web"})
 
 	s := NewToolSearchTool(r)
-	s.Execute(context.Background(), map[string]interface{}{"query": "edit"})
+	s.Execute(t.Context(), map[string]interface{}{"query": "edit"})
 
 	discovered := r.DrainDiscovered()
 	if len(discovered) != 1 {
@@ -423,12 +446,13 @@ func TestToolSearchTool_DiscoveryTracking(t *testing.T) {
 }
 
 func TestToolSearchTool_DiscoverySkipsGateway(t *testing.T) {
+	t.Parallel()
 	r := NewToolRegistry()
 	r.Register(&stubToolWithSchema{name: "read_file", desc: "Read a file"})
 	r.MarkGateway("read_file")
 
 	s := NewToolSearchTool(r)
-	s.Execute(context.Background(), map[string]interface{}{"query": "read"})
+	s.Execute(t.Context(), map[string]interface{}{"query": "read"})
 
 	discovered := r.DrainDiscovered()
 	if len(discovered) != 0 {
@@ -437,11 +461,12 @@ func TestToolSearchTool_DiscoverySkipsGateway(t *testing.T) {
 }
 
 func TestToolSearchTool_DiscoverySkipsMetaTools(t *testing.T) {
+	t.Parallel()
 	r := NewToolRegistry()
 	r.RegisterMetaTools()
 
 	s, _ := r.Get("tool_search")
-	s.Execute(context.Background(), map[string]interface{}{})
+	s.Execute(t.Context(), map[string]interface{}{})
 
 	discovered := r.DrainDiscovered()
 	for _, d := range discovered {
@@ -454,11 +479,12 @@ func TestToolSearchTool_DiscoverySkipsMetaTools(t *testing.T) {
 // --- Schema in search results tests ---
 
 func TestToolSearchTool_ReturnsSchema(t *testing.T) {
+	t.Parallel()
 	r := NewToolRegistry()
 	r.Register(&stubToolWithSchema{name: "read_file", desc: "Read a file"})
 
 	s := NewToolSearchTool(r)
-	result := s.Execute(context.Background(), map[string]interface{}{"query": "read"})
+	result := s.Execute(t.Context(), map[string]interface{}{"query": "read"})
 
 	var results []toolSearchResult
 	jsonv2.Unmarshal([]byte(result.ForLLM), &results)
@@ -478,11 +504,12 @@ func TestToolSearchTool_ReturnsSchema(t *testing.T) {
 }
 
 func TestToolSearchTool_ListAll_ReturnsSchema(t *testing.T) {
+	t.Parallel()
 	r := NewToolRegistry()
 	r.Register(&stubToolWithSchema{name: "read_file", desc: "Read a file"})
 
 	s := NewToolSearchTool(r)
-	result := s.Execute(context.Background(), map[string]interface{}{})
+	result := s.Execute(t.Context(), map[string]interface{}{})
 
 	var results []toolSearchResult
 	jsonv2.Unmarshal([]byte(result.ForLLM), &results)

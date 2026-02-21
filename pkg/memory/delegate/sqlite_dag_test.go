@@ -1,7 +1,6 @@
 package delegate
 
 import (
-	"context"
 	"testing"
 
 	"github.com/ZanzyTHEbar/dragonscale/pkg/memory/dag"
@@ -10,8 +9,9 @@ import (
 )
 
 func TestLibSQLDelegate_PersistDAG(t *testing.T) {
+	t.Parallel()
 	d := newTestDelegate(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	compressor := dag.NewCompressor(dag.DefaultCompressorConfig())
 	msgs := make([]dag.Message, 16)

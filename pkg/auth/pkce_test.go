@@ -7,6 +7,7 @@ import (
 )
 
 func TestGeneratePKCE(t *testing.T) {
+	t.Parallel()
 	codes, err := GeneratePKCE()
 	if err != nil {
 		t.Fatalf("GeneratePKCE() error: %v", err)
@@ -35,6 +36,7 @@ func TestGeneratePKCE(t *testing.T) {
 }
 
 func TestGeneratePKCEUniqueness(t *testing.T) {
+	t.Parallel()
 	codes1, err := GeneratePKCE()
 	if err != nil {
 		t.Fatalf("GeneratePKCE() error: %v", err)

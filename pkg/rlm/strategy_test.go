@@ -7,6 +7,7 @@ import (
 )
 
 func TestStrategyPlanNextFinalAtMaxDepth(t *testing.T) {
+	t.Parallel()
 	sp := NewStrategyPlanner(StrategyConfig{
 		DirectThreshold:   8192,
 		DefaultPartitionK: 4,
@@ -18,6 +19,7 @@ func TestStrategyPlanNextFinalAtMaxDepth(t *testing.T) {
 }
 
 func TestStrategyPlanNextFinalSmallContext(t *testing.T) {
+	t.Parallel()
 	sp := NewStrategyPlanner(DefaultStrategyConfig())
 
 	op := sp.PlanNext(1000, "any query", 0)
@@ -25,6 +27,7 @@ func TestStrategyPlanNextFinalSmallContext(t *testing.T) {
 }
 
 func TestStrategyPlanNextGrepForKeywordQuery(t *testing.T) {
+	t.Parallel()
 	sp := NewStrategyPlanner(DefaultStrategyConfig())
 
 	tests := []struct {
@@ -47,6 +50,7 @@ func TestStrategyPlanNextGrepForKeywordQuery(t *testing.T) {
 }
 
 func TestStrategyPlanNextPartitionDefault(t *testing.T) {
+	t.Parallel()
 	sp := NewStrategyPlanner(DefaultStrategyConfig())
 	op := sp.PlanNext(100_000, "summarize this document", 0)
 	assert.Equal(t, OpPartition, op.Type)
@@ -54,6 +58,7 @@ func TestStrategyPlanNextPartitionDefault(t *testing.T) {
 }
 
 func TestStrategyPlanNextPartitionLargeContext(t *testing.T) {
+	t.Parallel()
 	sp := NewStrategyPlanner(DefaultStrategyConfig())
 	op := sp.PlanNext(5_000_000, "summarize this corpus", 0)
 	assert.Equal(t, OpPartition, op.Type)
@@ -61,18 +66,22 @@ func TestStrategyPlanNextPartitionLargeContext(t *testing.T) {
 }
 
 func TestExtractKeywordQuoted(t *testing.T) {
+	t.Parallel()
 	assert.Equal(t, "handleRequest", extractKeyword(`find "handleRequest" in the codebase`))
 }
 
 func TestExtractKeywordNoQuotes(t *testing.T) {
+	t.Parallel()
 	assert.Equal(t, "find", extractKeyword("find the main function"))
 }
 
 func TestExtractKeywordEmpty(t *testing.T) {
+	t.Parallel()
 	assert.Equal(t, "", extractKeyword(""))
 }
 
 func TestLooksLikeKeywordQuery(t *testing.T) {
+	t.Parallel()
 	assert.True(t, looksLikeKeywordQuery(`find "something"`))
 	assert.True(t, looksLikeKeywordQuery("error: something broke"))
 	assert.True(t, looksLikeKeywordQuery("func processData"))

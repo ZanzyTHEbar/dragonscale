@@ -85,6 +85,7 @@ func setupIdentityDir(t *testing.T, files map[string]string) string {
 }
 
 func TestSyncAll_InsertsNewFiles(t *testing.T) {
+	t.Parallel()
 	dir := setupIdentityDir(t, map[string]string{
 		"AGENT.md":    "# Agent\nYou are helpful.",
 		"SOUL.md":     "# Soul\nCurious and kind.",
@@ -95,7 +96,7 @@ func TestSyncAll_InsertsNewFiles(t *testing.T) {
 	store := newMockStore()
 	s := New(dir, "agent-1", store)
 
-	require.NoError(t, s.SyncAll(context.Background()))
+	require.NoError(t, s.SyncAll(t.Context()))
 
 	for _, name := range IdentityFiles {
 		doc := store.getDoc("agent-1", name)
@@ -109,6 +110,7 @@ func TestSyncAll_InsertsNewFiles(t *testing.T) {
 }
 
 func TestSyncAll_SkipsUnchangedFiles(t *testing.T) {
+	t.Parallel()
 	dir := setupIdentityDir(t, map[string]string{
 		"AGENT.md": "# Agent\nSame content.",
 	})
@@ -116,29 +118,30 @@ func TestSyncAll_SkipsUnchangedFiles(t *testing.T) {
 	store := newMockStore()
 	s := New(dir, "agent-1", store)
 
-	require.NoError(t, s.SyncAll(context.Background()))
+	require.NoError(t, s.SyncAll(t.Context()))
 	firstDoc := store.getDoc("agent-1", "AGENT.md")
 	require.NotNil(t, firstDoc)
 	firstID := firstDoc.ID
 
-	require.NoError(t, s.SyncAll(context.Background()))
+	require.NoError(t, s.SyncAll(t.Context()))
 	secondDoc := store.getDoc("agent-1", "AGENT.md")
 	assert.Equal(t, firstID, secondDoc.ID, "unchanged file should not be re-upserted")
 }
 
 func TestSyncAll_UpsertsModifiedFiles(t *testing.T) {
+	t.Parallel()
 	dir := setupIdentityDir(t, map[string]string{
 		"AGENT.md": "# Agent\nVersion 1",
 	})
 
 	store := newMockStore()
 	s := New(dir, "agent-1", store)
-	require.NoError(t, s.SyncAll(context.Background()))
+	require.NoError(t, s.SyncAll(t.Context()))
 
 	v1Hash := store.getHash("agent-1", "AGENT.md")
 
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "AGENT.md"), []byte("# Agent\nVersion 2"), 0644))
-	require.NoError(t, s.SyncAll(context.Background()))
+	require.NoError(t, s.SyncAll(t.Context()))
 
 	v2Hash := store.getHash("agent-1", "AGENT.md")
 	assert.NotEqual(t, v1Hash, v2Hash, "hash should change after file modification")
@@ -148,6 +151,7 @@ func TestSyncAll_UpsertsModifiedFiles(t *testing.T) {
 }
 
 func TestSyncAll_SkipsMissingFiles(t *testing.T) {
+	t.Parallel()
 	dir := setupIdentityDir(t, map[string]string{
 		"AGENT.md": "# Agent only",
 	})
@@ -155,7 +159,7 @@ func TestSyncAll_SkipsMissingFiles(t *testing.T) {
 	store := newMockStore()
 	s := New(dir, "agent-1", store)
 
-	require.NoError(t, s.SyncAll(context.Background()))
+	require.NoError(t, s.SyncAll(t.Context()))
 
 	assert.NotNil(t, store.getDoc("agent-1", "AGENT.md"))
 	assert.Nil(t, store.getDoc("agent-1", "SOUL.md"), "missing file should not create a doc")
@@ -164,6 +168,7 @@ func TestSyncAll_SkipsMissingFiles(t *testing.T) {
 }
 
 func TestSyncAll_SkipsEmptyFiles(t *testing.T) {
+	t.Parallel()
 	dir := setupIdentityDir(t, map[string]string{
 		"AGENT.md": "   \n\t\n  ",
 	})
@@ -171,11 +176,12 @@ func TestSyncAll_SkipsEmptyFiles(t *testing.T) {
 	store := newMockStore()
 	s := New(dir, "agent-1", store)
 
-	require.NoError(t, s.SyncAll(context.Background()))
+	require.NoError(t, s.SyncAll(t.Context()))
 	assert.Nil(t, store.getDoc("agent-1", "AGENT.md"), "empty/whitespace-only file should be skipped")
 }
 
 func TestSyncAll_IsolatesAgents(t *testing.T) {
+	t.Parallel()
 	dir := setupIdentityDir(t, map[string]string{
 		"AGENT.md": "# Shared agent file",
 	})
@@ -184,8 +190,8 @@ func TestSyncAll_IsolatesAgents(t *testing.T) {
 	s1 := New(dir, "agent-a", store)
 	s2 := New(dir, "agent-b", store)
 
-	require.NoError(t, s1.SyncAll(context.Background()))
-	require.NoError(t, s2.SyncAll(context.Background()))
+	require.NoError(t, s1.SyncAll(t.Context()))
+	require.NoError(t, s2.SyncAll(t.Context()))
 
 	docA := store.getDoc("agent-a", "AGENT.md")
 	docB := store.getDoc("agent-b", "AGENT.md")
@@ -195,51 +201,54 @@ func TestSyncAll_IsolatesAgents(t *testing.T) {
 }
 
 func TestCheckAndSync_DetectsModifiedFile(t *testing.T) {
+	t.Parallel()
 	dir := setupIdentityDir(t, map[string]string{
 		"AGENT.md": "# Original",
 	})
 
 	store := newMockStore()
 	s := New(dir, "agent-1", store)
-	require.NoError(t, s.SyncAll(context.Background()))
+	require.NoError(t, s.SyncAll(t.Context()))
 
 	time.Sleep(50 * time.Millisecond)
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "AGENT.md"), []byte("# Modified"), 0644))
 
-	require.NoError(t, s.CheckAndSync(context.Background()))
+	require.NoError(t, s.CheckAndSync(t.Context()))
 
 	doc := store.getDoc("agent-1", "AGENT.md")
 	assert.Contains(t, doc.Content, "Modified")
 }
 
 func TestCheckAndSync_SkipsUntouchedFiles(t *testing.T) {
+	t.Parallel()
 	dir := setupIdentityDir(t, map[string]string{
 		"AGENT.md": "# Stable",
 	})
 
 	store := newMockStore()
 	s := New(dir, "agent-1", store)
-	require.NoError(t, s.SyncAll(context.Background()))
+	require.NoError(t, s.SyncAll(t.Context()))
 
 	hash1 := store.getHash("agent-1", "AGENT.md")
 
 	s.lastSync.Store(time.Now().Add(time.Second).UnixNano())
-	require.NoError(t, s.CheckAndSync(context.Background()))
+	require.NoError(t, s.CheckAndSync(t.Context()))
 
 	hash2 := store.getHash("agent-1", "AGENT.md")
 	assert.Equal(t, hash1, hash2, "untouched file should not trigger re-sync")
 }
 
 func TestWatch_DetectsFileChange(t *testing.T) {
+	t.Parallel()
 	dir := setupIdentityDir(t, map[string]string{
 		"AGENT.md": "# Initial",
 	})
 
 	store := newMockStore()
 	s := New(dir, "agent-1", store)
-	require.NoError(t, s.SyncAll(context.Background()))
+	require.NoError(t, s.SyncAll(t.Context()))
 
-	ctx := context.Background()
+	ctx := t.Context()
 	require.NoError(t, s.Watch(ctx))
 	defer s.Close()
 
@@ -252,15 +261,16 @@ func TestWatch_DetectsFileChange(t *testing.T) {
 }
 
 func TestWatch_IgnoresNonIdentityFiles(t *testing.T) {
+	t.Parallel()
 	dir := setupIdentityDir(t, map[string]string{
 		"AGENT.md": "# Agent",
 	})
 
 	store := newMockStore()
 	s := New(dir, "agent-1", store)
-	require.NoError(t, s.SyncAll(context.Background()))
+	require.NoError(t, s.SyncAll(t.Context()))
 
-	ctx := context.Background()
+	ctx := t.Context()
 	require.NoError(t, s.Watch(ctx))
 	defer s.Close()
 
@@ -271,6 +281,7 @@ func TestWatch_IgnoresNonIdentityFiles(t *testing.T) {
 }
 
 func TestContentHash_Deterministic(t *testing.T) {
+	t.Parallel()
 	data := []byte("hello world")
 	h1 := contentHash(data)
 	h2 := contentHash(data)
@@ -279,12 +290,14 @@ func TestContentHash_Deterministic(t *testing.T) {
 }
 
 func TestContentHash_DifferentForDifferentContent(t *testing.T) {
+	t.Parallel()
 	h1 := contentHash([]byte("version 1"))
 	h2 := contentHash([]byte("version 2"))
 	assert.NotEqual(t, h1, h2)
 }
 
 func TestIsIdentityFile(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		want bool
@@ -306,6 +319,7 @@ func TestIsIdentityFile(t *testing.T) {
 }
 
 func TestNew_SetsFields(t *testing.T) {
+	t.Parallel()
 	store := newMockStore()
 	s := New("/tmp/identity", "test-agent", store)
 	assert.Equal(t, "/tmp/identity", s.identityDir)

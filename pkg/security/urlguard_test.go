@@ -8,6 +8,7 @@ import (
 )
 
 func TestValidateURL_AllowedURLs(t *testing.T) {
+	t.Parallel()
 	tests := []string{
 		"https://example.com",
 		"https://api.openai.com/v1/chat",
@@ -23,6 +24,7 @@ func TestValidateURL_AllowedURLs(t *testing.T) {
 }
 
 func TestValidateURL_BlockedSchemes(t *testing.T) {
+	t.Parallel()
 	tests := []string{
 		"file:///etc/passwd",
 		"ftp://internal.server/data",
@@ -38,6 +40,7 @@ func TestValidateURL_BlockedSchemes(t *testing.T) {
 }
 
 func TestValidateURL_BlockedHosts(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		url  string
@@ -57,6 +60,7 @@ func TestValidateURL_BlockedHosts(t *testing.T) {
 }
 
 func TestValidateURL_BlockedIPs(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		url  string
@@ -78,6 +82,7 @@ func TestValidateURL_BlockedIPs(t *testing.T) {
 }
 
 func TestValidateURL_EmptyAndInvalid(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		url  string
@@ -95,6 +100,7 @@ func TestValidateURL_EmptyAndInvalid(t *testing.T) {
 }
 
 func TestIsBlockedIP(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		ip      string
 		blocked bool

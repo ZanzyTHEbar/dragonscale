@@ -7,6 +7,7 @@ import (
 )
 
 func TestProgressiveDisclosure_OnlyGatewayVisible(t *testing.T) {
+	t.Parallel()
 	r := NewToolRegistry()
 	r.Register(&stubTool{name: "read_file", desc: "Read"})
 	r.Register(&stubTool{name: "write_file", desc: "Write"})
@@ -28,6 +29,7 @@ func TestProgressiveDisclosure_OnlyGatewayVisible(t *testing.T) {
 }
 
 func TestProgressiveDisclosure_MarkGateway(t *testing.T) {
+	t.Parallel()
 	r := NewToolRegistry()
 	r.Register(&stubTool{name: "read_file", desc: "Read"})
 	r.Register(&stubTool{name: "memory", desc: "Memory tool"})
@@ -49,6 +51,7 @@ func TestProgressiveDisclosure_MarkGateway(t *testing.T) {
 }
 
 func TestProgressiveDisclosure_GetVisibleDefinitions(t *testing.T) {
+	t.Parallel()
 	r := NewToolRegistry()
 	r.Register(&stubTool{name: "read_file", desc: "Read"})
 	r.Register(&stubTool{name: "write_file", desc: "Write"})
@@ -61,6 +64,7 @@ func TestProgressiveDisclosure_GetVisibleDefinitions(t *testing.T) {
 }
 
 func TestProgressiveDisclosure_AllToolsStillDispatchable(t *testing.T) {
+	t.Parallel()
 	r := NewToolRegistry()
 	r.Register(&stubTool{name: "read_file", desc: "Read"})
 	r.RegisterMetaTools()
@@ -84,6 +88,7 @@ func TestProgressiveDisclosure_AllToolsStillDispatchable(t *testing.T) {
 }
 
 func TestProgressiveDisclosure_SearchFindsHiddenTools(t *testing.T) {
+	t.Parallel()
 	r := NewToolRegistry()
 	r.Register(&stubTool{name: "read_file", desc: "Read a file from filesystem"})
 	r.Register(&stubTool{name: "write_file", desc: "Write to a file"})
@@ -102,6 +107,7 @@ func TestProgressiveDisclosure_SearchFindsHiddenTools(t *testing.T) {
 }
 
 func TestProgressiveDisclosure_MarkNonexistentGateway(t *testing.T) {
+	t.Parallel()
 	r := NewToolRegistry()
 	r.RegisterMetaTools()
 	r.MarkGateway("nonexistent")

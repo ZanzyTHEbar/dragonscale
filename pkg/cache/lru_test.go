@@ -33,6 +33,7 @@ func (c *mockClock) Advance(d time.Duration) {
 // --- Basic LRU Tests ---
 
 func TestLRU_SetAndGet(t *testing.T) {
+	t.Parallel()
 	c := New[string, int](Options[string, int]{MaxSize: 10})
 
 	c.Set("a", 1)
@@ -55,6 +56,7 @@ func TestLRU_SetAndGet(t *testing.T) {
 }
 
 func TestLRU_Update(t *testing.T) {
+	t.Parallel()
 	c := New[string, string](Options[string, string]{MaxSize: 10})
 
 	c.Set("k", "v1")
@@ -71,6 +73,7 @@ func TestLRU_Update(t *testing.T) {
 }
 
 func TestLRU_EvictionOrder(t *testing.T) {
+	t.Parallel()
 	var evicted []string
 	c := New[string, int](Options[string, int]{
 		MaxSize: 3,
@@ -110,6 +113,7 @@ func TestLRU_EvictionOrder(t *testing.T) {
 }
 
 func TestLRU_MaxSizeZero_Unlimited(t *testing.T) {
+	t.Parallel()
 	c := New[int, int](Options[int, int]{})
 
 	for i := 0; i < 1000; i++ {
@@ -122,6 +126,7 @@ func TestLRU_MaxSizeZero_Unlimited(t *testing.T) {
 }
 
 func TestLRU_Delete(t *testing.T) {
+	t.Parallel()
 	var evictCalled bool
 	c := New[string, int](Options[string, int]{
 		MaxSize: 10,
@@ -148,6 +153,7 @@ func TestLRU_Delete(t *testing.T) {
 }
 
 func TestLRU_Clear(t *testing.T) {
+	t.Parallel()
 	var evictCount int
 	c := New[string, int](Options[string, int]{
 		MaxSize: 10,
@@ -171,6 +177,7 @@ func TestLRU_Clear(t *testing.T) {
 }
 
 func TestLRU_Peek_DoesNotPromote(t *testing.T) {
+	t.Parallel()
 	c := New[string, int](Options[string, int]{MaxSize: 3})
 
 	c.Set("a", 1)
@@ -196,6 +203,7 @@ func TestLRU_Peek_DoesNotPromote(t *testing.T) {
 // --- TTL Tests ---
 
 func TestLRU_TTL_Expiry(t *testing.T) {
+	t.Parallel()
 	clock := newMockClock(time.Now())
 	c := New[string, int](Options[string, int]{
 		MaxSize: 10,
@@ -225,6 +233,7 @@ func TestLRU_TTL_Expiry(t *testing.T) {
 }
 
 func TestLRU_TTL_PerEntry(t *testing.T) {
+	t.Parallel()
 	clock := newMockClock(time.Now())
 	c := New[string, int](Options[string, int]{
 		MaxSize: 10,
@@ -251,6 +260,7 @@ func TestLRU_TTL_PerEntry(t *testing.T) {
 }
 
 func TestLRU_Peek_ExpiresEntries(t *testing.T) {
+	t.Parallel()
 	clock := newMockClock(time.Now())
 	c := New[string, int](Options[string, int]{
 		MaxSize: 10,
@@ -268,6 +278,7 @@ func TestLRU_Peek_ExpiresEntries(t *testing.T) {
 }
 
 func TestLRU_Purge(t *testing.T) {
+	t.Parallel()
 	clock := newMockClock(time.Now())
 	c := New[string, int](Options[string, int]{
 		MaxSize: 10,
@@ -300,6 +311,7 @@ func TestLRU_Purge(t *testing.T) {
 // --- Stale-While-Revalidate Tests ---
 
 func TestLRU_SWR_ReturnsStaleAndRefreshes(t *testing.T) {
+	t.Parallel()
 	clock := newMockClock(time.Now())
 	var fetchCalls atomic.Int32
 	refreshDone := make(chan struct{}, 1)
@@ -347,6 +359,7 @@ func TestLRU_SWR_ReturnsStaleAndRefreshes(t *testing.T) {
 }
 
 func TestLRU_SWR_HardExpiry(t *testing.T) {
+	t.Parallel()
 	clock := newMockClock(time.Now())
 	c := New[string, int](Options[string, int]{
 		MaxSize:  10,
@@ -367,6 +380,7 @@ func TestLRU_SWR_HardExpiry(t *testing.T) {
 }
 
 func TestLRU_SWR_NoFetchFunc_StaleStillReturned(t *testing.T) {
+	t.Parallel()
 	clock := newMockClock(time.Now())
 	c := New[string, int](Options[string, int]{
 		MaxSize:  10,
@@ -388,6 +402,7 @@ func TestLRU_SWR_NoFetchFunc_StaleStillReturned(t *testing.T) {
 // --- Tag-Based Invalidation Tests ---
 
 func TestLRU_Tags_InvalidateByTag(t *testing.T) {
+	t.Parallel()
 	c := New[string, int](Options[string, int]{MaxSize: 10})
 
 	c.SetWithTags("user:1", 1, []string{"users"})
@@ -423,6 +438,7 @@ func TestLRU_Tags_InvalidateByTag(t *testing.T) {
 }
 
 func TestLRU_Tags_InvalidateNonexistentTag(t *testing.T) {
+	t.Parallel()
 	c := New[string, int](Options[string, int]{MaxSize: 10})
 	c.Set("a", 1)
 
@@ -435,6 +451,7 @@ func TestLRU_Tags_InvalidateNonexistentTag(t *testing.T) {
 }
 
 func TestLRU_Tags_UpdateRemovesOldTags(t *testing.T) {
+	t.Parallel()
 	c := New[string, int](Options[string, int]{MaxSize: 10})
 
 	c.SetWithTags("k", 1, []string{"tag-a"})
@@ -458,6 +475,7 @@ func TestLRU_Tags_UpdateRemovesOldTags(t *testing.T) {
 // --- Concurrent Access Tests ---
 
 func TestLRU_ConcurrentAccess(t *testing.T) {
+	t.Parallel()
 	c := New[int, int](Options[int, int]{MaxSize: 100})
 
 	var wg sync.WaitGroup
@@ -493,6 +511,7 @@ func TestLRU_ConcurrentAccess(t *testing.T) {
 }
 
 func TestLRU_ConcurrentTags(t *testing.T) {
+	t.Parallel()
 	c := New[string, int](Options[string, int]{MaxSize: 100})
 
 	var wg sync.WaitGroup
@@ -524,6 +543,7 @@ func TestLRU_ConcurrentTags(t *testing.T) {
 // --- Edge Cases ---
 
 func TestLRU_ZeroTTL_NoExpiry(t *testing.T) {
+	t.Parallel()
 	clock := newMockClock(time.Now())
 	c := New[string, int](Options[string, int]{
 		MaxSize: 10,
@@ -540,6 +560,7 @@ func TestLRU_ZeroTTL_NoExpiry(t *testing.T) {
 }
 
 func TestLRU_MaxSizeOne(t *testing.T) {
+	t.Parallel()
 	c := New[string, int](Options[string, int]{MaxSize: 1})
 
 	c.Set("a", 1)
@@ -557,6 +578,7 @@ func TestLRU_MaxSizeOne(t *testing.T) {
 }
 
 func TestLRU_Keys_Order(t *testing.T) {
+	t.Parallel()
 	c := New[string, int](Options[string, int]{MaxSize: 10})
 
 	c.Set("a", 1)

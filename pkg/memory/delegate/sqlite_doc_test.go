@@ -21,6 +21,7 @@ func makeDoc(agentID, name, category, content string) *memory.AgentDocument {
 }
 
 func TestLibSQLDelegate_GetDocument(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name        string
 		setup       func(t *testing.T, d *LibSQLDelegate, ctx context.Context)
@@ -67,7 +68,7 @@ func TestLibSQLDelegate_GetDocument(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			d := newTestDelegate(t)
-			ctx := context.Background()
+			ctx := t.Context()
 			if tt.setup != nil {
 				tt.setup(t, d, ctx)
 			}
@@ -86,6 +87,7 @@ func TestLibSQLDelegate_GetDocument(t *testing.T) {
 }
 
 func TestLibSQLDelegate_UpsertDocument(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name        string
 		ops         []*memory.AgentDocument
@@ -139,7 +141,7 @@ func TestLibSQLDelegate_UpsertDocument(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			d := newTestDelegate(t)
-			ctx := context.Background()
+			ctx := t.Context()
 			for _, doc := range tt.ops {
 				require.NoError(t, d.UpsertDocument(ctx, doc))
 			}
@@ -152,6 +154,7 @@ func TestLibSQLDelegate_UpsertDocument(t *testing.T) {
 }
 
 func TestLibSQLDelegate_DeleteDocument(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name    string
 		setup   func(t *testing.T, d *LibSQLDelegate, ctx context.Context)
@@ -185,7 +188,7 @@ func TestLibSQLDelegate_DeleteDocument(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			d := newTestDelegate(t)
-			ctx := context.Background()
+			ctx := t.Context()
 			if tt.setup != nil {
 				tt.setup(t, d, ctx)
 			}
@@ -206,6 +209,7 @@ func TestLibSQLDelegate_DeleteDocument(t *testing.T) {
 }
 
 func TestLibSQLDelegate_ListDocumentsByCategory(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		setup    func(t *testing.T, d *LibSQLDelegate, ctx context.Context)
@@ -256,7 +260,7 @@ func TestLibSQLDelegate_ListDocumentsByCategory(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			d := newTestDelegate(t)
-			ctx := context.Background()
+			ctx := t.Context()
 			if tt.setup != nil {
 				tt.setup(t, d, ctx)
 			}
@@ -271,6 +275,7 @@ func TestLibSQLDelegate_ListDocumentsByCategory(t *testing.T) {
 }
 
 func TestLibSQLDelegate_ListAllDocuments(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name    string
 		setup   func(t *testing.T, d *LibSQLDelegate, ctx context.Context)
@@ -318,7 +323,7 @@ func TestLibSQLDelegate_ListAllDocuments(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			d := newTestDelegate(t)
-			ctx := context.Background()
+			ctx := t.Context()
 			if tt.setup != nil {
 				tt.setup(t, d, ctx)
 			}

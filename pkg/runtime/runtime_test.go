@@ -44,6 +44,7 @@ func TestResolveBaseConfigPath_PrefersXDGOverLegacy(t *testing.T) {
 }
 
 func TestResolveBaseConfigPath_FallsBackToLegacyWhenXDGMissing(t *testing.T) {
+	t.Parallel()
 	home := t.TempDir()
 	xdg := t.TempDir()
 	t.Setenv("HOME", home)
@@ -58,6 +59,7 @@ func TestResolveBaseConfigPath_FallsBackToLegacyWhenXDGMissing(t *testing.T) {
 }
 
 func TestLoadResolvedConfig_AppliesOverlayAndKeepsBaseValues(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	basePath := filepath.Join(dir, "base.json")
 	overlayPath := filepath.Join(dir, "overlay.json")
@@ -82,6 +84,7 @@ func TestLoadResolvedConfig_AppliesOverlayAndKeepsBaseValues(t *testing.T) {
 }
 
 func TestEnsureMinProviderTimeout_SetsFloor(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	basePath := filepath.Join(dir, "base.json")
 	require.NoError(t, os.WriteFile(basePath, []byte(`{"providers":{"openai":{"timeout":0}}}`), 0o644))
@@ -95,10 +98,11 @@ func TestEnsureMinProviderTimeout_SetsFloor(t *testing.T) {
 }
 
 func TestStartOutbound_DropAndConsumeDoNotBlockPublishers(t *testing.T) {
+	t.Parallel()
 	modes := []OutboundMode{OutboundModeDrop, OutboundModeConsume}
 	for _, mode := range modes {
 		t.Run(string(mode), func(t *testing.T) {
-			ctx, cancel := context.WithCancel(context.Background())
+			ctx, cancel := context.WithCancel(t.Context())
 			defer cancel()
 
 			msgBus := bus.NewMessageBus()
@@ -127,7 +131,8 @@ func TestStartOutbound_DropAndConsumeDoNotBlockPublishers(t *testing.T) {
 }
 
 func TestStartOutbound_CallbackReceivesMessages(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
+	t.Parallel()
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
 	msgBus := bus.NewMessageBus()
@@ -158,6 +163,7 @@ func TestStartOutbound_CallbackReceivesMessages(t *testing.T) {
 }
 
 func TestValidateKernelInvariants(t *testing.T) {
+	t.Parallel()
 	t.Run("nil loop", func(t *testing.T) {
 		err := validateKernelInvariants(nil)
 		require.Error(t, err)

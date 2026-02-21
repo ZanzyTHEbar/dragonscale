@@ -103,6 +103,7 @@ func (t *mockNilResultTool) Execute(_ context.Context, _ map[string]interface{})
 // --- PicoToolAdapter.Info() Tests ---
 
 func TestAdapter_Info(t *testing.T) {
+	t.Parallel()
 	adapter := &PicoToolAdapter{inner: &mockDualChannelTool{}}
 	info := adapter.Info()
 
@@ -127,6 +128,7 @@ func TestAdapter_Info(t *testing.T) {
 }
 
 func TestAdapter_Info_UnwrapsSchemaWithRequired(t *testing.T) {
+	t.Parallel()
 	mock := &mockToolWithRequired{}
 	adapter := &PicoToolAdapter{inner: mock}
 	info := adapter.Info()
@@ -159,6 +161,7 @@ func (t *mockToolWithRequired) Execute(_ context.Context, _ map[string]interface
 // --- PicoToolAdapter.Run() Tests ---
 
 func TestAdapter_Run_SilentTool_NoPublish(t *testing.T) {
+	t.Parallel()
 	msgBus := bus.NewMessageBus()
 	adapter := &PicoToolAdapter{
 		inner:   &mockSilentTool{},
@@ -173,7 +176,7 @@ func TestAdapter_Run_SilentTool_NoPublish(t *testing.T) {
 		Input: "{}",
 	}
 
-	resp, err := adapter.Run(context.Background(), call)
+	resp, err := adapter.Run(t.Context(), call)
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
@@ -187,6 +190,7 @@ func TestAdapter_Run_SilentTool_NoPublish(t *testing.T) {
 }
 
 func TestAdapter_Run_DualChannel_PublishesForUser(t *testing.T) {
+	t.Parallel()
 	msgBus := bus.NewMessageBus()
 	adapter := &PicoToolAdapter{
 		inner:   &mockDualChannelTool{},
@@ -201,7 +205,7 @@ func TestAdapter_Run_DualChannel_PublishesForUser(t *testing.T) {
 		Input: `{"input": "hello"}`,
 	}
 
-	resp, err := adapter.Run(context.Background(), call)
+	resp, err := adapter.Run(t.Context(), call)
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
@@ -216,6 +220,7 @@ func TestAdapter_Run_DualChannel_PublishesForUser(t *testing.T) {
 }
 
 func TestAdapter_Run_ErrorTool_ReturnsErrorResponse(t *testing.T) {
+	t.Parallel()
 	adapter := &PicoToolAdapter{
 		inner: &mockErrorTool{},
 	}
@@ -226,7 +231,7 @@ func TestAdapter_Run_ErrorTool_ReturnsErrorResponse(t *testing.T) {
 		Input: "{}",
 	}
 
-	resp, err := adapter.Run(context.Background(), call)
+	resp, err := adapter.Run(t.Context(), call)
 	if err != nil {
 		t.Fatalf("Unexpected error (adapter should not return Go errors): %v", err)
 	}
@@ -240,6 +245,7 @@ func TestAdapter_Run_ErrorTool_ReturnsErrorResponse(t *testing.T) {
 }
 
 func TestAdapter_Run_NilResult_ReturnsError(t *testing.T) {
+	t.Parallel()
 	adapter := &PicoToolAdapter{
 		inner: &mockNilResultTool{},
 	}
@@ -250,7 +256,7 @@ func TestAdapter_Run_NilResult_ReturnsError(t *testing.T) {
 		Input: "{}",
 	}
 
-	resp, err := adapter.Run(context.Background(), call)
+	resp, err := adapter.Run(t.Context(), call)
 	if err != nil {
 		t.Fatalf("Unexpected Go error: %v", err)
 	}
@@ -264,6 +270,7 @@ func TestAdapter_Run_NilResult_ReturnsError(t *testing.T) {
 }
 
 func TestAdapter_Run_ContextualTool_SetsContext(t *testing.T) {
+	t.Parallel()
 	ctxTool := &mockContextualTool{}
 	adapter := &PicoToolAdapter{
 		inner:   ctxTool,
@@ -277,7 +284,7 @@ func TestAdapter_Run_ContextualTool_SetsContext(t *testing.T) {
 		Input: "{}",
 	}
 
-	resp, err := adapter.Run(context.Background(), call)
+	resp, err := adapter.Run(t.Context(), call)
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
@@ -289,6 +296,7 @@ func TestAdapter_Run_ContextualTool_SetsContext(t *testing.T) {
 }
 
 func TestAdapter_Run_InvalidJSON_ReturnsError(t *testing.T) {
+	t.Parallel()
 	adapter := &PicoToolAdapter{
 		inner: &mockSilentTool{},
 	}
@@ -299,7 +307,7 @@ func TestAdapter_Run_InvalidJSON_ReturnsError(t *testing.T) {
 		Input: "not valid json{{{",
 	}
 
-	resp, err := adapter.Run(context.Background(), call)
+	resp, err := adapter.Run(t.Context(), call)
 	if err != nil {
 		t.Fatalf("Unexpected Go error: %v", err)
 	}
@@ -312,6 +320,7 @@ func TestAdapter_Run_InvalidJSON_ReturnsError(t *testing.T) {
 // --- BuildAdaptedTools Tests ---
 
 func TestBuildAdaptedTools_NilRegistry(t *testing.T) {
+	t.Parallel()
 	result := BuildAdaptedTools(nil, nil, "", "")
 	if result != nil {
 		t.Error("Expected nil for nil registry")
@@ -319,6 +328,7 @@ func TestBuildAdaptedTools_NilRegistry(t *testing.T) {
 }
 
 func TestBuildAdaptedTools_WrapsAllTools(t *testing.T) {
+	t.Parallel()
 	registry := tools.NewToolRegistry()
 	registry.Register(&mockSilentTool{})
 	registry.Register(&mockDualChannelTool{})
@@ -348,6 +358,7 @@ func TestBuildAdaptedTools_WrapsAllTools(t *testing.T) {
 // --- parseToolArgs Tests ---
 
 func TestParseToolArgs_EmptyInput(t *testing.T) {
+	t.Parallel()
 	args, err := parseToolArgs("")
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
@@ -358,6 +369,7 @@ func TestParseToolArgs_EmptyInput(t *testing.T) {
 }
 
 func TestParseToolArgs_EmptyObject(t *testing.T) {
+	t.Parallel()
 	args, err := parseToolArgs("{}")
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
@@ -368,6 +380,7 @@ func TestParseToolArgs_EmptyObject(t *testing.T) {
 }
 
 func TestParseToolArgs_ValidJSON(t *testing.T) {
+	t.Parallel()
 	args, err := parseToolArgs(`{"key": "value", "num": 42}`)
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
@@ -378,6 +391,7 @@ func TestParseToolArgs_ValidJSON(t *testing.T) {
 }
 
 func TestParseToolArgs_InvalidJSON(t *testing.T) {
+	t.Parallel()
 	_, err := parseToolArgs("not json")
 	if err == nil {
 		t.Error("Expected error for invalid JSON")

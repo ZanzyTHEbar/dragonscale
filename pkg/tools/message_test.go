@@ -1,12 +1,12 @@
 package tools
 
 import (
-	"context"
 	"errors"
 	"testing"
 )
 
 func TestMessageTool_Execute_Success(t *testing.T) {
+	t.Parallel()
 	tool := NewMessageTool()
 	tool.SetContext("test-channel", "test-chat-id")
 
@@ -18,7 +18,7 @@ func TestMessageTool_Execute_Success(t *testing.T) {
 		return nil
 	})
 
-	ctx := context.Background()
+	ctx := t.Context()
 	args := map[string]interface{}{
 		"content": "Hello, world!",
 	}
@@ -59,6 +59,7 @@ func TestMessageTool_Execute_Success(t *testing.T) {
 }
 
 func TestMessageTool_Execute_WithCustomChannel(t *testing.T) {
+	t.Parallel()
 	tool := NewMessageTool()
 	tool.SetContext("default-channel", "default-chat-id")
 
@@ -69,7 +70,7 @@ func TestMessageTool_Execute_WithCustomChannel(t *testing.T) {
 		return nil
 	})
 
-	ctx := context.Background()
+	ctx := t.Context()
 	args := map[string]interface{}{
 		"content": "Test message",
 		"channel": "custom-channel",
@@ -95,6 +96,7 @@ func TestMessageTool_Execute_WithCustomChannel(t *testing.T) {
 }
 
 func TestMessageTool_Execute_SendFailure(t *testing.T) {
+	t.Parallel()
 	tool := NewMessageTool()
 	tool.SetContext("test-channel", "test-chat-id")
 
@@ -103,7 +105,7 @@ func TestMessageTool_Execute_SendFailure(t *testing.T) {
 		return sendErr
 	})
 
-	ctx := context.Background()
+	ctx := t.Context()
 	args := map[string]interface{}{
 		"content": "Test message",
 	}
@@ -132,10 +134,11 @@ func TestMessageTool_Execute_SendFailure(t *testing.T) {
 }
 
 func TestMessageTool_Execute_MissingContent(t *testing.T) {
+	t.Parallel()
 	tool := NewMessageTool()
 	tool.SetContext("test-channel", "test-chat-id")
 
-	ctx := context.Background()
+	ctx := t.Context()
 	args := map[string]interface{}{} // content missing
 
 	result := tool.Execute(ctx, args)
@@ -150,6 +153,7 @@ func TestMessageTool_Execute_MissingContent(t *testing.T) {
 }
 
 func TestMessageTool_Execute_NoTargetChannel(t *testing.T) {
+	t.Parallel()
 	tool := NewMessageTool()
 	// No SetContext called, so defaultChannel and defaultChatID are empty
 
@@ -157,7 +161,7 @@ func TestMessageTool_Execute_NoTargetChannel(t *testing.T) {
 		return nil
 	})
 
-	ctx := context.Background()
+	ctx := t.Context()
 	args := map[string]interface{}{
 		"content": "Test message",
 	}
@@ -174,11 +178,12 @@ func TestMessageTool_Execute_NoTargetChannel(t *testing.T) {
 }
 
 func TestMessageTool_Execute_NotConfigured(t *testing.T) {
+	t.Parallel()
 	tool := NewMessageTool()
 	tool.SetContext("test-channel", "test-chat-id")
 	// No SetSendCallback called
 
-	ctx := context.Background()
+	ctx := t.Context()
 	args := map[string]interface{}{
 		"content": "Test message",
 	}
@@ -195,6 +200,7 @@ func TestMessageTool_Execute_NotConfigured(t *testing.T) {
 }
 
 func TestMessageTool_Name(t *testing.T) {
+	t.Parallel()
 	tool := NewMessageTool()
 	if tool.Name() != "message" {
 		t.Errorf("Expected name 'message', got '%s'", tool.Name())
@@ -202,6 +208,7 @@ func TestMessageTool_Name(t *testing.T) {
 }
 
 func TestMessageTool_Description(t *testing.T) {
+	t.Parallel()
 	tool := NewMessageTool()
 	desc := tool.Description()
 	if desc == "" {
@@ -210,6 +217,7 @@ func TestMessageTool_Description(t *testing.T) {
 }
 
 func TestMessageTool_Parameters(t *testing.T) {
+	t.Parallel()
 	tool := NewMessageTool()
 	params := tool.Parameters()
 

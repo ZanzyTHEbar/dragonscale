@@ -7,6 +7,7 @@ import (
 )
 
 func TestRepairJSON(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name  string
 		input string
@@ -79,6 +80,7 @@ func TestRepairJSON(t *testing.T) {
 }
 
 func TestRepairJSONMultipleTopLevel(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name  string
 		input string
@@ -125,6 +127,7 @@ func TestRepairJSONMultipleTopLevel(t *testing.T) {
 }
 
 func TestRepairJSONEnsureASCII(t *testing.T) {
+	t.Parallel()
 	got, err := RepairJSON("{'test_中国人_ascii':'统一码'}", WithEnsureASCII(false))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -136,6 +139,7 @@ func TestRepairJSONEnsureASCII(t *testing.T) {
 }
 
 func TestRepairJSONStreamStable(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name  string
 		input string
@@ -197,6 +201,7 @@ func TestRepairJSONStreamStable(t *testing.T) {
 }
 
 func TestLoads(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name  string
 		input string
@@ -273,6 +278,7 @@ func TestLoads(t *testing.T) {
 }
 
 func TestRepairJSONSkipJSONLoads(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name  string
 		input string
@@ -320,6 +326,7 @@ func TestRepairJSONSkipJSONLoads(t *testing.T) {
 }
 
 func TestRepairJSONWithLog(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name      string
 		input     string
@@ -368,6 +375,7 @@ func TestRepairJSONWithLog(t *testing.T) {
 }
 
 func TestRepairJSONStrict(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name    string
 		input   string
@@ -438,6 +446,7 @@ func TestRepairJSONStrict(t *testing.T) {
 }
 
 func TestParseArrayObjects(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name  string
 		input string
@@ -479,6 +488,7 @@ func TestParseArrayObjects(t *testing.T) {
 }
 
 func TestParseArrayEdgeCases(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name  string
 		input string
@@ -620,6 +630,7 @@ func TestParseArrayEdgeCases(t *testing.T) {
 }
 
 func TestParseArrayMissingQuotes(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name  string
 		input string
@@ -656,6 +667,7 @@ func TestParseArrayMissingQuotes(t *testing.T) {
 }
 
 func TestParseComment(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name  string
 		input string
@@ -712,6 +724,7 @@ func TestParseComment(t *testing.T) {
 }
 
 func TestParseNumber(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name  string
 		input string
@@ -757,6 +770,7 @@ func TestParseNumber(t *testing.T) {
 }
 
 func TestParseNumberEdgeCases(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name  string
 		input string
@@ -863,6 +877,7 @@ func TestParseNumberEdgeCases(t *testing.T) {
 }
 
 func TestParseObjectObjects(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name  string
 		input string
@@ -912,6 +927,7 @@ func TestParseObjectObjects(t *testing.T) {
 }
 
 func TestParseObjectEdgeCases(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name  string
 		input string
@@ -1118,6 +1134,7 @@ func TestParseObjectEdgeCases(t *testing.T) {
 }
 
 func TestParseObjectMergeAtEnd(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name  string
 		input string
@@ -1179,6 +1196,7 @@ func TestParseObjectMergeAtEnd(t *testing.T) {
 }
 
 func TestParseStringBasics(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name  string
 		input string
@@ -1225,6 +1243,7 @@ func TestParseStringBasics(t *testing.T) {
 }
 
 func TestMissingAndMixedQuotes(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name  string
 		input string
@@ -1346,6 +1365,7 @@ func TestMissingAndMixedQuotes(t *testing.T) {
 }
 
 func TestEscaping(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name  string
 		input string
@@ -1416,6 +1436,7 @@ func TestEscaping(t *testing.T) {
 }
 
 func TestMarkdown(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name  string
 		input string
@@ -1452,6 +1473,7 @@ func TestMarkdown(t *testing.T) {
 }
 
 func TestLeadingTrailingCharacters(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name  string
 		input string
@@ -1493,6 +1515,7 @@ func TestLeadingTrailingCharacters(t *testing.T) {
 }
 
 func TestStringJSONLLMBlock(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name  string
 		input string
@@ -1534,6 +1557,7 @@ func TestStringJSONLLMBlock(t *testing.T) {
 }
 
 func TestParseBooleanOrNull(t *testing.T) {
+	t.Parallel()
 	loadCases := []struct {
 		name  string
 		input string

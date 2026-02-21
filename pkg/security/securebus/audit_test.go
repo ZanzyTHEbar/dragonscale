@@ -11,6 +11,7 @@ import (
 )
 
 func TestAuditLogAppendAndRetrieve(t *testing.T) {
+	t.Parallel()
 	al := NewAuditLog()
 
 	event := AuditEvent{
@@ -32,6 +33,7 @@ func TestAuditLogAppendAndRetrieve(t *testing.T) {
 }
 
 func TestAuditLogConcurrentAppend(t *testing.T) {
+	t.Parallel()
 	al := NewAuditLog()
 	n := 100
 
@@ -52,6 +54,7 @@ func TestAuditLogConcurrentAppend(t *testing.T) {
 }
 
 func TestAuditLogFilterBySession(t *testing.T) {
+	t.Parallel()
 	al := NewAuditLog()
 
 	_ = al.Append(AuditEvent{RequestID: "r1", SessionKey: "sess-A"})
@@ -69,6 +72,7 @@ func TestAuditLogFilterBySession(t *testing.T) {
 }
 
 func TestAuditLogLeakEvents(t *testing.T) {
+	t.Parallel()
 	al := NewAuditLog()
 
 	_ = al.Append(AuditEvent{RequestID: "r1", LeakDetected: false})
@@ -98,6 +102,7 @@ func (ms *mockSink) Write(event AuditEvent) error {
 }
 
 func TestAuditLogSinkIntegration(t *testing.T) {
+	t.Parallel()
 	sink := &mockSink{}
 	al := NewAuditLog(sink)
 
@@ -109,6 +114,7 @@ func TestAuditLogSinkIntegration(t *testing.T) {
 }
 
 func TestAuditLogSinkError(t *testing.T) {
+	t.Parallel()
 	sink := &mockSink{failAt: 1}
 	al := NewAuditLog(sink)
 
@@ -121,6 +127,7 @@ func TestAuditLogSinkError(t *testing.T) {
 }
 
 func TestAuditLogEventsImmutable(t *testing.T) {
+	t.Parallel()
 	al := NewAuditLog()
 	_ = al.Append(AuditEvent{RequestID: "r1"})
 

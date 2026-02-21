@@ -1,7 +1,6 @@
 package state
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -11,7 +10,10 @@ import (
 )
 
 func TestAtomicSave(t *testing.T) {
+	t.Parallel(
 	// Create temp workspace
+	)
+
 	tmpDir, err := os.MkdirTemp("", "state-test-*")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
@@ -21,7 +23,7 @@ func TestAtomicSave(t *testing.T) {
 	sm := NewManager(tmpDir)
 
 	// Test SetLastChannel
-	err = sm.SetLastChannel(context.Background(), "test-channel")
+	err = sm.SetLastChannel(t.Context(), "test-channel")
 	if err != nil {
 		t.Fatalf("SetLastChannel failed: %v", err)
 	}
@@ -51,6 +53,7 @@ func TestAtomicSave(t *testing.T) {
 }
 
 func TestSetLastChatID(t *testing.T) {
+	t.Parallel()
 	tmpDir, err := os.MkdirTemp("", "state-test-*")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
@@ -60,7 +63,7 @@ func TestSetLastChatID(t *testing.T) {
 	sm := NewManager(tmpDir)
 
 	// Test SetLastChatID
-	err = sm.SetLastChatID(context.Background(), "test-chat-id")
+	err = sm.SetLastChatID(t.Context(), "test-chat-id")
 	if err != nil {
 		t.Fatalf("SetLastChatID failed: %v", err)
 	}
@@ -84,6 +87,7 @@ func TestSetLastChatID(t *testing.T) {
 }
 
 func TestAtomicity_NoCorruptionOnInterrupt(t *testing.T) {
+	t.Parallel()
 	tmpDir, err := os.MkdirTemp("", "state-test-*")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
@@ -93,7 +97,7 @@ func TestAtomicity_NoCorruptionOnInterrupt(t *testing.T) {
 	sm := NewManager(tmpDir)
 
 	// Write initial state
-	err = sm.SetLastChannel(context.Background(), "initial-channel")
+	err = sm.SetLastChannel(t.Context(), "initial-channel")
 	if err != nil {
 		t.Fatalf("SetLastChannel failed: %v", err)
 	}
@@ -115,7 +119,7 @@ func TestAtomicity_NoCorruptionOnInterrupt(t *testing.T) {
 	os.Remove(tempFile)
 
 	// Now do a proper save
-	err = sm.SetLastChannel(context.Background(), "new-channel")
+	err = sm.SetLastChannel(t.Context(), "new-channel")
 	if err != nil {
 		t.Fatalf("SetLastChannel failed: %v", err)
 	}
@@ -127,6 +131,7 @@ func TestAtomicity_NoCorruptionOnInterrupt(t *testing.T) {
 }
 
 func TestConcurrentAccess(t *testing.T) {
+	t.Parallel()
 	tmpDir, err := os.MkdirTemp("", "state-test-*")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
@@ -140,7 +145,7 @@ func TestConcurrentAccess(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		go func(idx int) {
 			channel := fmt.Sprintf("channel-%d", idx)
-			sm.SetLastChannel(context.Background(), channel)
+			sm.SetLastChannel(t.Context(), channel)
 			done <- true
 		}(i)
 	}
@@ -170,6 +175,7 @@ func TestConcurrentAccess(t *testing.T) {
 }
 
 func TestNewManager_ExistingState(t *testing.T) {
+	t.Parallel()
 	tmpDir, err := os.MkdirTemp("", "state-test-*")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
@@ -178,8 +184,8 @@ func TestNewManager_ExistingState(t *testing.T) {
 
 	// Create initial state
 	sm1 := NewManager(tmpDir)
-	sm1.SetLastChannel(context.Background(), "existing-channel")
-	sm1.SetLastChatID(context.Background(), "existing-chat-id")
+	sm1.SetLastChannel(t.Context(), "existing-channel")
+	sm1.SetLastChatID(t.Context(), "existing-chat-id")
 
 	// Create new manager with same workspace
 	sm2 := NewManager(tmpDir)
@@ -195,6 +201,7 @@ func TestNewManager_ExistingState(t *testing.T) {
 }
 
 func TestNewManager_EmptyWorkspace(t *testing.T) {
+	t.Parallel()
 	tmpDir, err := os.MkdirTemp("", "state-test-*")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)

@@ -1,7 +1,6 @@
 package tools
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,12 +9,13 @@ import (
 
 // TestFilesystemTool_ReadFile_Success verifies successful file reading
 func TestFilesystemTool_ReadFile_Success(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 	testFile := filepath.Join(tmpDir, "test.txt")
 	os.WriteFile(testFile, []byte("test content"), 0644)
 
 	tool := &ReadFileTool{}
-	ctx := context.Background()
+	ctx := t.Context()
 	args := map[string]interface{}{
 		"path": testFile,
 	}
@@ -41,8 +41,9 @@ func TestFilesystemTool_ReadFile_Success(t *testing.T) {
 
 // TestFilesystemTool_ReadFile_NotFound verifies error handling for missing file
 func TestFilesystemTool_ReadFile_NotFound(t *testing.T) {
+	t.Parallel()
 	tool := &ReadFileTool{}
-	ctx := context.Background()
+	ctx := t.Context()
 	args := map[string]interface{}{
 		"path": "/nonexistent_file_12345.txt",
 	}
@@ -62,8 +63,9 @@ func TestFilesystemTool_ReadFile_NotFound(t *testing.T) {
 
 // TestFilesystemTool_ReadFile_MissingPath verifies error handling for missing path
 func TestFilesystemTool_ReadFile_MissingPath(t *testing.T) {
+	t.Parallel()
 	tool := &ReadFileTool{}
-	ctx := context.Background()
+	ctx := t.Context()
 	args := map[string]interface{}{}
 
 	result := tool.Execute(ctx, args)
@@ -81,11 +83,12 @@ func TestFilesystemTool_ReadFile_MissingPath(t *testing.T) {
 
 // TestFilesystemTool_WriteFile_Success verifies successful file writing
 func TestFilesystemTool_WriteFile_Success(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 	testFile := filepath.Join(tmpDir, "newfile.txt")
 
 	tool := &WriteFileTool{}
-	ctx := context.Background()
+	ctx := t.Context()
 	args := map[string]interface{}{
 		"path":    testFile,
 		"content": "hello world",
@@ -120,11 +123,12 @@ func TestFilesystemTool_WriteFile_Success(t *testing.T) {
 
 // TestFilesystemTool_WriteFile_CreateDir verifies directory creation
 func TestFilesystemTool_WriteFile_CreateDir(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 	testFile := filepath.Join(tmpDir, "subdir", "newfile.txt")
 
 	tool := &WriteFileTool{}
-	ctx := context.Background()
+	ctx := t.Context()
 	args := map[string]interface{}{
 		"path":    testFile,
 		"content": "test",
@@ -149,8 +153,9 @@ func TestFilesystemTool_WriteFile_CreateDir(t *testing.T) {
 
 // TestFilesystemTool_WriteFile_MissingPath verifies error handling for missing path
 func TestFilesystemTool_WriteFile_MissingPath(t *testing.T) {
+	t.Parallel()
 	tool := &WriteFileTool{}
-	ctx := context.Background()
+	ctx := t.Context()
 	args := map[string]interface{}{
 		"content": "test",
 	}
@@ -165,8 +170,9 @@ func TestFilesystemTool_WriteFile_MissingPath(t *testing.T) {
 
 // TestFilesystemTool_WriteFile_MissingContent verifies error handling for missing content
 func TestFilesystemTool_WriteFile_MissingContent(t *testing.T) {
+	t.Parallel()
 	tool := &WriteFileTool{}
-	ctx := context.Background()
+	ctx := t.Context()
 	args := map[string]interface{}{
 		"path": "/tmp/test.txt",
 	}
@@ -186,13 +192,14 @@ func TestFilesystemTool_WriteFile_MissingContent(t *testing.T) {
 
 // TestFilesystemTool_ListDir_Success verifies successful directory listing
 func TestFilesystemTool_ListDir_Success(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 	os.WriteFile(filepath.Join(tmpDir, "file1.txt"), []byte("content"), 0644)
 	os.WriteFile(filepath.Join(tmpDir, "file2.txt"), []byte("content"), 0644)
 	os.Mkdir(filepath.Join(tmpDir, "subdir"), 0755)
 
 	tool := &ListDirTool{}
-	ctx := context.Background()
+	ctx := t.Context()
 	args := map[string]interface{}{
 		"path": tmpDir,
 	}
@@ -215,8 +222,9 @@ func TestFilesystemTool_ListDir_Success(t *testing.T) {
 
 // TestFilesystemTool_ListDir_NotFound verifies error handling for non-existent directory
 func TestFilesystemTool_ListDir_NotFound(t *testing.T) {
+	t.Parallel()
 	tool := &ListDirTool{}
-	ctx := context.Background()
+	ctx := t.Context()
 	args := map[string]interface{}{
 		"path": "/nonexistent_directory_12345",
 	}
@@ -236,8 +244,9 @@ func TestFilesystemTool_ListDir_NotFound(t *testing.T) {
 
 // TestFilesystemTool_ListDir_DefaultPath verifies default to current directory
 func TestFilesystemTool_ListDir_DefaultPath(t *testing.T) {
+	t.Parallel()
 	tool := &ListDirTool{}
-	ctx := context.Background()
+	ctx := t.Context()
 	args := map[string]interface{}{}
 
 	result := tool.Execute(ctx, args)
@@ -250,6 +259,7 @@ func TestFilesystemTool_ListDir_DefaultPath(t *testing.T) {
 
 // Block paths that look inside workspace but point outside via symlink.
 func TestFilesystemTool_ReadFile_RejectsSymlinkEscape(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	workspace := filepath.Join(root, "workspace")
 	if err := os.MkdirAll(workspace, 0755); err != nil {
@@ -267,7 +277,7 @@ func TestFilesystemTool_ReadFile_RejectsSymlinkEscape(t *testing.T) {
 	}
 
 	tool := NewReadFileTool(workspace, true)
-	result := tool.Execute(context.Background(), map[string]interface{}{
+	result := tool.Execute(t.Context(), map[string]interface{}{
 		"path": link,
 	})
 
@@ -280,6 +290,7 @@ func TestFilesystemTool_ReadFile_RejectsSymlinkEscape(t *testing.T) {
 }
 
 func TestValidatePath_NullByteRejection(t *testing.T) {
+	t.Parallel()
 	workspace := t.TempDir()
 	tests := []struct {
 		name string
@@ -303,6 +314,7 @@ func TestValidatePath_NullByteRejection(t *testing.T) {
 }
 
 func TestValidatePath_SensitiveFileBlocking(t *testing.T) {
+	t.Parallel()
 	workspace := t.TempDir()
 	tests := []struct {
 		name      string
@@ -345,6 +357,7 @@ func TestValidatePath_SensitiveFileBlocking(t *testing.T) {
 }
 
 func TestValidatePath_SensitiveFileAllowedWithoutRestrict(t *testing.T) {
+	t.Parallel()
 	workspace := t.TempDir()
 	_, err := validatePath(".env", workspace, false)
 	if err != nil {
@@ -353,10 +366,11 @@ func TestValidatePath_SensitiveFileAllowedWithoutRestrict(t *testing.T) {
 }
 
 func TestWriteFileTool_RejectsOversizedContent(t *testing.T) {
+	t.Parallel()
 	workspace := t.TempDir()
 	tool := NewWriteFileTool(workspace, false)
 	oversized := strings.Repeat("x", maxWriteBytes+1)
-	result := tool.Execute(context.Background(), map[string]interface{}{
+	result := tool.Execute(t.Context(), map[string]interface{}{
 		"path":    filepath.Join(workspace, "big.txt"),
 		"content": oversized,
 	})
@@ -369,6 +383,7 @@ func TestWriteFileTool_RejectsOversizedContent(t *testing.T) {
 }
 
 func TestValidatePath_TraversalBlocked(t *testing.T) {
+	t.Parallel()
 	workspace := t.TempDir()
 	tests := []struct {
 		name string
@@ -389,6 +404,7 @@ func TestValidatePath_TraversalBlocked(t *testing.T) {
 }
 
 func TestValidatePath_ValidPathsAllowed(t *testing.T) {
+	t.Parallel()
 	workspace := t.TempDir()
 	os.MkdirAll(filepath.Join(workspace, "src", "pkg"), 0755)
 

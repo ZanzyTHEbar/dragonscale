@@ -47,9 +47,10 @@ func driveGeneratePath(ctx context.Context, f *reactFSM) {
 
 // TestFSM_Start verifies the FSM transitions from Init to PrepareStep on Start.
 func TestFSM_Start(t *testing.T) {
+	t.Parallel()
 	obs := &captureObserver{}
 	f, _ := newTestFSM(t, obs)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	f.Fire(ctx, ReActTriggerStart)
 
@@ -63,9 +64,10 @@ func TestFSM_Start(t *testing.T) {
 // TestFSM_FullHappyPath drives one complete step through all states and
 // ends in Done via Finished.
 func TestFSM_FullHappyPath(t *testing.T) {
+	t.Parallel()
 	obs := &captureObserver{}
 	f, _ := newTestFSM(t, obs)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	f.Fire(ctx, ReActTriggerStart)
 	driveGeneratePath(ctx, f)
@@ -81,9 +83,10 @@ func TestFSM_FullHappyPath(t *testing.T) {
 // TestFSM_Continue verifies that the loop can re-enter PrepareStep after a
 // tool-call step.
 func TestFSM_Continue(t *testing.T) {
+	t.Parallel()
 	obs := &captureObserver{}
 	f, _ := newTestFSM(t, obs)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	f.Fire(ctx, ReActTriggerStart)
 	driveGeneratePath(ctx, f)
@@ -101,9 +104,10 @@ func TestFSM_Continue(t *testing.T) {
 
 // TestFSM_StopConditionMet verifies the alternative Done path.
 func TestFSM_StopConditionMet(t *testing.T) {
+	t.Parallel()
 	obs := &captureObserver{}
 	f, _ := newTestFSM(t, obs)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	f.Fire(ctx, ReActTriggerStart)
 	driveGeneratePath(ctx, f)
@@ -115,9 +119,10 @@ func TestFSM_StopConditionMet(t *testing.T) {
 
 // TestFSM_ErrorTransition verifies the error state is reachable from any state.
 func TestFSM_ErrorTransition(t *testing.T) {
+	t.Parallel()
 	obs := &captureObserver{}
 	f, _ := newTestFSM(t, obs)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	f.Fire(ctx, ReActTriggerStart)
 	f.Fire(ctx, ReActTriggerPrepared)
@@ -130,9 +135,10 @@ func TestFSM_ErrorTransition(t *testing.T) {
 
 // TestFSM_RecoveredContinue verifies the error → PrepareStep recovery path.
 func TestFSM_RecoveredContinue(t *testing.T) {
+	t.Parallel()
 	obs := &captureObserver{}
 	f, _ := newTestFSM(t, obs)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	f.Fire(ctx, ReActTriggerStart)
 	f.Fire(ctx, ReActTriggerErrored) // error before prepared
@@ -146,8 +152,9 @@ func TestFSM_RecoveredContinue(t *testing.T) {
 // TestFSM_UnhandledTriggerIsPermissive verifies that firing an invalid trigger
 // from a given state does NOT return an error (permissive design).
 func TestFSM_UnhandledTriggerIsPermissive(t *testing.T) {
+	t.Parallel()
 	f, _ := newTestFSM(t, nil)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// From Init, firing Finished is not a permitted transition.
 	// The FSM must silently ignore it (no panic, no error).
@@ -159,8 +166,9 @@ func TestFSM_UnhandledTriggerIsPermissive(t *testing.T) {
 // TestFSM_TransitionLog verifies the log accumulates correctly and Snapshot
 // returns a copy.
 func TestFSM_TransitionLog(t *testing.T) {
+	t.Parallel()
 	f, _ := newTestFSM(t, nil)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	f.Fire(ctx, ReActTriggerStart)
 	f.Fire(ctx, ReActTriggerPrepared)
@@ -177,10 +185,11 @@ func TestFSM_TransitionLog(t *testing.T) {
 // TestFSM_StepIndex verifies that the step index embedded in transitions
 // reflects the pointer value at emission time.
 func TestFSM_StepIndex(t *testing.T) {
+	t.Parallel()
 	idx := 0
 	obs := &captureObserver{}
 	f := newReActFSM(obs, &idx)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	f.Fire(ctx, ReActTriggerStart) // stepIndex = 0
 	idx = 1
@@ -194,8 +203,9 @@ func TestFSM_StepIndex(t *testing.T) {
 
 // TestFSM_NilObserverSafe verifies no panic when no observer is attached.
 func TestFSM_NilObserverSafe(t *testing.T) {
+	t.Parallel()
 	f, _ := newTestFSM(t, nil)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	assert.NotPanics(t, func() {
 		f.Fire(ctx, ReActTriggerStart)
@@ -206,6 +216,7 @@ func TestFSM_NilObserverSafe(t *testing.T) {
 // TestReActTransitionLog_ConcurrentAppend verifies the log is safe under
 // concurrent writes.
 func TestReActTransitionLog_ConcurrentAppend(t *testing.T) {
+	t.Parallel()
 	log := NewReActTransitionLog()
 	const n = 100
 	var wg sync.WaitGroup

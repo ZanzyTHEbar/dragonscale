@@ -3,6 +3,7 @@ package channels
 import "testing"
 
 func TestBaseChannelIsAllowed(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name      string
 		allowList []string

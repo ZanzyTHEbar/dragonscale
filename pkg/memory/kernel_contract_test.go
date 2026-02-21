@@ -9,6 +9,7 @@ import (
 )
 
 func TestActiveContextProjection_TotalTokens(t *testing.T) {
+	t.Parallel()
 	p := &ActiveContextProjection{
 		Segments: []ProjectionSegment{
 			{Tokens: 120},
@@ -20,6 +21,7 @@ func TestActiveContextProjection_TotalTokens(t *testing.T) {
 }
 
 func TestActiveContextProjection_HasLosslessRefs(t *testing.T) {
+	t.Parallel()
 	now := time.Now().UTC()
 	p := &ActiveContextProjection{
 		Segments: []ProjectionSegment{

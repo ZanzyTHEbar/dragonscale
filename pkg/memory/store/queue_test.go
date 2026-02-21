@@ -1,7 +1,6 @@
 package store
 
 import (
-	"context"
 	"strings"
 	"testing"
 
@@ -13,7 +12,7 @@ import (
 
 func newTestQueueManager(t *testing.T, contextWindow int) (*QueueManager, *MemoryStore) {
 	t.Helper()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	del, err := delegate.NewLibSQLInMemory()
 	require.NoError(t, err)
@@ -32,7 +31,8 @@ func newTestQueueManager(t *testing.T, contextWindow int) (*QueueManager, *Memor
 }
 
 func TestQueueManager_NormalPressure(t *testing.T) {
-	ctx := context.Background()
+	t.Parallel()
+	ctx := t.Context()
 	qm, _ := newTestQueueManager(t, 100000)
 
 	decision, err := qm.Evaluate(ctx, "agent-1", "session-1")
@@ -42,7 +42,8 @@ func TestQueueManager_NormalPressure(t *testing.T) {
 }
 
 func TestQueueManager_WarnPressure(t *testing.T) {
-	ctx := context.Background()
+	t.Parallel()
+	ctx := t.Context()
 	qm, store := newTestQueueManager(t, 100) // tiny window
 
 	// Fill working context to ~75% of context window.
@@ -56,7 +57,8 @@ func TestQueueManager_WarnPressure(t *testing.T) {
 }
 
 func TestQueueManager_OffloadPressure(t *testing.T) {
-	ctx := context.Background()
+	t.Parallel()
+	ctx := t.Context()
 	qm, store := newTestQueueManager(t, 100) // tiny window
 
 	// Fill to ~82% of context window.
@@ -70,7 +72,8 @@ func TestQueueManager_OffloadPressure(t *testing.T) {
 }
 
 func TestQueueManager_FlushPressure(t *testing.T) {
-	ctx := context.Background()
+	t.Parallel()
+	ctx := t.Context()
 	qm, store := newTestQueueManager(t, 100) // tiny window
 
 	// Fill to ~88% of context window.
@@ -84,7 +87,8 @@ func TestQueueManager_FlushPressure(t *testing.T) {
 }
 
 func TestQueueManager_EvictOldest(t *testing.T) {
-	ctx := context.Background()
+	t.Parallel()
+	ctx := t.Context()
 	qm, store := newTestQueueManager(t, 100)
 
 	// Seed recall items
@@ -108,7 +112,8 @@ func TestQueueManager_EvictOldest(t *testing.T) {
 }
 
 func TestQueueManager_EvictEmpty(t *testing.T) {
-	ctx := context.Background()
+	t.Parallel()
+	ctx := t.Context()
 	qm, _ := newTestQueueManager(t, 100)
 
 	evicted, summary, err := qm.EvictOldest(ctx, "agent-1", "empty-session")
@@ -118,6 +123,7 @@ func TestQueueManager_EvictEmpty(t *testing.T) {
 }
 
 func TestDefaultQueueManagerConfig(t *testing.T) {
+	t.Parallel()
 	cfg := DefaultQueueManagerConfig()
 	assert.InDelta(t, 0.70, cfg.WarnThreshold, 0.001)
 	assert.InDelta(t, 0.80, cfg.OffloadThreshold, 0.001)

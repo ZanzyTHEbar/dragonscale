@@ -1,7 +1,6 @@
 package delegate
 
 import (
-	"context"
 	"fmt"
 	"testing"
 
@@ -15,7 +14,7 @@ func newTestDelegate(t *testing.T) *LibSQLDelegate {
 	if err != nil {
 		t.Fatalf("NewLibSQLInMemory: %v", err)
 	}
-	if err := d.Init(context.Background()); err != nil {
+	if err := d.Init(t.Context()); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
 	t.Cleanup(func() { d.Close() })
@@ -23,8 +22,9 @@ func newTestDelegate(t *testing.T) *LibSQLDelegate {
 }
 
 func TestLibSQLDelegate_WorkingContext(t *testing.T) {
+	t.Parallel()
 	d := newTestDelegate(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// Initially nil
 	wc, err := d.GetWorkingContext(ctx, "agent-1", "sess-1")
@@ -63,8 +63,9 @@ func TestLibSQLDelegate_WorkingContext(t *testing.T) {
 }
 
 func TestLibSQLDelegate_RecallItemCRUD(t *testing.T) {
+	t.Parallel()
 	d := newTestDelegate(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	item := &memory.RecallItem{
 		ID:         ids.New(),
@@ -156,8 +157,9 @@ func testEmbedding768(seed ...float32) []float32 {
 }
 
 func TestLibSQLDelegate_ArchivalChunkCRUD(t *testing.T) {
+	t.Parallel()
 	d := newTestDelegate(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	parentRecall := &memory.RecallItem{
 		ID: ids.New(), AgentID: "agent-1", SessionKey: "sess-1",
@@ -237,8 +239,9 @@ func TestLibSQLDelegate_ArchivalChunkCRUD(t *testing.T) {
 }
 
 func TestLibSQLDelegate_SummaryCRUD(t *testing.T) {
+	t.Parallel()
 	d := newTestDelegate(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	summary := &memory.MemorySummary{
 		ID:         ids.New(),
@@ -266,8 +269,9 @@ func TestLibSQLDelegate_SummaryCRUD(t *testing.T) {
 }
 
 func TestLibSQLDelegate_KeywordSearch(t *testing.T) {
+	t.Parallel()
 	d := newTestDelegate(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	items := []*memory.RecallItem{
 		{ID: ids.New(), AgentID: "agent-1", SessionKey: "s1", Role: "user", Sector: memory.SectorSemantic, Importance: 0.9, Content: "Go programming language is fast"},
@@ -291,8 +295,9 @@ func TestLibSQLDelegate_KeywordSearch(t *testing.T) {
 }
 
 func TestLibSQLDelegate_Counts(t *testing.T) {
+	t.Parallel()
 	d := newTestDelegate(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// Initial counts should be zero
 	rc, err := d.CountRecallItems(ctx, "agent-1", "")
@@ -328,8 +333,9 @@ func TestLibSQLDelegate_Counts(t *testing.T) {
 }
 
 func TestLibSQLDelegate_FTSSearch(t *testing.T) {
+	t.Parallel()
 	d := newTestDelegate(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// Insert recall items with searchable content
 	items := []*memory.RecallItem{
@@ -382,8 +388,9 @@ func TestLibSQLDelegate_FTSSearch(t *testing.T) {
 }
 
 func TestLibSQLDelegate_VectorSearch(t *testing.T) {
+	t.Parallel()
 	d := newTestDelegate(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// Insert archival chunks with 768-dim embeddings (schema requires F32_BLOB(768))
 	embData := [][]float32{
@@ -439,6 +446,7 @@ func TestLibSQLDelegate_VectorSearch(t *testing.T) {
 }
 
 func TestBuildFTSMatchExpr(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		input    string
 		expected string
@@ -465,6 +473,7 @@ func TestBuildFTSMatchExpr(t *testing.T) {
 }
 
 func TestVectorToString(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		input    memory.Embedding
 		expected string
@@ -485,7 +494,10 @@ func TestVectorToString(t *testing.T) {
 }
 
 func TestExtractVector(t *testing.T) {
+	t.Parallel(
 	// Round-trip test: Embedding.Value() -> blob -> extractVector
+	)
+
 	original := memory.Embedding{0.1, -0.2, 0.3, 0.99, -0.01}
 	dv, err := original.Value()
 	if err != nil {
@@ -510,6 +522,7 @@ func TestExtractVector(t *testing.T) {
 }
 
 func TestLibSQLDelegate_Capabilities(t *testing.T) {
+	t.Parallel()
 	d := newTestDelegate(t)
 
 	// After Init(), capabilities should have been probed
@@ -526,13 +539,14 @@ func TestLibSQLDelegate_Capabilities(t *testing.T) {
 	}
 
 	// Calling detect again should be a no-op (idempotent)
-	d.detectCapabilities(context.Background())
+	d.detectCapabilities(t.Context())
 	if d.HasFTS() != hasFTS || d.HasVectorSearch() != hasVec {
 		t.Error("detectCapabilities changed results on second call — not idempotent")
 	}
 }
 
 func TestEmbeddingValueScanRoundTrip(t *testing.T) {
+	t.Parallel()
 	vectors := []memory.Embedding{
 		{0.0, 1.0, -1.0, 0.5, -0.5},
 		{3.4028235e+38, -3.4028235e+38}, // max float32
@@ -578,8 +592,9 @@ func TestEmbeddingValueScanRoundTrip(t *testing.T) {
 }
 
 func TestIntegration_FullStackNoDisk(t *testing.T) {
+	t.Parallel()
 	d := newTestDelegate(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	agentID := "integration-agent"
 
 	t.Run("KV_Store", func(t *testing.T) {

@@ -1,7 +1,6 @@
 package store
 
 import (
-	"context"
 	"testing"
 
 	"github.com/ZanzyTHEbar/dragonscale/pkg/memory"
@@ -10,8 +9,9 @@ import (
 )
 
 func TestHeuristicScorer_BasicScoring(t *testing.T) {
+	t.Parallel()
 	scorer := NewHeuristicScorer()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	tests := []struct {
 		name      string
@@ -38,8 +38,9 @@ func TestHeuristicScorer_BasicScoring(t *testing.T) {
 }
 
 func TestHeuristicScorer_SectorClassification(t *testing.T) {
+	t.Parallel()
 	scorer := NewHeuristicScorer()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	tests := []struct {
 		name    string
@@ -78,6 +79,7 @@ func TestHeuristicScorer_SectorClassification(t *testing.T) {
 }
 
 func TestParseScoringResponse_ValidJSON(t *testing.T) {
+	t.Parallel()
 	input := `{"importance": 0.85, "salience": 0.6, "sector": "semantic"}`
 	result, err := parseScoringResponse(input)
 	require.NoError(t, err)
@@ -87,6 +89,7 @@ func TestParseScoringResponse_ValidJSON(t *testing.T) {
 }
 
 func TestParseScoringResponse_WithCodeFences(t *testing.T) {
+	t.Parallel()
 	input := "```json\n{\"importance\": 0.9, \"salience\": 0.3, \"sector\": \"procedural\"}\n```"
 	result, err := parseScoringResponse(input)
 	require.NoError(t, err)
@@ -95,6 +98,7 @@ func TestParseScoringResponse_WithCodeFences(t *testing.T) {
 }
 
 func TestParseScoringResponse_ClampsValues(t *testing.T) {
+	t.Parallel()
 	input := `{"importance": 1.5, "salience": -0.3, "sector": "episodic"}`
 	result, err := parseScoringResponse(input)
 	require.NoError(t, err)
@@ -103,6 +107,7 @@ func TestParseScoringResponse_ClampsValues(t *testing.T) {
 }
 
 func TestParseScoringResponse_UnknownSector(t *testing.T) {
+	t.Parallel()
 	input := `{"importance": 0.5, "salience": 0.5, "sector": "unknown_sector"}`
 	result, err := parseScoringResponse(input)
 	require.NoError(t, err)
@@ -110,6 +115,7 @@ func TestParseScoringResponse_UnknownSector(t *testing.T) {
 }
 
 func TestNormalizeSector(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		input    string
 		expected memory.Sector

@@ -14,6 +14,7 @@ import (
 )
 
 func TestSocketTransportRoundTrip(t *testing.T) {
+	t.Parallel()
 	sockPath := filepath.Join(t.TempDir(), "test.sock")
 
 	server, err := NewSocketTransportServer(sockPath)
@@ -47,7 +48,7 @@ func TestSocketTransportRoundTrip(t *testing.T) {
 		Timestamp: time.Now().UnixNano(),
 	}
 
-	resp, err := client.Send(context.Background(), req)
+	resp, err := client.Send(t.Context(), req)
 	require.NoError(t, err)
 	assert.Equal(t, "req-001", resp.ID)
 	assert.Contains(t, resp.Result, "req-001")
@@ -57,6 +58,7 @@ func TestSocketTransportRoundTrip(t *testing.T) {
 }
 
 func TestSocketTransportMultipleRequests(t *testing.T) {
+	t.Parallel()
 	sockPath := filepath.Join(t.TempDir(), "multi.sock")
 
 	server, err := NewSocketTransportServer(sockPath)
@@ -82,13 +84,14 @@ func TestSocketTransportMultipleRequests(t *testing.T) {
 			"echo",
 			`{}`,
 		)
-		resp, err := client.Send(context.Background(), req)
+		resp, err := client.Send(t.Context(), req)
 		require.NoError(t, err)
 		assert.Equal(t, req.ID, resp.ID)
 	}
 }
 
 func TestSocketTransportCleanup(t *testing.T) {
+	t.Parallel()
 	sockPath := filepath.Join(t.TempDir(), "cleanup.sock")
 
 	server, err := NewSocketTransportServer(sockPath)
@@ -104,6 +107,7 @@ func TestSocketTransportCleanup(t *testing.T) {
 }
 
 func TestSocketTransportClientSendOnClosed(t *testing.T) {
+	t.Parallel()
 	sockPath := filepath.Join(t.TempDir(), "closed.sock")
 
 	server, err := NewSocketTransportServer(sockPath)
@@ -120,7 +124,7 @@ func TestSocketTransportClientSendOnClosed(t *testing.T) {
 
 	client.Close()
 
-	_, err = client.Send(context.Background(), itr.ToolRequest{ID: "fail"})
+	_, err = client.Send(t.Context(), itr.ToolRequest{ID: "fail"})
 	assert.Error(t, err)
 
 	server.Close()

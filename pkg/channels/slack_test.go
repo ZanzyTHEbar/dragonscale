@@ -8,6 +8,7 @@ import (
 )
 
 func TestParseSlackChatID(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name       string
 		chatID     string
@@ -54,6 +55,7 @@ func TestParseSlackChatID(t *testing.T) {
 }
 
 func TestStripBotMention(t *testing.T) {
+	t.Parallel()
 	ch := &SlackChannel{botUserID: "U12345BOT"}
 
 	tests := []struct {
@@ -99,6 +101,7 @@ func TestStripBotMention(t *testing.T) {
 }
 
 func TestNewSlackChannel(t *testing.T) {
+	t.Parallel()
 	msgBus := bus.NewMessageBus()
 
 	t.Run("missing bot token", func(t *testing.T) {
@@ -143,6 +146,7 @@ func TestNewSlackChannel(t *testing.T) {
 }
 
 func TestSlackChannelIsAllowed(t *testing.T) {
+	t.Parallel()
 	msgBus := bus.NewMessageBus()
 
 	t.Run("empty allowlist allows all", func(t *testing.T) {

@@ -1,7 +1,6 @@
 package wasm
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -47,14 +46,16 @@ var minimalWASM = []byte{
 }
 
 func TestNewRuntime(t *testing.T) {
-	ctx := context.Background()
+	t.Parallel()
+	ctx := t.Context()
 	rt, err := NewRuntime(ctx, DefaultRuntimeConfig())
 	require.NoError(t, err)
 	defer rt.Close(ctx)
 }
 
 func TestExecuteMinimalModule(t *testing.T) {
-	ctx := context.Background()
+	t.Parallel()
+	ctx := t.Context()
 	rt, err := NewRuntime(ctx, DefaultRuntimeConfig())
 	require.NoError(t, err)
 	defer rt.Close(ctx)
@@ -67,7 +68,8 @@ func TestExecuteMinimalModule(t *testing.T) {
 }
 
 func TestExecuteTimeout(t *testing.T) {
-	ctx := context.Background()
+	t.Parallel()
+	ctx := t.Context()
 	cfg := DefaultRuntimeConfig()
 	cfg.ExecTimeout = 1 * time.Millisecond
 	rt, err := NewRuntime(ctx, cfg)
@@ -83,7 +85,8 @@ func TestExecuteTimeout(t *testing.T) {
 }
 
 func TestExecuteInvalidWASM(t *testing.T) {
-	ctx := context.Background()
+	t.Parallel()
+	ctx := t.Context()
 	rt, err := NewRuntime(ctx, DefaultRuntimeConfig())
 	require.NoError(t, err)
 	defer rt.Close(ctx)
@@ -94,7 +97,8 @@ func TestExecuteInvalidWASM(t *testing.T) {
 }
 
 func TestRuntimeCloseIdempotent(t *testing.T) {
-	ctx := context.Background()
+	t.Parallel()
+	ctx := t.Context()
 	rt, err := NewRuntime(ctx, DefaultRuntimeConfig())
 	require.NoError(t, err)
 
@@ -103,7 +107,8 @@ func TestRuntimeCloseIdempotent(t *testing.T) {
 }
 
 func TestExecuteAfterClose(t *testing.T) {
-	ctx := context.Background()
+	t.Parallel()
+	ctx := t.Context()
 	rt, err := NewRuntime(ctx, DefaultRuntimeConfig())
 	require.NoError(t, err)
 	rt.Close(ctx)
@@ -114,6 +119,7 @@ func TestExecuteAfterClose(t *testing.T) {
 }
 
 func TestLimitedBuffer(t *testing.T) {
+	t.Parallel()
 	lb := &limitedBuffer{max: 5}
 	n, err := lb.Write([]byte("hello world"))
 	assert.NoError(t, err)
@@ -122,6 +128,7 @@ func TestLimitedBuffer(t *testing.T) {
 }
 
 func TestLimitedBufferExactFit(t *testing.T) {
+	t.Parallel()
 	lb := &limitedBuffer{max: 5}
 	n, err := lb.Write([]byte("hello"))
 	assert.NoError(t, err)

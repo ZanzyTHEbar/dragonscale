@@ -7,6 +7,7 @@ import (
 )
 
 func TestToolCallTool_Name(t *testing.T) {
+	t.Parallel()
 	r := NewToolRegistry()
 	tc := NewToolCallTool(r)
 	if tc.Name() != "tool_call" {
@@ -15,6 +16,7 @@ func TestToolCallTool_Name(t *testing.T) {
 }
 
 func TestToolCallTool_Description(t *testing.T) {
+	t.Parallel()
 	r := NewToolRegistry()
 	tc := NewToolCallTool(r)
 	if tc.Description() == "" {
@@ -23,6 +25,7 @@ func TestToolCallTool_Description(t *testing.T) {
 }
 
 func TestToolCallTool_Parameters(t *testing.T) {
+	t.Parallel()
 	r := NewToolRegistry()
 	tc := NewToolCallTool(r)
 	params := tc.Parameters()
@@ -40,9 +43,10 @@ func TestToolCallTool_Parameters(t *testing.T) {
 }
 
 func TestToolCallTool_MissingToolName(t *testing.T) {
+	t.Parallel()
 	r := NewToolRegistry()
 	tc := NewToolCallTool(r)
-	result := tc.Execute(context.Background(), map[string]interface{}{})
+	result := tc.Execute(t.Context(), map[string]interface{}{})
 
 	if !result.IsError {
 		t.Error("expected error for missing tool_name")
@@ -50,11 +54,12 @@ func TestToolCallTool_MissingToolName(t *testing.T) {
 }
 
 func TestToolCallTool_DispatchesToTool(t *testing.T) {
+	t.Parallel()
 	r := NewToolRegistry()
 	r.Register(&stubTool{name: "read_file", desc: "Read a file"})
 	tc := NewToolCallTool(r)
 
-	result := tc.Execute(context.Background(), map[string]interface{}{
+	result := tc.Execute(t.Context(), map[string]interface{}{
 		"tool_name": "read_file",
 		"arguments": map[string]interface{}{"path": "/tmp/test.txt"},
 	})
@@ -68,11 +73,12 @@ func TestToolCallTool_DispatchesToTool(t *testing.T) {
 }
 
 func TestToolCallTool_PreventRecursion_ToolCall(t *testing.T) {
+	t.Parallel()
 	r := NewToolRegistry()
 	r.RegisterMetaTools()
 
 	tc, _ := r.Get("tool_call")
-	result := tc.Execute(context.Background(), map[string]interface{}{
+	result := tc.Execute(t.Context(), map[string]interface{}{
 		"tool_name": "tool_call",
 	})
 
@@ -82,11 +88,12 @@ func TestToolCallTool_PreventRecursion_ToolCall(t *testing.T) {
 }
 
 func TestToolCallTool_PreventRecursion_ToolSearch(t *testing.T) {
+	t.Parallel()
 	r := NewToolRegistry()
 	r.RegisterMetaTools()
 
 	tc, _ := r.Get("tool_call")
-	result := tc.Execute(context.Background(), map[string]interface{}{
+	result := tc.Execute(t.Context(), map[string]interface{}{
 		"tool_name": "tool_search",
 	})
 
@@ -96,11 +103,12 @@ func TestToolCallTool_PreventRecursion_ToolSearch(t *testing.T) {
 }
 
 func TestToolCallTool_JSONStringArguments(t *testing.T) {
+	t.Parallel()
 	r := NewToolRegistry()
 	r.Register(&echoTool{})
 	tc := NewToolCallTool(r)
 
-	result := tc.Execute(context.Background(), map[string]interface{}{
+	result := tc.Execute(t.Context(), map[string]interface{}{
 		"tool_name": "echo",
 		"arguments": `{"msg":"hello"}`,
 	})
@@ -114,11 +122,12 @@ func TestToolCallTool_JSONStringArguments(t *testing.T) {
 }
 
 func TestToolCallTool_NilArguments(t *testing.T) {
+	t.Parallel()
 	r := NewToolRegistry()
 	r.Register(&stubTool{name: "no_args", desc: "Tool that needs no args"})
 	tc := NewToolCallTool(r)
 
-	result := tc.Execute(context.Background(), map[string]interface{}{
+	result := tc.Execute(t.Context(), map[string]interface{}{
 		"tool_name": "no_args",
 	})
 
@@ -128,11 +137,12 @@ func TestToolCallTool_NilArguments(t *testing.T) {
 }
 
 func TestToolCallTool_InvalidJSONArguments(t *testing.T) {
+	t.Parallel()
 	r := NewToolRegistry()
 	r.Register(&stubToolWithSchema{name: "read_file", desc: "Read a file"})
 	tc := NewToolCallTool(r)
 
-	result := tc.Execute(context.Background(), map[string]interface{}{
+	result := tc.Execute(t.Context(), map[string]interface{}{
 		"tool_name": "read_file",
 		"arguments": "not-json",
 	})
@@ -147,11 +157,12 @@ func TestToolCallTool_InvalidJSONArguments(t *testing.T) {
 }
 
 func TestToolCallTool_MissingRequiredArgs_IncludesSchemaHint(t *testing.T) {
+	t.Parallel()
 	r := NewToolRegistry()
 	r.Register(&stubToolWithSchema{name: "read_file", desc: "Read a file"})
 	tc := NewToolCallTool(r)
 
-	result := tc.Execute(context.Background(), map[string]interface{}{
+	result := tc.Execute(t.Context(), map[string]interface{}{
 		"tool_name": "read_file",
 		"arguments": map[string]interface{}{},
 	})
@@ -168,10 +179,11 @@ func TestToolCallTool_MissingRequiredArgs_IncludesSchemaHint(t *testing.T) {
 }
 
 func TestToolCallTool_ToolNotFoundSuggestsSearch(t *testing.T) {
+	t.Parallel()
 	r := NewToolRegistry()
 	tc := NewToolCallTool(r)
 
-	result := tc.Execute(context.Background(), map[string]interface{}{
+	result := tc.Execute(t.Context(), map[string]interface{}{
 		"tool_name": "nonexistent",
 	})
 
@@ -184,6 +196,7 @@ func TestToolCallTool_ToolNotFoundSuggestsSearch(t *testing.T) {
 }
 
 func TestToolCallTool_ContextPropagation(t *testing.T) {
+	t.Parallel()
 	r := NewToolRegistry()
 	ct := &contextCaptureTool{}
 	r.Register(ct)
@@ -191,7 +204,7 @@ func TestToolCallTool_ContextPropagation(t *testing.T) {
 	tc := NewToolCallTool(r)
 	tc.SetContext("test-channel", "test-chat")
 
-	tc.Execute(context.Background(), map[string]interface{}{
+	tc.Execute(t.Context(), map[string]interface{}{
 		"tool_name": "capture",
 		"arguments": map[string]interface{}{},
 	})
@@ -203,6 +216,7 @@ func TestToolCallTool_ContextPropagation(t *testing.T) {
 }
 
 func TestToolCallTool_ResourceProvider_LoadsResources(t *testing.T) {
+	t.Parallel()
 	r := NewToolRegistry()
 	rt := &resourceAwareTool{
 		resources: map[string]string{
@@ -212,7 +226,7 @@ func TestToolCallTool_ResourceProvider_LoadsResources(t *testing.T) {
 	r.Register(rt)
 	tc := NewToolCallTool(r)
 
-	result := tc.Execute(context.Background(), map[string]interface{}{
+	result := tc.Execute(t.Context(), map[string]interface{}{
 		"tool_name": "resource_tool",
 		"arguments": map[string]interface{}{},
 	})
@@ -231,12 +245,13 @@ func TestToolCallTool_ResourceProvider_LoadsResources(t *testing.T) {
 }
 
 func TestToolCallTool_NormalizesCommaSeparatedToolName(t *testing.T) {
+	t.Parallel()
 	r := NewToolRegistry()
 	r.Register(&stubTool{name: "write_file", desc: "write"})
 	r.Register(&stubTool{name: "read_file", desc: "read"})
 	tc := NewToolCallTool(r)
 
-	result := tc.Execute(context.Background(), map[string]interface{}{
+	result := tc.Execute(t.Context(), map[string]interface{}{
 		"tool_name": "write_file, read_file",
 		"arguments": map[string]interface{}{"path": "x.txt"},
 	})
@@ -250,11 +265,12 @@ func TestToolCallTool_NormalizesCommaSeparatedToolName(t *testing.T) {
 }
 
 func TestToolCallTool_NormalizesEmbeddedToolName(t *testing.T) {
+	t.Parallel()
 	r := NewToolRegistry()
 	r.Register(&stubTool{name: "exec", desc: "exec"})
 	tc := NewToolCallTool(r)
 
-	result := tc.Execute(context.Background(), map[string]interface{}{
+	result := tc.Execute(t.Context(), map[string]interface{}{
 		"tool_name": "exec_tool_search_query_exec_run_shell_command_return_output_caution",
 		"arguments": map[string]interface{}{"command": "echo hi"},
 	})
@@ -268,11 +284,12 @@ func TestToolCallTool_NormalizesEmbeddedToolName(t *testing.T) {
 }
 
 func TestToolCallTool_NoResourceProvider_StillWorks(t *testing.T) {
+	t.Parallel()
 	r := NewToolRegistry()
 	r.Register(&stubTool{name: "plain", desc: "No resources"})
 	tc := NewToolCallTool(r)
 
-	result := tc.Execute(context.Background(), map[string]interface{}{
+	result := tc.Execute(t.Context(), map[string]interface{}{
 		"tool_name": "plain",
 		"arguments": map[string]interface{}{},
 	})
@@ -283,7 +300,8 @@ func TestToolCallTool_NoResourceProvider_StillWorks(t *testing.T) {
 }
 
 func TestResourcesFromContext_Empty(t *testing.T) {
-	res := ResourcesFromContext(context.Background())
+	t.Parallel()
+	res := ResourcesFromContext(t.Context())
 	if res != nil {
 		t.Error("expected nil for empty context")
 	}

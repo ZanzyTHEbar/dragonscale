@@ -2,8 +2,9 @@ package dag
 
 import (
 	"context"
-	jsonv2 "github.com/go-json-experiment/json"
 	"testing"
+
+	jsonv2 "github.com/go-json-experiment/json"
 
 	"github.com/ZanzyTHEbar/dragonscale/pkg/itr"
 	"github.com/stretchr/testify/assert"
@@ -11,26 +12,31 @@ import (
 )
 
 func TestExtractJSON_PlainJSON(t *testing.T) {
+	t.Parallel()
 	input := `{"nodes": [{"id": "n1"}]}`
 	assert.Equal(t, input, extractJSON(input))
 }
 
 func TestExtractJSON_MarkdownFenced(t *testing.T) {
+	t.Parallel()
 	input := "Here is the plan:\n```json\n{\"nodes\": [{\"id\": \"n1\"}]}\n```\nDone."
 	assert.Equal(t, `{"nodes": [{"id": "n1"}]}`, extractJSON(input))
 }
 
 func TestExtractJSON_GenericFenced(t *testing.T) {
+	t.Parallel()
 	input := "```\n{\"nodes\": []}\n```"
 	assert.Equal(t, `{"nodes": []}`, extractJSON(input))
 }
 
 func TestExtractJSON_LeadingText(t *testing.T) {
+	t.Parallel()
 	input := "The plan is: {\"nodes\":[]}"
 	assert.Equal(t, `{"nodes":[]}`, extractJSON(input))
 }
 
 func TestFindIndex(t *testing.T) {
+	t.Parallel()
 	assert.Equal(t, 0, findIndex("abc", "a"))
 	assert.Equal(t, 2, findIndex("abc", "c"))
 	assert.Equal(t, -1, findIndex("abc", "z"))
@@ -39,6 +45,7 @@ func TestFindIndex(t *testing.T) {
 }
 
 func TestValidatePlan_Valid(t *testing.T) {
+	t.Parallel()
 	plan := &itr.DAGPlan{
 		Nodes: []itr.DAGNode{
 			{ID: "a", Type: itr.CmdToolExec},
@@ -49,6 +56,7 @@ func TestValidatePlan_Valid(t *testing.T) {
 }
 
 func TestValidatePlan_Empty(t *testing.T) {
+	t.Parallel()
 	plan := &itr.DAGPlan{Nodes: nil}
 	err := validatePlan(plan)
 	require.Error(t, err)
@@ -56,6 +64,7 @@ func TestValidatePlan_Empty(t *testing.T) {
 }
 
 func TestValidatePlan_DuplicateID(t *testing.T) {
+	t.Parallel()
 	plan := &itr.DAGPlan{
 		Nodes: []itr.DAGNode{
 			{ID: "x", Type: itr.CmdToolExec},
@@ -68,6 +77,7 @@ func TestValidatePlan_DuplicateID(t *testing.T) {
 }
 
 func TestValidatePlan_EmptyID(t *testing.T) {
+	t.Parallel()
 	plan := &itr.DAGPlan{
 		Nodes: []itr.DAGNode{{ID: "", Type: itr.CmdToolExec}},
 	}
@@ -77,6 +87,7 @@ func TestValidatePlan_EmptyID(t *testing.T) {
 }
 
 func TestValidatePlan_UnknownDependency(t *testing.T) {
+	t.Parallel()
 	plan := &itr.DAGPlan{
 		Nodes: []itr.DAGNode{
 			{ID: "a", Type: itr.CmdToolExec, DependsOn: []string{"missing"}},
@@ -88,6 +99,7 @@ func TestValidatePlan_UnknownDependency(t *testing.T) {
 }
 
 func TestValidatePlan_SelfDependency(t *testing.T) {
+	t.Parallel()
 	plan := &itr.DAGPlan{
 		Nodes: []itr.DAGNode{
 			{ID: "a", Type: itr.CmdToolExec, DependsOn: []string{"a"}},
@@ -99,6 +111,7 @@ func TestValidatePlan_SelfDependency(t *testing.T) {
 }
 
 func TestValidatePlan_CyclicDependency(t *testing.T) {
+	t.Parallel()
 	plan := &itr.DAGPlan{
 		Nodes: []itr.DAGNode{
 			{ID: "a", Type: itr.CmdToolExec, DependsOn: []string{"b"}},
@@ -111,6 +124,7 @@ func TestValidatePlan_CyclicDependency(t *testing.T) {
 }
 
 func TestParsePlanResponse_ValidJSON(t *testing.T) {
+	t.Parallel()
 	input := `{
 		"nodes": [
 			{"id": "n1", "type": "tool_exec", "payload": {"tool_name": "read_file", "args_json": "{\"path\":\"/tmp/a\"}"}}
@@ -131,6 +145,7 @@ func TestParsePlanResponse_ValidJSON(t *testing.T) {
 }
 
 func TestParsePlanResponse_WithMarkdownFence(t *testing.T) {
+	t.Parallel()
 	input := "```json\n" + `{"nodes": [{"id": "x", "type": "tool_search", "payload": {"query": "files"}}]}` + "\n```"
 
 	plan, err := parsePlanResponse(input)
@@ -143,11 +158,13 @@ func TestParsePlanResponse_WithMarkdownFence(t *testing.T) {
 }
 
 func TestParsePlanResponse_InvalidJSON(t *testing.T) {
+	t.Parallel()
 	_, err := parsePlanResponse("not json at all")
 	assert.Error(t, err)
 }
 
 func TestPlannerPlanE2E(t *testing.T) {
+	t.Parallel()
 	mockLLM := func(ctx context.Context, systemPrompt, userQuery string) (string, uint32, error) {
 		plan := itr.DAGPlan{
 			Nodes: []itr.DAGNode{
@@ -164,7 +181,7 @@ func TestPlannerPlanE2E(t *testing.T) {
 	}
 
 	planner := NewPlanner(mockLLM, nil, DefaultPlannerConfig())
-	plan, tokens, err := planner.Plan(context.Background(), "search and read", nil)
+	plan, tokens, err := planner.Plan(t.Context(), "search and read", nil)
 	require.NoError(t, err)
 	assert.Equal(t, uint32(100), tokens)
 	require.Len(t, plan.Nodes, 2)
@@ -173,12 +190,13 @@ func TestPlannerPlanE2E(t *testing.T) {
 }
 
 func TestPlannerPlanLLMError(t *testing.T) {
+	t.Parallel()
 	mockLLM := func(ctx context.Context, systemPrompt, userQuery string) (string, uint32, error) {
 		return "", 50, assert.AnError
 	}
 
 	planner := NewPlanner(mockLLM, nil, DefaultPlannerConfig())
-	_, tokens, err := planner.Plan(context.Background(), "anything", nil)
+	_, tokens, err := planner.Plan(t.Context(), "anything", nil)
 	assert.Error(t, err)
 	assert.Equal(t, uint32(50), tokens)
 }

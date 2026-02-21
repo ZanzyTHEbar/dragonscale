@@ -3,8 +3,9 @@ package fantasy
 import (
 	"context"
 	"fmt"
-	jsonv2 "github.com/go-json-experiment/json"
 	"testing"
+
+	jsonv2 "github.com/go-json-experiment/json"
 
 	"github.com/stretchr/testify/require"
 )
@@ -111,7 +112,7 @@ func TestStreamingAgentCallbacks(t *testing.T) {
 	// Create agent
 	agent := NewAgent(mockModel)
 
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// Create streaming call with all callbacks
 	streamCall := AgentStreamCall{
@@ -301,7 +302,7 @@ func TestStreamingAgentWithTools(t *testing.T) {
 		WithTools(&EchoTool{}),
 	)
 
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// Track callback invocations
 	var toolInputStartCalled bool
@@ -399,7 +400,7 @@ func TestStreamingAgentTextDeltas(t *testing.T) {
 	}
 
 	agent := NewAgent(mockModel)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// Track text deltas
 	var textDeltas []string
@@ -461,7 +462,7 @@ func TestStreamingAgentReasoning(t *testing.T) {
 	}
 
 	agent := NewAgent(mockModel)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	var reasoningDeltas []string
 	var textDeltas []string
@@ -502,7 +503,7 @@ func TestStreamingAgentError(t *testing.T) {
 	}
 
 	agent := NewAgent(mockModel)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// Track error callbacks
 	var errorOccurred bool
@@ -568,7 +569,7 @@ func TestStreamingAgentSources(t *testing.T) {
 	}
 
 	agent := NewAgent(mockModel)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	var sources []SourceContent
 

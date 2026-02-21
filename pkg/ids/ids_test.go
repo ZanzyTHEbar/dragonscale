@@ -7,6 +7,7 @@ import (
 )
 
 func TestNew_IsV7(t *testing.T) {
+	t.Parallel()
 	u := New()
 
 	if u.IsZero() {
@@ -24,6 +25,7 @@ func TestNew_IsV7(t *testing.T) {
 }
 
 func TestNew_Unique(t *testing.T) {
+	t.Parallel()
 	seen := make(map[UUID]bool, 1000)
 	for i := 0; i < 1000; i++ {
 		u := New()
@@ -35,6 +37,7 @@ func TestNew_Unique(t *testing.T) {
 }
 
 func TestNew_Monotonic(t *testing.T) {
+	t.Parallel()
 	a := New()
 	b := New()
 	// UUIDv7 embeds ms timestamp in first 6 bytes. b >= a in timestamp.
@@ -50,6 +53,7 @@ func TestNew_Monotonic(t *testing.T) {
 }
 
 func TestParse_RoundTrip(t *testing.T) {
+	t.Parallel()
 	u := New()
 	s := u.String()
 
@@ -63,6 +67,7 @@ func TestParse_RoundTrip(t *testing.T) {
 }
 
 func TestParse_Errors(t *testing.T) {
+	t.Parallel()
 	cases := []string{
 		"",
 		"not-a-uuid",
@@ -78,6 +83,7 @@ func TestParse_Errors(t *testing.T) {
 }
 
 func TestIsZero(t *testing.T) {
+	t.Parallel()
 	var zero UUID
 	if !zero.IsZero() {
 		t.Fatal("zero UUID should be zero")
@@ -89,6 +95,7 @@ func TestIsZero(t *testing.T) {
 }
 
 func TestValue_BlobRoundTrip(t *testing.T) {
+	t.Parallel()
 	u := New()
 	v, err := u.Value()
 	if err != nil {
@@ -112,6 +119,7 @@ func TestValue_BlobRoundTrip(t *testing.T) {
 }
 
 func TestValue_ZeroIsNil(t *testing.T) {
+	t.Parallel()
 	var zero UUID
 	v, err := zero.Value()
 	if err != nil {
@@ -123,6 +131,7 @@ func TestValue_ZeroIsNil(t *testing.T) {
 }
 
 func TestScan_NilLeavesZero(t *testing.T) {
+	t.Parallel()
 	var u UUID
 	if err := u.Scan(nil); err != nil {
 		t.Fatalf("Scan(nil): %v", err)
@@ -133,6 +142,7 @@ func TestScan_NilLeavesZero(t *testing.T) {
 }
 
 func TestScan_String(t *testing.T) {
+	t.Parallel()
 	orig := New()
 	var u UUID
 	if err := u.Scan(orig.String()); err != nil {
@@ -144,6 +154,7 @@ func TestScan_String(t *testing.T) {
 }
 
 func TestScan_InvalidBlob(t *testing.T) {
+	t.Parallel()
 	var u UUID
 	if err := u.Scan([]byte{1, 2, 3}); err == nil {
 		t.Fatal("Scan(3-byte blob) should fail")
@@ -151,6 +162,7 @@ func TestScan_InvalidBlob(t *testing.T) {
 }
 
 func TestScan_InvalidType(t *testing.T) {
+	t.Parallel()
 	var u UUID
 	if err := u.Scan(42); err == nil {
 		t.Fatal("Scan(int) should fail")
@@ -158,6 +170,7 @@ func TestScan_InvalidType(t *testing.T) {
 }
 
 func TestJSON_RoundTrip(t *testing.T) {
+	t.Parallel()
 	u := New()
 
 	b, err := jsonv2.Marshal(u)
@@ -184,6 +197,7 @@ func TestJSON_RoundTrip(t *testing.T) {
 }
 
 func TestJSON_ZeroUUID(t *testing.T) {
+	t.Parallel()
 	var zero UUID
 	b, err := jsonv2.Marshal(zero)
 	if err != nil {
@@ -196,6 +210,7 @@ func TestJSON_ZeroUUID(t *testing.T) {
 }
 
 func TestJSON_InStruct(t *testing.T) {
+	t.Parallel()
 	type record struct {
 		ID   UUID   `json:"id"`
 		Name string `json:"name"`
@@ -217,6 +232,7 @@ func TestJSON_InStruct(t *testing.T) {
 }
 
 func TestFromBytes(t *testing.T) {
+	t.Parallel()
 	u := New()
 	b := u.Bytes()
 	restored := FromBytes(b)
@@ -226,6 +242,7 @@ func TestFromBytes(t *testing.T) {
 }
 
 func TestMustParse_Panics(t *testing.T) {
+	t.Parallel()
 	defer func() {
 		if r := recover(); r == nil {
 			t.Fatal("MustParse should panic on bad input")
@@ -235,6 +252,7 @@ func TestMustParse_Panics(t *testing.T) {
 }
 
 func TestString_Format(t *testing.T) {
+	t.Parallel()
 	u := New()
 	s := u.String()
 	if len(s) != 36 {
@@ -246,6 +264,7 @@ func TestString_Format(t *testing.T) {
 }
 
 func TestUUIDComparable(t *testing.T) {
+	t.Parallel()
 	a := New()
 	b := a // copy
 	if a != b {

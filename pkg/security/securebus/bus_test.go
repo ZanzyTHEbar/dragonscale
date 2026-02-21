@@ -2,8 +2,9 @@ package securebus_test
 
 import (
 	"context"
-	jsonv2 "github.com/go-json-experiment/json"
 	"testing"
+
+	jsonv2 "github.com/go-json-experiment/json"
 
 	"github.com/ZanzyTHEbar/dragonscale/pkg/itr"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/security"
@@ -76,12 +77,13 @@ func makeBus(t *testing.T, toolMap map[string]tools.Tool, secrets *security.Secr
 // ── tests ─────────────────────────────────────────────────────────────────────
 
 func TestBus_SuccessfulToolExec(t *testing.T) {
+	t.Parallel()
 	tool := &staticTool{name: "greet", result: "hello world"}
 	bus := makeBus(t, map[string]tools.Tool{"greet": tool}, nil)
 	defer bus.Close()
 
 	req := itr.NewToolExecRequest("req-1", "sess", "tc-1", "greet", makeArgsJSON(nil))
-	resp := bus.Execute(context.Background(), req)
+	resp := bus.Execute(t.Context(), req)
 
 	assert.False(t, resp.IsError)
 	assert.Equal(t, "hello world", resp.Result)
@@ -89,22 +91,24 @@ func TestBus_SuccessfulToolExec(t *testing.T) {
 }
 
 func TestBus_UnknownTool(t *testing.T) {
+	t.Parallel()
 	bus := makeBus(t, map[string]tools.Tool{}, nil)
 	defer bus.Close()
 
 	req := itr.NewToolExecRequest("req-2", "sess", "tc-2", "nonexistent", makeArgsJSON(nil))
-	resp := bus.Execute(context.Background(), req)
+	resp := bus.Execute(t.Context(), req)
 
 	assert.True(t, resp.IsError)
 }
 
 func TestBus_ToolReturnsError(t *testing.T) {
+	t.Parallel()
 	tool := &staticTool{name: "fail", result: "something broke", isErr: true}
 	bus := makeBus(t, map[string]tools.Tool{"fail": tool}, nil)
 	defer bus.Close()
 
 	req := itr.NewToolExecRequest("req-3", "sess", "tc-3", "fail", makeArgsJSON(nil))
-	resp := bus.Execute(context.Background(), req)
+	resp := bus.Execute(t.Context(), req)
 
 	assert.True(t, resp.IsError)
 	assert.Equal(t, 1, bus.AuditLog().Len())
@@ -113,14 +117,17 @@ func TestBus_ToolReturnsError(t *testing.T) {
 }
 
 func TestBus_LeakDetection(t *testing.T) {
+	t.Parallel(
 	// Tool output contains an API key — should be redacted.
+	)
+
 	apiKey := "AKIAIOSFODNN7EXAMPLE" // fake AWS key matching redactor pattern
 	tool := &staticTool{name: "leaky", result: "result: " + apiKey}
 	bus := makeBus(t, map[string]tools.Tool{"leaky": tool}, nil)
 	defer bus.Close()
 
 	req := itr.NewToolExecRequest("req-4", "sess", "tc-4", "leaky", makeArgsJSON(nil))
-	resp := bus.Execute(context.Background(), req)
+	resp := bus.Execute(t.Context(), req)
 
 	assert.True(t, resp.LeakDetected, "should detect API key in output")
 	assert.NotContains(t, resp.Result, apiKey, "raw API key must not appear in response")
@@ -130,7 +137,10 @@ func TestBus_LeakDetection(t *testing.T) {
 }
 
 func TestBus_SecretInjection_ArgVariant(t *testing.T) {
+	t.Parallel(
 	// Tool reads injected "token" arg from args map.
+	)
+
 	echoT := &echoTool{}
 
 	// Give echo tool a capability that declares a secret injected as arg:input.
@@ -174,7 +184,7 @@ func TestBus_SecretInjection_ArgVariant(t *testing.T) {
 	defer bus.Close()
 
 	req := itr.NewToolExecRequest("req-5", "sess", "tc-5", "echo", makeArgsJSON(nil))
-	resp := bus.Execute(context.Background(), req)
+	resp := bus.Execute(t.Context(), req)
 
 	assert.False(t, resp.IsError)
 	assert.Equal(t, "supersecret", resp.Result, "injected secret should appear in tool output")
@@ -185,6 +195,7 @@ func TestBus_SecretInjection_ArgVariant(t *testing.T) {
 }
 
 func TestBus_PolicyViolation_RecursionDepth(t *testing.T) {
+	t.Parallel()
 	tool := &staticTool{name: "ok", result: "fine"}
 	bus := makeBus(t, map[string]tools.Tool{"ok": tool}, nil)
 	defer bus.Close()
@@ -192,7 +203,7 @@ func TestBus_PolicyViolation_RecursionDepth(t *testing.T) {
 	req := itr.NewToolExecRequest("req-6", "sess", "tc-6", "ok", makeArgsJSON(nil))
 	req.Depth = 255 // far exceeds MaxRecursionDepth=10
 
-	resp := bus.Execute(context.Background(), req)
+	resp := bus.Execute(t.Context(), req)
 
 	assert.True(t, resp.IsError, "depth violation should produce an error response")
 	events := bus.AuditLog().Events()
@@ -201,13 +212,14 @@ func TestBus_PolicyViolation_RecursionDepth(t *testing.T) {
 }
 
 func TestBus_AuditLog_FilterBySession(t *testing.T) {
+	t.Parallel()
 	tool := &staticTool{name: "t", result: "ok"}
 	bus := makeBus(t, map[string]tools.Tool{"t": tool}, nil)
 	defer bus.Close()
 
 	for _, sk := range []string{"session-A", "session-A", "session-B"} {
 		req := itr.NewToolExecRequest("req-audit-"+sk, sk, "tc", "t", makeArgsJSON(nil))
-		bus.Execute(context.Background(), req)
+		bus.Execute(t.Context(), req)
 	}
 
 	assert.Equal(t, 3, bus.AuditLog().Len())
@@ -216,40 +228,44 @@ func TestBus_AuditLog_FilterBySession(t *testing.T) {
 }
 
 func TestBus_Transport_Send(t *testing.T) {
+	t.Parallel()
 	tool := &staticTool{name: "ping", result: "pong"}
 	bus := makeBus(t, map[string]tools.Tool{"ping": tool}, nil)
 	defer bus.Close()
 
 	req := itr.NewToolExecRequest("req-tr", "sess", "tc", "ping", makeArgsJSON(nil))
-	resp, err := bus.Transport().Send(context.Background(), req)
+	resp, err := bus.Transport().Send(t.Context(), req)
 
 	require.NoError(t, err)
 	assert.Equal(t, "pong", resp.Result)
 }
 
 func TestBus_InvalidArgsJSON(t *testing.T) {
+	t.Parallel()
 	tool := &staticTool{name: "ok", result: "ok"}
 	bus := makeBus(t, map[string]tools.Tool{"ok": tool}, nil)
 	defer bus.Close()
 
 	req := itr.NewToolExecRequest("req-bad", "sess", "tc", "ok", "{invalid json")
-	resp := bus.Execute(context.Background(), req)
+	resp := bus.Execute(t.Context(), req)
 
 	assert.True(t, resp.IsError)
 }
 
 func TestBus_RLMFinalCommand(t *testing.T) {
+	t.Parallel()
 	bus := makeBus(t, nil, nil)
 	defer bus.Close()
 
 	req := itr.NewFinalRequest("req-final", "sess", 0, "the answer", "")
-	resp := bus.Execute(context.Background(), req)
+	resp := bus.Execute(t.Context(), req)
 
 	assert.False(t, resp.IsError)
 	assert.Equal(t, "the answer", resp.Result)
 }
 
 func TestBus_CloseIdempotent(t *testing.T) {
+	t.Parallel()
 	bus := makeBus(t, nil, nil)
 
 	assert.NotPanics(t, func() {
@@ -260,6 +276,7 @@ func TestBus_CloseIdempotent(t *testing.T) {
 }
 
 func TestBus_ToolSearch(t *testing.T) {
+	t.Parallel()
 	bus := makeBus(t, nil, nil)
 	defer bus.Close()
 
@@ -268,24 +285,26 @@ func TestBus_ToolSearch(t *testing.T) {
 	})
 
 	req := itr.NewToolSearchRequest("req-search", "sess", "file operations", 5)
-	resp := bus.Execute(context.Background(), req)
+	resp := bus.Execute(t.Context(), req)
 
 	assert.False(t, resp.IsError)
 	assert.Contains(t, resp.Result, "read_file")
 }
 
 func TestBus_ToolSearchNotConfigured(t *testing.T) {
+	t.Parallel()
 	bus := makeBus(t, nil, nil)
 	defer bus.Close()
 
 	req := itr.NewToolSearchRequest("req-search2", "sess", "anything", 5)
-	resp := bus.Execute(context.Background(), req)
+	resp := bus.Execute(t.Context(), req)
 
 	assert.True(t, resp.IsError)
 	assert.Contains(t, resp.Result, "not configured")
 }
 
 func TestBus_NilToolResult(t *testing.T) {
+	t.Parallel()
 	executor := func(ctx context.Context, name string, args map[string]interface{}) *tools.ToolResult {
 		return nil
 	}
@@ -296,7 +315,7 @@ func TestBus_NilToolResult(t *testing.T) {
 	defer bus.Close()
 
 	req := itr.NewToolExecRequest("req-nil", "sess", "tc", "something", "{}")
-	resp := bus.Execute(context.Background(), req)
+	resp := bus.Execute(t.Context(), req)
 
 	assert.False(t, resp.IsError)
 	assert.Empty(t, resp.Result)

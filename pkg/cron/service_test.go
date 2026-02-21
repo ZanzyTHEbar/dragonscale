@@ -8,6 +8,7 @@ import (
 )
 
 func TestSaveStore_FilePermissions(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("file permission bits are not enforced on Windows")
 	}

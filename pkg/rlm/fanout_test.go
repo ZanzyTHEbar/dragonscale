@@ -12,14 +12,16 @@ import (
 )
 
 func TestFanOutEmpty(t *testing.T) {
-	results := FanOut(context.Background(), nil, 0, nil)
+	t.Parallel()
+	results := FanOut(t.Context(), nil, 0, nil)
 	assert.Nil(t, results)
 }
 
 func TestFanOutUnbounded(t *testing.T) {
+	t.Parallel()
 	partitions := []string{"part-0", "part-1", "part-2"}
 
-	results := FanOut(context.Background(), partitions, 0, func(ctx context.Context, idx int, key, partition string) PartitionResult {
+	results := FanOut(t.Context(), partitions, 0, func(ctx context.Context, idx int, key, partition string) PartitionResult {
 		return PartitionResult{
 			PartitionIdx: idx,
 			ContextKey:   key,
@@ -37,6 +39,7 @@ func TestFanOutUnbounded(t *testing.T) {
 }
 
 func TestFanOutBounded(t *testing.T) {
+	t.Parallel()
 	partitions := make([]string, 10)
 	for i := range partitions {
 		partitions[i] = fmt.Sprintf("chunk-%d", i)
@@ -45,7 +48,7 @@ func TestFanOutBounded(t *testing.T) {
 	var maxConcurrent int64
 	var current int64
 
-	results := FanOut(context.Background(), partitions, 3, func(ctx context.Context, idx int, key, partition string) PartitionResult {
+	results := FanOut(t.Context(), partitions, 3, func(ctx context.Context, idx int, key, partition string) PartitionResult {
 		c := atomic.AddInt64(&current, 1)
 		for {
 			old := atomic.LoadInt64(&maxConcurrent)
@@ -71,9 +74,10 @@ func TestFanOutBounded(t *testing.T) {
 }
 
 func TestFanOutPreservesOrder(t *testing.T) {
+	t.Parallel()
 	partitions := []string{"A", "B", "C", "D"}
 
-	results := FanOut(context.Background(), partitions, 2, func(ctx context.Context, idx int, key, partition string) PartitionResult {
+	results := FanOut(t.Context(), partitions, 2, func(ctx context.Context, idx int, key, partition string) PartitionResult {
 		return PartitionResult{
 			PartitionIdx: idx,
 			Answer:       partition,
@@ -88,6 +92,7 @@ func TestFanOutPreservesOrder(t *testing.T) {
 }
 
 func TestMergeResultsDeduplication(t *testing.T) {
+	t.Parallel()
 	results := []PartitionResult{
 		{Answer: "  answer one  "},
 		{Answer: "answer one"},
@@ -101,6 +106,7 @@ func TestMergeResultsDeduplication(t *testing.T) {
 }
 
 func TestMergeResultsAllErrors(t *testing.T) {
+	t.Parallel()
 	results := []PartitionResult{
 		{Err: fmt.Errorf("e1")},
 		{Err: fmt.Errorf("e2")},
@@ -109,6 +115,7 @@ func TestMergeResultsAllErrors(t *testing.T) {
 }
 
 func TestMergeResultsAllEmpty(t *testing.T) {
+	t.Parallel()
 	results := []PartitionResult{
 		{Answer: ""},
 		{Answer: "  "},
@@ -117,6 +124,7 @@ func TestMergeResultsAllEmpty(t *testing.T) {
 }
 
 func TestTotalTokens(t *testing.T) {
+	t.Parallel()
 	results := []PartitionResult{
 		{Tokens: 100},
 		{Tokens: 250},
@@ -126,5 +134,6 @@ func TestTotalTokens(t *testing.T) {
 }
 
 func TestTotalTokensEmpty(t *testing.T) {
+	t.Parallel()
 	assert.Equal(t, uint32(0), TotalTokens(nil))
 }

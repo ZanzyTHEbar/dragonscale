@@ -42,9 +42,10 @@ func (e *countingEmbedder) Dimensions() int { return e.dims }
 func (e *countingEmbedder) Model() string   { return "test-model" }
 
 func TestCachedEmbedder_CachesIdenticalText(t *testing.T) {
+	t.Parallel()
 	inner := &countingEmbedder{dims: 8}
 	cached := NewCachedEmbedder(inner, DefaultCachedEmbedderConfig())
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// First call — should hit inner
 	vec1, err := cached.Embed(ctx, "hello world")
@@ -76,9 +77,10 @@ func TestCachedEmbedder_CachesIdenticalText(t *testing.T) {
 }
 
 func TestCachedEmbedder_DifferentTextHitsInner(t *testing.T) {
+	t.Parallel()
 	inner := &countingEmbedder{dims: 4}
 	cached := NewCachedEmbedder(inner, DefaultCachedEmbedderConfig())
-	ctx := context.Background()
+	ctx := t.Context()
 
 	cached.Embed(ctx, "text A")
 	cached.Embed(ctx, "text B")
@@ -93,9 +95,10 @@ func TestCachedEmbedder_DifferentTextHitsInner(t *testing.T) {
 }
 
 func TestCachedEmbedder_BatchPartialCache(t *testing.T) {
+	t.Parallel()
 	inner := &countingEmbedder{dims: 4}
 	cached := NewCachedEmbedder(inner, DefaultCachedEmbedderConfig())
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// Pre-cache one text
 	cached.Embed(ctx, "cached text")
@@ -126,9 +129,10 @@ func TestCachedEmbedder_BatchPartialCache(t *testing.T) {
 }
 
 func TestCachedEmbedder_BatchAllCached(t *testing.T) {
+	t.Parallel()
 	inner := &countingEmbedder{dims: 4}
 	cached := NewCachedEmbedder(inner, DefaultCachedEmbedderConfig())
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// Pre-cache all texts
 	cached.Embed(ctx, "A")
@@ -148,6 +152,7 @@ func TestCachedEmbedder_BatchAllCached(t *testing.T) {
 }
 
 func TestCachedEmbedder_Dimensions(t *testing.T) {
+	t.Parallel()
 	inner := &countingEmbedder{dims: 768}
 	cached := NewCachedEmbedder(inner, DefaultCachedEmbedderConfig())
 	if cached.Dimensions() != 768 {
@@ -156,6 +161,7 @@ func TestCachedEmbedder_Dimensions(t *testing.T) {
 }
 
 func TestCachedEmbedder_Model(t *testing.T) {
+	t.Parallel()
 	inner := &countingEmbedder{dims: 4}
 	cached := NewCachedEmbedder(inner, DefaultCachedEmbedderConfig())
 	if cached.Model() != "test-model" {
@@ -164,12 +170,13 @@ func TestCachedEmbedder_Model(t *testing.T) {
 }
 
 func TestCachedEmbedder_MaxEntries(t *testing.T) {
+	t.Parallel()
 	inner := &countingEmbedder{dims: 4}
 	cached := NewCachedEmbedder(inner, CachedEmbedderConfig{
 		MaxEntries: 3,
 		TTL:        time.Hour,
 	})
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// Fill cache
 	cached.Embed(ctx, "A")

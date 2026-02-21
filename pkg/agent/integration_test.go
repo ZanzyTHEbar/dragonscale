@@ -59,8 +59,8 @@ func (m *toolCallingModel) Generate(_ context.Context, call fantasy.Call) (*fant
 	}, nil
 }
 
-func (m *toolCallingModel) Stream(_ context.Context, call fantasy.Call) (fantasy.StreamResponse, error) {
-	resp, err := m.Generate(context.Background(), call)
+func (m *toolCallingModel) Stream(ctx context.Context, call fantasy.Call) (fantasy.StreamResponse, error) {
+	resp, err := m.Generate(ctx, call)
 	if err != nil {
 		return nil, err
 	}
@@ -162,6 +162,7 @@ func (t *echoTool) Execute(_ context.Context, args map[string]interface{}) *tool
 // TestIntegration_FullAgentLoop_SimpleResponse tests the full agent loop
 // with a simple mock model that returns text directly (no tool calls).
 func TestIntegration_FullAgentLoop_SimpleResponse(t *testing.T) {
+	t.Parallel()
 	tmpDir, err := os.MkdirTemp("", "agent-integration-*")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
@@ -183,7 +184,7 @@ func TestIntegration_FullAgentLoop_SimpleResponse(t *testing.T) {
 	model := newMockLanguageModel("Hello from Fantasy agent")
 	al := mustNewAgentLoop(t, cfg, msgBus, model)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
 
 	msg := bus.InboundMessage{
@@ -225,6 +226,7 @@ func TestIntegration_FullAgentLoop_SimpleResponse(t *testing.T) {
 // TestIntegration_FullAgentLoop_WithToolCalls tests the full agent loop
 // including tool call execution and response incorporation.
 func TestIntegration_FullAgentLoop_WithToolCalls(t *testing.T) {
+	t.Parallel()
 	tmpDir, err := os.MkdirTemp("", "agent-integration-tools-*")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
@@ -249,7 +251,7 @@ func TestIntegration_FullAgentLoop_WithToolCalls(t *testing.T) {
 	// Register the echo tool
 	al.RegisterTool(&echoTool{})
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
 
 	msg := bus.InboundMessage{
@@ -279,6 +281,7 @@ func TestIntegration_FullAgentLoop_WithToolCalls(t *testing.T) {
 // TestIntegration_ProcessDirect tests the ProcessDirect method
 // which is used by CLI mode for one-shot message processing.
 func TestIntegration_ProcessDirect(t *testing.T) {
+	t.Parallel()
 	tmpDir, err := os.MkdirTemp("", "agent-integration-direct-*")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
@@ -300,7 +303,7 @@ func TestIntegration_ProcessDirect(t *testing.T) {
 	model := newMockLanguageModel("Direct CLI response")
 	al := mustNewAgentLoop(t, cfg, msgBus, model)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
 
 	response, err := al.ProcessDirect(ctx, "Direct message", "direct-session")
@@ -374,6 +377,7 @@ func (m *streamingModel) Model() string    { return "streaming-mock" }
 // TestIntegration_Streaming_TextDeltas tests that the streaming agent loop
 // publishes text deltas to the bus and returns the complete text.
 func TestIntegration_Streaming_TextDeltas(t *testing.T) {
+	t.Parallel()
 	tmpDir, err := os.MkdirTemp("", "agent-integration-stream-*")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
@@ -395,7 +399,7 @@ func TestIntegration_Streaming_TextDeltas(t *testing.T) {
 	model := newStreamingModel("Hello from streaming agent response")
 	al := mustNewAgentLoop(t, cfg, msgBus, model)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
 
 	// Collect stream deltas in background
@@ -450,6 +454,7 @@ func TestIntegration_Streaming_TextDeltas(t *testing.T) {
 // TestIntegration_Streaming_WithToolCalls tests streaming with a model
 // that requests tool calls before producing a final streamed response.
 func TestIntegration_Streaming_WithToolCalls(t *testing.T) {
+	t.Parallel()
 	tmpDir, err := os.MkdirTemp("", "agent-integration-stream-tools-*")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
@@ -472,7 +477,7 @@ func TestIntegration_Streaming_WithToolCalls(t *testing.T) {
 	al := mustNewAgentLoop(t, cfg, msgBus, model)
 	al.RegisterTool(&echoTool{})
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
 
 	// Collect deltas
@@ -512,6 +517,7 @@ func TestIntegration_Streaming_WithToolCalls(t *testing.T) {
 // TestIntegration_MultipleMessages tests sequential message processing
 // to verify session history accumulation.
 func TestIntegration_MultipleMessages(t *testing.T) {
+	t.Parallel()
 	tmpDir, err := os.MkdirTemp("", "agent-integration-multi-*")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
@@ -534,7 +540,7 @@ func TestIntegration_MultipleMessages(t *testing.T) {
 	al := mustNewAgentLoop(t, cfg, msgBus, model)
 
 	sessionKey := "multi-msg-session"
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// Send 3 messages
 	for i := 0; i < 3; i++ {

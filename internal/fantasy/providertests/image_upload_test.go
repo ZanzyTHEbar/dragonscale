@@ -54,6 +54,7 @@ func geminiImageBuilder(model string) builderFunc {
 }
 
 func TestImageUploadAgent(t *testing.T) {
+	t.Parallel()
 	pairs := []builderPair{
 		{
 			name:    "anthropic-claude-sonnet-4",
@@ -100,6 +101,7 @@ func TestImageUploadAgent(t *testing.T) {
 }
 
 func TestImageUploadAgentStreaming(t *testing.T) {
+	t.Parallel()
 	pairs := []builderPair{
 		{
 			name:    "anthropic-claude-sonnet-4",

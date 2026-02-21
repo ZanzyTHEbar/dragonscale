@@ -26,6 +26,7 @@ var openrouterTestModels = []testModel{
 }
 
 func TestOpenRouterCommon(t *testing.T) {
+	t.Parallel()
 	var pairs []builderPair
 	for _, m := range openrouterTestModels {
 		pairs = append(pairs, builderPair{m.name, openrouterBuilder(m.model), nil, nil})
@@ -34,12 +35,14 @@ func TestOpenRouterCommon(t *testing.T) {
 }
 
 func TestOpenRouterCommonWithAnthropicCache(t *testing.T) {
+	t.Parallel()
 	testCommon(t, []builderPair{
 		{"claude-sonnet-4", openrouterBuilder("anthropic/claude-sonnet-4"), nil, addAnthropicCaching},
 	})
 }
 
 func TestOpenRouterThinking(t *testing.T) {
+	t.Parallel()
 	opts := fantasy.ProviderOptions{
 		openrouter.Name: &openrouter.ProviderOptions{
 			Reasoning: &openrouter.ReasoningOptions{

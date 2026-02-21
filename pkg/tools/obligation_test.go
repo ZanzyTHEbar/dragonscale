@@ -1,7 +1,6 @@
 package tools
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -13,7 +12,8 @@ import (
 )
 
 func TestObligationTool_CreateAndList(t *testing.T) {
-	ctx := context.Background()
+	t.Parallel()
+	ctx := t.Context()
 	del, err := delegate.NewLibSQLInMemory()
 	require.NoError(t, err)
 	require.NoError(t, del.Init(ctx))
@@ -46,7 +46,8 @@ func TestObligationTool_CreateAndList(t *testing.T) {
 }
 
 func TestObligationTool_StateMachineAndEvidence(t *testing.T) {
-	ctx := context.Background()
+	t.Parallel()
+	ctx := t.Context()
 	del, err := delegate.NewLibSQLInMemory()
 	require.NoError(t, err)
 	require.NoError(t, del.Init(ctx))
@@ -115,7 +116,8 @@ func TestObligationTool_StateMachineAndEvidence(t *testing.T) {
 }
 
 func TestObligationTool_CollectDueObligations_TransitionsScheduledToDue(t *testing.T) {
-	ctx := context.Background()
+	t.Parallel()
+	ctx := t.Context()
 	del, err := delegate.NewLibSQLInMemory()
 	require.NoError(t, err)
 	require.NoError(t, del.Init(ctx))
@@ -154,7 +156,8 @@ func TestObligationTool_CollectDueObligations_TransitionsScheduledToDue(t *testi
 }
 
 func TestObligationTool_CollectDueObligations_DoesNotDuplicateDueEvidence(t *testing.T) {
-	ctx := context.Background()
+	t.Parallel()
+	ctx := t.Context()
 	del, err := delegate.NewLibSQLInMemory()
 	require.NoError(t, err)
 	require.NoError(t, del.Init(ctx))

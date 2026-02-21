@@ -1,11 +1,12 @@
 package agent_test
 
 import (
-	"context"
 	"testing"
 	"time"
 
 	"charm.land/fantasy"
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -19,7 +20,7 @@ func newTestQueries(t *testing.T) *testDB {
 	t.Helper()
 	d, err := delegate.NewLibSQLInMemory()
 	require.NoError(t, err, "NewLibSQLInMemory")
-	require.NoError(t, d.Init(context.Background()), "Init")
+	require.NoError(t, d.Init(t.Context()), "Init")
 	t.Cleanup(func() { _ = d.Close() })
 	return &testDB{delegate: d}
 }
@@ -36,7 +37,7 @@ func newConversation(t *testing.T, q *sqlc.Queries) ids.UUID {
 	t.Helper()
 	id := ids.New()
 	title := "test-conv"
-	_, err := q.CreateAgentConversation(context.Background(), sqlc.CreateAgentConversationParams{
+	_, err := q.CreateAgentConversation(t.Context(), sqlc.CreateAgentConversationParams{
 		ID:    id,
 		Title: &title,
 	})
@@ -45,34 +46,39 @@ func newConversation(t *testing.T, q *sqlc.Queries) ids.UUID {
 }
 
 func TestStateStore_CreateRun(t *testing.T) {
+	t.Parallel()
 	db := newTestQueries(t)
 	q := db.delegate.Queries()
 	s := agent.NewStateStore(q)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	convID := newConversation(t, q)
 	run, err := s.CreateRun(ctx, convID)
 	require.NoError(t, err)
 
 	assert.False(t, run.ID.IsZero(), "run ID must be set")
-	assert.Equal(t, convID, run.ConversationID)
-	assert.Equal(t, "running", run.Status)
+	assert.Empty(t, cmp.Diff(sqlc.AgentRun{
+		ConversationID: convID,
+		Status:         "running",
+	}, run, cmpopts.IgnoreFields(sqlc.AgentRun{}, "ID", "MetadataJson", "CreatedAt", "UpdatedAt")))
 }
 
 func TestStateStore_CreateRun_ZeroConversationID(t *testing.T) {
+	t.Parallel()
 	db := newTestQueries(t)
 	s := agent.NewStateStore(db.delegate.Queries())
-	ctx := context.Background()
+	ctx := t.Context()
 
 	_, err := s.CreateRun(ctx, ids.UUID{})
 	assert.Error(t, err, "zero conversation id should be rejected")
 }
 
 func TestStateStore_UpdateRunStatus(t *testing.T) {
+	t.Parallel()
 	db := newTestQueries(t)
 	q := db.delegate.Queries()
 	s := agent.NewStateStore(q)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	convID := newConversation(t, q)
 	run, err := s.CreateRun(ctx, convID)
@@ -81,15 +87,18 @@ func TestStateStore_UpdateRunStatus(t *testing.T) {
 	updated, err := s.UpdateRunStatus(ctx, run.ID, "completed", map[string]any{"steps": 3})
 	require.NoError(t, err)
 
-	assert.Equal(t, run.ID, updated.ID)
-	assert.Equal(t, "completed", updated.Status)
+	assert.Empty(t, cmp.Diff(sqlc.AgentRun{
+		ID:     run.ID,
+		Status: "completed",
+	}, updated, cmpopts.IgnoreFields(sqlc.AgentRun{}, "ConversationID", "MetadataJson", "CreatedAt", "UpdatedAt")))
 }
 
 func TestStateStore_UpdateRunStatus_EmptyStatus(t *testing.T) {
+	t.Parallel()
 	db := newTestQueries(t)
 	q := db.delegate.Queries()
 	s := agent.NewStateStore(q)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	convID := newConversation(t, q)
 	run, err := s.CreateRun(ctx, convID)
@@ -100,10 +109,11 @@ func TestStateStore_UpdateRunStatus_EmptyStatus(t *testing.T) {
 }
 
 func TestStateStore_AddRunState(t *testing.T) {
+	t.Parallel()
 	db := newTestQueries(t)
 	q := db.delegate.Queries()
 	s := agent.NewStateStore(q)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	convID := newConversation(t, q)
 	run, err := s.CreateRun(ctx, convID)
@@ -112,17 +122,19 @@ func TestStateStore_AddRunState(t *testing.T) {
 	state, err := s.AddRunState(ctx, run.ID, 0, fantasy.ReActStateLLMCall, map[string]string{"model": "gpt-4o"})
 	require.NoError(t, err)
 
-	assert.False(t, state.ID.IsZero())
-	assert.Equal(t, run.ID, state.RunID)
-	assert.Equal(t, int64(0), state.StepIndex)
-	assert.Equal(t, string(fantasy.ReActStateLLMCall), state.State)
+	assert.Empty(t, cmp.Diff(sqlc.AgentRunState{
+		RunID:     run.ID,
+		StepIndex: 0,
+		State:     string(fantasy.ReActStateLLMCall),
+	}, state, cmpopts.IgnoreFields(sqlc.AgentRunState{}, "ID", "SnapshotJson", "CreatedAt", "UpdatedAt")))
 }
 
 func TestStateStore_AddRunState_NegativeStep(t *testing.T) {
+	t.Parallel()
 	db := newTestQueries(t)
 	q := db.delegate.Queries()
 	s := agent.NewStateStore(q)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	convID := newConversation(t, q)
 	run, err := s.CreateRun(ctx, convID)
@@ -133,10 +145,11 @@ func TestStateStore_AddRunState_NegativeStep(t *testing.T) {
 }
 
 func TestStateStore_AddTransition(t *testing.T) {
+	t.Parallel()
 	db := newTestQueries(t)
 	q := db.delegate.Queries()
 	s := agent.NewStateStore(q)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	convID := newConversation(t, q)
 	run, err := s.CreateRun(ctx, convID)
@@ -152,15 +165,19 @@ func TestStateStore_AddTransition(t *testing.T) {
 	row, err := s.AddTransition(ctx, run.ID, tr)
 	require.NoError(t, err)
 
-	assert.False(t, row.ID.IsZero())
-	assert.Equal(t, string(fantasy.ReActStateInit), row.FromState)
-	assert.Equal(t, string(fantasy.ReActStatePrepareStep), row.ToState)
-	assert.Equal(t, string(fantasy.ReActTriggerStart), row.Trigger)
+	assert.Empty(t, cmp.Diff(sqlc.AgentStateTransition{
+		RunID:     run.ID,
+		StepIndex: 0,
+		FromState: string(fantasy.ReActStateInit),
+		ToState:   string(fantasy.ReActStatePrepareStep),
+		Trigger:   string(fantasy.ReActTriggerStart),
+	}, row, cmpopts.IgnoreFields(sqlc.AgentStateTransition{}, "ID", "At", "MetaJson", "Error", "CreatedAt", "UpdatedAt")))
 }
 
 func TestStateStore_NilStore(t *testing.T) {
+	t.Parallel()
 	var s *agent.StateStore
-	ctx := context.Background()
+	ctx := t.Context()
 
 	_, err := s.CreateRun(ctx, ids.New())
 	assert.Error(t, err, "nil store should error")
@@ -169,11 +186,12 @@ func TestStateStore_NilStore(t *testing.T) {
 // --- CheckpointStore ---
 
 func TestCheckpointStore_CreateAndList(t *testing.T) {
+	t.Parallel()
 	db := newTestQueries(t)
 	q := db.delegate.Queries()
 	ss := agent.NewStateStore(q)
 	cs := agent.NewCheckpointStore(q)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	convID := newConversation(t, q)
 	run, err := ss.CreateRun(ctx, convID)
@@ -195,11 +213,12 @@ func TestCheckpointStore_CreateAndList(t *testing.T) {
 }
 
 func TestCheckpointStore_GetByName(t *testing.T) {
+	t.Parallel()
 	db := newTestQueries(t)
 	q := db.delegate.Queries()
 	ss := agent.NewStateStore(q)
 	cs := agent.NewCheckpointStore(q)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	convID := newConversation(t, q)
 	run, err := ss.CreateRun(ctx, convID)
@@ -217,10 +236,11 @@ func TestCheckpointStore_GetByName(t *testing.T) {
 }
 
 func TestCheckpointStore_EmptyName(t *testing.T) {
+	t.Parallel()
 	db := newTestQueries(t)
 	q := db.delegate.Queries()
 	cs := agent.NewCheckpointStore(q)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	convID := newConversation(t, q)
 	_, err := cs.CreateCheckpoint(ctx, convID, "   ", ids.New(), nil)

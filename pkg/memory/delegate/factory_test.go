@@ -1,7 +1,6 @@
 package delegate
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -12,6 +11,7 @@ import (
 )
 
 func TestNewFromConfig_LocalOnly_DefaultPath(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 	defaultPath := filepath.Join(tmpDir, "test.db")
 
@@ -23,7 +23,7 @@ func TestNewFromConfig_LocalOnly_DefaultPath(t *testing.T) {
 	}
 	defer d.Close()
 
-	if err := d.Init(context.Background()); err != nil {
+	if err := d.Init(t.Context()); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
 
@@ -32,13 +32,14 @@ func TestNewFromConfig_LocalOnly_DefaultPath(t *testing.T) {
 	}
 
 	// Verify it's functional
-	err = d.UpsertWorkingContext(context.Background(), "agent", "sess", "test content")
+	err = d.UpsertWorkingContext(t.Context(), "agent", "sess", "test content")
 	if err != nil {
 		t.Fatalf("UpsertWorkingContext: %v", err)
 	}
 }
 
 func TestNewFromConfig_LocalOnly_CustomPath(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 	customPath := filepath.Join(tmpDir, "custom.db")
 
@@ -52,7 +53,7 @@ func TestNewFromConfig_LocalOnly_CustomPath(t *testing.T) {
 	}
 	defer d.Close()
 
-	if err := d.Init(context.Background()); err != nil {
+	if err := d.Init(t.Context()); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
 
@@ -63,6 +64,7 @@ func TestNewFromConfig_LocalOnly_CustomPath(t *testing.T) {
 }
 
 func TestNewFromConfig_CustomDims(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 	dbPath := filepath.Join(tmpDir, "test.db")
 
@@ -82,6 +84,7 @@ func TestNewFromConfig_CustomDims(t *testing.T) {
 }
 
 func TestNewFromConfig_DefaultDims(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 	dbPath := filepath.Join(tmpDir, "test.db")
 
@@ -99,6 +102,7 @@ func TestNewFromConfig_DefaultDims(t *testing.T) {
 }
 
 func TestNewFromConfig_ReplicaFallback(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 	dbPath := filepath.Join(tmpDir, "test.db")
 
@@ -121,12 +125,13 @@ func TestNewFromConfig_ReplicaFallback(t *testing.T) {
 	}
 
 	// Should still be functional in local mode
-	if err := d.Init(context.Background()); err != nil {
+	if err := d.Init(t.Context()); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
 }
 
 func TestNewFromConfig_LocalFullRoundTrip(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 	dbPath := filepath.Join(tmpDir, "roundtrip.db")
 
@@ -140,11 +145,11 @@ func TestNewFromConfig_LocalFullRoundTrip(t *testing.T) {
 	}
 	defer d.Close()
 
-	if err := d.Init(context.Background()); err != nil {
+	if err := d.Init(t.Context()); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// Working context round-trip
 	if err := d.UpsertWorkingContext(ctx, "a1", "s1", "hello"); err != nil {
@@ -180,6 +185,7 @@ func TestNewFromConfig_LocalFullRoundTrip(t *testing.T) {
 }
 
 func TestSyncConfig_Defaults(t *testing.T) {
+	t.Parallel()
 	cfg := config.DefaultConfig()
 	// Memory is always enabled -- no Enabled field to check.
 	if cfg.Memory.EmbeddingDims != 768 {

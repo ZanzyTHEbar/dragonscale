@@ -3,7 +3,6 @@
 package memory_test
 
 import (
-	"context"
 	"testing"
 
 	"github.com/ZanzyTHEbar/dragonscale/pkg/ids"
@@ -23,7 +22,7 @@ func setupFullStack(t *testing.T) (*memstore.MemoryStore, *delegate.LibSQLDelega
 	t.Helper()
 	del, err := delegate.NewLibSQLInMemory()
 	require.NoError(t, err, "create in-memory delegate")
-	require.NoError(t, del.Init(context.Background()), "run goose migrations")
+	require.NoError(t, del.Init(t.Context()), "run goose migrations")
 	t.Cleanup(func() { del.Close() })
 
 	chunker := memstore.NewMarkdownChunker(memstore.DefaultMarkdownChunkerConfig())
@@ -33,21 +32,23 @@ func setupFullStack(t *testing.T) (*memstore.MemoryStore, *delegate.LibSQLDelega
 }
 
 func TestIntegration_GooseMigrationIdempotent(t *testing.T) {
+	t.Parallel()
 	del, err := delegate.NewLibSQLInMemory()
 	require.NoError(t, err)
 	defer del.Close()
 
-	ctx := context.Background()
+	ctx := t.Context()
 	require.NoError(t, del.Init(ctx), "first migration up")
 	require.NoError(t, del.Init(ctx), "idempotent re-Init")
 }
 
 func TestIntegration_GooseMigration_DownUpRoundTrip(t *testing.T) {
+	t.Parallel()
 	del, err := delegate.NewLibSQLInMemory()
 	require.NoError(t, err)
 	defer del.Close()
 
-	ctx := context.Background()
+	ctx := t.Context()
 
 	require.NoError(t, del.Init(ctx), "initial up")
 
@@ -83,8 +84,9 @@ func TestIntegration_GooseMigration_DownUpRoundTrip(t *testing.T) {
 }
 
 func TestIntegration_BlobPK_RoundTrip(t *testing.T) {
+	t.Parallel()
 	store, _ := setupFullStack(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	item := &memory.RecallItem{
 		AgentID:    testAgent,
@@ -106,8 +108,9 @@ func TestIntegration_BlobPK_RoundTrip(t *testing.T) {
 }
 
 func TestIntegration_ArchivalChunking_EndToEnd(t *testing.T) {
+	t.Parallel()
 	store, del := setupFullStack(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	longContent := "# Architecture Notes\n\nThe system uses hexagonal architecture with ports and adapters.\n\n"
 	longContent += "## Database Layer\n\nWe use libSQL with BLOB primary keys for storage efficiency.\n\n"
@@ -131,8 +134,9 @@ func TestIntegration_ArchivalChunking_EndToEnd(t *testing.T) {
 }
 
 func TestIntegration_FTS5Search(t *testing.T) {
+	t.Parallel()
 	store, _ := setupFullStack(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	items := []struct {
 		content string
@@ -172,8 +176,9 @@ func TestIntegration_FTS5Search(t *testing.T) {
 }
 
 func TestIntegration_CascadeDelete(t *testing.T) {
+	t.Parallel()
 	store, del := setupFullStack(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	recallID, err := store.StoreArchival(ctx, "Archival content to be cascade deleted", testAgent, map[string]string{
 		"agent_id":    testAgent,
@@ -195,8 +200,9 @@ func TestIntegration_CascadeDelete(t *testing.T) {
 }
 
 func TestIntegration_ToolOffload(t *testing.T) {
+	t.Parallel()
 	store, _ := setupFullStack(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	largeResult := ""
 	for i := 0; i < 500; i++ {
@@ -211,8 +217,9 @@ func TestIntegration_ToolOffload(t *testing.T) {
 }
 
 func TestIntegration_WorkingContext_Persistence(t *testing.T) {
+	t.Parallel()
 	_, del := setupFullStack(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	require.NoError(t, del.UpsertWorkingContext(ctx, testAgent, testSession, "initial state"))
 
@@ -228,8 +235,9 @@ func TestIntegration_WorkingContext_Persistence(t *testing.T) {
 }
 
 func TestIntegration_Summary_CRUD(t *testing.T) {
+	t.Parallel()
 	store, del := setupFullStack(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	summary := &memory.MemorySummary{
 		AgentID:    testAgent,
@@ -249,8 +257,9 @@ func TestIntegration_Summary_CRUD(t *testing.T) {
 }
 
 func TestIntegration_IDUniqueness_AcrossEntities(t *testing.T) {
+	t.Parallel()
 	store, _ := setupFullStack(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	seenIDs := make(map[ids.UUID]string)
 
@@ -284,8 +293,9 @@ func TestIntegration_IDUniqueness_AcrossEntities(t *testing.T) {
 }
 
 func TestIntegration_ContextPressure(t *testing.T) {
+	t.Parallel()
 	store, _ := setupFullStack(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	pressure, err := store.ContextUsage(ctx, testAgent, testSession)
 	require.NoError(t, err)

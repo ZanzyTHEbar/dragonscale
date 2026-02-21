@@ -115,6 +115,7 @@ func writeSessionFile(t *testing.T, dir, name string, sess SessionFile) {
 }
 
 func TestMigrateFileSessions_Basic(t *testing.T) {
+	t.Parallel()
 	sessDir := t.TempDir()
 	del := newMockDelegate()
 
@@ -182,6 +183,7 @@ func TestMigrateFileSessions_Basic(t *testing.T) {
 }
 
 func TestMigrateFileSessions_Idempotent(t *testing.T) {
+	t.Parallel()
 	sessDir := t.TempDir()
 	del := newMockDelegate()
 
@@ -217,6 +219,7 @@ func TestMigrateFileSessions_Idempotent(t *testing.T) {
 }
 
 func TestMigrateFileSessions_EmptyDir(t *testing.T) {
+	t.Parallel()
 	sessDir := t.TempDir()
 	del := newMockDelegate()
 
@@ -230,6 +233,7 @@ func TestMigrateFileSessions_EmptyDir(t *testing.T) {
 }
 
 func TestMigrateFileSessions_NonexistentDir(t *testing.T) {
+	t.Parallel()
 	del := newMockDelegate()
 
 	result, err := MigrateFileSessions(t.Context(), del, pkg.NAME, "/nonexistent/path")
@@ -242,6 +246,7 @@ func TestMigrateFileSessions_NonexistentDir(t *testing.T) {
 }
 
 func TestMigrateFileSessions_SkipsEmptyMessages(t *testing.T) {
+	t.Parallel()
 	sessDir := t.TempDir()
 	del := newMockDelegate()
 
@@ -264,6 +269,7 @@ func TestMigrateFileSessions_SkipsEmptyMessages(t *testing.T) {
 }
 
 func TestMigrateFileSessions_FallbackKey(t *testing.T) {
+	t.Parallel()
 	sessDir := t.TempDir()
 	del := newMockDelegate()
 
@@ -288,6 +294,7 @@ func TestMigrateFileSessions_FallbackKey(t *testing.T) {
 }
 
 func TestMigrateFileSessions_MalformedJSON(t *testing.T) {
+	t.Parallel()
 	sessDir := t.TempDir()
 	del := newMockDelegate()
 

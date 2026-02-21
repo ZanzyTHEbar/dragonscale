@@ -13,6 +13,7 @@ import (
 )
 
 func TestOpenAICompatibleCommon(t *testing.T) {
+	t.Parallel()
 	testCommon(t, []builderPair{
 		{"xai-grok-4-fast", builderXAIGrok4Fast, nil, nil},
 		{"xai-grok-code-fast", builderXAIGrokCodeFast, nil, nil},
@@ -24,6 +25,7 @@ func TestOpenAICompatibleCommon(t *testing.T) {
 }
 
 func TestOpenAICompatObjectGeneration(t *testing.T) {
+	t.Parallel()
 	testObjectGeneration(t, []builderPair{
 		{"xai-grok-4-fast", builderXAIGrok4Fast, nil, nil},
 		{"xai-grok-code-fast", builderXAIGrokCodeFast, nil, nil},
@@ -32,6 +34,7 @@ func TestOpenAICompatObjectGeneration(t *testing.T) {
 }
 
 func TestOpenAICompatibleThinking(t *testing.T) {
+	t.Parallel()
 	opts := fantasy.ProviderOptions{
 		openaicompat.Name: &openaicompat.ProviderOptions{
 			ReasoningEffort: openai.ReasoningEffortOption(openai.ReasoningEffortHigh),

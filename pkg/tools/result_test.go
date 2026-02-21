@@ -5,98 +5,54 @@ import (
 	"testing"
 
 	jsonv2 "github.com/go-json-experiment/json"
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
+	"github.com/stretchr/testify/assert"
 )
 
-func TestNewToolResult(t *testing.T) {
-	result := NewToolResult("test content")
+func TestToolResultConstructors(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name string
+		got  *ToolResult
+		want ToolResult
+	}{
+		{
+			name: "new result",
+			got:  NewToolResult("basic content"),
+			want: ToolResult{ForLLM: "basic content"},
+		},
+		{
+			name: "silent result",
+			got:  SilentResult("silent content"),
+			want: ToolResult{ForLLM: "silent content", Silent: true},
+		},
+		{
+			name: "async result",
+			got:  AsyncResult("async content"),
+			want: ToolResult{ForLLM: "async content", Async: true},
+		},
+		{
+			name: "error result",
+			got:  ErrorResult("error content"),
+			want: ToolResult{ForLLM: "error content", IsError: true},
+		},
+		{
+			name: "user result",
+			got:  UserResult("user visible content"),
+			want: ToolResult{ForLLM: "user visible content", ForUser: "user visible content"},
+		},
+	}
 
-	if result.ForLLM != "test content" {
-		t.Errorf("Expected ForLLM 'test content', got '%s'", result.ForLLM)
-	}
-	if result.Silent {
-		t.Error("Expected Silent to be false")
-	}
-	if result.IsError {
-		t.Error("Expected IsError to be false")
-	}
-	if result.Async {
-		t.Error("Expected Async to be false")
-	}
-}
-
-func TestSilentResult(t *testing.T) {
-	result := SilentResult("silent operation")
-
-	if result.ForLLM != "silent operation" {
-		t.Errorf("Expected ForLLM 'silent operation', got '%s'", result.ForLLM)
-	}
-	if !result.Silent {
-		t.Error("Expected Silent to be true")
-	}
-	if result.IsError {
-		t.Error("Expected IsError to be false")
-	}
-	if result.Async {
-		t.Error("Expected Async to be false")
-	}
-}
-
-func TestAsyncResult(t *testing.T) {
-	result := AsyncResult("async task started")
-
-	if result.ForLLM != "async task started" {
-		t.Errorf("Expected ForLLM 'async task started', got '%s'", result.ForLLM)
-	}
-	if result.Silent {
-		t.Error("Expected Silent to be false")
-	}
-	if result.IsError {
-		t.Error("Expected IsError to be false")
-	}
-	if !result.Async {
-		t.Error("Expected Async to be true")
-	}
-}
-
-func TestErrorResult(t *testing.T) {
-	result := ErrorResult("operation failed")
-
-	if result.ForLLM != "operation failed" {
-		t.Errorf("Expected ForLLM 'operation failed', got '%s'", result.ForLLM)
-	}
-	if result.Silent {
-		t.Error("Expected Silent to be false")
-	}
-	if !result.IsError {
-		t.Error("Expected IsError to be true")
-	}
-	if result.Async {
-		t.Error("Expected Async to be false")
-	}
-}
-
-func TestUserResult(t *testing.T) {
-	content := "user visible message"
-	result := UserResult(content)
-
-	if result.ForLLM != content {
-		t.Errorf("Expected ForLLM '%s', got '%s'", content, result.ForLLM)
-	}
-	if result.ForUser != content {
-		t.Errorf("Expected ForUser '%s', got '%s'", content, result.ForUser)
-	}
-	if result.Silent {
-		t.Error("Expected Silent to be false")
-	}
-	if result.IsError {
-		t.Error("Expected IsError to be false")
-	}
-	if result.Async {
-		t.Error("Expected Async to be false")
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Empty(t, cmp.Diff(tt.want, *tt.got, cmpopts.IgnoreFields(ToolResult{}, "Err")))
+		})
 	}
 }
 
 func TestToolResultJSONSerialization(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name   string
 		result *ToolResult
@@ -138,26 +94,15 @@ func TestToolResultJSONSerialization(t *testing.T) {
 			}
 
 			// Verify fields match (Err should be excluded)
-			if decoded.ForLLM != tt.result.ForLLM {
-				t.Errorf("ForLLM mismatch: got '%s', want '%s'", decoded.ForLLM, tt.result.ForLLM)
-			}
-			if decoded.ForUser != tt.result.ForUser {
-				t.Errorf("ForUser mismatch: got '%s', want '%s'", decoded.ForUser, tt.result.ForUser)
-			}
-			if decoded.Silent != tt.result.Silent {
-				t.Errorf("Silent mismatch: got %v, want %v", decoded.Silent, tt.result.Silent)
-			}
-			if decoded.IsError != tt.result.IsError {
-				t.Errorf("IsError mismatch: got %v, want %v", decoded.IsError, tt.result.IsError)
-			}
-			if decoded.Async != tt.result.Async {
-				t.Errorf("Async mismatch: got %v, want %v", decoded.Async, tt.result.Async)
+			if diff := cmp.Diff(*tt.result, decoded, cmpopts.IgnoreFields(ToolResult{}, "Err")); diff != "" {
+				t.Errorf("ToolResult mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}
 }
 
 func TestToolResultWithErrors(t *testing.T) {
+	t.Parallel()
 	err := errors.New("underlying error")
 	result := ErrorResult("error message").WithError(err)
 
@@ -185,6 +130,7 @@ func TestToolResultWithErrors(t *testing.T) {
 }
 
 func TestToolResultJSONStructure(t *testing.T) {
+	t.Parallel()
 	result := UserResult("test content")
 
 	data, err := jsonv2.Marshal(result)

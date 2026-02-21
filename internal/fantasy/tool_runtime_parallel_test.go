@@ -46,7 +46,7 @@ func TestParallelToolRuntime_OrderAndCallbackDeterminism(t *testing.T) {
 		{ToolCallID: "c3", ToolName: "p", Input: `{"delay_ms":30,"value":"c"}`},
 	}
 
-	results, err := runtime.Execute(context.Background(), []AgentTool{tool}, toolCalls, cb)
+	results, err := runtime.Execute(t.Context(), []AgentTool{tool}, toolCalls, cb)
 	require.NoError(t, err)
 	require.Len(t, results, 3)
 
@@ -92,7 +92,7 @@ func TestParallelToolRuntime_BarrierForNonParallelTools(t *testing.T) {
 		{ToolCallID: "p3", ToolName: "p", Input: `{}`},
 	}
 
-	results, err := runtime.Execute(context.Background(), []AgentTool{parallel, seq}, toolCalls, cb)
+	results, err := runtime.Execute(t.Context(), []AgentTool{parallel, seq}, toolCalls, cb)
 	require.NoError(t, err)
 	require.Len(t, results, 4)
 
@@ -118,7 +118,7 @@ func TestParallelToolRuntime_CriticalErrorPropagation(t *testing.T) {
 		{ToolCallID: "bad", ToolName: "p", Input: `{}`},
 	}
 
-	results, err := runtime.Execute(context.Background(), []AgentTool{tool}, toolCalls, nil)
+	results, err := runtime.Execute(t.Context(), []AgentTool{tool}, toolCalls, nil)
 	require.Error(t, err)
 	require.Nil(t, results)
 }
@@ -148,7 +148,7 @@ func TestParallelToolRuntime_MetricsAndLogHooks(t *testing.T) {
 	toolCalls := []ToolCallContent{
 		{ToolCallID: "a", ToolName: "p", Input: `{}`},
 	}
-	res, err := rt.Execute(context.Background(), []AgentTool{tool}, toolCalls, nil)
+	res, err := rt.Execute(t.Context(), []AgentTool{tool}, toolCalls, nil)
 	require.NoError(t, err)
 	require.Len(t, res, 1)
 	require.True(t, metricsCalled)

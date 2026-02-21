@@ -10,9 +10,10 @@ import (
 )
 
 func TestTransportNonCodeExecForwarded(t *testing.T) {
-	rt, err := NewRuntime(context.Background(), DefaultRuntimeConfig())
+	t.Parallel()
+	rt, err := NewRuntime(t.Context(), DefaultRuntimeConfig())
 	require.NoError(t, err)
-	defer rt.Close(context.Background())
+	defer rt.Close(t.Context())
 
 	forwarded := false
 	transport := NewTransport(rt, func(ctx context.Context, req itr.ToolRequest) (itr.ToolResponse, error) {
@@ -21,7 +22,7 @@ func TestTransportNonCodeExecForwarded(t *testing.T) {
 	})
 
 	req := itr.NewToolExecRequest("id-1", "sess", "tc", "read_file", `{"path":"/tmp"}`)
-	resp, err := transport.Send(context.Background(), req)
+	resp, err := transport.Send(t.Context(), req)
 	require.NoError(t, err)
 	assert.True(t, forwarded)
 	assert.Equal(t, "forwarded", resp.Result)
@@ -29,35 +30,38 @@ func TestTransportNonCodeExecForwarded(t *testing.T) {
 }
 
 func TestTransportNonCodeExecNoFallback(t *testing.T) {
-	rt, err := NewRuntime(context.Background(), DefaultRuntimeConfig())
+	t.Parallel()
+	rt, err := NewRuntime(t.Context(), DefaultRuntimeConfig())
 	require.NoError(t, err)
-	defer rt.Close(context.Background())
+	defer rt.Close(t.Context())
 
 	transport := NewTransport(rt, nil)
 
 	req := itr.NewToolExecRequest("id-1", "sess", "tc", "read_file", `{"path":"/tmp"}`)
-	resp, err := transport.Send(context.Background(), req)
+	resp, err := transport.Send(t.Context(), req)
 	require.NoError(t, err)
 	assert.True(t, resp.IsError)
 	assert.Contains(t, resp.Result, "unsupported command type")
 }
 
 func TestTransportCodeExecEmptyCode(t *testing.T) {
-	rt, err := NewRuntime(context.Background(), DefaultRuntimeConfig())
+	t.Parallel()
+	rt, err := NewRuntime(t.Context(), DefaultRuntimeConfig())
 	require.NoError(t, err)
-	defer rt.Close(context.Background())
+	defer rt.Close(t.Context())
 
 	transport := NewTransport(rt, nil)
 
 	req := itr.NewCodeExecRequest("id-1", "sess", "", "javascript")
-	resp, err := transport.Send(context.Background(), req)
+	resp, err := transport.Send(t.Context(), req)
 	require.NoError(t, err)
 	assert.True(t, resp.IsError)
 	assert.Contains(t, resp.Result, "empty code")
 }
 
 func TestTransportClose(t *testing.T) {
-	rt, err := NewRuntime(context.Background(), DefaultRuntimeConfig())
+	t.Parallel()
+	rt, err := NewRuntime(t.Context(), DefaultRuntimeConfig())
 	require.NoError(t, err)
 
 	transport := NewTransport(rt, nil)

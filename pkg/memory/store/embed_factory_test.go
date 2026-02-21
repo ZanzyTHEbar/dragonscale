@@ -1,15 +1,17 @@
 package store
 
 import (
-	jsonv2 "github.com/go-json-experiment/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	jsonv2 "github.com/go-json-experiment/json"
 
 	"github.com/ZanzyTHEbar/dragonscale/pkg/config"
 )
 
 func TestNewEmbedderFromConfig_EmptyProvider(t *testing.T) {
+	t.Parallel()
 	emb, err := NewEmbedderFromConfig(config.EmbeddingConfig{}, config.ProvidersConfig{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -20,6 +22,7 @@ func TestNewEmbedderFromConfig_EmptyProvider(t *testing.T) {
 }
 
 func TestNewEmbedderFromConfig_UnknownProvider(t *testing.T) {
+	t.Parallel()
 	_, err := NewEmbedderFromConfig(config.EmbeddingConfig{Provider: "nonexistent"}, config.ProvidersConfig{})
 	if err == nil {
 		t.Error("expected error for unknown provider")
@@ -27,6 +30,7 @@ func TestNewEmbedderFromConfig_UnknownProvider(t *testing.T) {
 }
 
 func TestNewEmbedderFromConfig_OpenAI_NoKey(t *testing.T) {
+	t.Parallel()
 	_, err := NewEmbedderFromConfig(
 		config.EmbeddingConfig{Provider: "openai"},
 		config.ProvidersConfig{},
@@ -37,6 +41,7 @@ func TestNewEmbedderFromConfig_OpenAI_NoKey(t *testing.T) {
 }
 
 func TestNewEmbedderFromConfig_OpenAI_FallbackKey(t *testing.T) {
+	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		respData, _ := jsonv2.Marshal(map[string]interface{}{
 			"data": []map[string]interface{}{
@@ -70,6 +75,7 @@ func TestNewEmbedderFromConfig_OpenAI_FallbackKey(t *testing.T) {
 }
 
 func TestNewEmbedderFromConfig_Ollama(t *testing.T) {
+	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		respData, _ := jsonv2.Marshal(map[string]interface{}{
 			"embeddings": [][]float32{{0.1, 0.2, 0.3}},
@@ -98,6 +104,7 @@ func TestNewEmbedderFromConfig_Ollama(t *testing.T) {
 }
 
 func TestNewEmbedderFromConfig_Ollama_FallbackBase(t *testing.T) {
+	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		respData, _ := jsonv2.Marshal(map[string]interface{}{
 			"embeddings": [][]float32{{0.5}},
@@ -121,6 +128,7 @@ func TestNewEmbedderFromConfig_Ollama_FallbackBase(t *testing.T) {
 }
 
 func TestNewEmbedderFromConfig_CaseInsensitive(t *testing.T) {
+	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		respData, _ := jsonv2.Marshal(map[string]interface{}{
 			"embeddings": [][]float32{{0.1}},

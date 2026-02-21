@@ -11,6 +11,7 @@ import (
 )
 
 func TestCamelToSnake(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name  string
 		input string
@@ -41,6 +42,7 @@ func TestCamelToSnake(t *testing.T) {
 }
 
 func TestConvertKeysToSnake(t *testing.T) {
+	t.Parallel()
 	input := map[string]interface{}{
 		"apiKey":  "test-key",
 		"apiBase": "https://example.com",
@@ -87,6 +89,7 @@ func TestConvertKeysToSnake(t *testing.T) {
 }
 
 func TestLoadOpenClawConfig(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "openclaw.json")
 
@@ -144,6 +147,7 @@ func TestLoadOpenClawConfig(t *testing.T) {
 }
 
 func TestConvertConfig(t *testing.T) {
+	t.Parallel()
 	t.Run("providers mapping", func(t *testing.T) {
 		data := map[string]interface{}{
 			"providers": map[string]interface{}{
@@ -301,6 +305,7 @@ func TestConvertConfig(t *testing.T) {
 }
 
 func TestMergeConfig(t *testing.T) {
+	t.Parallel()
 	t.Run("fills empty fields", func(t *testing.T) {
 		existing := config.DefaultConfig()
 		incoming := config.DefaultConfig()
@@ -365,6 +370,7 @@ func TestMergeConfig(t *testing.T) {
 }
 
 func TestPlanWorkspaceMigration(t *testing.T) {
+	t.Parallel()
 	t.Run("copies available files", func(t *testing.T) {
 		srcDir := t.TempDir()
 		dstDir := t.TempDir()
@@ -495,6 +501,7 @@ func TestPlanWorkspaceMigration(t *testing.T) {
 }
 
 func TestFindOpenClawConfig(t *testing.T) {
+	t.Parallel()
 	t.Run("finds openclaw.json", func(t *testing.T) {
 		tmpDir := t.TempDir()
 		configPath := filepath.Join(tmpDir, "openclaw.json")
@@ -549,6 +556,7 @@ func TestFindOpenClawConfig(t *testing.T) {
 }
 
 func TestRewriteWorkspacePath(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name  string
 		input string
@@ -569,6 +577,7 @@ func TestRewriteWorkspacePath(t *testing.T) {
 }
 
 func TestRunDryRun(t *testing.T) {
+	t.Parallel()
 	openclawHome := t.TempDir()
 	picoClawHome := t.TempDir()
 
@@ -610,6 +619,7 @@ func TestRunDryRun(t *testing.T) {
 }
 
 func TestRunFullMigration(t *testing.T) {
+	t.Parallel()
 	openclawHome := t.TempDir()
 	picoClawHome := t.TempDir()
 
@@ -708,6 +718,7 @@ func TestRunFullMigration(t *testing.T) {
 }
 
 func TestRunOpenClawNotFound(t *testing.T) {
+	t.Parallel()
 	opts := Options{
 		OpenClawHome: "/nonexistent/path/to/openclaw",
 		PicoClawHome: t.TempDir(),
@@ -720,6 +731,7 @@ func TestRunOpenClawNotFound(t *testing.T) {
 }
 
 func TestRunMutuallyExclusiveFlags(t *testing.T) {
+	t.Parallel()
 	opts := Options{
 		ConfigOnly:    true,
 		WorkspaceOnly: true,
@@ -732,6 +744,7 @@ func TestRunMutuallyExclusiveFlags(t *testing.T) {
 }
 
 func TestBackupFile(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "test.md")
 	os.WriteFile(filePath, []byte("original content"), 0644)
@@ -751,6 +764,7 @@ func TestBackupFile(t *testing.T) {
 }
 
 func TestCopyFile(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 	srcPath := filepath.Join(tmpDir, "src.md")
 	dstPath := filepath.Join(tmpDir, "dst.md")
@@ -771,6 +785,7 @@ func TestCopyFile(t *testing.T) {
 }
 
 func TestRunConfigOnly(t *testing.T) {
+	t.Parallel()
 	openclawHome := t.TempDir()
 	picoClawHome := t.TempDir()
 
@@ -811,6 +826,7 @@ func TestRunConfigOnly(t *testing.T) {
 }
 
 func TestRunWorkspaceOnly(t *testing.T) {
+	t.Parallel()
 	openclawHome := t.TempDir()
 	picoClawHome := t.TempDir()
 

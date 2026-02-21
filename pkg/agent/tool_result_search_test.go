@@ -1,10 +1,10 @@
 package agent_test
 
 import (
-	"context"
-	jsonv2 "github.com/go-json-experiment/json"
 	"strings"
 	"testing"
+
+	jsonv2 "github.com/go-json-experiment/json"
 
 	"charm.land/fantasy"
 	"github.com/stretchr/testify/assert"
@@ -21,7 +21,7 @@ func setupSearchFixture(t *testing.T) (fantasy.AgentTool, agent.KVDelegate, stri
 	q := db.delegate.Queries()
 	convID := newConversation(t, q)
 	s := agent.NewStateStore(q)
-	run, err := s.CreateRun(context.Background(), convID)
+	run, err := s.CreateRun(t.Context(), convID)
 	require.NoError(t, err)
 
 	kv := agent.NewDelegateKV(db.delegate, "search-test")
@@ -41,7 +41,7 @@ func setupSearchFixture(t *testing.T) (fantasy.AgentTool, agent.KVDelegate, stri
 		{ToolCallID: "c2", ToolName: "beta"},
 		{ToolCallID: "c3", ToolName: "alpha"},
 	}
-	_, err = r.Execute(context.Background(), nil, calls, nil)
+	_, err = r.Execute(t.Context(), nil, calls, nil)
 	require.NoError(t, err)
 
 	tool := agent.NewToolResultSearchTool(q, kv)
@@ -51,7 +51,7 @@ func setupSearchFixture(t *testing.T) (fantasy.AgentTool, agent.KVDelegate, stri
 // invokeSearch calls the search tool with the given input and parses the JSON response.
 func invokeSearch(t *testing.T, tool fantasy.AgentTool, input agent.ToolResultSearchInput) map[string]any {
 	t.Helper()
-	resp, err := tool.Run(context.Background(), fantasy.ToolCall{
+	resp, err := tool.Run(t.Context(), fantasy.ToolCall{
 		Input: marshalInput(t, input),
 	})
 	require.NoError(t, err)
@@ -69,89 +69,102 @@ func marshalInput(t *testing.T, v any) string {
 	return string(b)
 }
 
-func TestToolResultSearch_ByConversationID(t *testing.T) {
-	tool, _, convID, _ := setupSearchFixture(t)
-	ctx := context.Background()
-	_ = ctx
+func TestToolResultSearch_QueryFilters(t *testing.T) {
+	t.Parallel()
 
-	out := invokeSearch(t, tool, agent.ToolResultSearchInput{
-		ConversationID: convID,
-		Limit:          10,
-	})
+	tests := []struct {
+		name      string
+		build     func(convID, runID string) agent.ToolResultSearchInput
+		wantTotal float64
+		wantTCID  string
+	}{
+		{
+			name: "by conversation ID",
+			build: func(convID, _ string) agent.ToolResultSearchInput {
+				return agent.ToolResultSearchInput{
+					ConversationID: convID,
+					Limit:          10,
+				}
+			},
+			wantTotal: 3,
+		},
+		{
+			name: "by run ID",
+			build: func(_, runID string) agent.ToolResultSearchInput {
+				return agent.ToolResultSearchInput{
+					RunID: runID,
+					Limit: 10,
+				}
+			},
+			wantTotal: 3,
+		},
+		{
+			name: "by run ID and tool_call_id",
+			build: func(_, runID string) agent.ToolResultSearchInput {
+				return agent.ToolResultSearchInput{
+					RunID:      runID,
+					ToolCallID: "c2",
+				}
+			},
+			wantTotal: 1,
+			wantTCID:  "c2",
+		},
+		{
+			name: "filter by tool_name",
+			build: func(convID, _ string) agent.ToolResultSearchInput {
+				return agent.ToolResultSearchInput{
+					ConversationID: convID,
+					ToolName:       "alpha",
+					Limit:          10,
+				}
+			},
+			wantTotal: 2,
+		},
+		{
+			name: "filter by query",
+			build: func(convID, _ string) agent.ToolResultSearchInput {
+				return agent.ToolResultSearchInput{
+					ConversationID: convID,
+					Query:          "beta",
+					Limit:          10,
+				}
+			},
+			wantTotal: 1,
+		},
+		{
+			name: "default limit",
+			build: func(convID, _ string) agent.ToolResultSearchInput {
+				return agent.ToolResultSearchInput{
+					ConversationID: convID,
+				}
+			},
+			wantTotal: 3,
+		},
+	}
 
-	total, _ := out["total"].(float64)
-	assert.Equal(t, float64(3), total, "should find all 3 results by conversation_id")
-}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tool, _, convID, runID := setupSearchFixture(t)
+			input := tt.build(convID, runID)
+			out := invokeSearch(t, tool, input)
 
-func TestToolResultSearch_ByRunID(t *testing.T) {
-	tool, _, _, runID := setupSearchFixture(t)
+			total, _ := out["total"].(float64)
+			assert.Equal(t, tt.wantTotal, total)
 
-	out := invokeSearch(t, tool, agent.ToolResultSearchInput{
-		RunID: runID,
-		Limit: 10,
-	})
-
-	total, _ := out["total"].(float64)
-	assert.Equal(t, float64(3), total)
-}
-
-func TestToolResultSearch_ByRunID_AndToolCallID(t *testing.T) {
-	tool, _, _, runID := setupSearchFixture(t)
-
-	out := invokeSearch(t, tool, agent.ToolResultSearchInput{
-		RunID:      runID,
-		ToolCallID: "c2",
-	})
-
-	total, _ := out["total"].(float64)
-	assert.Equal(t, float64(1), total)
-	items := out["items"].([]any)
-	item := items[0].(map[string]any)
-	assert.Equal(t, "c2", item["tool_call_id"])
-}
-
-func TestToolResultSearch_FilterByToolName(t *testing.T) {
-	tool, _, convID, _ := setupSearchFixture(t)
-
-	out := invokeSearch(t, tool, agent.ToolResultSearchInput{
-		ConversationID: convID,
-		ToolName:       "alpha",
-		Limit:          10,
-	})
-
-	total, _ := out["total"].(float64)
-	assert.Equal(t, float64(2), total, "filter by tool_name should return only 'alpha' results")
-}
-
-func TestToolResultSearch_FilterByQuery(t *testing.T) {
-	tool, _, convID, _ := setupSearchFixture(t)
-
-	out := invokeSearch(t, tool, agent.ToolResultSearchInput{
-		ConversationID: convID,
-		Query:          "beta",
-		Limit:          10,
-	})
-
-	total, _ := out["total"].(float64)
-	assert.Equal(t, float64(1), total)
-}
-
-func TestToolResultSearch_DefaultLimit(t *testing.T) {
-	tool, _, convID, _ := setupSearchFixture(t)
-
-	// No limit specified -- default is 5, but we only have 3 items
-	out := invokeSearch(t, tool, agent.ToolResultSearchInput{
-		ConversationID: convID,
-	})
-
-	total, _ := out["total"].(float64)
-	assert.Equal(t, float64(3), total)
+			if tt.wantTCID != "" {
+				items := out["items"].([]any)
+				item := items[0].(map[string]any)
+				assert.Equal(t, tt.wantTCID, item["tool_call_id"])
+			}
+		})
+	}
 }
 
 func TestToolResultSearch_MissingConvAndRunID_ErrorResponse(t *testing.T) {
+	t.Parallel()
 	tool, _, _, _ := setupSearchFixture(t)
 
-	resp, err := tool.Run(context.Background(), fantasy.ToolCall{
+	resp, err := tool.Run(t.Context(), fantasy.ToolCall{
 		Input: marshalInput(t, agent.ToolResultSearchInput{}),
 	})
 	require.NoError(t, err)
@@ -163,11 +176,12 @@ func TestToolResultSearch_MissingConvAndRunID_ErrorResponse(t *testing.T) {
 // TestToolResultSearch_LineView verifies that the KV full-result is sliced
 // into the requested line range.
 func TestToolResultSearch_LineView(t *testing.T) {
+	t.Parallel()
 	db := newTestQueries(t)
 	q := db.delegate.Queries()
 	convID := newConversation(t, q)
 	s := agent.NewStateStore(q)
-	run, err := s.CreateRun(context.Background(), convID)
+	run, err := s.CreateRun(t.Context(), convID)
 	require.NoError(t, err)
 
 	kv := agent.NewDelegateKV(db.delegate, "line-view-test")
@@ -189,7 +203,7 @@ func TestToolResultSearch_LineView(t *testing.T) {
 		RunID:          run.ID,
 		ThresholdChars: 100000,
 	}
-	_, err = r.Execute(context.Background(), nil, []fantasy.ToolCallContent{{ToolCallID: "lv1", ToolName: "liner"}}, nil)
+	_, err = r.Execute(t.Context(), nil, []fantasy.ToolCallContent{{ToolCallID: "lv1", ToolName: "liner"}}, nil)
 	require.NoError(t, err)
 
 	tool := agent.NewToolResultSearchTool(q, kv)
@@ -220,11 +234,12 @@ func TestToolResultSearch_LineView(t *testing.T) {
 
 // TestToolResultSearch_ChunkView verifies chunk-range retrieval from KV.
 func TestToolResultSearch_ChunkView(t *testing.T) {
+	t.Parallel()
 	db := newTestQueries(t)
 	q := db.delegate.Queries()
 	convID := newConversation(t, q)
 	s := agent.NewStateStore(q)
-	run, err := s.CreateRun(context.Background(), convID)
+	run, err := s.CreateRun(t.Context(), convID)
 	require.NoError(t, err)
 
 	kv := agent.NewDelegateKV(db.delegate, "chunk-view-test")
@@ -247,7 +262,7 @@ func TestToolResultSearch_ChunkView(t *testing.T) {
 		ThresholdChars: 10,
 		ChunkChars:     20,
 	}
-	_, err = r.Execute(context.Background(), nil, []fantasy.ToolCallContent{{ToolCallID: "cv1", ToolName: "chunker"}}, nil)
+	_, err = r.Execute(t.Context(), nil, []fantasy.ToolCallContent{{ToolCallID: "cv1", ToolName: "chunker"}}, nil)
 	require.NoError(t, err)
 
 	tool := agent.NewToolResultSearchTool(q, kv)

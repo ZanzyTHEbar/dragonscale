@@ -7,6 +7,7 @@ import (
 )
 
 func TestSkillsInfoValidate(t *testing.T) {
+	t.Parallel()
 	testcases := []struct {
 		name        string
 		skillName   string

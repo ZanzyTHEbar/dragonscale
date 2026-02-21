@@ -25,6 +25,7 @@ func makeAuditEntry(agentID, sessionKey, action, target string) *memory.AuditEnt
 }
 
 func TestLibSQLDelegate_InsertAuditEntry(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name  string
 		entry *memory.AuditEntry
@@ -54,7 +55,7 @@ func TestLibSQLDelegate_InsertAuditEntry(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			d := newTestDelegate(t)
-			ctx := context.Background()
+			ctx := t.Context()
 			require.NoError(t, d.InsertAuditEntry(ctx, tt.entry))
 
 			count, err := d.CountAuditEntries(ctx, tt.entry.AgentID)
@@ -65,6 +66,7 @@ func TestLibSQLDelegate_InsertAuditEntry(t *testing.T) {
 }
 
 func TestLibSQLDelegate_ListAuditEntries(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name    string
 		setup   func(t *testing.T, d *LibSQLDelegate, ctx context.Context)
@@ -114,7 +116,7 @@ func TestLibSQLDelegate_ListAuditEntries(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			d := newTestDelegate(t)
-			ctx := context.Background()
+			ctx := t.Context()
 			if tt.setup != nil {
 				tt.setup(t, d, ctx)
 			}
@@ -126,6 +128,7 @@ func TestLibSQLDelegate_ListAuditEntries(t *testing.T) {
 }
 
 func TestLibSQLDelegate_ListAuditEntriesByAction(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name       string
 		setup      func(t *testing.T, d *LibSQLDelegate, ctx context.Context)
@@ -160,7 +163,7 @@ func TestLibSQLDelegate_ListAuditEntriesByAction(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			d := newTestDelegate(t)
-			ctx := context.Background()
+			ctx := t.Context()
 			if tt.setup != nil {
 				tt.setup(t, d, ctx)
 			}
@@ -177,6 +180,7 @@ func TestLibSQLDelegate_ListAuditEntriesByAction(t *testing.T) {
 }
 
 func TestLibSQLDelegate_ListAuditEntriesBySession(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name       string
 		setup      func(t *testing.T, d *LibSQLDelegate, ctx context.Context)
@@ -209,7 +213,7 @@ func TestLibSQLDelegate_ListAuditEntriesBySession(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			d := newTestDelegate(t)
-			ctx := context.Background()
+			ctx := t.Context()
 			if tt.setup != nil {
 				tt.setup(t, d, ctx)
 			}
@@ -221,8 +225,9 @@ func TestLibSQLDelegate_ListAuditEntriesBySession(t *testing.T) {
 }
 
 func TestLibSQLDelegate_PruneOldAuditEntries(t *testing.T) {
+	t.Parallel()
 	d := newTestDelegate(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	require.NoError(t, d.InsertAuditEntry(ctx, makeAuditEntry("a1", "s1", "tool_call", "t1")))
 	require.NoError(t, d.InsertAuditEntry(ctx, makeAuditEntry("a1", "s1", "tool_call", "t2")))
@@ -240,6 +245,7 @@ func TestLibSQLDelegate_PruneOldAuditEntries(t *testing.T) {
 }
 
 func TestLibSQLDelegate_CountAuditEntriesByAction(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name    string
 		setup   func(t *testing.T, d *LibSQLDelegate, ctx context.Context)
@@ -269,7 +275,7 @@ func TestLibSQLDelegate_CountAuditEntriesByAction(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			d := newTestDelegate(t)
-			ctx := context.Background()
+			ctx := t.Context()
 			if tt.setup != nil {
 				tt.setup(t, d, ctx)
 			}

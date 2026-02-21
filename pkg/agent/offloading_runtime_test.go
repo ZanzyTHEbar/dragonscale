@@ -40,7 +40,7 @@ func makeOffloader(t *testing.T, base fantasy.ToolRuntime, threshold, chunkChars
 	q := db.delegate.Queries()
 	convID := newConversation(t, q)
 	s := agent.NewStateStore(q)
-	run, err := s.CreateRun(context.Background(), convID)
+	run, err := s.CreateRun(t.Context(), convID)
 	require.NoError(t, err)
 
 	kv := agent.NewDelegateKV(db.delegate, "offload-test")
@@ -76,8 +76,9 @@ func makeCalls(n int) []fantasy.ToolCallContent {
 // TestOffloading_SmallResult_KeptInline verifies that results below the
 // threshold are stored in KV but the inline value is unchanged.
 func TestOffloading_SmallResult_KeptInline(t *testing.T) {
+	t.Parallel()
 	r, _, _, kv := makeOffloader(t, nil, 1000, 500)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	calls := makeCalls(1)
 	results, err := r.Execute(ctx, nil, calls, nil)
@@ -95,6 +96,7 @@ func TestOffloading_SmallResult_KeptInline(t *testing.T) {
 // TestOffloading_LargeResult_Truncated verifies that results above the
 // threshold are truncated inline and chunked in KV.
 func TestOffloading_LargeResult_Truncated(t *testing.T) {
+	t.Parallel()
 	longText := strings.Repeat("x", 200)
 
 	base := staticToolRuntime{results: []fantasy.ToolResultContent{
@@ -106,7 +108,7 @@ func TestOffloading_LargeResult_Truncated(t *testing.T) {
 	}}
 
 	r, _, _, kv := makeOffloader(t, base, 50, 30)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	calls := makeCalls(1)
 	calls[0].ToolCallID = "call-a"
@@ -149,8 +151,9 @@ func TestOffloading_LargeResult_Truncated(t *testing.T) {
 
 // TestOffloading_DBMetadata_Inserted verifies that the DB record is created.
 func TestOffloading_DBMetadata_Inserted(t *testing.T) {
+	t.Parallel()
 	r, convIDPtr, runIDPtr, _ := makeOffloader(t, nil, 1000, 500)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	calls := makeCalls(2)
 	_, err := r.Execute(ctx, nil, calls, nil)
@@ -165,11 +168,12 @@ func TestOffloading_DBMetadata_Inserted(t *testing.T) {
 
 // TestOffloading_NilKV_Errors verifies that a nil KVDelegate returns an error.
 func TestOffloading_NilKV_Errors(t *testing.T) {
+	t.Parallel()
 	db := newTestQueries(t)
 	q := db.delegate.Queries()
 	convID := newConversation(t, q)
 	s := agent.NewStateStore(q)
-	run, err := s.CreateRun(context.Background(), convID)
+	run, err := s.CreateRun(t.Context(), convID)
 	require.NoError(t, err)
 
 	r := &agent.OffloadingToolRuntime{
@@ -178,12 +182,13 @@ func TestOffloading_NilKV_Errors(t *testing.T) {
 		RunID:          run.ID,
 	}
 
-	_, err = r.Execute(context.Background(), nil, makeCalls(1), nil)
+	_, err = r.Execute(t.Context(), nil, makeCalls(1), nil)
 	assert.Error(t, err, "nil KV should fail")
 }
 
 // TestOffloading_NilQueries_Errors verifies that a nil Queries returns an error.
 func TestOffloading_NilQueries_Errors(t *testing.T) {
+	t.Parallel()
 	db := newTestQueries(t)
 	kv := agent.NewDelegateKV(db.delegate, "a")
 
@@ -193,15 +198,16 @@ func TestOffloading_NilQueries_Errors(t *testing.T) {
 		RunID:          ids.New(),
 	}
 
-	_, err := r.Execute(context.Background(), nil, makeCalls(1), nil)
+	_, err := r.Execute(t.Context(), nil, makeCalls(1), nil)
 	assert.Error(t, err, "nil queries should fail")
 }
 
 // TestOffloading_EmptyToolCalls_ReturnsNil verifies no work is done when
 // no tool calls are provided.
 func TestOffloading_EmptyToolCalls_ReturnsNil(t *testing.T) {
+	t.Parallel()
 	r, _, _, _ := makeOffloader(t, nil, 1000, 500)
-	results, err := r.Execute(context.Background(), nil, nil, nil)
+	results, err := r.Execute(t.Context(), nil, nil, nil)
 	require.NoError(t, err)
 	assert.Nil(t, results, "no tool calls should produce no results")
 }
@@ -209,8 +215,9 @@ func TestOffloading_EmptyToolCalls_ReturnsNil(t *testing.T) {
 // TestOffloading_MultipleCalls_AllStoredInKV verifies that each call gets
 // its own full-result KV entry.
 func TestOffloading_MultipleCalls_AllStoredInKV(t *testing.T) {
+	t.Parallel()
 	r, _, _, kv := makeOffloader(t, nil, 1000, 500)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	calls := makeCalls(3)
 	_, err := r.Execute(ctx, nil, calls, nil)
@@ -230,6 +237,7 @@ func TestOffloading_MultipleCalls_AllStoredInKV(t *testing.T) {
 
 // TestChunkString verifies the internal chunking logic boundary conditions.
 func TestChunkString(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name      string
 		input     string
@@ -268,10 +276,10 @@ func TestChunkString(t *testing.T) {
 
 			r, _, _, kv := makeOffloader(t, base, effectiveThreshold, tt.chunkSize)
 			calls := []fantasy.ToolCallContent{{ToolCallID: "c", ToolName: "t"}}
-			_, err := r.Execute(context.Background(), nil, calls, nil)
+			_, err := r.Execute(t.Context(), nil, calls, nil)
 			require.NoError(t, err)
 
-			keys, err := kv.Scan(context.Background(), "tool_results/")
+			keys, err := kv.Scan(t.Context(), "tool_results/")
 			require.NoError(t, err)
 
 			chunkCount := 0

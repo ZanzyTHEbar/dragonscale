@@ -33,8 +33,8 @@ func (m *MockLanguageModel) Generate(_ context.Context, call fantasy.Call) (*fan
 	}, nil
 }
 
-func (m *MockLanguageModel) Stream(_ context.Context, call fantasy.Call) (fantasy.StreamResponse, error) {
-	resp, err := m.Generate(context.Background(), call)
+func (m *MockLanguageModel) Stream(ctx context.Context, call fantasy.Call) (fantasy.StreamResponse, error) {
+	resp, err := m.Generate(ctx, call)
 	if err != nil {
 		return nil, err
 	}
@@ -59,6 +59,7 @@ func (m *MockLanguageModel) Model() string    { return "test-model" }
 
 // TestSubagentTool_Name verifies tool name
 func TestSubagentTool_Name(t *testing.T) {
+	t.Parallel()
 	provider := &MockLanguageModel{}
 	manager := NewSubagentManager(provider, "test-model", "/tmp/test", nil)
 	tool := NewSubagentTool(manager)
@@ -70,6 +71,7 @@ func TestSubagentTool_Name(t *testing.T) {
 
 // TestSubagentTool_Description verifies tool description
 func TestSubagentTool_Description(t *testing.T) {
+	t.Parallel()
 	provider := &MockLanguageModel{}
 	manager := NewSubagentManager(provider, "test-model", "/tmp/test", nil)
 	tool := NewSubagentTool(manager)
@@ -85,6 +87,7 @@ func TestSubagentTool_Description(t *testing.T) {
 
 // TestSubagentTool_Parameters verifies tool parameters schema
 func TestSubagentTool_Parameters(t *testing.T) {
+	t.Parallel()
 	provider := &MockLanguageModel{}
 	manager := NewSubagentManager(provider, "test-model", "/tmp/test", nil)
 	tool := NewSubagentTool(manager)
@@ -153,6 +156,7 @@ func TestSubagentTool_Parameters(t *testing.T) {
 
 // TestSubagentTool_SetContext verifies context setting
 func TestSubagentTool_SetContext(t *testing.T) {
+	t.Parallel()
 	provider := &MockLanguageModel{}
 	manager := NewSubagentManager(provider, "test-model", "/tmp/test", nil)
 	tool := NewSubagentTool(manager)
@@ -166,6 +170,7 @@ func TestSubagentTool_SetContext(t *testing.T) {
 
 // TestSubagentTool_Execute_Success tests successful execution
 func TestSubagentTool_Execute_Success(t *testing.T) {
+	t.Parallel()
 	provider := &MockLanguageModel{}
 	msgBus := bus.NewMessageBus()
 	manager := NewSubagentManager(provider, "test-model", "/tmp/test", msgBus)
@@ -178,7 +183,7 @@ func TestSubagentTool_Execute_Success(t *testing.T) {
 	tool := NewSubagentTool(manager)
 	tool.SetContext("telegram", "chat-123")
 
-	ctx := context.Background()
+	ctx := t.Context()
 	args := map[string]interface{}{
 		"task":  "Write a haiku about coding",
 		"label": "haiku-task",
@@ -228,6 +233,7 @@ func TestSubagentTool_Execute_Success(t *testing.T) {
 
 // TestSubagentTool_Execute_NoLabel tests execution without label
 func TestSubagentTool_Execute_NoLabel(t *testing.T) {
+	t.Parallel()
 	provider := &MockLanguageModel{}
 	msgBus := bus.NewMessageBus()
 	manager := NewSubagentManager(provider, "test-model", "/tmp/test", msgBus)
@@ -236,7 +242,7 @@ func TestSubagentTool_Execute_NoLabel(t *testing.T) {
 	})
 	tool := NewSubagentTool(manager)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	args := map[string]interface{}{
 		"task": "Test task without label",
 	}
@@ -255,11 +261,12 @@ func TestSubagentTool_Execute_NoLabel(t *testing.T) {
 
 // TestSubagentTool_Execute_MissingTask tests error handling for missing task
 func TestSubagentTool_Execute_MissingTask(t *testing.T) {
+	t.Parallel()
 	provider := &MockLanguageModel{}
 	manager := NewSubagentManager(provider, "test-model", "/tmp/test", nil)
 	tool := NewSubagentTool(manager)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	args := map[string]interface{}{
 		"label": "test",
 	}
@@ -284,9 +291,10 @@ func TestSubagentTool_Execute_MissingTask(t *testing.T) {
 
 // TestSubagentTool_Execute_NilManager tests error handling for nil manager
 func TestSubagentTool_Execute_NilManager(t *testing.T) {
+	t.Parallel()
 	tool := NewSubagentTool(nil)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	args := map[string]interface{}{
 		"task": "test task",
 	}
@@ -305,6 +313,7 @@ func TestSubagentTool_Execute_NilManager(t *testing.T) {
 
 // TestSubagentTool_Execute_ContextPassing verifies context is properly used
 func TestSubagentTool_Execute_ContextPassing(t *testing.T) {
+	t.Parallel()
 	provider := &MockLanguageModel{}
 	msgBus := bus.NewMessageBus()
 	manager := NewSubagentManager(provider, "test-model", "/tmp/test", msgBus)
@@ -318,7 +327,7 @@ func TestSubagentTool_Execute_ContextPassing(t *testing.T) {
 	chatID := "test-chat"
 	tool.SetContext(channel, chatID)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	args := map[string]interface{}{
 		"task": "Test context passing",
 	}
@@ -335,6 +344,7 @@ func TestSubagentTool_Execute_ContextPassing(t *testing.T) {
 }
 
 func TestSubagentTool_Execute_NestedDelegationRequiresScopeAndKeptWork(t *testing.T) {
+	t.Parallel()
 	provider := &MockLanguageModel{}
 	msgBus := bus.NewMessageBus()
 	manager := NewSubagentManager(provider, "test-model", "/tmp/test", msgBus)
@@ -344,7 +354,7 @@ func TestSubagentTool_Execute_NestedDelegationRequiresScopeAndKeptWork(t *testin
 	tool := NewSubagentTool(manager)
 
 	// Simulate nested delegation (depth > 0) without delegated scope metadata.
-	ctx := withDelegationContext(context.Background(), "parent-task", 1)
+	ctx := withDelegationContext(t.Context(), "parent-task", 1)
 	result := tool.Execute(ctx, map[string]interface{}{
 		"task":  "nested task",
 		"label": "nested",
@@ -359,6 +369,7 @@ func TestSubagentTool_Execute_NestedDelegationRequiresScopeAndKeptWork(t *testin
 }
 
 func TestSubagentTool_Execute_NestedDelegationWithMetadataSucceeds(t *testing.T) {
+	t.Parallel()
 	provider := &MockLanguageModel{}
 	msgBus := bus.NewMessageBus()
 	manager := NewSubagentManager(provider, "test-model", "/tmp/test", msgBus)
@@ -367,7 +378,7 @@ func TestSubagentTool_Execute_NestedDelegationWithMetadataSucceeds(t *testing.T)
 	})
 	tool := NewSubagentTool(manager)
 
-	ctx := withDelegationContext(context.Background(), "parent-task", 1)
+	ctx := withDelegationContext(t.Context(), "parent-task", 1)
 	result := tool.Execute(ctx, map[string]interface{}{
 		"task":            "nested task",
 		"label":           "nested",
@@ -382,6 +393,7 @@ func TestSubagentTool_Execute_NestedDelegationWithMetadataSucceeds(t *testing.T)
 
 // TestSubagentTool_ForUserTruncation verifies long content is truncated for user
 func TestSubagentTool_ForUserTruncation(t *testing.T) {
+	t.Parallel()
 	provider := &MockLanguageModel{}
 	msgBus := bus.NewMessageBus()
 	manager := NewSubagentManager(provider, "test-model", "/tmp/test", msgBus)
@@ -390,7 +402,7 @@ func TestSubagentTool_ForUserTruncation(t *testing.T) {
 	})
 	tool := NewSubagentTool(manager)
 
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// Create a task that will generate long response
 	longTask := strings.Repeat("This is a very long task description. ", 100)

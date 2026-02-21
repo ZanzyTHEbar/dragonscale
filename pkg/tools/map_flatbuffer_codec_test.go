@@ -5,6 +5,7 @@ import (
 )
 
 func TestMapRunSpecFlatBuffer_RoundTrip(t *testing.T) {
+	t.Parallel()
 	original := MapRunSpec{
 		Version:          1,
 		OperatorKind:     MapOperatorLLM,
@@ -42,6 +43,7 @@ func TestMapRunSpecFlatBuffer_RoundTrip(t *testing.T) {
 }
 
 func TestMapItemFlatBuffer_RoundTrip(t *testing.T) {
+	t.Parallel()
 	input := MapItemInputRecord{
 		Version:   1,
 		ItemIndex: 7,

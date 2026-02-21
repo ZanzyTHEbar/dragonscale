@@ -9,6 +9,7 @@ import (
 )
 
 func TestSchnorrKeypair(t *testing.T) {
+	t.Parallel()
 	key := make([]byte, 32)
 	for i := range key {
 		key[i] = byte(i + 1)
@@ -22,11 +23,13 @@ func TestSchnorrKeypair(t *testing.T) {
 }
 
 func TestSchnorrKeypairRejectsBadLength(t *testing.T) {
+	t.Parallel()
 	_, _, err := SchnorrKeypair([]byte("short"))
 	assert.Error(t, err)
 }
 
 func TestSchnorrFullHandshake(t *testing.T) {
+	t.Parallel()
 	masterKey := make([]byte, 32)
 	for i := range masterKey {
 		masterKey[i] = byte(i + 42)
@@ -49,6 +52,7 @@ func TestSchnorrFullHandshake(t *testing.T) {
 }
 
 func TestSchnorrRejectsWrongKey(t *testing.T) {
+	t.Parallel()
 	masterKey1 := make([]byte, 32)
 	masterKey2 := make([]byte, 32)
 	for i := range masterKey1 {
@@ -73,6 +77,7 @@ func TestSchnorrRejectsWrongKey(t *testing.T) {
 }
 
 func TestZKPSessionManagerIssueAndValidate(t *testing.T) {
+	t.Parallel()
 	masterKey := make([]byte, 32)
 	for i := range masterKey {
 		masterKey[i] = byte(i + 7)
@@ -96,6 +101,7 @@ func TestZKPSessionManagerIssueAndValidate(t *testing.T) {
 }
 
 func TestZKPSessionManagerRejectsInvalidProof(t *testing.T) {
+	t.Parallel()
 	masterKey := make([]byte, 32)
 	for i := range masterKey {
 		masterKey[i] = byte(i)
@@ -109,6 +115,7 @@ func TestZKPSessionManagerRejectsInvalidProof(t *testing.T) {
 }
 
 func TestZKPSessionManagerExpiry(t *testing.T) {
+	t.Parallel()
 	masterKey := make([]byte, 32)
 	for i := range masterKey {
 		masterKey[i] = byte(i + 3)
@@ -128,6 +135,7 @@ func TestZKPSessionManagerExpiry(t *testing.T) {
 }
 
 func TestZKPSessionManagerRevoke(t *testing.T) {
+	t.Parallel()
 	masterKey := make([]byte, 32)
 	for i := range masterKey {
 		masterKey[i] = byte(i + 5)
@@ -148,6 +156,7 @@ func TestZKPSessionManagerRevoke(t *testing.T) {
 }
 
 func TestHandshakePayloadBinaryRoundTrip(t *testing.T) {
+	t.Parallel()
 	hp := HandshakePayload{Phase: 3}
 	for i := 0; i < 32; i++ {
 		hp.RX[i] = byte(i)
@@ -165,6 +174,7 @@ func TestHandshakePayloadBinaryRoundTrip(t *testing.T) {
 }
 
 func TestHandshakeResultBinaryRoundTrip(t *testing.T) {
+	t.Parallel()
 	hr := HandshakeResult{ExpiresUnix: time.Now().Unix()}
 	for i := 0; i < 32; i++ {
 		hr.SessionToken[i] = byte(i + 200)
@@ -179,6 +189,7 @@ func TestHandshakeResultBinaryRoundTrip(t *testing.T) {
 }
 
 func TestZKPSessionManagerCleanup(t *testing.T) {
+	t.Parallel()
 	masterKey := make([]byte, 32)
 	for i := range masterKey {
 		masterKey[i] = byte(i + 11)

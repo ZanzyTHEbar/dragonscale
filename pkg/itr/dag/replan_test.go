@@ -7,6 +7,7 @@ import (
 )
 
 func TestNeedsReplan(t *testing.T) {
+	t.Parallel()
 	assert.True(t, needsReplan("The task is incomplete [NEEDS_MORE_STEPS]"))
 	assert.True(t, needsReplan("[NEEDS_MORE_STEPS]"))
 	assert.False(t, needsReplan("Task complete. Here is the answer."))
@@ -14,5 +15,6 @@ func TestNeedsReplan(t *testing.T) {
 }
 
 func TestReplanSentinelIsConsistent(t *testing.T) {
+	t.Parallel()
 	assert.Equal(t, "[NEEDS_MORE_STEPS]", replanSentinel)
 }

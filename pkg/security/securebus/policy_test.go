@@ -10,6 +10,7 @@ import (
 )
 
 func TestPolicyValidateRecursionDepth(t *testing.T) {
+	t.Parallel()
 	pe := NewPolicyEngine(PolicyConfig{MaxRecursionDepth: 5})
 
 	req := itr.ToolRequest{Depth: 3}
@@ -22,6 +23,7 @@ func TestPolicyValidateRecursionDepth(t *testing.T) {
 }
 
 func TestPolicyValidateNoDepthLimit(t *testing.T) {
+	t.Parallel()
 	pe := NewPolicyEngine(PolicyConfig{MaxRecursionDepth: 0})
 
 	req := itr.ToolRequest{Depth: 255}
@@ -29,6 +31,7 @@ func TestPolicyValidateNoDepthLimit(t *testing.T) {
 }
 
 func TestPolicyValidateNetworkSSRFBlocked(t *testing.T) {
+	t.Parallel()
 	pe := NewPolicyEngine(DefaultPolicyConfig())
 
 	ssrfURLs := []string{
@@ -53,6 +56,7 @@ func TestPolicyValidateNetworkSSRFBlocked(t *testing.T) {
 }
 
 func TestPolicyValidateNetworkAllowed(t *testing.T) {
+	t.Parallel()
 	pe := NewPolicyEngine(DefaultPolicyConfig())
 	rules := []tools.EndpointRule{{Pattern: "https://api.github.com/*"}}
 
@@ -60,6 +64,7 @@ func TestPolicyValidateNetworkAllowed(t *testing.T) {
 }
 
 func TestPolicyValidateNetworkNoRules(t *testing.T) {
+	t.Parallel()
 	pe := NewPolicyEngine(DefaultPolicyConfig())
 	err := pe.ValidateNetwork("https://example.com", nil)
 	require.Error(t, err)
@@ -67,6 +72,7 @@ func TestPolicyValidateNetworkNoRules(t *testing.T) {
 }
 
 func TestPolicyValidateNetworkNoMatchingRule(t *testing.T) {
+	t.Parallel()
 	pe := NewPolicyEngine(DefaultPolicyConfig())
 	rules := []tools.EndpointRule{{Pattern: "https://api.github.com/*"}}
 
@@ -76,6 +82,7 @@ func TestPolicyValidateNetworkNoMatchingRule(t *testing.T) {
 }
 
 func TestPolicyValidateFilesystemAllowed(t *testing.T) {
+	t.Parallel()
 	pe := NewPolicyEngine(PolicyConfig{AllowedWorkspace: "/workspace"})
 	rules := []tools.PathRule{{Pattern: "src/*", Mode: "rw"}}
 
@@ -85,6 +92,7 @@ func TestPolicyValidateFilesystemAllowed(t *testing.T) {
 }
 
 func TestPolicyValidateFilesystemNoRules(t *testing.T) {
+	t.Parallel()
 	pe := NewPolicyEngine(PolicyConfig{})
 	err := pe.ValidateFilesystem("/etc/passwd", "r", nil)
 	require.Error(t, err)
@@ -92,6 +100,7 @@ func TestPolicyValidateFilesystemNoRules(t *testing.T) {
 }
 
 func TestPolicyValidateFilesystemModeMismatch(t *testing.T) {
+	t.Parallel()
 	pe := NewPolicyEngine(PolicyConfig{AllowedWorkspace: "/workspace"})
 	rules := []tools.PathRule{{Pattern: "data/*", Mode: "r"}}
 

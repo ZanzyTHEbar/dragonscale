@@ -1,9 +1,9 @@
 package store
 
 import (
-	"context"
-	jsonv2 "github.com/go-json-experiment/json"
 	"testing"
+
+	jsonv2 "github.com/go-json-experiment/json"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -17,7 +17,7 @@ func newTestMemoryTool(t *testing.T) *MemoryTool {
 
 func executeAndParse(t *testing.T, tool *MemoryTool, input string) *MemoryToolResponse {
 	t.Helper()
-	ctx := context.Background()
+	ctx := t.Context()
 	raw, err := tool.Execute(ctx, input)
 	require.NoError(t, err)
 
@@ -27,6 +27,7 @@ func executeAndParse(t *testing.T, tool *MemoryTool, input string) *MemoryToolRe
 }
 
 func TestMemoryTool_WriteAndRead(t *testing.T) {
+	t.Parallel()
 	tool := newTestMemoryTool(t)
 
 	// Write
@@ -52,6 +53,7 @@ func TestMemoryTool_WriteAndRead(t *testing.T) {
 }
 
 func TestMemoryTool_WriteArchival(t *testing.T) {
+	t.Parallel()
 	tool := newTestMemoryTool(t)
 
 	resp := executeAndParse(t, tool, `{"action":"write","content":"Large document content for archival.","tier":"archival","source":"test"}`)
@@ -60,6 +62,7 @@ func TestMemoryTool_WriteArchival(t *testing.T) {
 }
 
 func TestMemoryTool_Search(t *testing.T) {
+	t.Parallel()
 	tool := newTestMemoryTool(t)
 
 	// Seed data
@@ -74,6 +77,7 @@ func TestMemoryTool_Search(t *testing.T) {
 }
 
 func TestMemoryTool_Update(t *testing.T) {
+	t.Parallel()
 	tool := newTestMemoryTool(t)
 
 	// Write
@@ -91,6 +95,7 @@ func TestMemoryTool_Update(t *testing.T) {
 }
 
 func TestMemoryTool_Delete(t *testing.T) {
+	t.Parallel()
 	tool := newTestMemoryTool(t)
 
 	// Write
@@ -108,6 +113,7 @@ func TestMemoryTool_Delete(t *testing.T) {
 }
 
 func TestMemoryTool_Status(t *testing.T) {
+	t.Parallel()
 	tool := newTestMemoryTool(t)
 
 	resp := executeAndParse(t, tool, `{"action":"status"}`)
@@ -118,6 +124,7 @@ func TestMemoryTool_Status(t *testing.T) {
 }
 
 func TestMemoryTool_InvalidAction(t *testing.T) {
+	t.Parallel()
 	tool := newTestMemoryTool(t)
 
 	resp := executeAndParse(t, tool, `{"action":"explode"}`)
@@ -126,6 +133,7 @@ func TestMemoryTool_InvalidAction(t *testing.T) {
 }
 
 func TestMemoryTool_InvalidJSON(t *testing.T) {
+	t.Parallel()
 	tool := newTestMemoryTool(t)
 
 	resp := executeAndParse(t, tool, `not json`)
@@ -134,6 +142,7 @@ func TestMemoryTool_InvalidJSON(t *testing.T) {
 }
 
 func TestMemoryTool_MissingRequiredFields(t *testing.T) {
+	t.Parallel()
 	tool := newTestMemoryTool(t)
 
 	tests := []struct {

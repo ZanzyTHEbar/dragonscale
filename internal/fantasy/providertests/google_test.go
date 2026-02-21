@@ -26,6 +26,7 @@ var vertexTestModels = []testModel{
 }
 
 func TestGoogleCommon(t *testing.T) {
+	t.Parallel()
 	var pairs []builderPair
 	for _, m := range geminiTestModels {
 		pairs = append(pairs, builderPair{m.name, geminiBuilder(m.model), nil, nil})
@@ -37,6 +38,7 @@ func TestGoogleCommon(t *testing.T) {
 }
 
 func TestGoogleThinking(t *testing.T) {
+	t.Parallel()
 	opts := fantasy.ProviderOptions{
 		google.Name: &google.ProviderOptions{
 			ThinkingConfig: &google.ThinkingConfig{
@@ -57,6 +59,7 @@ func TestGoogleThinking(t *testing.T) {
 }
 
 func TestGoogleObjectGeneration(t *testing.T) {
+	t.Parallel()
 	var pairs []builderPair
 	for _, m := range geminiTestModels {
 		pairs = append(pairs, builderPair{m.name, geminiBuilder(m.model), nil, nil})
@@ -65,6 +68,7 @@ func TestGoogleObjectGeneration(t *testing.T) {
 }
 
 func TestGoogleVertexObjectGeneration(t *testing.T) {
+	t.Parallel()
 	var pairs []builderPair
 	for _, m := range vertexTestModels {
 		pairs = append(pairs, builderPair{m.name, vertexBuilder(m.model), nil, nil})

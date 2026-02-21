@@ -11,6 +11,7 @@ import (
 // --- MessagesToFantasy Tests ---
 
 func TestMessagesToFantasy_EmptySlice(t *testing.T) {
+	t.Parallel()
 	result := MessagesToFantasy(nil)
 	if len(result) != 0 {
 		t.Errorf("Expected empty slice for nil input, got %d", len(result))
@@ -23,6 +24,7 @@ func TestMessagesToFantasy_EmptySlice(t *testing.T) {
 }
 
 func TestMessageToFantasy_SimpleTextMessage(t *testing.T) {
+	t.Parallel()
 	msg := messages.Message{
 		Role:    "user",
 		Content: "Hello, world",
@@ -47,6 +49,7 @@ func TestMessageToFantasy_SimpleTextMessage(t *testing.T) {
 }
 
 func TestMessageToFantasy_AssistantWithMultipleToolCalls(t *testing.T) {
+	t.Parallel()
 	msg := messages.Message{
 		Role:    "assistant",
 		Content: "Let me run both tools.",
@@ -113,6 +116,7 @@ func TestMessageToFantasy_AssistantWithMultipleToolCalls(t *testing.T) {
 }
 
 func TestMessageToFantasy_ToolCallWithMapArgsFallback(t *testing.T) {
+	t.Parallel()
 	msg := messages.Message{
 		Role: "assistant",
 		ToolCalls: []messages.ToolCall{
@@ -145,6 +149,7 @@ func TestMessageToFantasy_ToolCallWithMapArgsFallback(t *testing.T) {
 }
 
 func TestMessageToFantasy_ToolResultMessage(t *testing.T) {
+	t.Parallel()
 	msg := messages.Message{
 		Role:       "tool",
 		Content:    "file contents here",
@@ -177,6 +182,7 @@ func TestMessageToFantasy_ToolResultMessage(t *testing.T) {
 }
 
 func TestMessageToFantasy_EmptyContent(t *testing.T) {
+	t.Parallel()
 	msg := messages.Message{
 		Role:    "assistant",
 		Content: "",
@@ -193,6 +199,7 @@ func TestMessageToFantasy_EmptyContent(t *testing.T) {
 // --- StepToMessages Tests ---
 
 func TestStepToMessages_TextOnly(t *testing.T) {
+	t.Parallel()
 	step := fantasy.StepResult{
 		Response: fantasy.Response{
 			Content: fantasy.ResponseContent{
@@ -216,6 +223,7 @@ func TestStepToMessages_TextOnly(t *testing.T) {
 }
 
 func TestStepToMessages_MultipleToolCalls(t *testing.T) {
+	t.Parallel()
 	step := fantasy.StepResult{
 		Response: fantasy.Response{
 			Content: fantasy.ResponseContent{
@@ -280,6 +288,7 @@ func TestStepToMessages_MultipleToolCalls(t *testing.T) {
 }
 
 func TestStepToMessages_ErrorToolResult(t *testing.T) {
+	t.Parallel()
 	testErr := errors.New("permission denied")
 	step := fantasy.StepResult{
 		Response: fantasy.Response{
@@ -315,6 +324,7 @@ func TestStepToMessages_ErrorToolResult(t *testing.T) {
 }
 
 func TestStepToMessages_ErrorToolResult_NilError(t *testing.T) {
+	t.Parallel()
 	step := fantasy.StepResult{
 		Response: fantasy.Response{
 			Content: fantasy.ResponseContent{
@@ -339,6 +349,7 @@ func TestStepToMessages_ErrorToolResult_NilError(t *testing.T) {
 }
 
 func TestStepToMessages_ToolCallWithoutText(t *testing.T) {
+	t.Parallel()
 	step := fantasy.StepResult{
 		Response: fantasy.Response{
 			Content: fantasy.ResponseContent{
@@ -372,6 +383,7 @@ func TestStepToMessages_ToolCallWithoutText(t *testing.T) {
 // --- AgentResultToMessages Tests ---
 
 func TestAgentResultToMessages_MultipleSteps(t *testing.T) {
+	t.Parallel()
 	result := &fantasy.AgentResult{
 		Steps: []fantasy.StepResult{
 			{
@@ -417,7 +429,10 @@ func TestAgentResultToMessages_MultipleSteps(t *testing.T) {
 // --- Round-trip fidelity test ---
 
 func TestRoundTrip_PicoClawToFantasyAndBack(t *testing.T) {
+	t.Parallel(
 	// Start with DragonScale messages representing a typical conversation
+	)
+
 	original := []messages.Message{
 		{Role: "user", Content: "Read the file"},
 		{

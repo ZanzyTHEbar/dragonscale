@@ -67,7 +67,7 @@ func deterministicVec(text string, dim int) memory.Embedding {
 
 func newTestStore(t *testing.T, withEmbedder bool) *MemoryStore {
 	t.Helper()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	del, err := delegate.NewLibSQLInMemory()
 	require.NoError(t, err)
@@ -95,7 +95,8 @@ func newTestStore(t *testing.T, withEmbedder bool) *MemoryStore {
 }
 
 func TestWorkingContext_SetAndGet(t *testing.T) {
-	ctx := context.Background()
+	t.Parallel()
+	ctx := t.Context()
 	store := newTestStore(t, false)
 
 	// Initially empty
@@ -122,7 +123,8 @@ func TestWorkingContext_SetAndGet(t *testing.T) {
 }
 
 func TestWorkingContext_IsolatedBySessions(t *testing.T) {
-	ctx := context.Background()
+	t.Parallel()
+	ctx := t.Context()
 	store := newTestStore(t, false)
 
 	err := store.SetWorkingContext(ctx, "agent-1", "session-a", "Context A")
@@ -140,7 +142,8 @@ func TestWorkingContext_IsolatedBySessions(t *testing.T) {
 }
 
 func TestRecall_CRUD(t *testing.T) {
-	ctx := context.Background()
+	t.Parallel()
+	ctx := t.Context()
 	store := newTestStore(t, false)
 
 	item := &memory.RecallItem{
@@ -187,7 +190,8 @@ func TestRecall_CRUD(t *testing.T) {
 }
 
 func TestArchival_StoreAndRetrieve(t *testing.T) {
-	ctx := context.Background()
+	t.Parallel()
+	ctx := t.Context()
 	store := newTestStore(t, true)
 
 	// Store a multi-chunk document
@@ -209,7 +213,8 @@ func TestArchival_StoreAndRetrieve(t *testing.T) {
 }
 
 func TestArchival_WithoutEmbedder(t *testing.T) {
-	ctx := context.Background()
+	t.Parallel()
+	ctx := t.Context()
 	store := newTestStore(t, false) // no embedder
 
 	content := "Short archival content for testing without embeddings."
@@ -226,7 +231,8 @@ func TestArchival_WithoutEmbedder(t *testing.T) {
 }
 
 func TestSearch_KeywordOnly(t *testing.T) {
-	ctx := context.Background()
+	t.Parallel()
+	ctx := t.Context()
 	store := newTestStore(t, false)
 
 	// Seed some recall items
@@ -251,7 +257,8 @@ func TestSearch_KeywordOnly(t *testing.T) {
 }
 
 func TestSearch_HybridWithEmbeddings(t *testing.T) {
-	ctx := context.Background()
+	t.Parallel()
+	ctx := t.Context()
 	store := newTestStore(t, true)
 
 	// Seed recall items
@@ -283,7 +290,8 @@ func TestSearch_HybridWithEmbeddings(t *testing.T) {
 }
 
 func TestSearch_ShadowModeUsesBaselineAndTracksParity(t *testing.T) {
-	ctx := context.Background()
+	t.Parallel()
+	ctx := t.Context()
 	store := newTestStore(t, false)
 
 	// Baseline recall hit.
@@ -319,7 +327,8 @@ func TestSearch_ShadowModeUsesBaselineAndTracksParity(t *testing.T) {
 }
 
 func TestSearch_DoesNotPromoteWithoutAugmentedSignals(t *testing.T) {
-	ctx := context.Background()
+	t.Parallel()
+	ctx := t.Context()
 	store := newTestStore(t, false)
 
 	gates := retrievalPromotionGates{
@@ -361,7 +370,8 @@ func TestSearch_DoesNotPromoteWithoutAugmentedSignals(t *testing.T) {
 }
 
 func TestSearch_PromoteOnlyOnGateWin(t *testing.T) {
-	ctx := context.Background()
+	t.Parallel()
+	ctx := t.Context()
 	store := newTestStore(t, false)
 
 	gates := retrievalPromotionGates{
@@ -406,7 +416,8 @@ func TestSearch_PromoteOnlyOnGateWin(t *testing.T) {
 }
 
 func TestSearch_FastRollbackPreservesBaselinePath(t *testing.T) {
-	ctx := context.Background()
+	t.Parallel()
+	ctx := t.Context()
 	store := newTestStore(t, false)
 
 	del, ok := store.delegate.(*delegate.LibSQLDelegate)
@@ -492,7 +503,8 @@ func TestSearch_FastRollbackPreservesBaselinePath(t *testing.T) {
 }
 
 func TestUpdateRetrievalPolicy_PersistFailuresDoNotBlockTransitions(t *testing.T) {
-	ctx := context.Background()
+	t.Parallel()
+	ctx := t.Context()
 	store := newTestStore(t, true)
 
 	baseDelegate := store.delegate
@@ -530,7 +542,8 @@ func TestUpdateRetrievalPolicy_PersistFailuresDoNotBlockTransitions(t *testing.T
 }
 
 func TestSearch_ConcurrentRetrievalPolicyUpdates(t *testing.T) {
-	ctx := context.Background()
+	t.Parallel()
+	ctx := t.Context()
 	store := newTestStore(t, true)
 
 	require.NoError(t, store.StoreRecall(ctx, &memory.RecallItem{
@@ -576,7 +589,8 @@ func TestSearch_ConcurrentRetrievalPolicyUpdates(t *testing.T) {
 }
 
 func TestContextUsage(t *testing.T) {
-	ctx := context.Background()
+	t.Parallel()
+	ctx := t.Context()
 	store := newTestStore(t, false)
 
 	// Empty system — should be normal pressure
@@ -597,7 +611,8 @@ func TestContextUsage(t *testing.T) {
 }
 
 func TestContextUsage_RecallTokenEstimateUsesContent(t *testing.T) {
-	ctx := context.Background()
+	t.Parallel()
+	ctx := t.Context()
 	store := newTestStore(t, false)
 
 	contentA := strings.Repeat("schedule follow-up reminder ", 80)
@@ -631,7 +646,8 @@ func TestContextUsage_RecallTokenEstimateUsesContent(t *testing.T) {
 }
 
 func TestContextUsage_PressureLevels(t *testing.T) {
-	ctx := context.Background()
+	t.Parallel()
+	ctx := t.Context()
 
 	del, err := delegate.NewLibSQLInMemory()
 	require.NoError(t, err)
@@ -656,6 +672,7 @@ func TestContextUsage_PressureLevels(t *testing.T) {
 }
 
 func TestShouldOffload(t *testing.T) {
+	t.Parallel()
 	store := &MemoryStore{cfg: Config{OffloadThresholdTokens: 100}}
 
 	assert.False(t, store.ShouldOffload("short"))
@@ -663,7 +680,8 @@ func TestShouldOffload(t *testing.T) {
 }
 
 func TestOffloadToolResult(t *testing.T) {
-	ctx := context.Background()
+	t.Parallel()
+	ctx := t.Context()
 	store := newTestStore(t, false)
 
 	largeContent := strings.Repeat("This is a large tool result that should be offloaded. ", 20)
@@ -682,7 +700,8 @@ func TestOffloadToolResult(t *testing.T) {
 }
 
 func TestStoreSummary(t *testing.T) {
-	ctx := context.Background()
+	t.Parallel()
+	ctx := t.Context()
 	store := newTestStore(t, false)
 
 	summary := &memory.MemorySummary{
@@ -699,7 +718,8 @@ func TestStoreSummary(t *testing.T) {
 }
 
 func TestDeleteRecall_CascadesArchival(t *testing.T) {
-	ctx := context.Background()
+	t.Parallel()
+	ctx := t.Context()
 	store := newTestStore(t, true)
 
 	// Store archival content (creates recall item + archival chunks)
@@ -726,6 +746,7 @@ func TestDeleteRecall_CascadesArchival(t *testing.T) {
 // --- Retrieval pipeline unit tests ---
 
 func TestCosineSimilarity(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		a, b     memory.Embedding
@@ -747,6 +768,7 @@ func TestCosineSimilarity(t *testing.T) {
 }
 
 func TestRRF_MergesTwoSets(t *testing.T) {
+	t.Parallel()
 	idA, idB, idC := ids.New(), ids.New(), ids.New()
 	set1 := []memory.SearchResult{
 		{ID: idA, Content: "a", Score: 1.0},
@@ -764,7 +786,10 @@ func TestRRF_MergesTwoSets(t *testing.T) {
 }
 
 func TestRecencyDecay(t *testing.T) {
+	t.Parallel(
 	// 0 hours age → decay = 1.0
+	)
+
 	assert.InDelta(t, 1.0, RecencyDecay(0, 168), 0.001)
 
 	// 168 hours (1 half-life) → decay = 0.5
@@ -775,6 +800,7 @@ func TestRecencyDecay(t *testing.T) {
 }
 
 func TestApplyRecencyDecay_ReordersByAge(t *testing.T) {
+	t.Parallel()
 	now := time.Now()
 	idOld, idNew := ids.New(), ids.New()
 

@@ -5,6 +5,7 @@ import (
 )
 
 func TestLogLevelFiltering(t *testing.T) {
+	t.Parallel()
 	initialLevel := GetLevel()
 	defer SetLevel(initialLevel)
 
@@ -45,6 +46,7 @@ func TestLogLevelFiltering(t *testing.T) {
 }
 
 func TestLoggerWithComponent(t *testing.T) {
+	t.Parallel()
 	initialLevel := GetLevel()
 	defer SetLevel(initialLevel)
 
@@ -81,6 +83,7 @@ func TestLoggerWithComponent(t *testing.T) {
 }
 
 func TestLogLevels(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name  string
 		level LogLevel
@@ -103,6 +106,7 @@ func TestLogLevels(t *testing.T) {
 }
 
 func TestSetGetLevel(t *testing.T) {
+	t.Parallel()
 	initialLevel := GetLevel()
 	defer SetLevel(initialLevel)
 
@@ -117,6 +121,7 @@ func TestSetGetLevel(t *testing.T) {
 }
 
 func TestLoggerHelperFunctions(t *testing.T) {
+	t.Parallel()
 	initialLevel := GetLevel()
 	defer SetLevel(initialLevel)
 

@@ -54,6 +54,7 @@ func (m *llmMapMockModel) Provider() string { return "mock" }
 func (m *llmMapMockModel) Model() string    { return "mock-llm-map" }
 
 func TestLLMMapTool_Execute_Success(t *testing.T) {
+	t.Parallel()
 	model := &llmMapMockModel{
 		responses: []string{
 			`{"label":"alpha","priority":1}`,
@@ -62,7 +63,7 @@ func TestLLMMapTool_Execute_Success(t *testing.T) {
 	}
 	tool := NewLLMMapTool(model, "mock-llm-map")
 
-	result := tool.Execute(context.Background(), map[string]interface{}{
+	result := tool.Execute(t.Context(), map[string]interface{}{
 		"instruction": "Convert item to {label, priority}",
 		"items": []interface{}{
 			map[string]interface{}{"name": "A"},
@@ -90,12 +91,13 @@ func TestLLMMapTool_Execute_Success(t *testing.T) {
 }
 
 func TestLLMMapTool_Execute_SchemaValidationFailure(t *testing.T) {
+	t.Parallel()
 	model := &llmMapMockModel{
 		responses: []string{`{"only":"value"}`},
 	}
 	tool := NewLLMMapTool(model, "mock-llm-map")
 
-	result := tool.Execute(context.Background(), map[string]interface{}{
+	result := tool.Execute(t.Context(), map[string]interface{}{
 		"instruction": "Return normalized object",
 		"items":       []interface{}{map[string]interface{}{"name": "x"}},
 		"output_schema": map[string]interface{}{

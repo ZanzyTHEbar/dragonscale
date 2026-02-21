@@ -7,24 +7,30 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestNewObservation_ThreeDateModel(t *testing.T) {
+	t.Parallel()
 	ref := time.Date(2026, 2, 16, 10, 0, 0, 0, time.UTC)
 	obs := time.Date(2026, 2, 18, 14, 30, 0, 0, time.UTC)
 
 	o := NewObservation("User prefers Go over Rust", PriorityNotable, ref, obs)
 
-	assert.Equal(t, "User prefers Go over Rust", o.Content)
-	assert.Equal(t, PriorityNotable, o.Priority)
-	assert.Equal(t, ref.Unix(), o.ReferencedAt)
-	assert.Equal(t, obs.Unix(), o.ObservedAt)
-	assert.Equal(t, "2 days ago", o.RelativeDate)
+	assert.Empty(t, cmp.Diff(Observation{
+		Content:      "User prefers Go over Rust",
+		Priority:     PriorityNotable,
+		ObservedAt:   obs.Unix(),
+		ReferencedAt: ref.Unix(),
+		RelativeDate: "2 days ago",
+	}, o))
 }
 
 func TestRelativeDate(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 2, 18, 14, 0, 0, 0, time.UTC)
 
 	tests := []struct {
@@ -53,6 +59,7 @@ func TestRelativeDate(t *testing.T) {
 }
 
 func TestPriorityEmoji(t *testing.T) {
+	t.Parallel()
 	assert.Equal(t, "🔴", PriorityCritical.Emoji())
 	assert.Equal(t, "🟡", PriorityNotable.Emoji())
 	assert.Equal(t, "🔵", PriorityInformational.Emoji())
@@ -60,6 +67,7 @@ func TestPriorityEmoji(t *testing.T) {
 }
 
 func TestFormatBlock(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 2, 18, 14, 30, 0, 0, time.UTC)
 	obs := []Observation{
 		NewObservation("Decision: use SQLite", PriorityCritical, now, now),
@@ -75,11 +83,13 @@ func TestFormatBlock(t *testing.T) {
 }
 
 func TestFormatBlock_Empty(t *testing.T) {
+	t.Parallel()
 	assert.Equal(t, "", FormatBlock(nil))
 	assert.Equal(t, "", FormatBlock([]Observation{}))
 }
 
 func TestMarshalUnmarshalRoundTrip(t *testing.T) {
+	t.Parallel()
 	now := time.Now()
 	obs := []Observation{
 		NewObservation("Fact A", PriorityCritical, now, now),
@@ -93,23 +103,25 @@ func TestMarshalUnmarshalRoundTrip(t *testing.T) {
 	parsed, err := UnmarshalObservations(data)
 	require.NoError(t, err)
 	assert.Len(t, parsed, 2)
-	assert.Equal(t, "Fact A", parsed[0].Content)
-	assert.Equal(t, PriorityCritical, parsed[0].Priority)
+	assert.Empty(t, cmp.Diff(obs[0], parsed[0]))
 }
 
 func TestUnmarshalObservations_Empty(t *testing.T) {
+	t.Parallel()
 	obs, err := UnmarshalObservations("")
 	assert.NoError(t, err)
 	assert.Nil(t, obs)
 }
 
 func TestEstimateTokens(t *testing.T) {
+	t.Parallel()
 	tokens := EstimateTokens("Hello, world!")
 	assert.True(t, tokens > 0)
 	assert.True(t, tokens < 20)
 }
 
 func TestParseObservations(t *testing.T) {
+	t.Parallel()
 	now := time.Now()
 	response := `critical|User decided to migrate to SQLite
 notable|Prefers hexagonal architecture
@@ -119,13 +131,31 @@ notable|`
 
 	obs := parseObservations(response, now)
 	assert.Len(t, obs, 3)
-	assert.Equal(t, PriorityCritical, obs[0].Priority)
-	assert.Equal(t, "User decided to migrate to SQLite", obs[0].Content)
-	assert.Equal(t, PriorityNotable, obs[1].Priority)
-	assert.Equal(t, PriorityInformational, obs[2].Priority)
+	assert.Empty(t, cmp.Diff(Observation{
+		Content:      "User decided to migrate to SQLite",
+		Priority:     PriorityCritical,
+		ObservedAt:   now.Unix(),
+		ReferencedAt: now.Unix(),
+		RelativeDate: relativeDate(now, now),
+	}, obs[0]))
+	assert.Empty(t, cmp.Diff(Observation{
+		Content:      "Prefers hexagonal architecture",
+		Priority:     PriorityNotable,
+		ObservedAt:   now.Unix(),
+		ReferencedAt: now.Unix(),
+		RelativeDate: relativeDate(now, now),
+	}, obs[1]))
+	assert.Empty(t, cmp.Diff(Observation{
+		Content:      "Uses VS Code as primary editor",
+		Priority:     PriorityInformational,
+		ObservedAt:   now.Unix(),
+		ReferencedAt: now.Unix(),
+		RelativeDate: relativeDate(now, now),
+	}, obs[2]))
 }
 
 func TestObserver_ShouldObserve(t *testing.T) {
+	t.Parallel()
 	mockModel := func(_ context.Context, _ string) (string, error) {
 		return "", nil
 	}
@@ -140,6 +170,7 @@ func TestObserver_ShouldObserve(t *testing.T) {
 }
 
 func TestObserver_Observe(t *testing.T) {
+	t.Parallel()
 	mockModel := func(_ context.Context, prompt string) (string, error) {
 		return "critical|Important decision made\nnotable|User preference noted", nil
 	}
@@ -151,13 +182,14 @@ func TestObserver_Observe(t *testing.T) {
 		{Role: "assistant", Content: "Good choice for embedded use cases"},
 	}
 
-	obs, err := o.Observe(context.Background(), msgs, nil)
+	obs, err := o.Observe(t.Context(), msgs, nil)
 	require.NoError(t, err)
 	assert.Len(t, obs, 2)
 	assert.Equal(t, PriorityCritical, obs[0].Priority)
 }
 
 func TestReflector_ShouldReflect(t *testing.T) {
+	t.Parallel()
 	mockModel := func(_ context.Context, _ string) (string, error) {
 		return "", nil
 	}
@@ -175,6 +207,7 @@ func TestReflector_ShouldReflect(t *testing.T) {
 }
 
 func TestReflector_Reflect(t *testing.T) {
+	t.Parallel()
 	mockModel := func(_ context.Context, prompt string) (string, error) {
 		return "KEEP 0\nDROP 1\nKEEP 2", nil
 	}
@@ -188,7 +221,7 @@ func TestReflector_Reflect(t *testing.T) {
 		NewObservation("Notable thing", PriorityNotable, now, now),
 	}
 
-	kept, err := r.Reflect(context.Background(), obs)
+	kept, err := r.Reflect(t.Context(), obs)
 	require.NoError(t, err)
 	assert.Len(t, kept, 2)
 	assert.Equal(t, "Critical fact", kept[0].Content)
@@ -196,6 +229,7 @@ func TestReflector_Reflect(t *testing.T) {
 }
 
 func TestReflector_ReflectFallbackKeepsCritical(t *testing.T) {
+	t.Parallel()
 	mockModel := func(_ context.Context, _ string) (string, error) {
 		return "garbage output", nil
 	}
@@ -208,13 +242,14 @@ func TestReflector_ReflectFallbackKeepsCritical(t *testing.T) {
 		NewObservation("Can drop", PriorityInformational, now, now),
 	}
 
-	kept, err := r.Reflect(context.Background(), obs)
+	kept, err := r.Reflect(t.Context(), obs)
 	require.NoError(t, err)
 	assert.Len(t, kept, 1)
 	assert.Equal(t, "Must keep", kept[0].Content)
 }
 
 func TestParsePriority(t *testing.T) {
+	t.Parallel()
 	assert.Equal(t, PriorityCritical, parsePriority("critical"))
 	assert.Equal(t, PriorityCritical, parsePriority("CRITICAL"))
 	assert.Equal(t, PriorityNotable, parsePriority("notable"))
@@ -223,6 +258,7 @@ func TestParsePriority(t *testing.T) {
 }
 
 func TestParseKeptIndices(t *testing.T) {
+	t.Parallel()
 	now := time.Now()
 	obs := []Observation{
 		NewObservation("A", PriorityCritical, now, now),

@@ -1,8 +1,9 @@
 package providertests
 
 import (
-	jsonv2 "github.com/go-json-experiment/json"
 	"testing"
+
+	jsonv2 "github.com/go-json-experiment/json"
 
 	"charm.land/fantasy"
 	"charm.land/fantasy/providers/anthropic"
@@ -14,6 +15,7 @@ import (
 )
 
 func TestProviderRegistry_Serialization_OpenAIOptions(t *testing.T) {
+	t.Parallel()
 	msg := fantasy.Message{
 		Role: fantasy.MessageRoleUser,
 		Content: []fantasy.MessagePart{
@@ -52,7 +54,10 @@ func TestProviderRegistry_Serialization_OpenAIOptions(t *testing.T) {
 }
 
 func TestProviderRegistry_Serialization_OpenAIResponses(t *testing.T) {
+	t.Parallel(
 	// Use ResponsesProviderOptions in provider options
+	)
+
 	msg := fantasy.Message{
 		Role: fantasy.MessageRoleUser,
 		Content: []fantasy.MessagePart{
@@ -95,6 +100,7 @@ func TestProviderRegistry_Serialization_OpenAIResponses(t *testing.T) {
 }
 
 func TestProviderRegistry_Serialization_OpenAIResponsesReasoningMetadata(t *testing.T) {
+	t.Parallel()
 	resp := fantasy.Response{
 		Content: []fantasy.Content{
 			fantasy.TextContent{
@@ -144,6 +150,7 @@ func TestProviderRegistry_Serialization_OpenAIResponsesReasoningMetadata(t *test
 }
 
 func TestProviderRegistry_Serialization_AnthropicOptions(t *testing.T) {
+	t.Parallel()
 	sendReasoning := true
 	msg := fantasy.Message{
 		Role: fantasy.MessageRoleUser,
@@ -172,6 +179,7 @@ func TestProviderRegistry_Serialization_AnthropicOptions(t *testing.T) {
 }
 
 func TestProviderRegistry_Serialization_GoogleOptions(t *testing.T) {
+	t.Parallel()
 	msg := fantasy.Message{
 		Role: fantasy.MessageRoleUser,
 		Content: []fantasy.MessagePart{
@@ -200,6 +208,7 @@ func TestProviderRegistry_Serialization_GoogleOptions(t *testing.T) {
 }
 
 func TestProviderRegistry_Serialization_OpenRouterOptions(t *testing.T) {
+	t.Parallel()
 	includeUsage := true
 	msg := fantasy.Message{
 		Role: fantasy.MessageRoleUser,
@@ -231,6 +240,7 @@ func TestProviderRegistry_Serialization_OpenRouterOptions(t *testing.T) {
 }
 
 func TestProviderRegistry_Serialization_OpenAICompatOptions(t *testing.T) {
+	t.Parallel()
 	effort := openai.ReasoningEffortHigh
 	msg := fantasy.Message{
 		Role: fantasy.MessageRoleUser,
@@ -262,7 +272,10 @@ func TestProviderRegistry_Serialization_OpenAICompatOptions(t *testing.T) {
 }
 
 func TestProviderRegistry_MultiProvider(t *testing.T) {
+	t.Parallel(
 	// Test with multiple providers in one message
+	)
+
 	sendReasoning := true
 	msg := fantasy.Message{
 		Role: fantasy.MessageRoleUser,
@@ -299,6 +312,7 @@ func TestProviderRegistry_MultiProvider(t *testing.T) {
 }
 
 func TestProviderRegistry_ErrorHandling(t *testing.T) {
+	t.Parallel()
 	t.Run("unknown provider type", func(t *testing.T) {
 		invalidJSON := `{
 			"role": "user",
@@ -333,8 +347,11 @@ func TestProviderRegistry_ErrorHandling(t *testing.T) {
 }
 
 func TestProviderRegistry_AllTypesRegistered(t *testing.T) {
+	t.Parallel(
 	// Verify all expected provider types are registered
 	// We test that unmarshaling with proper type IDs doesn't fail with "unknown provider data type"
+	)
+
 	tests := []struct {
 		name         string
 		providerName string

@@ -27,18 +27,22 @@ func errorModel(_ context.Context, _, _ string) (string, uint32, error) {
 }
 
 func TestEngine_SmallContext_AnswerDirectly(t *testing.T) {
+	t.Parallel()
 	cfg := rlm.DefaultEngineConfig()
 	cfg.Strategy.DirectThreshold = 10000 // larger than our test context
 	engine := rlm.NewEngine(cfg, nil, echoModel)
 
-	answer, tokens, err := engine.Answer(context.Background(), "sess", "what?", "short context")
+	answer, tokens, err := engine.Answer(t.Context(), "sess", "what?", "short context")
 	require.NoError(t, err)
 	assert.NotEmpty(t, answer)
 	assert.Greater(t, tokens, uint32(0))
 }
 
 func TestEngine_LargeContext_Partitions(t *testing.T) {
+	t.Parallel(
 	// Force partitioning by setting DirectThreshold very low.
+	)
+
 	cfg := rlm.DefaultEngineConfig()
 	cfg.Strategy.DirectThreshold = 10
 	cfg.Strategy.DefaultPartitionK = 2
@@ -48,13 +52,14 @@ func TestEngine_LargeContext_Partitions(t *testing.T) {
 	largeCtx := strings.Repeat("hello world ", 100) // ~1200 bytes
 	engine := rlm.NewEngine(cfg, nil, echoModel)
 
-	answer, tokens, err := engine.Answer(context.Background(), "sess", "summarise", largeCtx)
+	answer, tokens, err := engine.Answer(t.Context(), "sess", "summarise", largeCtx)
 	require.NoError(t, err)
 	assert.NotEmpty(t, answer)
 	assert.Greater(t, tokens, uint32(0))
 }
 
 func TestEngine_MaxDepthTerminates(t *testing.T) {
+	t.Parallel()
 	cfg := rlm.DefaultEngineConfig()
 	cfg.Strategy.DirectThreshold = 0 // always partition
 	cfg.Strategy.MaxDepth = 3
@@ -64,20 +69,22 @@ func TestEngine_MaxDepthTerminates(t *testing.T) {
 	engine := rlm.NewEngine(cfg, nil, echoModel)
 
 	// Should terminate without stack overflow.
-	_, _, err := engine.Answer(context.Background(), "sess", "any", content)
+	_, _, err := engine.Answer(t.Context(), "sess", "any", content)
 	assert.NoError(t, err)
 }
 
 func TestEngine_ModelError_Propagates(t *testing.T) {
+	t.Parallel()
 	cfg := rlm.DefaultEngineConfig()
 	cfg.Strategy.DirectThreshold = 10000
 	engine := rlm.NewEngine(cfg, nil, errorModel)
 
-	_, _, err := engine.Answer(context.Background(), "sess", "q", "ctx")
+	_, _, err := engine.Answer(t.Context(), "sess", "q", "ctx")
 	assert.Error(t, err)
 }
 
 func TestEngine_GrepQuery_NarrowsContext(t *testing.T) {
+	t.Parallel()
 	cfg := rlm.DefaultEngineConfig()
 	cfg.Strategy.DirectThreshold = 10
 	cfg.Strategy.DefaultPartitionK = 2
@@ -88,14 +95,15 @@ func TestEngine_GrepQuery_NarrowsContext(t *testing.T) {
 	content := "foo\nfunc myFunction() {}\nbar\nbaz"
 	engine := rlm.NewEngine(cfg, nil, echoModel)
 
-	answer, _, err := engine.Answer(context.Background(), "sess", "find func definition", content)
+	answer, _, err := engine.Answer(t.Context(), "sess", "find func definition", content)
 	require.NoError(t, err)
 	assert.NotEmpty(t, answer)
 }
 
 func TestFanOut_AllPartitions_Processed(t *testing.T) {
+	t.Parallel()
 	partitions := []string{"A", "B", "C", "D"}
-	results := rlm.FanOut(context.Background(), partitions, 2,
+	results := rlm.FanOut(t.Context(), partitions, 2,
 		func(_ context.Context, idx int, key, part string) rlm.PartitionResult {
 			return rlm.PartitionResult{PartitionIdx: idx, ContextKey: key, Answer: "ans-" + part, Tokens: 1}
 		})
@@ -108,11 +116,12 @@ func TestFanOut_AllPartitions_Processed(t *testing.T) {
 }
 
 func TestFanOut_UnboundedConcurrency(t *testing.T) {
+	t.Parallel()
 	parts := make([]string, 20)
 	for i := range parts {
 		parts[i] = fmt.Sprintf("part-%d", i)
 	}
-	results := rlm.FanOut(context.Background(), parts, 0,
+	results := rlm.FanOut(t.Context(), parts, 0,
 		func(_ context.Context, idx int, key, part string) rlm.PartitionResult {
 			return rlm.PartitionResult{PartitionIdx: idx, Answer: part, Tokens: 2}
 		})
@@ -121,7 +130,8 @@ func TestFanOut_UnboundedConcurrency(t *testing.T) {
 }
 
 func TestFanOut_Empty(t *testing.T) {
-	results := rlm.FanOut(context.Background(), nil, 4,
+	t.Parallel()
+	results := rlm.FanOut(t.Context(), nil, 4,
 		func(_ context.Context, _ int, _, _ string) rlm.PartitionResult {
 			return rlm.PartitionResult{}
 		})
@@ -129,6 +139,7 @@ func TestFanOut_Empty(t *testing.T) {
 }
 
 func TestMergeResults_Deduplication(t *testing.T) {
+	t.Parallel()
 	results := []rlm.PartitionResult{
 		{Answer: "alpha"},
 		{Answer: "beta"},
@@ -140,6 +151,7 @@ func TestMergeResults_Deduplication(t *testing.T) {
 }
 
 func TestMergeResults_WithErrors(t *testing.T) {
+	t.Parallel()
 	results := []rlm.PartitionResult{
 		{Answer: "good"},
 		{Err: fmt.Errorf("failed"), Answer: "should be skipped"},
@@ -149,6 +161,7 @@ func TestMergeResults_WithErrors(t *testing.T) {
 }
 
 func TestStrategyPlanner_SmallContext_OpFinal(t *testing.T) {
+	t.Parallel()
 	cfg := rlm.DefaultStrategyConfig()
 	cfg.DirectThreshold = 1000
 	planner := rlm.NewStrategyPlanner(cfg)
@@ -158,6 +171,7 @@ func TestStrategyPlanner_SmallContext_OpFinal(t *testing.T) {
 }
 
 func TestStrategyPlanner_MaxDepth_OpFinal(t *testing.T) {
+	t.Parallel()
 	cfg := rlm.DefaultStrategyConfig()
 	cfg.MaxDepth = 3
 	planner := rlm.NewStrategyPlanner(cfg)
@@ -167,6 +181,7 @@ func TestStrategyPlanner_MaxDepth_OpFinal(t *testing.T) {
 }
 
 func TestStrategyPlanner_KeywordQuery_OpGrep(t *testing.T) {
+	t.Parallel()
 	planner := rlm.NewStrategyPlanner(rlm.DefaultStrategyConfig())
 
 	// "find" prefix should trigger grep.
@@ -176,6 +191,7 @@ func TestStrategyPlanner_KeywordQuery_OpGrep(t *testing.T) {
 }
 
 func TestStrategyPlanner_LargeContext_OpPartition(t *testing.T) {
+	t.Parallel()
 	planner := rlm.NewStrategyPlanner(rlm.DefaultStrategyConfig())
 
 	op := planner.PlanNext(100000, "summarise everything", 0)

@@ -26,7 +26,7 @@ func mustNewAgentLoop(t *testing.T, cfg *config.Config, msgBus *bus.MessageBus, 
 	if cfg != nil && cfg.Memory.DBPath == "" && strings.TrimSpace(cfg.Agents.Defaults.Workspace) != "" {
 		cfg.Memory.DBPath = filepath.Join(cfg.Agents.Defaults.Workspace, "agent-loop-test.db")
 	}
-	al, err := NewAgentLoop(context.Background(), cfg, msgBus, model)
+	al, err := NewAgentLoop(t.Context(), cfg, msgBus, model)
 	if err != nil {
 		t.Fatalf("NewAgentLoop: %v", err)
 	}
@@ -73,6 +73,7 @@ func (m *mockLanguageModel) Provider() string { return "mock" }
 func (m *mockLanguageModel) Model() string    { return "mock-model" }
 
 func TestContinuityKeepCount_UsesConfiguredPolicy(t *testing.T) {
+	t.Parallel()
 	buildHistory := func(n int, content string) []messages.Message {
 		history := make([]messages.Message, 0, n)
 		for i := 0; i < n; i++ {
@@ -113,6 +114,7 @@ func TestContinuityKeepCount_UsesConfiguredPolicy(t *testing.T) {
 }
 
 func TestPrepareRuntimeState_ConcurrentSameSessionUsesSingleConversation(t *testing.T) {
+	t.Parallel()
 	tmpDir, err := os.MkdirTemp("", "agent-test-*")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
@@ -133,7 +135,7 @@ func TestPrepareRuntimeState_ConcurrentSameSessionUsesSingleConversation(t *test
 	msgBus := bus.NewMessageBus()
 	model := newMockLanguageModel("")
 	al := mustNewAgentLoop(t, cfg, msgBus, model)
-	beforeConversations, err := al.queries.ListAgentConversations(context.Background(), memsqlc.ListAgentConversationsParams{
+	beforeConversations, err := al.queries.ListAgentConversations(t.Context(), memsqlc.ListAgentConversationsParams{
 		Limit: 10000,
 	})
 	if err != nil {
@@ -152,7 +154,7 @@ func TestPrepareRuntimeState_ConcurrentSameSessionUsesSingleConversation(t *test
 		go func() {
 			defer wg.Done()
 			<-start
-			conversationID, _, prepareErr := al.prepareRuntimeState(context.Background(), "race-session")
+			conversationID, _, prepareErr := al.prepareRuntimeState(t.Context(), "race-session")
 			if prepareErr != nil {
 				errorsCh <- prepareErr
 				return
@@ -180,7 +182,7 @@ func TestPrepareRuntimeState_ConcurrentSameSessionUsesSingleConversation(t *test
 		t.Fatalf("expected one conversation id, got %d (%v)", len(uniqueConversationIDs), uniqueConversationIDs)
 	}
 
-	conversations, err := al.queries.ListAgentConversations(context.Background(), memsqlc.ListAgentConversationsParams{
+	conversations, err := al.queries.ListAgentConversations(t.Context(), memsqlc.ListAgentConversationsParams{
 		Limit: 10000,
 	})
 	if err != nil {
@@ -192,7 +194,10 @@ func TestPrepareRuntimeState_ConcurrentSameSessionUsesSingleConversation(t *test
 }
 
 func TestRecordLastChannel(t *testing.T) {
+	t.Parallel(
 	// Create temp workspace
+	)
+
 	tmpDir, err := os.MkdirTemp("", "agent-test-*")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
@@ -218,7 +223,7 @@ func TestRecordLastChannel(t *testing.T) {
 
 	// Test RecordLastChannel
 	testChannel := "test-channel"
-	err = al.RecordLastChannel(context.Background(), testChannel)
+	err = al.RecordLastChannel(t.Context(), testChannel)
 	if err != nil {
 		t.Fatalf("RecordLastChannel failed: %v", err)
 	}
@@ -237,7 +242,10 @@ func TestRecordLastChannel(t *testing.T) {
 }
 
 func TestRecordLastChatID(t *testing.T) {
+	t.Parallel(
 	// Create temp workspace
+	)
+
 	tmpDir, err := os.MkdirTemp("", "agent-test-*")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
@@ -263,7 +271,7 @@ func TestRecordLastChatID(t *testing.T) {
 
 	// Test RecordLastChatID
 	testChatID := "test-chat-id-123"
-	err = al.RecordLastChatID(context.Background(), testChatID)
+	err = al.RecordLastChatID(t.Context(), testChatID)
 	if err != nil {
 		t.Fatalf("RecordLastChatID failed: %v", err)
 	}
@@ -282,7 +290,10 @@ func TestRecordLastChatID(t *testing.T) {
 }
 
 func TestNewAgentLoop_StateInitialized(t *testing.T) {
+	t.Parallel(
 	// Create temp workspace
+	)
+
 	tmpDir, err := os.MkdirTemp("", "agent-test-*")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
@@ -313,6 +324,7 @@ func TestNewAgentLoop_StateInitialized(t *testing.T) {
 }
 
 func TestNewAgentLoop_UnifiedKernelDependenciesInitialized(t *testing.T) {
+	t.Parallel()
 	tmpDir, err := os.MkdirTemp("", "agent-test-*")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
@@ -344,6 +356,7 @@ func TestNewAgentLoop_UnifiedKernelDependenciesInitialized(t *testing.T) {
 
 // TestToolRegistry_ToolRegistration verifies tools can be registered and retrieved
 func TestToolRegistry_ToolRegistration(t *testing.T) {
+	t.Parallel()
 	tmpDir, err := os.MkdirTemp("", "agent-test-*")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
@@ -390,6 +403,7 @@ func TestToolRegistry_ToolRegistration(t *testing.T) {
 
 // TestToolContext_Updates verifies tool context is updated with channel/chatID
 func TestToolContext_Updates(t *testing.T) {
+	t.Parallel()
 	tmpDir, err := os.MkdirTemp("", "agent-test-*")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
@@ -421,6 +435,7 @@ func TestToolContext_Updates(t *testing.T) {
 
 // TestToolRegistry_GetDefinitions verifies tool definitions can be retrieved
 func TestToolRegistry_GetDefinitions(t *testing.T) {
+	t.Parallel()
 	tmpDir, err := os.MkdirTemp("", "agent-test-*")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
@@ -465,6 +480,7 @@ func TestToolRegistry_GetDefinitions(t *testing.T) {
 
 // TestAgentLoop_GetStartupInfo verifies startup info contains tools
 func TestAgentLoop_GetStartupInfo(t *testing.T) {
+	t.Parallel()
 	tmpDir, err := os.MkdirTemp("", "agent-test-*")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
@@ -512,6 +528,7 @@ func TestAgentLoop_GetStartupInfo(t *testing.T) {
 
 // TestAgentLoop_Stop verifies Stop() sets running to false
 func TestAgentLoop_Stop(t *testing.T) {
+	t.Parallel()
 	tmpDir, err := os.MkdirTemp("", "agent-test-*")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
@@ -619,6 +636,7 @@ const responseTimeout = 3 * time.Second
 
 // TestToolResult_SilentToolDoesNotSendUserMessage verifies silent tools don't trigger outbound
 func TestToolResult_SilentToolDoesNotSendUserMessage(t *testing.T) {
+	t.Parallel()
 	tmpDir, err := os.MkdirTemp("", "agent-test-*")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
@@ -642,7 +660,7 @@ func TestToolResult_SilentToolDoesNotSendUserMessage(t *testing.T) {
 	helper := testHelper{al: al}
 
 	// ReadFileTool returns SilentResult, which should not send user message
-	ctx := context.Background()
+	ctx := t.Context()
 	msg := bus.InboundMessage{
 		Channel:    "test",
 		SenderID:   "user1",
@@ -661,6 +679,7 @@ func TestToolResult_SilentToolDoesNotSendUserMessage(t *testing.T) {
 
 // TestToolResult_UserFacingToolDoesSendMessage verifies user-facing tools trigger outbound
 func TestToolResult_UserFacingToolDoesSendMessage(t *testing.T) {
+	t.Parallel()
 	tmpDir, err := os.MkdirTemp("", "agent-test-*")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
@@ -684,7 +703,7 @@ func TestToolResult_UserFacingToolDoesSendMessage(t *testing.T) {
 	helper := testHelper{al: al}
 
 	// ExecTool returns UserResult, which should send user message
-	ctx := context.Background()
+	ctx := t.Context()
 	msg := bus.InboundMessage{
 		Channel:    "test",
 		SenderID:   "user1",
@@ -702,6 +721,7 @@ func TestToolResult_UserFacingToolDoesSendMessage(t *testing.T) {
 }
 
 func TestResolveFinalContent_RecoversFromPriorStepText(t *testing.T) {
+	t.Parallel()
 	al := &AgentLoop{}
 	steps := []fantasy.StepResult{
 		{
@@ -730,6 +750,7 @@ func TestResolveFinalContent_RecoversFromPriorStepText(t *testing.T) {
 }
 
 func TestResolveFinalContent_ErrorsWhenNoTextExists(t *testing.T) {
+	t.Parallel()
 	al := &AgentLoop{}
 	steps := []fantasy.StepResult{
 		{
@@ -748,6 +769,7 @@ func TestResolveFinalContent_ErrorsWhenNoTextExists(t *testing.T) {
 }
 
 func TestResolveFinalContent_RecoversFromToolResultText(t *testing.T) {
+	t.Parallel()
 	al := &AgentLoop{}
 	steps := []fantasy.StepResult{
 		{
@@ -776,6 +798,7 @@ func TestResolveFinalContent_RecoversFromToolResultText(t *testing.T) {
 // TestForceCompression_PersistsProvenance verifies that emergency compression
 // cycles persist provenance metadata to the audit log for postmortem.
 func TestForceCompression_PersistsProvenance(t *testing.T) {
+	t.Parallel()
 	tmpDir, err := os.MkdirTemp("", "agent-provenance-test-*")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
@@ -827,7 +850,7 @@ func TestForceCompression_PersistsProvenance(t *testing.T) {
 		t.Fatalf("test precondition failed: token_estimate=%d threshold=%d", tokenEstimate, criticalThreshold)
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 	al.forceCompression(ctx, sessionKey, "", "")
 
 	del := al.MemoryDelegate()
@@ -872,6 +895,7 @@ func TestForceCompression_PersistsProvenance(t *testing.T) {
 }
 
 func TestPersistOversizedRecoveryRefs_CreatesRecoverableReferences(t *testing.T) {
+	t.Parallel()
 	tmpDir, err := os.MkdirTemp("", "agent-recovery-ref-test-*")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
@@ -904,7 +928,7 @@ func TestPersistOversizedRecoveryRefs_CreatesRecoverableReferences(t *testing.T)
 		},
 	}
 
-	refs, err := al.persistOversizedRecoveryRefs(context.Background(), "recovery-session", omitted)
+	refs, err := al.persistOversizedRecoveryRefs(t.Context(), "recovery-session", omitted)
 	if err != nil {
 		t.Fatalf("persistOversizedRecoveryRefs failed: %v", err)
 	}
@@ -919,7 +943,7 @@ func TestPersistOversizedRecoveryRefs_CreatesRecoverableReferences(t *testing.T)
 			return "recovery-session"
 		},
 	})
-	res := dagTool.Execute(context.Background(), map[string]interface{}{
+	res := dagTool.Execute(t.Context(), map[string]interface{}{
 		"node_id":     refs[0],
 		"session_key": "recovery-session",
 	})

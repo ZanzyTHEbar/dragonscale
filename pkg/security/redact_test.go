@@ -7,6 +7,7 @@ import (
 )
 
 func TestRedactor_APIKeys(t *testing.T) {
+	t.Parallel()
 	r := NewRedactor()
 	tests := []struct {
 		name  string
@@ -30,6 +31,7 @@ func TestRedactor_APIKeys(t *testing.T) {
 }
 
 func TestRedactor_Bearer(t *testing.T) {
+	t.Parallel()
 	r := NewRedactor()
 	input := "Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.xxxxx"
 	out := r.Redact(input)
@@ -37,6 +39,7 @@ func TestRedactor_Bearer(t *testing.T) {
 }
 
 func TestRedactor_JWT(t *testing.T) {
+	t.Parallel()
 	r := NewRedactor()
 	jwt := "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U"
 	out := r.Redact(jwt)
@@ -44,6 +47,7 @@ func TestRedactor_JWT(t *testing.T) {
 }
 
 func TestRedactor_PII(t *testing.T) {
+	t.Parallel()
 	r := NewRedactor()
 	tests := []struct {
 		name  string
@@ -64,6 +68,7 @@ func TestRedactor_PII(t *testing.T) {
 }
 
 func TestRedactor_SecretValues(t *testing.T) {
+	t.Parallel()
 	r := NewRedactor()
 	tests := []struct {
 		name  string
@@ -84,6 +89,7 @@ func TestRedactor_SecretValues(t *testing.T) {
 }
 
 func TestRedactor_SafeText(t *testing.T) {
+	t.Parallel()
 	r := NewRedactor()
 	safe := "This is a normal log message about processing 42 items."
 	assert.Equal(t, safe, r.Redact(safe))
@@ -91,6 +97,7 @@ func TestRedactor_SafeText(t *testing.T) {
 }
 
 func TestRedactor_RedactMap(t *testing.T) {
+	t.Parallel()
 	r := NewRedactor()
 	m := map[string]interface{}{
 		"command": "curl -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.xxxxxxxxxxxxxxxxxxxx.yyyyyyyy'",
@@ -109,6 +116,7 @@ func TestRedactor_RedactMap(t *testing.T) {
 }
 
 func TestMaskKey(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		input string
 		want  string

@@ -74,7 +74,7 @@ func newMapRuntimeForTest(t *testing.T, llm fantasy.LanguageModel, manager *Suba
 	t.Helper()
 	d, err := delegate.NewLibSQLInMemory()
 	require.NoError(t, err)
-	require.NoError(t, d.Init(context.Background()))
+	require.NoError(t, d.Init(t.Context()))
 	t.Cleanup(func() { _ = d.Close() })
 
 	return NewMapRuntime(d.Queries(), pkg.NAME, llm, "mock-map-llm", manager)
@@ -90,6 +90,7 @@ func decodeResultMap(t *testing.T, result *ToolResult) map[string]interface{} {
 }
 
 func TestLLMMap_WorkerJSONL_StatusAndRead(t *testing.T) {
+	t.Parallel()
 	model := &scriptedMapLLM{
 		responses: []scriptedMapLLMResponse{
 			{Text: `{"label":"alpha","priority":1}`},
@@ -102,7 +103,7 @@ func TestLLMMap_WorkerJSONL_StatusAndRead(t *testing.T) {
 	statusTool := NewMapRunStatusTool(runtime)
 	readTool := NewMapRunReadTool(runtime)
 
-	enqueue := decodeResultMap(t, mapTool.Execute(context.Background(), map[string]interface{}{
+	enqueue := decodeResultMap(t, mapTool.Execute(t.Context(), map[string]interface{}{
 		"instruction":    "normalize to {label, priority}",
 		"input_jsonl":    "{\"name\":\"a\"}\n{\"name\":\"b\"}",
 		"execution_mode": "worker",
@@ -111,14 +112,14 @@ func TestLLMMap_WorkerJSONL_StatusAndRead(t *testing.T) {
 	require.NotEmpty(t, runID)
 	assert.Equal(t, "worker", enqueue["execution_mode"])
 
-	status := decodeResultMap(t, statusTool.Execute(context.Background(), map[string]interface{}{
+	status := decodeResultMap(t, statusTool.Execute(t.Context(), map[string]interface{}{
 		"run_id":        runID,
 		"process_steps": float64(20),
 	}))
 	assert.Equal(t, mapRunStatusSucceeded, status["status"])
 	assert.EqualValues(t, 2, status["succeeded_items"])
 
-	readJSON := decodeResultMap(t, readTool.Execute(context.Background(), map[string]interface{}{
+	readJSON := decodeResultMap(t, readTool.Execute(t.Context(), map[string]interface{}{
 		"run_id": runID,
 		"limit":  float64(10),
 		"format": "json",
@@ -127,7 +128,7 @@ func TestLLMMap_WorkerJSONL_StatusAndRead(t *testing.T) {
 	require.True(t, ok)
 	require.Len(t, itemsAny, 2)
 
-	readJSONL := decodeResultMap(t, readTool.Execute(context.Background(), map[string]interface{}{
+	readJSONL := decodeResultMap(t, readTool.Execute(t.Context(), map[string]interface{}{
 		"run_id": runID,
 		"format": "jsonl",
 	}))
@@ -137,6 +138,7 @@ func TestLLMMap_WorkerJSONL_StatusAndRead(t *testing.T) {
 }
 
 func TestLLMMap_IdempotencyReuse(t *testing.T) {
+	t.Parallel()
 	model := &scriptedMapLLM{
 		responses: []scriptedMapLLMResponse{
 			{Text: `{"label":"alpha"}`},
@@ -153,14 +155,15 @@ func TestLLMMap_IdempotencyReuse(t *testing.T) {
 		"idempotency_key": "run-1",
 		"session_key":     "sess-a",
 	}
-	first := decodeResultMap(t, mapTool.Execute(context.Background(), args))
-	second := decodeResultMap(t, mapTool.Execute(context.Background(), args))
+	first := decodeResultMap(t, mapTool.Execute(t.Context(), args))
+	second := decodeResultMap(t, mapTool.Execute(t.Context(), args))
 
 	assert.Equal(t, first["run_id"], second["run_id"])
 	assert.Equal(t, true, second["idempotent_reuse"])
 }
 
 func TestLLMMap_IdempotencyReuse_Concurrent(t *testing.T) {
+	t.Parallel()
 	model := &scriptedMapLLM{
 		responses: []scriptedMapLLMResponse{
 			{Text: `{"label":"alpha"}`},
@@ -181,7 +184,7 @@ func TestLLMMap_IdempotencyReuse_Concurrent(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			<-start
-			result := mapTool.Execute(context.Background(), map[string]interface{}{
+			result := mapTool.Execute(t.Context(), map[string]interface{}{
 				"instruction":     "normalize",
 				"items":           []interface{}{map[string]interface{}{"name": "a"}},
 				"execution_mode":  "worker",
@@ -227,6 +230,7 @@ func TestLLMMap_IdempotencyReuse_Concurrent(t *testing.T) {
 }
 
 func TestLLMMap_InlineRetriesThenSucceeds(t *testing.T) {
+	t.Parallel()
 	model := &scriptedMapLLM{
 		responses: []scriptedMapLLMResponse{
 			{Err: fmt.Errorf("transient model outage")},
@@ -238,7 +242,7 @@ func TestLLMMap_InlineRetriesThenSucceeds(t *testing.T) {
 	mapTool.SetRuntime(runtime)
 	readTool := NewMapRunReadTool(runtime)
 
-	result := decodeResultMap(t, mapTool.Execute(context.Background(), map[string]interface{}{
+	result := decodeResultMap(t, mapTool.Execute(t.Context(), map[string]interface{}{
 		"instruction":    "normalize",
 		"items":          []interface{}{map[string]interface{}{"name": "retry"}},
 		"execution_mode": "inline",
@@ -248,7 +252,7 @@ func TestLLMMap_InlineRetriesThenSucceeds(t *testing.T) {
 	runID, _ := result["run_id"].(string)
 	require.NotEmpty(t, runID)
 
-	read := decodeResultMap(t, readTool.Execute(context.Background(), map[string]interface{}{
+	read := decodeResultMap(t, readTool.Execute(t.Context(), map[string]interface{}{
 		"run_id": runID,
 		"format": "json",
 	}))
@@ -261,6 +265,7 @@ func TestLLMMap_InlineRetriesThenSucceeds(t *testing.T) {
 }
 
 func TestLLMMap_InlineExhaustedRetriesFailsRun(t *testing.T) {
+	t.Parallel()
 	model := &scriptedMapLLM{
 		responses: []scriptedMapLLMResponse{
 			{Text: `not-json`},
@@ -271,7 +276,7 @@ func TestLLMMap_InlineExhaustedRetriesFailsRun(t *testing.T) {
 	mapTool := NewLLMMapTool(model, "mock-map-llm")
 	mapTool.SetRuntime(runtime)
 
-	payload := decodeResultMap(t, mapTool.Execute(context.Background(), map[string]interface{}{
+	payload := decodeResultMap(t, mapTool.Execute(t.Context(), map[string]interface{}{
 		"instruction":    "normalize",
 		"items":          []interface{}{map[string]interface{}{"name": "bad"}},
 		"execution_mode": "inline",
@@ -284,6 +289,7 @@ func TestLLMMap_InlineExhaustedRetriesFailsRun(t *testing.T) {
 }
 
 func TestMapRunRead_DetectsOutputHashMismatch(t *testing.T) {
+	t.Parallel()
 	model := &scriptedMapLLM{
 		responses: []scriptedMapLLMResponse{
 			{Text: `{"label":"alpha"}`},
@@ -294,7 +300,7 @@ func TestMapRunRead_DetectsOutputHashMismatch(t *testing.T) {
 	mapTool.SetRuntime(runtime)
 	readTool := NewMapRunReadTool(runtime)
 
-	result := decodeResultMap(t, mapTool.Execute(context.Background(), map[string]interface{}{
+	result := decodeResultMap(t, mapTool.Execute(t.Context(), map[string]interface{}{
 		"instruction":    "normalize",
 		"items":          []interface{}{map[string]interface{}{"name": "a"}},
 		"execution_mode": "inline",
@@ -304,7 +310,7 @@ func TestMapRunRead_DetectsOutputHashMismatch(t *testing.T) {
 
 	runID, err := ids.Parse(runIDText)
 	require.NoError(t, err)
-	rows, err := runtime.queries.ListMapItemsByRunPaged(context.Background(), memsqlc.ListMapItemsByRunPagedParams{
+	rows, err := runtime.queries.ListMapItemsByRunPaged(t.Context(), memsqlc.ListMapItemsByRunPagedParams{
 		RunID: runID,
 		Lim:   10,
 		Off:   0,
@@ -312,14 +318,14 @@ func TestMapRunRead_DetectsOutputHashMismatch(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, rows, 1)
 
-	_, err = runtime.queries.MarkMapItemSucceeded(context.Background(), memsqlc.MarkMapItemSucceededParams{
+	_, err = runtime.queries.MarkMapItemSucceeded(t.Context(), memsqlc.MarkMapItemSucceededParams{
 		OutputFb:   rows[0].OutputFb,
 		OutputHash: optionalStringPtr("forced-mismatch"),
 		ID:         rows[0].ID,
 	})
 	require.NoError(t, err)
 
-	readResult := readTool.Execute(context.Background(), map[string]interface{}{
+	readResult := readTool.Execute(t.Context(), map[string]interface{}{
 		"run_id": runIDText,
 		"format": "json",
 	})
@@ -329,6 +335,7 @@ func TestMapRunRead_DetectsOutputHashMismatch(t *testing.T) {
 }
 
 func TestAgenticMap_WorkerLifecycle(t *testing.T) {
+	t.Parallel()
 	provider := &MockLanguageModel{}
 	manager := NewSubagentManager(provider, "test-model", "/tmp/test", bus.NewMessageBus())
 	manager.SetRunLoop(func(_ context.Context, _ ToolLoopConfig, _, userPrompt, _, _ string) (*ToolLoopResult, error) {
@@ -341,7 +348,7 @@ func TestAgenticMap_WorkerLifecycle(t *testing.T) {
 	statusTool := NewMapRunStatusTool(runtime)
 	readTool := NewMapRunReadTool(runtime)
 
-	enqueue := decodeResultMap(t, tool.Execute(context.Background(), map[string]interface{}{
+	enqueue := decodeResultMap(t, tool.Execute(t.Context(), map[string]interface{}{
 		"items":          []interface{}{map[string]interface{}{"name": "x"}},
 		"task_template":  "Handle {{index}} => {{item_json}}",
 		"execution_mode": "worker",
@@ -349,13 +356,13 @@ func TestAgenticMap_WorkerLifecycle(t *testing.T) {
 	runID, _ := enqueue["run_id"].(string)
 	require.NotEmpty(t, runID)
 
-	status := decodeResultMap(t, statusTool.Execute(context.Background(), map[string]interface{}{
+	status := decodeResultMap(t, statusTool.Execute(t.Context(), map[string]interface{}{
 		"run_id":        runID,
 		"process_steps": float64(20),
 	}))
 	assert.Equal(t, mapRunStatusSucceeded, status["status"])
 
-	read := decodeResultMap(t, readTool.Execute(context.Background(), map[string]interface{}{
+	read := decodeResultMap(t, readTool.Execute(t.Context(), map[string]interface{}{
 		"run_id": runID,
 		"format": "json",
 	}))
@@ -367,6 +374,7 @@ func TestAgenticMap_WorkerLifecycle(t *testing.T) {
 }
 
 func TestLLMMap_InvalidJSONLIngestFails(t *testing.T) {
+	t.Parallel()
 	model := &scriptedMapLLM{
 		responses: []scriptedMapLLMResponse{{Text: `{"ok":true}`}},
 	}
@@ -374,7 +382,7 @@ func TestLLMMap_InvalidJSONLIngestFails(t *testing.T) {
 	mapTool := NewLLMMapTool(model, "mock-map-llm")
 	mapTool.SetRuntime(runtime)
 
-	result := mapTool.Execute(context.Background(), map[string]interface{}{
+	result := mapTool.Execute(t.Context(), map[string]interface{}{
 		"instruction": "normalize",
 		"input_jsonl": "{\"name\":\"ok\"}\nnot-json",
 	})

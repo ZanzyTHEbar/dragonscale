@@ -12,6 +12,7 @@ import (
 )
 
 func TestOpenAIResponsesCommon(t *testing.T) {
+	t.Parallel()
 	var pairs []builderPair
 	for _, m := range openaiTestModels {
 		pairs = append(pairs, builderPair{m.name, openAIReasoningBuilder(m.model), nil, nil})
@@ -34,6 +35,7 @@ func openAIReasoningBuilder(model string) builderFunc {
 }
 
 func TestOpenAIResponsesWithSummaryThinking(t *testing.T) {
+	t.Parallel()
 	opts := fantasy.ProviderOptions{
 		openai.Name: &openai.ResponsesProviderOptions{
 			Include: []openai.IncludeType{
@@ -54,6 +56,7 @@ func TestOpenAIResponsesWithSummaryThinking(t *testing.T) {
 }
 
 func TestOpenAIResponsesObjectGeneration(t *testing.T) {
+	t.Parallel()
 	var pairs []builderPair
 	for _, m := range openaiTestModels {
 		pairs = append(pairs, builderPair{m.name, openAIReasoningBuilder(m.model), nil, nil})

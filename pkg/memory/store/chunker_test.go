@@ -9,6 +9,7 @@ import (
 )
 
 func TestMarkdownChunker_BasicSplit(t *testing.T) {
+	t.Parallel()
 	chunker := NewMarkdownChunker(MarkdownChunkerConfig{
 		ChunkSize:    100,
 		ChunkOverlap: 20,
@@ -26,6 +27,7 @@ func TestMarkdownChunker_BasicSplit(t *testing.T) {
 }
 
 func TestMarkdownChunker_SmallContent(t *testing.T) {
+	t.Parallel()
 	chunker := NewMarkdownChunker(DefaultMarkdownChunkerConfig())
 
 	chunks, err := chunker.Chunk("Short text.")
@@ -35,6 +37,7 @@ func TestMarkdownChunker_SmallContent(t *testing.T) {
 }
 
 func TestMarkdownChunker_PreservesMarkdownStructure(t *testing.T) {
+	t.Parallel()
 	chunker := NewMarkdownChunker(MarkdownChunkerConfig{
 		ChunkSize:    200,
 		ChunkOverlap: 40,
@@ -81,6 +84,7 @@ Even more content follows here with additional details and explanations that mak
 }
 
 func TestMarkdownChunker_EmptyContent(t *testing.T) {
+	t.Parallel()
 	chunker := NewMarkdownChunker(DefaultMarkdownChunkerConfig())
 	chunks, err := chunker.Chunk("")
 	require.NoError(t, err)
@@ -88,6 +92,7 @@ func TestMarkdownChunker_EmptyContent(t *testing.T) {
 }
 
 func TestMarkdownChunker_DefaultConfig(t *testing.T) {
+	t.Parallel()
 	cfg := DefaultMarkdownChunkerConfig()
 	assert.Equal(t, 1600, cfg.ChunkSize)
 	assert.Equal(t, 320, cfg.ChunkOverlap)

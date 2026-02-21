@@ -10,6 +10,7 @@ import (
 
 // TestDefaultConfig_HeartbeatEnabled verifies heartbeat is enabled by default
 func TestDefaultConfig_HeartbeatEnabled(t *testing.T) {
+	t.Parallel()
 	cfg := DefaultConfig()
 
 	if !cfg.Heartbeat.Enabled {
@@ -19,6 +20,7 @@ func TestDefaultConfig_HeartbeatEnabled(t *testing.T) {
 
 // TestDefaultConfig_SandboxPath verifies sandbox path is resolvable
 func TestDefaultConfig_SandboxPath(t *testing.T) {
+	t.Parallel()
 	cfg := DefaultConfig()
 	path := cfg.SandboxPath()
 	if path == "" {
@@ -28,6 +30,7 @@ func TestDefaultConfig_SandboxPath(t *testing.T) {
 
 // TestDefaultConfig_Model verifies model is set
 func TestDefaultConfig_Model(t *testing.T) {
+	t.Parallel()
 	cfg := DefaultConfig()
 
 	if cfg.Agents.Defaults.Model == "" {
@@ -37,6 +40,7 @@ func TestDefaultConfig_Model(t *testing.T) {
 
 // TestDefaultConfig_MaxTokens verifies max tokens has default value
 func TestDefaultConfig_MaxTokens(t *testing.T) {
+	t.Parallel()
 	cfg := DefaultConfig()
 
 	if cfg.Agents.Defaults.MaxTokens == 0 {
@@ -46,6 +50,7 @@ func TestDefaultConfig_MaxTokens(t *testing.T) {
 
 // TestDefaultConfig_MaxToolIterations verifies max tool iterations has default value
 func TestDefaultConfig_MaxToolIterations(t *testing.T) {
+	t.Parallel()
 	cfg := DefaultConfig()
 
 	if cfg.Agents.Defaults.MaxToolIterations == 0 {
@@ -54,6 +59,7 @@ func TestDefaultConfig_MaxToolIterations(t *testing.T) {
 }
 
 func TestDefaultConfig_ContinuityRetention(t *testing.T) {
+	t.Parallel()
 	cfg := DefaultConfig()
 
 	if cfg.Agents.Defaults.ContinuityRetention.MinMessages <= 0 {
@@ -72,6 +78,7 @@ func TestDefaultConfig_ContinuityRetention(t *testing.T) {
 
 // TestDefaultConfig_Temperature verifies temperature has default value
 func TestDefaultConfig_Temperature(t *testing.T) {
+	t.Parallel()
 	cfg := DefaultConfig()
 
 	if cfg.Agents.Defaults.Temperature == 0 {
@@ -81,6 +88,7 @@ func TestDefaultConfig_Temperature(t *testing.T) {
 
 // TestDefaultConfig_Gateway verifies gateway defaults
 func TestDefaultConfig_Gateway(t *testing.T) {
+	t.Parallel()
 	cfg := DefaultConfig()
 
 	if cfg.Gateway.Host != "0.0.0.0" {
@@ -93,6 +101,7 @@ func TestDefaultConfig_Gateway(t *testing.T) {
 
 // TestDefaultConfig_Providers verifies provider structure
 func TestDefaultConfig_Providers(t *testing.T) {
+	t.Parallel()
 	cfg := DefaultConfig()
 
 	// Verify all providers are empty by default
@@ -121,6 +130,7 @@ func TestDefaultConfig_Providers(t *testing.T) {
 
 // TestDefaultConfig_Channels verifies channels are disabled by default
 func TestDefaultConfig_Channels(t *testing.T) {
+	t.Parallel()
 	cfg := DefaultConfig()
 
 	// Verify all channels are disabled by default
@@ -152,6 +162,7 @@ func TestDefaultConfig_Channels(t *testing.T) {
 
 // TestDefaultConfig_WebTools verifies web tools config
 func TestDefaultConfig_WebTools(t *testing.T) {
+	t.Parallel()
 	cfg := DefaultConfig()
 
 	// Verify web tools defaults
@@ -167,6 +178,7 @@ func TestDefaultConfig_WebTools(t *testing.T) {
 }
 
 func TestSaveConfig_FilePermissions(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("file permission bits are not enforced on Windows")
 	}
@@ -192,6 +204,7 @@ func TestSaveConfig_FilePermissions(t *testing.T) {
 
 // TestConfig_Complete verifies all config fields are set
 func TestConfig_Complete(t *testing.T) {
+	t.Parallel()
 	cfg := DefaultConfig()
 
 	// Verify complete config structure
@@ -222,6 +235,7 @@ func TestConfig_Complete(t *testing.T) {
 }
 
 func TestDefaultConfig_OpenAIWebSearchEnabled(t *testing.T) {
+	t.Parallel()
 	cfg := DefaultConfig()
 	if !cfg.Providers.OpenAI.WebSearch {
 		t.Fatal("DefaultConfig().Providers.OpenAI.WebSearch should be true")
@@ -229,6 +243,7 @@ func TestDefaultConfig_OpenAIWebSearchEnabled(t *testing.T) {
 }
 
 func TestLoadConfig_OpenAIWebSearchDefaultsTrueWhenUnset(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "config.json")
 	if err := os.WriteFile(configPath, []byte(`{"providers":{"openai":{"api_base":""}}}`), 0o600); err != nil {
@@ -245,6 +260,7 @@ func TestLoadConfig_OpenAIWebSearchDefaultsTrueWhenUnset(t *testing.T) {
 }
 
 func TestValidate_MemoryConfig(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		mutate   func(*Config)
@@ -318,6 +334,7 @@ func TestValidate_MemoryConfig(t *testing.T) {
 }
 
 func TestValidate_ContinuityRetentionConfig(t *testing.T) {
+	t.Parallel()
 	cfg := DefaultConfig()
 	cfg.Agents.Defaults.ContinuityRetention.MinMessages = 8
 	cfg.Agents.Defaults.ContinuityRetention.MaxMessages = 4
@@ -342,6 +359,7 @@ func containsMemoryWarning(s string) bool {
 }
 
 func TestLoadConfig_OpenAIWebSearchCanBeDisabled(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "config.json")
 	if err := os.WriteFile(configPath, []byte(`{"providers":{"openai":{"web_search":false}}}`), 0o600); err != nil {

@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -24,6 +26,7 @@ func makeMessages(n int) []Message {
 }
 
 func TestCompressor_EmptyInput(t *testing.T) {
+	t.Parallel()
 	c := NewCompressor(DefaultCompressorConfig())
 	d := c.Compress(nil)
 	assert.Empty(t, d.Nodes)
@@ -31,6 +34,7 @@ func TestCompressor_EmptyInput(t *testing.T) {
 }
 
 func TestCompressor_SmallInput(t *testing.T) {
+	t.Parallel()
 	c := NewCompressor(DefaultCompressorConfig())
 	msgs := []Message{
 		{Role: "user", Content: "Hello, how are you?"},
@@ -48,6 +52,7 @@ func TestCompressor_SmallInput(t *testing.T) {
 }
 
 func TestCompressor_ChunkSplitting(t *testing.T) {
+	t.Parallel()
 	cfg := DefaultCompressorConfig()
 	cfg.ChunkSize = 4
 	c := NewCompressor(cfg)
@@ -67,6 +72,7 @@ func TestCompressor_ChunkSplitting(t *testing.T) {
 }
 
 func TestCompressor_SectionBuilding(t *testing.T) {
+	t.Parallel()
 	cfg := DefaultCompressorConfig()
 	cfg.ChunkSize = 4
 	cfg.SectionSize = 2
@@ -89,6 +95,7 @@ func TestCompressor_SectionBuilding(t *testing.T) {
 }
 
 func TestCompressor_SessionSummary(t *testing.T) {
+	t.Parallel()
 	cfg := DefaultCompressorConfig()
 	cfg.ChunkSize = 4
 	cfg.SectionSize = 2
@@ -109,6 +116,7 @@ func TestCompressor_SessionSummary(t *testing.T) {
 }
 
 func TestExtractSentences(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		text string
@@ -133,6 +141,7 @@ func TestExtractSentences(t *testing.T) {
 }
 
 func TestExtractSentences_Truncation(t *testing.T) {
+	t.Parallel()
 	long := strings.Repeat("This is a very long sentence with many words. ", 20)
 	result := extractSentences(long, 5)
 	assert.LessOrEqual(t, len([]rune(result)), 210)
@@ -140,6 +149,7 @@ func TestExtractSentences_Truncation(t *testing.T) {
 }
 
 func TestNode_FormatForPrompt(t *testing.T) {
+	t.Parallel()
 	n := &Node{
 		ID:       "chunk-1",
 		Level:    LevelChunk,
@@ -153,6 +163,7 @@ func TestNode_FormatForPrompt(t *testing.T) {
 }
 
 func TestDAG_FormatLevel(t *testing.T) {
+	t.Parallel()
 	cfg := DefaultCompressorConfig()
 	cfg.ChunkSize = 4
 	c := NewCompressor(cfg)
@@ -167,6 +178,7 @@ func TestDAG_FormatLevel(t *testing.T) {
 }
 
 func TestDAG_TotalTokens(t *testing.T) {
+	t.Parallel()
 	cfg := DefaultCompressorConfig()
 	cfg.ChunkSize = 4
 	c := NewCompressor(cfg)
@@ -179,25 +191,30 @@ func TestDAG_TotalTokens(t *testing.T) {
 }
 
 func TestComputeBudget(t *testing.T) {
+	t.Parallel()
 	cfg := DefaultBudgetConfig()
 	b := ComputeBudget(100000, cfg)
 
-	assert.Equal(t, 100000, b.Total)
-	assert.Equal(t, 20000, b.SystemPrompt)
-	assert.Equal(t, 10000, b.Observations)
-	assert.Equal(t, 5000, b.Knowledge)
-	assert.Equal(t, 25000, b.DAGSummaries)
-	assert.Equal(t, 30000, b.RawTail)
-	assert.Equal(t, 10000, b.ToolResults)
+	assert.Empty(t, cmp.Diff(Budget{
+		Total:        100000,
+		SystemPrompt: 20000,
+		Observations: 10000,
+		Knowledge:    5000,
+		DAGSummaries: 25000,
+		RawTail:      30000,
+		ToolResults:  10000,
+	}, b))
 }
 
 func TestBudget_Remaining(t *testing.T) {
+	t.Parallel()
 	b := Budget{Total: 10000}
 	assert.Equal(t, 7000, b.Remaining(1000, 500, 500, 500, 500, 0))
 	assert.Equal(t, 0, b.Remaining(5000, 3000, 1000, 1000, 1000, 0))
 }
 
 func TestSelectDAGLevel(t *testing.T) {
+	t.Parallel()
 	cfg := DefaultCompressorConfig()
 	cfg.ChunkSize = 4
 	cfg.SectionSize = 2
@@ -219,6 +236,7 @@ func TestSelectDAGLevel(t *testing.T) {
 }
 
 func TestTailMessageCount(t *testing.T) {
+	t.Parallel()
 	assert.Equal(t, 4, TailMessageCount(100))   // Minimum
 	assert.Equal(t, 20, TailMessageCount(1000)) // 1000/50
 	assert.Equal(t, 4, TailMessageCount(0))     // Zero budget
@@ -226,6 +244,7 @@ func TestTailMessageCount(t *testing.T) {
 }
 
 func TestRenderDAGForBudget(t *testing.T) {
+	t.Parallel()
 	assert.Empty(t, RenderDAGForBudget(nil, 1000))
 
 	cfg := DefaultCompressorConfig()

@@ -2,12 +2,14 @@ package fantasy
 
 import (
 	"errors"
-	jsonv2 "github.com/go-json-experiment/json"
-	"reflect"
 	"testing"
+
+	jsonv2 "github.com/go-json-experiment/json"
+	"github.com/google/go-cmp/cmp"
 )
 
 func TestMessageJSONSerialization(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name    string
 		message Message
@@ -199,44 +201,29 @@ func compareMessagePart(t *testing.T, index int, original, decoded MessagePart) 
 	case ContentTypeText:
 		orig := original.(TextPart)
 		dec := decoded.(TextPart)
-		if orig.Text != dec.Text {
-			t.Errorf("content[%d] text mismatch: got %q, want %q", index, dec.Text, orig.Text)
+		if diff := cmp.Diff(orig, dec); diff != "" {
+			t.Errorf("content[%d] TextPart mismatch (-want +got):\n%s", index, diff)
 		}
 
 	case ContentTypeReasoning:
 		orig := original.(ReasoningPart)
 		dec := decoded.(ReasoningPart)
-		if orig.Text != dec.Text {
-			t.Errorf("content[%d] reasoning text mismatch: got %q, want %q", index, dec.Text, orig.Text)
+		if diff := cmp.Diff(orig, dec); diff != "" {
+			t.Errorf("content[%d] ReasoningPart mismatch (-want +got):\n%s", index, diff)
 		}
 
 	case ContentTypeFile:
 		orig := original.(FilePart)
 		dec := decoded.(FilePart)
-		if orig.Filename != dec.Filename {
-			t.Errorf("content[%d] filename mismatch: got %q, want %q", index, dec.Filename, orig.Filename)
-		}
-		if orig.MediaType != dec.MediaType {
-			t.Errorf("content[%d] media type mismatch: got %q, want %q", index, dec.MediaType, orig.MediaType)
-		}
-		if !reflect.DeepEqual(orig.Data, dec.Data) {
-			t.Errorf("content[%d] file data mismatch", index)
+		if diff := cmp.Diff(orig, dec); diff != "" {
+			t.Errorf("content[%d] FilePart mismatch (-want +got):\n%s", index, diff)
 		}
 
 	case ContentTypeToolCall:
 		orig := original.(ToolCallPart)
 		dec := decoded.(ToolCallPart)
-		if orig.ToolCallID != dec.ToolCallID {
-			t.Errorf("content[%d] tool call id mismatch: got %q, want %q", index, dec.ToolCallID, orig.ToolCallID)
-		}
-		if orig.ToolName != dec.ToolName {
-			t.Errorf("content[%d] tool name mismatch: got %q, want %q", index, dec.ToolName, orig.ToolName)
-		}
-		if orig.Input != dec.Input {
-			t.Errorf("content[%d] tool input mismatch: got %q, want %q", index, dec.Input, orig.Input)
-		}
-		if orig.ProviderExecuted != dec.ProviderExecuted {
-			t.Errorf("content[%d] provider executed mismatch: got %v, want %v", index, dec.ProviderExecuted, orig.ProviderExecuted)
+		if diff := cmp.Diff(orig, dec); diff != "" {
+			t.Errorf("content[%d] ToolCallPart mismatch (-want +got):\n%s", index, diff)
 		}
 
 	case ContentTypeToolResult:
@@ -259,30 +246,35 @@ func compareToolResultOutput(t *testing.T, index int, original, decoded ToolResu
 	case ToolResultContentTypeText:
 		orig := original.(ToolResultOutputContentText)
 		dec := decoded.(ToolResultOutputContentText)
-		if orig.Text != dec.Text {
-			t.Errorf("content[%d] tool result text mismatch: got %q, want %q", index, dec.Text, orig.Text)
+		if diff := cmp.Diff(orig, dec); diff != "" {
+			t.Errorf("content[%d] ToolResultOutputContentText mismatch (-want +got):\n%s", index, diff)
 		}
 
 	case ToolResultContentTypeError:
 		orig := original.(ToolResultOutputContentError)
 		dec := decoded.(ToolResultOutputContentError)
-		if orig.Error.Error() != dec.Error.Error() {
-			t.Errorf("content[%d] tool result error mismatch: got %q, want %q", index, dec.Error.Error(), orig.Error.Error())
+		if orig.Error == nil && dec.Error == nil {
+			return
+		}
+		if orig.Error == nil || dec.Error == nil {
+			t.Errorf("content[%d] ToolResultOutputContentError mismatch (-want +got): %v != %v", index, orig.Error, dec.Error)
+			return
+		}
+		if diff := cmp.Diff(orig.Error.Error(), dec.Error.Error()); diff != "" {
+			t.Errorf("content[%d] ToolResultOutputContentError mismatch (-want +got):\n%s", index, diff)
 		}
 
 	case ToolResultContentTypeMedia:
 		orig := original.(ToolResultOutputContentMedia)
 		dec := decoded.(ToolResultOutputContentMedia)
-		if orig.Data != dec.Data {
-			t.Errorf("content[%d] tool result media data mismatch", index)
-		}
-		if orig.MediaType != dec.MediaType {
-			t.Errorf("content[%d] tool result media type mismatch: got %q, want %q", index, dec.MediaType, orig.MediaType)
+		if diff := cmp.Diff(orig, dec); diff != "" {
+			t.Errorf("content[%d] ToolResultOutputContentMedia mismatch (-want +got):\n%s", index, diff)
 		}
 	}
 }
 
 func TestHelperFunctions(t *testing.T) {
+	t.Parallel()
 	t.Run("NewUserMessage - text only", func(t *testing.T) {
 		msg := NewUserMessage("Hello")
 
@@ -412,6 +404,7 @@ func TestHelperFunctions(t *testing.T) {
 }
 
 func TestEdgeCases(t *testing.T) {
+	t.Parallel()
 	t.Run("empty text part", func(t *testing.T) {
 		msg := Message{
 			Role: MessageRoleUser,
@@ -520,6 +513,7 @@ func TestEdgeCases(t *testing.T) {
 }
 
 func TestInvalidJSONHandling(t *testing.T) {
+	t.Parallel()
 	t.Run("unknown message part type", func(t *testing.T) {
 		invalidJSON := `{
 			"role": "user",
@@ -606,6 +600,7 @@ func (m *mockProviderData) UnmarshalJSON(data []byte) error {
 }
 
 func TestPromptSerialization(t *testing.T) {
+	t.Parallel()
 	t.Run("serialize prompt (message slice)", func(t *testing.T) {
 		prompt := Prompt{
 			NewSystemMessage("You are helpful"),
@@ -647,6 +642,7 @@ func TestPromptSerialization(t *testing.T) {
 }
 
 func TestStreamPartErrorSerialization(t *testing.T) {
+	t.Parallel()
 	t.Run("stream part with ProviderError containing OpenAI API error", func(t *testing.T) {
 		// Create a mock OpenAI API error
 		openaiErr := errors.New("invalid_api_key: Incorrect API key provided")

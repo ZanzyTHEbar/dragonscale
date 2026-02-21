@@ -1,14 +1,15 @@
 package store
 
 import (
-	"context"
-	jsonv2 "github.com/go-json-experiment/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	jsonv2 "github.com/go-json-experiment/json"
 )
 
 func TestOllamaEmbedder_Embed(t *testing.T) {
+	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/embed" {
 			t.Errorf("expected /api/embed, got %s", r.URL.Path)
@@ -35,7 +36,7 @@ func TestOllamaEmbedder_Embed(t *testing.T) {
 		Model: "test-model",
 	})
 
-	vec, err := e.Embed(context.Background(), "hello world")
+	vec, err := e.Embed(t.Context(), "hello world")
 	if err != nil {
 		t.Fatalf("Embed: %v", err)
 	}
@@ -53,6 +54,7 @@ func TestOllamaEmbedder_Embed(t *testing.T) {
 }
 
 func TestOllamaEmbedder_EmbedBatch(t *testing.T) {
+	t.Parallel()
 	callCount := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		callCount++
@@ -65,7 +67,7 @@ func TestOllamaEmbedder_EmbedBatch(t *testing.T) {
 
 	e := NewOllamaEmbedder(OllamaEmbedderConfig{Base: srv.URL})
 
-	vecs, err := e.EmbedBatch(context.Background(), []string{"a", "b", "c"})
+	vecs, err := e.EmbedBatch(t.Context(), []string{"a", "b", "c"})
 	if err != nil {
 		t.Fatalf("EmbedBatch: %v", err)
 	}
@@ -78,6 +80,7 @@ func TestOllamaEmbedder_EmbedBatch(t *testing.T) {
 }
 
 func TestOllamaEmbedder_ServerError(t *testing.T) {
+	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		w.Write([]byte("model not found"))
@@ -85,13 +88,14 @@ func TestOllamaEmbedder_ServerError(t *testing.T) {
 	defer srv.Close()
 
 	e := NewOllamaEmbedder(OllamaEmbedderConfig{Base: srv.URL})
-	_, err := e.Embed(context.Background(), "test")
+	_, err := e.Embed(t.Context(), "test")
 	if err == nil {
 		t.Error("expected error for server error response")
 	}
 }
 
 func TestOllamaEmbedder_EmptyResponse(t *testing.T) {
+	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		respData, _ := jsonv2.Marshal(ollamaEmbedResponse{Embeddings: [][]float32{}})
 		w.Write(respData)
@@ -99,13 +103,14 @@ func TestOllamaEmbedder_EmptyResponse(t *testing.T) {
 	defer srv.Close()
 
 	e := NewOllamaEmbedder(OllamaEmbedderConfig{Base: srv.URL})
-	_, err := e.Embed(context.Background(), "test")
+	_, err := e.Embed(t.Context(), "test")
 	if err == nil {
 		t.Error("expected error for empty embeddings")
 	}
 }
 
 func TestOllamaEmbedder_DefaultModel(t *testing.T) {
+	t.Parallel()
 	e := NewOllamaEmbedder(OllamaEmbedderConfig{})
 	if e.Model() != defaultOllamaModel {
 		t.Errorf("expected %q, got %q", defaultOllamaModel, e.Model())

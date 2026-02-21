@@ -1,7 +1,6 @@
 package delegate
 
 import (
-	"context"
 	"testing"
 
 	"github.com/ZanzyTHEbar/dragonscale/pkg/ids"
@@ -10,7 +9,7 @@ import (
 
 func BenchmarkListRecallItems(b *testing.B) {
 	d := newBenchDelegate(b)
-	ctx := context.Background()
+	ctx := b.Context()
 	agent := "bench-agent"
 	session := "bench-sess"
 
@@ -36,7 +35,7 @@ func BenchmarkListRecallItems(b *testing.B) {
 
 func BenchmarkGetWorkingContext(b *testing.B) {
 	d := newBenchDelegate(b)
-	ctx := context.Background()
+	ctx := b.Context()
 	agent := "bench-agent"
 	session := "bench-sess"
 
@@ -51,7 +50,7 @@ func BenchmarkGetWorkingContext(b *testing.B) {
 
 func BenchmarkUpsertKV(b *testing.B) {
 	d := newBenchDelegate(b)
-	ctx := context.Background()
+	ctx := b.Context()
 
 	b.ReportAllocs()
 	b.ResetTimer()
@@ -62,7 +61,7 @@ func BenchmarkUpsertKV(b *testing.B) {
 
 func BenchmarkGetKV(b *testing.B) {
 	d := newBenchDelegate(b)
-	ctx := context.Background()
+	ctx := b.Context()
 	_ = d.UpsertKV(ctx, "bench-agent", "bench-key", "bench-value")
 
 	b.ReportAllocs()
@@ -74,7 +73,7 @@ func BenchmarkGetKV(b *testing.B) {
 
 func BenchmarkInsertAuditEntry(b *testing.B) {
 	d := newBenchDelegate(b)
-	ctx := context.Background()
+	ctx := b.Context()
 
 	b.ReportAllocs()
 	b.ResetTimer()
@@ -93,7 +92,7 @@ func BenchmarkInsertAuditEntry(b *testing.B) {
 // BenchmarkInsertRecallItems_Sequential measures sequential single-insert performance.
 func BenchmarkInsertRecallItems_Sequential(b *testing.B) {
 	d := newBenchDelegate(b)
-	ctx := context.Background()
+	ctx := b.Context()
 	b.ReportAllocs()
 	b.ResetTimer()
 	for b.Loop() {
@@ -116,7 +115,7 @@ func BenchmarkInsertRecallItems_Sequential(b *testing.B) {
 // Compare with BenchmarkInsertRecallItems_Sequential to quantify WAL savings.
 func BenchmarkInsertRecallItems_Batch(b *testing.B) {
 	d := newBenchDelegate(b)
-	ctx := context.Background()
+	ctx := b.Context()
 	b.ReportAllocs()
 	b.ResetTimer()
 	for b.Loop() {
@@ -140,7 +139,7 @@ func BenchmarkInsertRecallItems_Batch(b *testing.B) {
 // BenchmarkInsertArchivalChunks_Sequential measures sequential chunk inserts.
 func BenchmarkInsertArchivalChunks_Sequential(b *testing.B) {
 	d := newBenchDelegate(b)
-	ctx := context.Background()
+	ctx := b.Context()
 	recallID := ids.New()
 	_ = d.InsertRecallItem(ctx, &memory.RecallItem{
 		ID: recallID, AgentID: "bench-agent", SessionKey: "s",
@@ -162,7 +161,7 @@ func BenchmarkInsertArchivalChunks_Sequential(b *testing.B) {
 // BenchmarkInsertArchivalChunks_Batch measures batch-tx chunk inserts for 5 chunks.
 func BenchmarkInsertArchivalChunks_Batch(b *testing.B) {
 	d := newBenchDelegate(b)
-	ctx := context.Background()
+	ctx := b.Context()
 	recallID := ids.New()
 	_ = d.InsertRecallItem(ctx, &memory.RecallItem{
 		ID: recallID, AgentID: "bench-agent", SessionKey: "s",
@@ -185,11 +184,12 @@ func BenchmarkInsertArchivalChunks_Batch(b *testing.B) {
 
 func newBenchDelegate(b *testing.B) *LibSQLDelegate {
 	b.Helper()
+	ctx := b.Context()
 	d, err := NewLibSQLInMemory()
 	if err != nil {
 		b.Fatal(err)
 	}
-	if err := d.Init(context.Background()); err != nil {
+	if err := d.Init(ctx); err != nil {
 		b.Fatal(err)
 	}
 	b.Cleanup(func() { d.Close() })

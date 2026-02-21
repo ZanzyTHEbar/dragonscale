@@ -8,6 +8,7 @@ import (
 )
 
 func TestRouteExplicitModes(t *testing.T) {
+	t.Parallel()
 	cfg := DefaultRouterConfig()
 
 	assert.Equal(t, ModeReAct, Route(ModeReAct, "anything", cfg))
@@ -15,17 +16,20 @@ func TestRouteExplicitModes(t *testing.T) {
 }
 
 func TestRouteAutoSimpleQuery(t *testing.T) {
+	t.Parallel()
 	cfg := DefaultRouterConfig()
 	assert.Equal(t, ModeReAct, Route(ModeAuto, "what is the weather?", cfg))
 }
 
 func TestRouteAutoComplexQuery(t *testing.T) {
+	t.Parallel()
 	cfg := DefaultRouterConfig()
 	longQuery := strings.Repeat("word ", 35)
 	assert.Equal(t, ModeDAG, Route(ModeAuto, longQuery, cfg))
 }
 
 func TestRouteAutoParallelKeywords(t *testing.T) {
+	t.Parallel()
 	cfg := DefaultRouterConfig()
 
 	keywords := []string{
@@ -42,12 +46,14 @@ func TestRouteAutoParallelKeywords(t *testing.T) {
 }
 
 func TestRouteAutoToolSignals(t *testing.T) {
+	t.Parallel()
 	cfg := DefaultRouterConfig()
 	q := "search the codebase, read the file, then execute the command"
 	assert.Equal(t, ModeDAG, Route(ModeAuto, q, cfg))
 }
 
 func TestToolLoopModeString(t *testing.T) {
+	t.Parallel()
 	assert.Equal(t, "react", ModeReAct.String())
 	assert.Equal(t, "dag", ModeDAG.String())
 	assert.Equal(t, "auto", ModeAuto.String())
@@ -55,6 +61,7 @@ func TestToolLoopModeString(t *testing.T) {
 }
 
 func TestClassifyQueryDefault(t *testing.T) {
+	t.Parallel()
 	cfg := DefaultRouterConfig()
 	assert.Equal(t, ModeReAct, classifyQuery("hello", cfg))
 }

@@ -53,6 +53,7 @@ func (m *mockFocusDelegate) DeleteKV(ctx context.Context, agentID, key string) e
 }
 
 func TestStartFocus(t *testing.T) {
+	t.Parallel()
 	sm := session.NewSessionManager("")
 	sk := "test-session"
 	sm.GetOrCreate(sk)
@@ -63,7 +64,7 @@ func TestStartFocus(t *testing.T) {
 	delegate := newMockFocusDelegate()
 	tool := NewStartFocusTool(delegate, sm, func() string { return sk })
 
-	ctx := context.Background()
+	ctx := t.Context()
 	result := tool.Execute(ctx, map[string]interface{}{
 		"topic": "investigate auth bug",
 	})
@@ -82,15 +83,17 @@ func TestStartFocus(t *testing.T) {
 }
 
 func TestStartFocus_MissingTopic(t *testing.T) {
+	t.Parallel()
 	sm := session.NewSessionManager("")
 	delegate := newMockFocusDelegate()
 	tool := NewStartFocusTool(delegate, sm, func() string { return "s" })
 
-	result := tool.Execute(context.Background(), map[string]interface{}{})
+	result := tool.Execute(t.Context(), map[string]interface{}{})
 	assert.Contains(t, result.ForLLM, "topic is required")
 }
 
 func TestCompleteFocus(t *testing.T) {
+	t.Parallel()
 	sm := session.NewSessionManager("")
 	sk := "test-session"
 	sm.GetOrCreate(sk)
@@ -101,7 +104,7 @@ func TestCompleteFocus(t *testing.T) {
 	delegate := newMockFocusDelegate()
 
 	startTool := NewStartFocusTool(delegate, sm, func() string { return sk })
-	ctx := context.Background()
+	ctx := t.Context()
 	startTool.Execute(ctx, map[string]interface{}{"topic": "debug auth"})
 
 	sm.AddMessage(sk, "user", "check logs")
@@ -146,6 +149,7 @@ func TestCompleteFocus(t *testing.T) {
 }
 
 func TestCompleteFocus_NoActiveFocus(t *testing.T) {
+	t.Parallel()
 	sm := session.NewSessionManager("")
 	sk := "test-session"
 	sm.GetOrCreate(sk)
@@ -153,18 +157,19 @@ func TestCompleteFocus_NoActiveFocus(t *testing.T) {
 	delegate := newMockFocusDelegate()
 	tool := NewCompleteFocusTool(delegate, sm, func() string { return sk })
 
-	result := tool.Execute(context.Background(), map[string]interface{}{
+	result := tool.Execute(t.Context(), map[string]interface{}{
 		"summary": "some summary",
 	})
 	assert.Contains(t, result.ForLLM, "no active focus session")
 }
 
 func TestCompleteFocus_MultipleKnowledgeEntries(t *testing.T) {
+	t.Parallel()
 	sm := session.NewSessionManager("")
 	sk := "test-session"
 	sm.GetOrCreate(sk)
 	delegate := newMockFocusDelegate()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	startTool := NewStartFocusTool(delegate, sm, func() string { return sk })
 	completeTool := NewCompleteFocusTool(delegate, sm, func() string { return sk })
@@ -192,6 +197,7 @@ func TestCompleteFocus_MultipleKnowledgeEntries(t *testing.T) {
 }
 
 func TestPruneHistory(t *testing.T) {
+	t.Parallel()
 	tool := &CompleteFocusTool{}
 
 	tests := []struct {
@@ -256,6 +262,7 @@ func TestPruneHistory(t *testing.T) {
 }
 
 func TestKnowledgeBlockFormat(t *testing.T) {
+	t.Parallel()
 	kb := &KnowledgeBlock{
 		Entries: []KnowledgeEntry{
 			{Topic: "Auth Flow", Summary: "Token validation needs expiry check."},
@@ -271,13 +278,15 @@ func TestKnowledgeBlockFormat(t *testing.T) {
 }
 
 func TestKnowledgeBlockFormat_Empty(t *testing.T) {
+	t.Parallel()
 	kb := &KnowledgeBlock{}
 	assert.Empty(t, kb.FormatBlock())
 }
 
 func TestLoadKnowledgeBlock(t *testing.T) {
+	t.Parallel()
 	delegate := newMockFocusDelegate()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	block := LoadKnowledgeBlock(ctx, delegate, "nonexistent")
 	assert.Empty(t, block)

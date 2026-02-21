@@ -24,10 +24,11 @@ func waitForCondition(t *testing.T, timeout time.Duration, cond func() bool) {
 }
 
 func TestSubagentManager_SpawnRequiresRunLoop(t *testing.T) {
+	t.Parallel()
 	provider := &MockLanguageModel{}
 	manager := NewSubagentManager(provider, "test-model", "/tmp/test", bus.NewMessageBus())
 
-	_, err := manager.Spawn(context.Background(), "task-without-loop", "label", "", "", "cli", "chat", nil)
+	_, err := manager.Spawn(t.Context(), "task-without-loop", "label", "", "", "cli", "chat", nil)
 	if err == nil {
 		t.Fatal("expected spawn to fail when run loop is not configured")
 	}
@@ -37,6 +38,7 @@ func TestSubagentManager_SpawnRequiresRunLoop(t *testing.T) {
 }
 
 func TestSubagentManager_SpawnDelegationGuardrails(t *testing.T) {
+	t.Parallel()
 	provider := &MockLanguageModel{}
 	manager := NewSubagentManager(provider, "test-model", "/tmp/test", bus.NewMessageBus())
 	manager.SetDelegationLimits(2, 1)
@@ -47,23 +49,23 @@ func TestSubagentManager_SpawnDelegationGuardrails(t *testing.T) {
 		return &ToolLoopResult{Content: "done", Iterations: 1}, nil
 	})
 
-	_, err := manager.Spawn(context.Background(), "task-1", "one", "", "", "cli", "chat", nil)
+	_, err := manager.Spawn(t.Context(), "task-1", "one", "", "", "cli", "chat", nil)
 	if err != nil {
 		t.Fatalf("first spawn should succeed: %v", err)
 	}
 
-	_, err = manager.Spawn(context.Background(), "task-2", "two", "", "", "cli", "chat", nil)
+	_, err = manager.Spawn(t.Context(), "task-2", "two", "", "", "cli", "chat", nil)
 	if err == nil || !strings.Contains(err.Error(), "delegation fanout exceeded") {
 		t.Fatalf("expected fanout error, got: %v", err)
 	}
 
-	nestedCtx := withDelegationContext(context.Background(), "parent", 1)
+	nestedCtx := withDelegationContext(t.Context(), "parent", 1)
 	_, err = manager.Spawn(nestedCtx, "task-3", "three", "", "", "cli", "chat", nil)
 	if err == nil || !strings.Contains(err.Error(), "nested delegation requires delegated_scope and kept_work") {
 		t.Fatalf("expected nested delegation metadata error, got: %v", err)
 	}
 
-	deepCtx := withDelegationContext(context.Background(), "parent", 2)
+	deepCtx := withDelegationContext(t.Context(), "parent", 2)
 	_, err = manager.Spawn(deepCtx, "task-4", "four", "lookup", "synthesize", "cli", "chat", nil)
 	if err == nil || !strings.Contains(err.Error(), "delegation depth exceeded") {
 		t.Fatalf("expected depth error, got: %v", err)
@@ -81,6 +83,7 @@ func TestSubagentManager_SpawnDelegationGuardrails(t *testing.T) {
 }
 
 func TestSubagentManager_ConcurrentSpawnRespectsFanout(t *testing.T) {
+	t.Parallel()
 	provider := &MockLanguageModel{}
 	manager := NewSubagentManager(provider, "test-model", "/tmp/test", bus.NewMessageBus())
 	manager.SetDelegationLimits(3, 2)
@@ -105,7 +108,7 @@ func TestSubagentManager_ConcurrentSpawnRespectsFanout(t *testing.T) {
 		go func(i int) {
 			defer wg.Done()
 			<-start
-			_, err := manager.Spawn(context.Background(), fmt.Sprintf("task-%d", i), fmt.Sprintf("label-%d", i), "", "", "cli", "chat", nil)
+			_, err := manager.Spawn(t.Context(), fmt.Sprintf("task-%d", i), fmt.Sprintf("label-%d", i), "", "", "cli", "chat", nil)
 			mu.Lock()
 			defer mu.Unlock()
 			if err == nil {
@@ -151,6 +154,7 @@ func TestSubagentManager_ConcurrentSpawnRespectsFanout(t *testing.T) {
 }
 
 func TestSubagentManager_SpawnAuditLineageAndRuntimeContext(t *testing.T) {
+	t.Parallel()
 	provider := &MockLanguageModel{}
 	manager := NewSubagentManager(provider, "test-model", "/tmp/test", bus.NewMessageBus())
 
@@ -171,7 +175,7 @@ func TestSubagentManager_SpawnAuditLineageAndRuntimeContext(t *testing.T) {
 		eventsCh <- evt
 	})
 
-	parentCtx := withDelegationContext(context.Background(), "parent-9", 1)
+	parentCtx := withDelegationContext(t.Context(), "parent-9", 1)
 	_, err := manager.Spawn(parentCtx, "task-a", "label-a", "collect facts", "final synthesis", "telegram", "chat-7", nil)
 	if err != nil {
 		t.Fatalf("spawn failed: %v", err)

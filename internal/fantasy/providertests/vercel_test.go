@@ -20,6 +20,7 @@ var vercelTestModels = []testModel{
 }
 
 func TestVercelCommon(t *testing.T) {
+	t.Parallel()
 	var pairs []builderPair
 	for _, m := range vercelTestModels {
 		pairs = append(pairs, builderPair{m.name, vercelBuilder(m.model), nil, nil})
@@ -28,12 +29,14 @@ func TestVercelCommon(t *testing.T) {
 }
 
 func TestVercelCommonWithAnthropicCache(t *testing.T) {
+	t.Parallel()
 	testCommon(t, []builderPair{
 		{"claude-sonnet-4", vercelBuilder("anthropic/claude-sonnet-4"), nil, addAnthropicCaching},
 	})
 }
 
 func TestVercelThinking(t *testing.T) {
+	t.Parallel()
 	enabled := true
 	opts := fantasy.ProviderOptions{
 		vercel.Name: &vercel.ProviderOptions{

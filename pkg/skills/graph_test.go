@@ -10,6 +10,7 @@ import (
 )
 
 func TestParseWikilinks(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name    string
 		content string
@@ -66,6 +67,7 @@ func TestParseWikilinks(t *testing.T) {
 }
 
 func TestMergeUnique(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		a, b []string
@@ -94,6 +96,7 @@ func writeSkill(t *testing.T, dir, name, content string) {
 }
 
 func TestBuildGraph_Basic(t *testing.T) {
+	t.Parallel()
 	tmp := t.TempDir()
 
 	writeSkill(t, tmp, "risk-management", `---
@@ -152,6 +155,7 @@ No wikilinks here.
 }
 
 func TestBuildGraph_FrontmatterLinksAndWikilinks(t *testing.T) {
+	t.Parallel()
 	tmp := t.TempDir()
 
 	writeSkill(t, tmp, "alpha", `---
@@ -186,6 +190,7 @@ No links.
 }
 
 func TestTraverseFrom(t *testing.T) {
+	t.Parallel()
 	tmp := t.TempDir()
 
 	writeSkill(t, tmp, "a", `---
@@ -233,6 +238,7 @@ No outgoing links.
 }
 
 func TestSearchSkills(t *testing.T) {
+	t.Parallel()
 	tmp := t.TempDir()
 
 	writeSkill(t, tmp, "risk-management", `---
@@ -278,6 +284,7 @@ Content.
 }
 
 func TestListMOCs(t *testing.T) {
+	t.Parallel()
 	tmp := t.TempDir()
 
 	writeSkill(t, tmp, "trading-moc", `---
@@ -305,6 +312,7 @@ Content.
 }
 
 func TestGetIndex(t *testing.T) {
+	t.Parallel()
 	tmp := t.TempDir()
 
 	writeSkill(t, tmp, "index", `---
@@ -332,6 +340,7 @@ Content.
 }
 
 func TestGetIndex_None(t *testing.T) {
+	t.Parallel()
 	tmp := t.TempDir()
 	writeSkill(t, tmp, "some-skill", `---
 name: some-skill
@@ -346,6 +355,7 @@ Content.
 }
 
 func TestExtendedFrontmatter_JSON(t *testing.T) {
+	t.Parallel()
 	tmp := t.TempDir()
 
 	writeSkill(t, tmp, "json-skill", `---

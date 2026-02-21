@@ -9,6 +9,7 @@ import (
 )
 
 func TestLibSQLDelegate_GetKV(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name      string
 		setup     func(t *testing.T, d *LibSQLDelegate, ctx context.Context)
@@ -73,7 +74,7 @@ func TestLibSQLDelegate_GetKV(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			d := newTestDelegate(t)
-			ctx := context.Background()
+			ctx := t.Context()
 			if tt.setup != nil {
 				tt.setup(t, d, ctx)
 			}
@@ -89,6 +90,7 @@ func TestLibSQLDelegate_GetKV(t *testing.T) {
 }
 
 func TestLibSQLDelegate_UpsertKV(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name    string
 		ops     []kvOp
@@ -147,7 +149,7 @@ func TestLibSQLDelegate_UpsertKV(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			d := newTestDelegate(t)
-			ctx := context.Background()
+			ctx := t.Context()
 			for _, op := range tt.ops {
 				require.NoError(t, d.UpsertKV(ctx, op.agent, op.key, op.val))
 			}
@@ -159,6 +161,7 @@ func TestLibSQLDelegate_UpsertKV(t *testing.T) {
 }
 
 func TestLibSQLDelegate_DeleteKV(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name    string
 		setup   func(t *testing.T, d *LibSQLDelegate, ctx context.Context)
@@ -193,7 +196,7 @@ func TestLibSQLDelegate_DeleteKV(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			d := newTestDelegate(t)
-			ctx := context.Background()
+			ctx := t.Context()
 			if tt.setup != nil {
 				tt.setup(t, d, ctx)
 			}
@@ -218,6 +221,7 @@ func TestLibSQLDelegate_DeleteKV(t *testing.T) {
 }
 
 func TestLibSQLDelegate_ListKVByPrefix(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name    string
 		setup   func(t *testing.T, d *LibSQLDelegate, ctx context.Context)
@@ -286,7 +290,7 @@ func TestLibSQLDelegate_ListKVByPrefix(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			d := newTestDelegate(t)
-			ctx := context.Background()
+			ctx := t.Context()
 			if tt.setup != nil {
 				tt.setup(t, d, ctx)
 			}

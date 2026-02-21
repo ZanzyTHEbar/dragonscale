@@ -8,6 +8,7 @@ import (
 )
 
 func TestTopologicalOrderLinear(t *testing.T) {
+	t.Parallel()
 	states := map[string]*nodeState{
 		"a": newNodeState("a", nil),
 		"b": newNodeState("b", []string{"a"}),
@@ -23,6 +24,7 @@ func TestTopologicalOrderLinear(t *testing.T) {
 }
 
 func TestTopologicalOrderParallel(t *testing.T) {
+	t.Parallel()
 	states := map[string]*nodeState{
 		"a": newNodeState("a", nil),
 		"b": newNodeState("b", nil),
@@ -40,6 +42,7 @@ func TestTopologicalOrderParallel(t *testing.T) {
 }
 
 func TestTopologicalOrderCycleDetection(t *testing.T) {
+	t.Parallel()
 	states := map[string]*nodeState{
 		"a": newNodeState("a", []string{"c"}),
 		"b": newNodeState("b", []string{"a"}),
@@ -52,6 +55,7 @@ func TestTopologicalOrderCycleDetection(t *testing.T) {
 }
 
 func TestTopologicalOrderSingleNode(t *testing.T) {
+	t.Parallel()
 	states := map[string]*nodeState{
 		"only": newNodeState("only", nil),
 	}
@@ -63,6 +67,7 @@ func TestTopologicalOrderSingleNode(t *testing.T) {
 }
 
 func TestResolveRefs(t *testing.T) {
+	t.Parallel()
 	states := map[string]*nodeState{
 		"search": newNodeState("search", nil),
 	}
@@ -75,6 +80,7 @@ func TestResolveRefs(t *testing.T) {
 }
 
 func TestResolveRefsNoMatch(t *testing.T) {
+	t.Parallel()
 	states := map[string]*nodeState{}
 	input := `{"path":"#nodemissing"}`
 	result := resolveRefs(input, states)
@@ -82,6 +88,7 @@ func TestResolveRefsNoMatch(t *testing.T) {
 }
 
 func TestResolveToolExecArgsNoRefs(t *testing.T) {
+	t.Parallel()
 	states := map[string]*nodeState{}
 	input := `{"path":"/tmp/plain.txt"}`
 	result := resolveToolExecArgs(input, states)
@@ -89,6 +96,7 @@ func TestResolveToolExecArgsNoRefs(t *testing.T) {
 }
 
 func TestEscapeForJSON(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		input    string
 		expected string
@@ -106,6 +114,7 @@ func TestEscapeForJSON(t *testing.T) {
 }
 
 func TestNodeStateSetAndGetResult(t *testing.T) {
+	t.Parallel()
 	ns := newNodeState("test", nil)
 
 	go func() {

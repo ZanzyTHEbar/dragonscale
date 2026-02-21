@@ -11,6 +11,7 @@ import (
 )
 
 func TestBedrockCommon(t *testing.T) {
+	t.Parallel()
 	testCommon(t, []builderPair{
 		{"bedrock-anthropic-claude-3-sonnet", builderBedrockClaude3Sonnet, nil, nil},
 		{"bedrock-anthropic-claude-3-opus", builderBedrockClaude3Opus, nil, nil},
@@ -19,6 +20,7 @@ func TestBedrockCommon(t *testing.T) {
 }
 
 func TestBedrockBasicAuth(t *testing.T) {
+	t.Parallel()
 	testSimple(t, builderPair{"bedrock-anthropic-claude-3-sonnet", buildersBedrockBasicAuth, nil, nil})
 }
 

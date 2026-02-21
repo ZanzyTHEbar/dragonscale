@@ -11,6 +11,7 @@ import (
 )
 
 func TestExecuteHeartbeat_Async(t *testing.T) {
+	t.Parallel()
 	tmpDir, err := os.MkdirTemp("", "heartbeat-test-*")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
@@ -49,6 +50,7 @@ func TestExecuteHeartbeat_Async(t *testing.T) {
 }
 
 func TestExecuteHeartbeat_Error(t *testing.T) {
+	t.Parallel()
 	tmpDir, err := os.MkdirTemp("", "heartbeat-test-*")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
@@ -87,6 +89,7 @@ func TestExecuteHeartbeat_Error(t *testing.T) {
 }
 
 func TestExecuteHeartbeat_Silent(t *testing.T) {
+	t.Parallel()
 	tmpDir, err := os.MkdirTemp("", "heartbeat-test-*")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
@@ -125,6 +128,7 @@ func TestExecuteHeartbeat_Silent(t *testing.T) {
 }
 
 func TestHeartbeatService_StartStop(t *testing.T) {
+	t.Parallel()
 	tmpDir, err := os.MkdirTemp("", "heartbeat-test-*")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
@@ -144,6 +148,7 @@ func TestHeartbeatService_StartStop(t *testing.T) {
 }
 
 func TestHeartbeatService_Disabled(t *testing.T) {
+	t.Parallel()
 	tmpDir, err := os.MkdirTemp("", "heartbeat-test-*")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
@@ -161,6 +166,7 @@ func TestHeartbeatService_Disabled(t *testing.T) {
 }
 
 func TestExecuteHeartbeat_NilResult(t *testing.T) {
+	t.Parallel()
 	tmpDir, err := os.MkdirTemp("", "heartbeat-test-*")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
@@ -183,6 +189,7 @@ func TestExecuteHeartbeat_NilResult(t *testing.T) {
 
 // TestLogPath verifies heartbeat log is written to workspace directory
 func TestLogPath(t *testing.T) {
+	t.Parallel()
 	tmpDir, err := os.MkdirTemp("", "heartbeat-test-*")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
@@ -203,6 +210,7 @@ func TestLogPath(t *testing.T) {
 
 // TestHeartbeatFilePath verifies HEARTBEAT.md is at workspace root
 func TestHeartbeatFilePath(t *testing.T) {
+	t.Parallel()
 	tmpDir, err := os.MkdirTemp("", "heartbeat-test-*")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)
@@ -222,6 +230,7 @@ func TestHeartbeatFilePath(t *testing.T) {
 }
 
 func TestExecuteHeartbeat_UsesDueContextWithoutHeartbeatFile(t *testing.T) {
+	t.Parallel()
 	tmpDir, err := os.MkdirTemp("", "heartbeat-test-*")
 	if err != nil {
 		t.Fatalf("Failed to create temp dir: %v", err)

@@ -39,6 +39,7 @@ func allFileTools(workspace string) []tools.Tool {
 // ---------------------------------------------------------------------------
 
 func TestToolRegistry_AllToolsHaveSchema(t *testing.T) {
+	t.Parallel()
 	workspace := testWorkspace(t)
 
 	registry := tools.NewToolRegistry()
@@ -68,6 +69,7 @@ func TestToolRegistry_AllToolsHaveSchema(t *testing.T) {
 }
 
 func TestToolRegistry_SchemaPropertiesAreTyped(t *testing.T) {
+	t.Parallel()
 	workspace := testWorkspace(t)
 
 	for _, tool := range allFileTools(workspace) {
@@ -91,10 +93,11 @@ func TestToolRegistry_SchemaPropertiesAreTyped(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestToolExecution_ReadFile_NonExistent(t *testing.T) {
+	t.Parallel()
 	workspace := testWorkspace(t)
 
 	readTool := tools.NewReadFileTool(workspace, true)
-	result := readTool.Execute(context.Background(), map[string]interface{}{
+	result := readTool.Execute(t.Context(), map[string]interface{}{
 		"path": "nonexistent_file_12345.txt",
 	})
 
@@ -103,10 +106,11 @@ func TestToolExecution_ReadFile_NonExistent(t *testing.T) {
 }
 
 func TestToolExecution_WriteAndReadFile(t *testing.T) {
+	t.Parallel()
 	workspace := testWorkspace(t)
 
 	writeTool := tools.NewWriteFileTool(workspace, true)
-	writeResult := writeTool.Execute(context.Background(), map[string]interface{}{
+	writeResult := writeTool.Execute(t.Context(), map[string]interface{}{
 		"path":    "eval_test.txt",
 		"content": "hello from eval test",
 	})
@@ -114,7 +118,7 @@ func TestToolExecution_WriteAndReadFile(t *testing.T) {
 	assert.False(t, writeResult.IsError, "write should succeed: %s", writeResult.ForLLM)
 
 	readTool := tools.NewReadFileTool(workspace, true)
-	readResult := readTool.Execute(context.Background(), map[string]interface{}{
+	readResult := readTool.Execute(t.Context(), map[string]interface{}{
 		"path": "eval_test.txt",
 	})
 	require.NotNil(t, readResult)
@@ -123,10 +127,11 @@ func TestToolExecution_WriteAndReadFile(t *testing.T) {
 }
 
 func TestToolExecution_ExecBlocking(t *testing.T) {
+	t.Parallel()
 	workspace := testWorkspace(t)
 
 	execTool := tools.NewExecTool(workspace, false)
-	result := execTool.Execute(context.Background(), map[string]interface{}{
+	result := execTool.Execute(t.Context(), map[string]interface{}{
 		"command": "echo dragonscale-eval-test",
 	})
 
@@ -136,13 +141,14 @@ func TestToolExecution_ExecBlocking(t *testing.T) {
 }
 
 func TestToolExecution_ListDir(t *testing.T) {
+	t.Parallel()
 	workspace := testWorkspace(t)
 
 	os.WriteFile(filepath.Join(workspace, "file_a.txt"), []byte("a"), 0644)
 	os.WriteFile(filepath.Join(workspace, "file_b.txt"), []byte("b"), 0644)
 
 	listTool := tools.NewListDirTool(workspace, true)
-	result := listTool.Execute(context.Background(), map[string]interface{}{
+	result := listTool.Execute(t.Context(), map[string]interface{}{
 		"path": ".",
 	})
 
@@ -153,16 +159,17 @@ func TestToolExecution_ListDir(t *testing.T) {
 }
 
 func TestToolExecution_EditFile(t *testing.T) {
+	t.Parallel()
 	workspace := testWorkspace(t)
 
 	writeTool := tools.NewWriteFileTool(workspace, true)
-	writeTool.Execute(context.Background(), map[string]interface{}{
+	writeTool.Execute(t.Context(), map[string]interface{}{
 		"path":    "edit_target.txt",
 		"content": "hello world foo bar",
 	})
 
 	editTool := tools.NewEditFileTool(workspace, true)
-	result := editTool.Execute(context.Background(), map[string]interface{}{
+	result := editTool.Execute(t.Context(), map[string]interface{}{
 		"path":     "edit_target.txt",
 		"old_text": "world",
 		"new_text": "dragonscale",
@@ -171,7 +178,7 @@ func TestToolExecution_EditFile(t *testing.T) {
 	assert.False(t, result.IsError, "edit should succeed: %s", result.ForLLM)
 
 	readTool := tools.NewReadFileTool(workspace, true)
-	readResult := readTool.Execute(context.Background(), map[string]interface{}{
+	readResult := readTool.Execute(t.Context(), map[string]interface{}{
 		"path": "edit_target.txt",
 	})
 	assert.Contains(t, readResult.ForLLM, "dragonscale")
@@ -179,16 +186,17 @@ func TestToolExecution_EditFile(t *testing.T) {
 }
 
 func TestToolExecution_AppendFile(t *testing.T) {
+	t.Parallel()
 	workspace := testWorkspace(t)
 
 	writeTool := tools.NewWriteFileTool(workspace, true)
-	writeTool.Execute(context.Background(), map[string]interface{}{
+	writeTool.Execute(t.Context(), map[string]interface{}{
 		"path":    "append_target.txt",
 		"content": "line one\n",
 	})
 
 	appendTool := tools.NewAppendFileTool(workspace, true)
-	result := appendTool.Execute(context.Background(), map[string]interface{}{
+	result := appendTool.Execute(t.Context(), map[string]interface{}{
 		"path":    "append_target.txt",
 		"content": "line two\n",
 	})
@@ -196,7 +204,7 @@ func TestToolExecution_AppendFile(t *testing.T) {
 	assert.False(t, result.IsError, "append should succeed: %s", result.ForLLM)
 
 	readTool := tools.NewReadFileTool(workspace, true)
-	readResult := readTool.Execute(context.Background(), map[string]interface{}{
+	readResult := readTool.Execute(t.Context(), map[string]interface{}{
 		"path": "append_target.txt",
 	})
 	assert.Contains(t, readResult.ForLLM, "line one")
@@ -208,10 +216,11 @@ func TestToolExecution_AppendFile(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestToolExecution_ReadFile_WorkspaceRestriction(t *testing.T) {
+	t.Parallel()
 	workspace := testWorkspace(t)
 
 	readTool := tools.NewReadFileTool(workspace, true)
-	result := readTool.Execute(context.Background(), map[string]interface{}{
+	result := readTool.Execute(t.Context(), map[string]interface{}{
 		"path": "/etc/passwd",
 	})
 	require.NotNil(t, result)
@@ -219,10 +228,11 @@ func TestToolExecution_ReadFile_WorkspaceRestriction(t *testing.T) {
 }
 
 func TestToolExecution_WriteFile_WorkspaceRestriction(t *testing.T) {
+	t.Parallel()
 	workspace := testWorkspace(t)
 
 	writeTool := tools.NewWriteFileTool(workspace, true)
-	result := writeTool.Execute(context.Background(), map[string]interface{}{
+	result := writeTool.Execute(t.Context(), map[string]interface{}{
 		"path":    "/tmp/escape_test.txt",
 		"content": "should not write",
 	})
@@ -231,10 +241,11 @@ func TestToolExecution_WriteFile_WorkspaceRestriction(t *testing.T) {
 }
 
 func TestToolExecution_ReadFile_PathTraversal(t *testing.T) {
+	t.Parallel()
 	workspace := testWorkspace(t)
 
 	readTool := tools.NewReadFileTool(workspace, true)
-	result := readTool.Execute(context.Background(), map[string]interface{}{
+	result := readTool.Execute(t.Context(), map[string]interface{}{
 		"path": "../../../../etc/hostname",
 	})
 	require.NotNil(t, result)
@@ -242,6 +253,7 @@ func TestToolExecution_ReadFile_PathTraversal(t *testing.T) {
 }
 
 func TestToolExecution_Unrestricted(t *testing.T) {
+	t.Parallel()
 	workspace := testWorkspace(t)
 
 	tmpFile := filepath.Join(os.TempDir(), "dragonscale_unrestricted_test.txt")
@@ -249,7 +261,7 @@ func TestToolExecution_Unrestricted(t *testing.T) {
 	defer os.Remove(tmpFile)
 
 	readTool := tools.NewReadFileTool(workspace, false)
-	result := readTool.Execute(context.Background(), map[string]interface{}{
+	result := readTool.Execute(t.Context(), map[string]interface{}{
 		"path": tmpFile,
 	})
 	require.NotNil(t, result)
@@ -262,6 +274,7 @@ func TestToolExecution_Unrestricted(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestToolRegistry_ProgressiveDisclosure(t *testing.T) {
+	t.Parallel()
 	workspace := testWorkspace(t)
 
 	registry := tools.NewToolRegistry()
@@ -290,6 +303,7 @@ func TestToolRegistry_ProgressiveDisclosure(t *testing.T) {
 }
 
 func TestToolSearch_FindsReadFile(t *testing.T) {
+	t.Parallel()
 	workspace := testWorkspace(t)
 
 	registry := tools.NewToolRegistry()
@@ -299,7 +313,7 @@ func TestToolSearch_FindsReadFile(t *testing.T) {
 	registry.RegisterMetaTools()
 
 	searchTool := tools.NewToolSearchTool(registry)
-	result := searchTool.Execute(context.Background(), map[string]interface{}{
+	result := searchTool.Execute(t.Context(), map[string]interface{}{
 		"query": "read file",
 	})
 
@@ -309,6 +323,7 @@ func TestToolSearch_FindsReadFile(t *testing.T) {
 }
 
 func TestToolSearch_ListsAll(t *testing.T) {
+	t.Parallel()
 	workspace := testWorkspace(t)
 
 	registry := tools.NewToolRegistry()
@@ -317,7 +332,7 @@ func TestToolSearch_ListsAll(t *testing.T) {
 	registry.RegisterMetaTools()
 
 	searchTool := tools.NewToolSearchTool(registry)
-	result := searchTool.Execute(context.Background(), map[string]interface{}{
+	result := searchTool.Execute(t.Context(), map[string]interface{}{
 		"query": "",
 	})
 
@@ -327,6 +342,7 @@ func TestToolSearch_ListsAll(t *testing.T) {
 }
 
 func TestToolSearch_NoResults(t *testing.T) {
+	t.Parallel()
 	workspace := testWorkspace(t)
 
 	registry := tools.NewToolRegistry()
@@ -334,7 +350,7 @@ func TestToolSearch_NoResults(t *testing.T) {
 	registry.RegisterMetaTools()
 
 	searchTool := tools.NewToolSearchTool(registry)
-	result := searchTool.Execute(context.Background(), map[string]interface{}{
+	result := searchTool.Execute(t.Context(), map[string]interface{}{
 		"query": "xyzzy_nonexistent_tool",
 	})
 
@@ -343,6 +359,7 @@ func TestToolSearch_NoResults(t *testing.T) {
 }
 
 func TestToolCall_DispatchesCorrectly(t *testing.T) {
+	t.Parallel()
 	workspace := testWorkspace(t)
 
 	os.WriteFile(filepath.Join(workspace, "dispatch_test.txt"), []byte("dispatch ok"), 0644)
@@ -352,7 +369,7 @@ func TestToolCall_DispatchesCorrectly(t *testing.T) {
 	registry.RegisterMetaTools()
 
 	callTool := tools.NewToolCallTool(registry)
-	result := callTool.Execute(context.Background(), map[string]interface{}{
+	result := callTool.Execute(t.Context(), map[string]interface{}{
 		"tool_name": "read_file",
 		"arguments": map[string]interface{}{
 			"path": "dispatch_test.txt",
@@ -365,6 +382,7 @@ func TestToolCall_DispatchesCorrectly(t *testing.T) {
 }
 
 func TestToolCall_RejectsRecursion(t *testing.T) {
+	t.Parallel()
 	workspace := testWorkspace(t)
 
 	registry := tools.NewToolRegistry()
@@ -372,7 +390,7 @@ func TestToolCall_RejectsRecursion(t *testing.T) {
 	registry.RegisterMetaTools()
 
 	callTool := tools.NewToolCallTool(registry)
-	result := callTool.Execute(context.Background(), map[string]interface{}{
+	result := callTool.Execute(t.Context(), map[string]interface{}{
 		"tool_name": "tool_call",
 	})
 
@@ -381,11 +399,12 @@ func TestToolCall_RejectsRecursion(t *testing.T) {
 }
 
 func TestToolCall_RejectsUnknownTool(t *testing.T) {
+	t.Parallel()
 	registry := tools.NewToolRegistry()
 	registry.RegisterMetaTools()
 
 	callTool := tools.NewToolCallTool(registry)
-	result := callTool.Execute(context.Background(), map[string]interface{}{
+	result := callTool.Execute(t.Context(), map[string]interface{}{
 		"tool_name": "nonexistent_tool_xyz",
 	})
 
@@ -394,17 +413,19 @@ func TestToolCall_RejectsUnknownTool(t *testing.T) {
 }
 
 func TestToolCall_MissingToolName(t *testing.T) {
+	t.Parallel()
 	registry := tools.NewToolRegistry()
 	registry.RegisterMetaTools()
 
 	callTool := tools.NewToolCallTool(registry)
-	result := callTool.Execute(context.Background(), map[string]interface{}{})
+	result := callTool.Execute(t.Context(), map[string]interface{}{})
 
 	require.NotNil(t, result)
 	assert.True(t, result.IsError, "missing tool_name should be rejected")
 }
 
 func TestToolCall_StringArguments(t *testing.T) {
+	t.Parallel()
 	workspace := testWorkspace(t)
 
 	os.WriteFile(filepath.Join(workspace, "str_args.txt"), []byte("string args ok"), 0644)
@@ -414,7 +435,7 @@ func TestToolCall_StringArguments(t *testing.T) {
 	registry.RegisterMetaTools()
 
 	callTool := tools.NewToolCallTool(registry)
-	result := callTool.Execute(context.Background(), map[string]interface{}{
+	result := callTool.Execute(t.Context(), map[string]interface{}{
 		"tool_name": "read_file",
 		"arguments": `{"path": "str_args.txt"}`,
 	})
@@ -429,6 +450,7 @@ func TestToolCall_StringArguments(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestToolRegistry_GatewayMarking(t *testing.T) {
+	t.Parallel()
 	workspace := testWorkspace(t)
 
 	registry := tools.NewToolRegistry()
@@ -458,6 +480,7 @@ func TestToolRegistry_GatewayMarking(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestConfig_DefaultValues(t *testing.T) {
+	t.Parallel()
 	cfg := config.DefaultConfig()
 
 	assert.True(t, cfg.Agents.Defaults.RestrictToSandbox, "restrict to sandbox should be on by default")
@@ -469,6 +492,7 @@ func TestConfig_DefaultValues(t *testing.T) {
 }
 
 func TestConfig_LoadEvalConfigs(t *testing.T) {
+	t.Parallel()
 	evalDir := filepath.Join("..", "..", "eval", "configs")
 
 	tests := []struct {
@@ -492,6 +516,7 @@ func TestConfig_LoadEvalConfigs(t *testing.T) {
 }
 
 func TestConfig_MissingFileReturnsDefaults(t *testing.T) {
+	t.Parallel()
 	cfg, err := config.LoadConfig("/nonexistent/path/config.json")
 	require.NoError(t, err, "missing config should return defaults, not error")
 	assert.Equal(t, 768, cfg.Memory.EmbeddingDims, "should have default embedding dims")
@@ -502,10 +527,11 @@ func TestConfig_MissingFileReturnsDefaults(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestToolExecution_ExecTimeout(t *testing.T) {
+	t.Parallel()
 	workspace := testWorkspace(t)
 
 	execTool := tools.NewExecTool(workspace, false)
-	ctx, cancel := context.WithTimeout(context.Background(), 1)
+	ctx, cancel := context.WithTimeout(t.Context(), 1)
 	defer cancel()
 
 	result := execTool.Execute(ctx, map[string]interface{}{
@@ -516,10 +542,11 @@ func TestToolExecution_ExecTimeout(t *testing.T) {
 }
 
 func TestToolExecution_ExecEmptyCommand(t *testing.T) {
+	t.Parallel()
 	workspace := testWorkspace(t)
 
 	execTool := tools.NewExecTool(workspace, false)
-	result := execTool.Execute(context.Background(), map[string]interface{}{
+	result := execTool.Execute(t.Context(), map[string]interface{}{
 		"command": "",
 	})
 
@@ -532,6 +559,7 @@ func TestToolExecution_ExecEmptyCommand(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestToolSchema_JSONRoundtrip(t *testing.T) {
+	t.Parallel()
 	workspace := testWorkspace(t)
 
 	for _, tool := range allFileTools(workspace) {

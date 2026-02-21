@@ -8,6 +8,7 @@ import (
 )
 
 func TestVault_RoundTrip(t *testing.T) {
+	t.Parallel()
 	key, err := GenerateKey()
 	require.NoError(t, err)
 	require.Len(t, key, 32)
@@ -35,6 +36,7 @@ func TestVault_RoundTrip(t *testing.T) {
 }
 
 func TestVault_DifferentCiphertexts(t *testing.T) {
+	t.Parallel()
 	key, _ := GenerateKey()
 	v, _ := NewVault(key)
 
@@ -44,6 +46,7 @@ func TestVault_DifferentCiphertexts(t *testing.T) {
 }
 
 func TestVault_WrongKey(t *testing.T) {
+	t.Parallel()
 	key1, _ := GenerateKey()
 	key2, _ := GenerateKey()
 
@@ -58,6 +61,7 @@ func TestVault_WrongKey(t *testing.T) {
 }
 
 func TestVault_TamperedCiphertext(t *testing.T) {
+	t.Parallel()
 	key, _ := GenerateKey()
 	v, _ := NewVault(key)
 
@@ -70,6 +74,7 @@ func TestVault_TamperedCiphertext(t *testing.T) {
 }
 
 func TestVault_InvalidKeyLength(t *testing.T) {
+	t.Parallel()
 	_, err := NewVault([]byte("too-short"))
 	assert.ErrorIs(t, err, ErrKeyLength)
 
@@ -78,6 +83,7 @@ func TestVault_InvalidKeyLength(t *testing.T) {
 }
 
 func TestVault_EmptyInput(t *testing.T) {
+	t.Parallel()
 	key, _ := GenerateKey()
 	v, _ := NewVault(key)
 
@@ -90,6 +96,7 @@ func TestVault_EmptyInput(t *testing.T) {
 }
 
 func TestVault_BinaryData(t *testing.T) {
+	t.Parallel()
 	key, _ := GenerateKey()
 	v, _ := NewVault(key)
 

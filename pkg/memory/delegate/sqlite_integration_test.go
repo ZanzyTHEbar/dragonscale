@@ -1,7 +1,6 @@
 package delegate
 
 import (
-	"context"
 	"testing"
 
 	jsonv2 "github.com/go-json-experiment/json"
@@ -14,8 +13,9 @@ import (
 )
 
 func TestCronKVBackend_Roundtrip(t *testing.T) {
+	t.Parallel()
 	d := newTestDelegate(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	agentID := pkg.NAME
 	kvKey := "cron:store"
 
@@ -61,8 +61,9 @@ func TestCronKVBackend_Roundtrip(t *testing.T) {
 }
 
 func TestCronKVBackend_UpdatePreservesShape(t *testing.T) {
+	t.Parallel()
 	d := newTestDelegate(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	agentID := pkg.NAME
 	kvKey := "cron:store"
 
@@ -78,8 +79,9 @@ func TestCronKVBackend_UpdatePreservesShape(t *testing.T) {
 }
 
 func TestCronKVBackend_PrefixScan(t *testing.T) {
+	t.Parallel()
 	d := newTestDelegate(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	agentID := pkg.NAME
 
 	require.NoError(t, d.UpsertKV(ctx, agentID, "cron:store", "{}"))
@@ -94,8 +96,9 @@ func TestCronKVBackend_PrefixScan(t *testing.T) {
 }
 
 func TestEndToEnd_SessionAndAuditFlow(t *testing.T) {
+	t.Parallel()
 	d := newTestDelegate(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	agentID := "a1"
 	sessionKey := "sess-integration"
 
@@ -171,8 +174,9 @@ func TestEndToEnd_SessionAndAuditFlow(t *testing.T) {
 }
 
 func TestEndToEnd_WorkingContextAndRecallRoundtrip(t *testing.T) {
+	t.Parallel()
 	d := newTestDelegate(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	agentID := "a1"
 	sessionKey := "sess-wc"
 

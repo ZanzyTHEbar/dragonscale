@@ -10,6 +10,7 @@ import (
 )
 
 func TestAvailableTemplates(t *testing.T) {
+	t.Parallel()
 	templates := AvailableTemplates()
 	assert.Contains(t, templates, "trading")
 	assert.Contains(t, templates, "legal")
@@ -17,6 +18,7 @@ func TestAvailableTemplates(t *testing.T) {
 }
 
 func TestInstallTemplate(t *testing.T) {
+	t.Parallel()
 	tmp := t.TempDir()
 
 	err := InstallTemplate("trading", tmp)
@@ -35,6 +37,7 @@ func TestInstallTemplate(t *testing.T) {
 }
 
 func TestInstallTemplate_BuildsValidGraph(t *testing.T) {
+	t.Parallel()
 	tmp := t.TempDir()
 	require.NoError(t, InstallTemplate("trading", tmp))
 
@@ -56,6 +59,7 @@ func TestInstallTemplate_BuildsValidGraph(t *testing.T) {
 }
 
 func TestInstallTemplate_NotFound(t *testing.T) {
+	t.Parallel()
 	tmp := t.TempDir()
 	err := InstallTemplate("nonexistent", tmp)
 	assert.Error(t, err)
