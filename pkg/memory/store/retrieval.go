@@ -5,8 +5,8 @@ import (
 	"sort"
 	"time"
 
-	"github.com/sipeed/picoclaw/pkg/ids"
-	"github.com/sipeed/picoclaw/pkg/memory"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/ids"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/memory"
 )
 
 // CosineSimilarity computes the cosine similarity between two embedding vectors.

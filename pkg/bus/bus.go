@@ -4,7 +4,7 @@ import (
 	"context"
 	"sync"
 
-	"github.com/sipeed/picoclaw/pkg/logger"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/logger"
 )
 
 type MessageBus struct {

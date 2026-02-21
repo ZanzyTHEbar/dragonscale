@@ -6,8 +6,8 @@ import (
 	"encoding/hex"
 	"time"
 
-	"github.com/sipeed/picoclaw/pkg/cache"
-	"github.com/sipeed/picoclaw/pkg/memory"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/cache"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/memory"
 )
 
 // CachedEmbedder wraps an EmbeddingProvider with an LRU cache keyed by content hash.

@@ -5,12 +5,12 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/sipeed/picoclaw/pkg/bus"
-	"github.com/sipeed/picoclaw/pkg/constants"
-	"github.com/sipeed/picoclaw/pkg/devices/events"
-	"github.com/sipeed/picoclaw/pkg/devices/sources"
-	"github.com/sipeed/picoclaw/pkg/logger"
-	"github.com/sipeed/picoclaw/pkg/state"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/bus"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/constants"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/devices/events"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/devices/sources"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/logger"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/state"
 )
 
 type Service struct {

@@ -1,7 +1,7 @@
-// PicoClaw - Ultra-lightweight personal AI agent
+// DragonScale - Ultra-lightweight personal AI agent
 // License: MIT
 //
-// Copyright (c) 2026 PicoClaw contributors
+// Copyright (c) 2026 DragonScale contributors
 
 package fantasy
 
@@ -15,8 +15,8 @@ import (
 
 	"charm.land/fantasy"
 	"charm.land/fantasy/providers/openaicompat"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/config"
 	"github.com/openai/openai-go/v2/option"
-	"github.com/sipeed/picoclaw/pkg/config"
 )
 
 // providerEntry describes a single LLM provider: how to identify it, how to
@@ -191,7 +191,7 @@ func (e *providerEntry) resolveBase(cfg *config.Config) string {
 	return e.defaultBase
 }
 
-// CreateProvider builds a Fantasy provider from PicoClaw config.
+// CreateProvider builds a Fantasy provider from DragonScale config.
 func CreateProvider(cfg *config.Config) (fantasy.Provider, error) {
 	providerName := strings.ToLower(cfg.Agents.Defaults.Provider)
 	model := cfg.Agents.Defaults.Model
@@ -333,7 +333,7 @@ func defaultIfEmpty(val, fallback string) string {
 
 func providerNameOrDefault(name string) string {
 	if name == "" {
-		return "picoclaw"
+		return "dragonscale"
 	}
 	return name
 }

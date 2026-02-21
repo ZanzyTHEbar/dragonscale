@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/sipeed/picoclaw/pkg/itr"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/itr"
 )
 
 const (

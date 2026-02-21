@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/sipeed/picoclaw/pkg/config"
-	"github.com/sipeed/picoclaw/pkg/logger"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/config"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/logger"
 )
 
 // NewFromConfig creates a LibSQLDelegate from the application config.

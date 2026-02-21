@@ -1,8 +1,8 @@
-// PicoClaw - Ultra-lightweight personal AI agent
+// DragonScale - Ultra-lightweight personal AI agent
 // Inspired by and based on nanobot: https://github.com/HKUDS/nanobot
 // License: MIT
 //
-// Copyright (c) 2026 PicoClaw contributors
+// Copyright (c) 2026 DragonScale contributors
 
 package heartbeat
 
@@ -14,11 +14,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/sipeed/picoclaw/pkg/bus"
-	"github.com/sipeed/picoclaw/pkg/constants"
-	"github.com/sipeed/picoclaw/pkg/logger"
-	"github.com/sipeed/picoclaw/pkg/state"
-	"github.com/sipeed/picoclaw/pkg/tools"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/bus"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/constants"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/logger"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/state"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/tools"
 )
 
 const (
@@ -31,12 +31,17 @@ const (
 // channel and chatID are derived from the last active user channel.
 type HeartbeatHandler func(prompt, channel, chatID string) *tools.ToolResult
 
+// DueContextProvider returns additional heartbeat prompt context for due
+// obligations/reminders discovered by scheduler-integrated checks.
+type DueContextProvider func(now time.Time) (string, error)
+
 // HeartbeatService manages periodic heartbeat checks
 type HeartbeatService struct {
 	workspace string
 	bus       *bus.MessageBus
 	state     *state.Manager
 	handler   HeartbeatHandler
+	dueCtx    DueContextProvider
 	interval  time.Duration
 	enabled   bool
 	mu        sync.RWMutex
@@ -74,6 +79,14 @@ func (hs *HeartbeatService) SetHandler(handler HeartbeatHandler) {
 	hs.mu.Lock()
 	defer hs.mu.Unlock()
 	hs.handler = handler
+}
+
+// SetDueContextProvider registers a callback that contributes due-obligation
+// context to heartbeat prompts.
+func (hs *HeartbeatService) SetDueContextProvider(provider DueContextProvider) {
+	hs.mu.Lock()
+	defer hs.mu.Unlock()
+	hs.dueCtx = provider
 }
 
 // Start begins the heartbeat service
@@ -148,6 +161,7 @@ func (hs *HeartbeatService) executeHeartbeat() {
 	enabled := hs.enabled
 	stopped := hs.stopChan == nil
 	handler := hs.handler
+	dueCtxProvider := hs.dueCtx
 	hs.mu.RUnlock()
 
 	if !enabled || stopped {
@@ -156,9 +170,19 @@ func (hs *HeartbeatService) executeHeartbeat() {
 
 	logger.DebugC("heartbeat", "Executing heartbeat")
 
-	prompt := hs.buildPrompt()
+	dueContext := ""
+	if dueCtxProvider != nil {
+		ctx, err := dueCtxProvider(time.Now().UTC())
+		if err != nil {
+			hs.logError("Due obligation check failed: %v", err)
+		} else {
+			dueContext = strings.TrimSpace(ctx)
+		}
+	}
+
+	prompt := hs.buildPrompt(dueContext)
 	if prompt == "" {
-		logger.InfoC("heartbeat", "No heartbeat prompt (HEARTBEAT.md empty or missing)")
+		logger.InfoC("heartbeat", "No heartbeat prompt or due obligations")
 		return
 	}
 
@@ -213,22 +237,27 @@ func (hs *HeartbeatService) executeHeartbeat() {
 }
 
 // buildPrompt builds the heartbeat prompt from HEARTBEAT.md
-func (hs *HeartbeatService) buildPrompt() string {
+func (hs *HeartbeatService) buildPrompt(dueContext string) string {
 	heartbeatPath := filepath.Join(hs.workspace, "HEARTBEAT.md")
 
 	data, err := os.ReadFile(heartbeatPath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			hs.createDefaultHeartbeatTemplate()
+			data = []byte{}
+		} else {
+			hs.logError("Error reading HEARTBEAT.md: %v", err)
 			return ""
 		}
-		hs.logError("Error reading HEARTBEAT.md: %v", err)
-		return ""
 	}
 
-	content := string(data)
-	if len(content) == 0 {
+	content := strings.TrimSpace(string(data))
+	dueContext = strings.TrimSpace(dueContext)
+	if content == "" && dueContext == "" {
 		return ""
+	}
+	if dueContext == "" {
+		dueContext = "None."
 	}
 
 	now := time.Now().Format("2006-01-02 15:04:05")
@@ -240,8 +269,11 @@ You are a proactive AI assistant. This is a scheduled heartbeat check.
 Review the following tasks and execute any necessary actions using available skills.
 If there is nothing that requires attention, respond ONLY with: HEARTBEAT_OK
 
+## Due Obligations
 %s
-`, now, content)
+
+%s
+`, now, dueContext, content)
 }
 
 // createDefaultHeartbeatTemplate creates the default HEARTBEAT.md file

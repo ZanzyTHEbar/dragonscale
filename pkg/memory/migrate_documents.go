@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/sipeed/picoclaw/pkg/ids"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/ids"
 )
 
 var bootstrapDocNames = []string{

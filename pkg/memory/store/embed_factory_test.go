@@ -6,7 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/config"
 )
 
 func TestNewEmbedderFromConfig_EmptyProvider(t *testing.T) {

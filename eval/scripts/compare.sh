@@ -13,7 +13,7 @@ if [[ "${1:-}" == "--repeat" ]]; then
   REPEAT="${2:-3}"
 fi
 
-echo "=== PicoClaw Eval Comparison ==="
+echo "=== DragonScale Eval Comparison ==="
 echo "Repeat: ${REPEAT}x per test case"
 echo ""
 
@@ -47,7 +47,7 @@ cd "$EVAL_DIR"
 
 # Create a temp config with both providers
 cat > promptfooconfig-compare.yaml <<'YAML'
-description: "PicoClaw A/B comparison (branch vs main)"
+description: "DragonScale A/B comparison (branch vs main)"
 
 providers:
   - id: "exec:./bin/eval-runner"

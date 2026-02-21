@@ -17,19 +17,11 @@ func GetRootAsExecWasm(buf []byte, offset flatbuffers.UOffsetT) *ExecWasm {
 	return x
 }
 
-func FinishExecWasmBuffer(builder *flatbuffers.Builder, offset flatbuffers.UOffsetT) {
-	builder.Finish(offset)
-}
-
 func GetSizePrefixedRootAsExecWasm(buf []byte, offset flatbuffers.UOffsetT) *ExecWasm {
 	n := flatbuffers.GetUOffsetT(buf[offset+flatbuffers.SizeUint32:])
 	x := &ExecWasm{}
 	x.Init(buf, n+offset+flatbuffers.SizeUint32)
 	return x
-}
-
-func FinishSizePrefixedExecWasmBuffer(builder *flatbuffers.Builder, offset flatbuffers.UOffsetT) {
-	builder.FinishSizePrefixed(offset)
 }
 
 func (rcv *ExecWasm) Init(buf []byte, i flatbuffers.UOffsetT) {

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sipeed/picoclaw/pkg/ids"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/ids"
 )
 
 // MigrateDailyNotes performs a one-time migration of daily note files

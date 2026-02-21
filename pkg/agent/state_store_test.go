@@ -9,10 +9,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/sipeed/picoclaw/pkg/agent"
-	"github.com/sipeed/picoclaw/pkg/ids"
-	"github.com/sipeed/picoclaw/pkg/memory/delegate"
-	"github.com/sipeed/picoclaw/pkg/memory/sqlc"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/agent"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/ids"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/memory/delegate"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/memory/sqlc"
 )
 
 func newTestQueries(t *testing.T) *testDB {

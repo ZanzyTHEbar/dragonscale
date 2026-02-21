@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/config"
 )
 
 type ActionType int
@@ -76,7 +76,7 @@ func Run(opts Options) (*Result, error) {
 		return nil, err
 	}
 
-	fmt.Println("Migrating from OpenClaw to PicoClaw")
+	fmt.Println("Migrating from OpenClaw to DragonScale")
 	fmt.Printf("  Source:      %s\n", openclawHome)
 	fmt.Printf("  Destination: %s\n", picoClawHome)
 	fmt.Println()
@@ -118,7 +118,7 @@ func Plan(opts Options, openclawHome, picoClawHome string) ([]Action, []string, 
 				Type:        ActionConvertConfig,
 				Source:      configPath,
 				Destination: filepath.Join(picoClawHome, "config.json"),
-				Description: "convert OpenClaw config to PicoClaw format",
+				Description: "convert OpenClaw config to DragonScale format",
 			})
 
 			data, err := LoadOpenClawConfig(configPath)
@@ -221,7 +221,7 @@ func executeConfigMigration(srcConfigPath, dstConfigPath, picoClawHome string) e
 	if _, err := os.Stat(dstConfigPath); err == nil {
 		existing, err := config.LoadConfig(dstConfigPath)
 		if err != nil {
-			return fmt.Errorf("loading existing PicoClaw config: %w", err)
+			return fmt.Errorf("loading existing DragonScale config: %w", err)
 		}
 		incoming = MergeConfig(existing, incoming)
 	}
@@ -330,14 +330,14 @@ func resolvePicoClawHome(override string) (string, error) {
 	if override != "" {
 		return expandHome(override), nil
 	}
-	if envHome := os.Getenv("PICOCLAW_HOME"); envHome != "" {
+	if envHome := os.Getenv("DRAGONSCALE_HOME"); envHome != "" {
 		return expandHome(envHome), nil
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", fmt.Errorf("resolving home directory: %w", err)
 	}
-	return filepath.Join(home, ".picoclaw"), nil
+	return filepath.Join(home, ".dragonscale"), nil
 }
 
 func resolveWorkspace(homeDir string) string {

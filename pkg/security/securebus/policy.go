@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/sipeed/picoclaw/pkg/itr"
-	"github.com/sipeed/picoclaw/pkg/tools"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/itr"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/tools"
 )
 
 // PolicyConfig controls global enforcement settings for the SecureBus.

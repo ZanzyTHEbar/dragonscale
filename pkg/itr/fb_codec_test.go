@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sipeed/picoclaw/pkg/itr"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/itr"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

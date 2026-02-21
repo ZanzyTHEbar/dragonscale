@@ -1,7 +1,7 @@
-// PicoClaw - Ultra-lightweight personal AI agent
+// DragonScale - Ultra-lightweight personal AI agent
 // License: MIT
 //
-// Copyright (c) 2026 PicoClaw contributors
+// Copyright (c) 2026 DragonScale contributors
 
 package fantasy
 
@@ -12,14 +12,14 @@ import (
 	"charm.land/fantasy"
 	jsonv2 "github.com/go-json-experiment/json"
 
-	"github.com/sipeed/picoclaw/pkg/bus"
-	"github.com/sipeed/picoclaw/pkg/logger"
-	memstore "github.com/sipeed/picoclaw/pkg/memory/store"
-	"github.com/sipeed/picoclaw/pkg/tools"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/bus"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/logger"
+	memstore "github.com/ZanzyTHEbar/dragonscale/pkg/memory/store"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/tools"
 )
 
-// PicoToolAdapter wraps a PicoClaw tool as a Fantasy AgentTool.
-// It bridges PicoClaw's dual-channel ToolResult semantics with Fantasy's
+// PicoToolAdapter wraps a DragonScale tool as a Fantasy AgentTool.
+// It bridges DragonScale's dual-channel ToolResult semantics with Fantasy's
 // simple ToolResponse by publishing ForUser content to the bus as a side effect
 // and returning only ForLLM content to Fantasy.
 type PicoToolAdapter struct {
@@ -35,9 +35,9 @@ type PicoToolAdapter struct {
 // Compile-time check that PicoToolAdapter implements fantasy.AgentTool.
 var _ fantasy.AgentTool = (*PicoToolAdapter)(nil)
 
-// Info returns Fantasy-compatible tool metadata from the PicoClaw tool.
+// Info returns Fantasy-compatible tool metadata from the DragonScale tool.
 // Fantasy's ToolInfo expects Parameters to be just the properties map and
-// Required to be a separate []string. PicoClaw tools return a full JSON
+// Required to be a separate []string. DragonScale tools return a full JSON
 // Schema object from Parameters() (with "type", "properties", "required"
 // keys), so we must unwrap it here to avoid double-wrapping in
 // agent.prepareTools() and agent.validateToolCall().
@@ -77,14 +77,14 @@ func unwrapSchema(params map[string]interface{}) (map[string]interface{}, []stri
 	return props, required
 }
 
-// Run executes the PicoClaw tool and bridges the result to Fantasy.
+// Run executes the DragonScale tool and bridges the result to Fantasy.
 //
 // Side effects:
 //   - If the tool result has ForUser content and is not Silent, publishes to the bus.
 //   - If the tool is a ContextualTool, sets channel/chatID context before execution.
 //   - If the tool is an AsyncTool, wires a callback that publishes results to the bus.
 func (a *PicoToolAdapter) Run(ctx context.Context, call fantasy.ToolCall) (fantasy.ToolResponse, error) {
-	// 1. Deserialize Fantasy's JSON string input into PicoClaw's map format.
+	// 1. Deserialize Fantasy's JSON string input into DragonScale's map format.
 	args, err := parseToolArgs(call.Input)
 	if err != nil {
 		return fantasy.NewTextErrorResponse(fmt.Sprintf("invalid arguments: %v", err)), nil
@@ -108,7 +108,7 @@ func (a *PicoToolAdapter) Run(ctx context.Context, call fantasy.ToolCall) (fanta
 		})
 	}
 
-	// 4. Execute the PicoClaw tool.
+	// 4. Execute the DragonScale tool.
 	result := a.inner.Execute(ctx, args)
 	if result == nil {
 		return fantasy.NewTextErrorResponse("tool returned nil result"), nil
@@ -146,12 +146,12 @@ func (a *PicoToolAdapter) Run(ctx context.Context, call fantasy.ToolCall) (fanta
 	return fantasy.NewTextResponse(result.ForLLM), nil
 }
 
-// ProviderOptions returns nil — PicoClaw tools have no provider-specific options.
+// ProviderOptions returns nil — DragonScale tools have no provider-specific options.
 func (a *PicoToolAdapter) ProviderOptions() fantasy.ProviderOptions {
 	return fantasy.ProviderOptions{}
 }
 
-// SetProviderOptions is a no-op for PicoClaw tools.
+// SetProviderOptions is a no-op for DragonScale tools.
 func (a *PicoToolAdapter) SetProviderOptions(_ fantasy.ProviderOptions) {}
 
 // AdaptedToolsConfig configures how tools are adapted for the Fantasy agent.

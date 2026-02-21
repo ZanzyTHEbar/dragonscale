@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/sipeed/picoclaw/pkg/memory"
-	memstore "github.com/sipeed/picoclaw/pkg/memory/store"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/memory"
+	memstore "github.com/ZanzyTHEbar/dragonscale/pkg/memory/store"
 )
 
 // KeywordSearchTool performs FTS5+BM25 keyword search across recall and archival memory.

@@ -1,8 +1,8 @@
-// PicoClaw - Ultra-lightweight personal AI agent
+// DragonScale - Ultra-lightweight personal AI agent
 // Inspired by and based on nanobot: https://github.com/HKUDS/nanobot
 // License: MIT
 //
-// Copyright (c) 2026 PicoClaw contributors
+// Copyright (c) 2026 DragonScale contributors
 
 package main
 
@@ -21,28 +21,28 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ZanzyTHEbar/dragonscale/pkg/agent"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/auth"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/bus"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/channels"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/config"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/cron"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/devices"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/health"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/heartbeat"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/itr"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/logger"
+	picomemory "github.com/ZanzyTHEbar/dragonscale/pkg/memory"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/memory/delegate"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/migrate"
+	picoruntime "github.com/ZanzyTHEbar/dragonscale/pkg/runtime"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/security"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/security/securebus"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/skills"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/state"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/tools"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/voice"
 	"github.com/chzyer/readline"
-	"github.com/sipeed/picoclaw/pkg/agent"
-	"github.com/sipeed/picoclaw/pkg/auth"
-	"github.com/sipeed/picoclaw/pkg/bus"
-	"github.com/sipeed/picoclaw/pkg/channels"
-	"github.com/sipeed/picoclaw/pkg/config"
-	"github.com/sipeed/picoclaw/pkg/cron"
-	"github.com/sipeed/picoclaw/pkg/devices"
-	"github.com/sipeed/picoclaw/pkg/health"
-	"github.com/sipeed/picoclaw/pkg/heartbeat"
-	"github.com/sipeed/picoclaw/pkg/itr"
-	"github.com/sipeed/picoclaw/pkg/logger"
-	picomemory "github.com/sipeed/picoclaw/pkg/memory"
-	"github.com/sipeed/picoclaw/pkg/memory/delegate"
-	"github.com/sipeed/picoclaw/pkg/migrate"
-	picoruntime "github.com/sipeed/picoclaw/pkg/runtime"
-	"github.com/sipeed/picoclaw/pkg/security"
-	"github.com/sipeed/picoclaw/pkg/security/securebus"
-	"github.com/sipeed/picoclaw/pkg/skills"
-	"github.com/sipeed/picoclaw/pkg/state"
-	"github.com/sipeed/picoclaw/pkg/tools"
-	"github.com/sipeed/picoclaw/pkg/voice"
 )
 
 //go:generate cp -r ../../workspace .
@@ -80,7 +80,7 @@ func formatBuildInfo() (build string, goVer string) {
 }
 
 func printVersion() {
-	fmt.Printf("%s picoclaw %s\n", logo, formatVersion())
+	fmt.Printf("%s dragonscale %s\n", logo, formatVersion())
 	build, goVer := formatBuildInfo()
 	if build != "" {
 		fmt.Printf("  Build: %s\n", build)
@@ -159,7 +159,7 @@ func main() {
 		installer := skills.NewSkillInstaller(skillsDir)
 		cfgDir, _ := config.ConfigDir()
 		globalSkillsDir := filepath.Join(cfgDir, "skills")
-		builtinSkillsDir := filepath.Join(cfgDir, "picoclaw", "skills")
+		builtinSkillsDir := filepath.Join(cfgDir, "dragonscale", "skills")
 		skillsLoader := skills.NewSkillsLoader(skillsDir, globalSkillsDir, builtinSkillsDir)
 
 		switch subcommand {
@@ -169,7 +169,7 @@ func main() {
 			skillsInstallCmd(installer)
 		case "remove", "uninstall":
 			if len(os.Args) < 4 {
-				fmt.Println("Usage: picoclaw skills remove <skill-name>")
+				fmt.Println("Usage: dragonscale skills remove <skill-name>")
 				return
 			}
 			skillsRemoveCmd(installer, os.Args[3])
@@ -181,7 +181,7 @@ func main() {
 			skillsSearchCmd(installer)
 		case "show":
 			if len(os.Args) < 4 {
-				fmt.Println("Usage: picoclaw skills show <skill-name>")
+				fmt.Println("Usage: dragonscale skills show <skill-name>")
 				return
 			}
 			skillsShowCmd(skillsLoader, os.Args[3])
@@ -205,20 +205,20 @@ func main() {
 }
 
 func printHelp() {
-	fmt.Printf("%s picoclaw - Personal AI Assistant v%s\n\n", logo, version)
-	fmt.Println("Usage: picoclaw <command>")
+	fmt.Printf("%s dragonscale - Personal AI Assistant v%s\n\n", logo, version)
+	fmt.Println("Usage: dragonscale <command>")
 	fmt.Println()
 	fmt.Println("Commands:")
-	fmt.Println("  onboard     Initialize picoclaw configuration and workspace")
+	fmt.Println("  onboard     Initialize dragonscale configuration and workspace")
 	fmt.Println("  agent       Interact with the agent directly")
 	fmt.Println("  auth        Manage authentication (login, logout, status)")
-	fmt.Println("  gateway     Start picoclaw gateway")
-	fmt.Println("  status      Show picoclaw status")
+	fmt.Println("  gateway     Start dragonscale gateway")
+	fmt.Println("  status      Show dragonscale status")
 	fmt.Println("  cron        Manage scheduled tasks")
-	fmt.Println("  migrate     Migrate from OpenClaw to PicoClaw")
+	fmt.Println("  migrate     Migrate from OpenClaw to DragonScale")
 	fmt.Println("  memory      Memory system management (db status, session migration)")
 	fmt.Println("  secret      Manage secrets (add, list, delete)")
-	fmt.Println("  daemon      Manage the picoclaw daemon (start, stop, status)")
+	fmt.Println("  daemon      Manage the dragonscale daemon (start, stop, status)")
 	fmt.Println("  skills      Manage skills (install, list, remove)")
 	fmt.Println("  version     Show version information")
 }
@@ -249,7 +249,7 @@ func onboard() {
 
 	createWorkspaceTemplates(cfg)
 
-	fmt.Printf("%s picoclaw is ready!\n", logo)
+	fmt.Printf("%s dragonscale is ready!\n", logo)
 
 	fmt.Print("\nSet up encrypted secret storage? (y/n): ")
 	var secretResponse string
@@ -264,20 +264,20 @@ func onboard() {
 			fmt.Println("  " + encoded)
 			fmt.Println()
 			fmt.Println("Add to your shell profile:")
-			fmt.Println("  export PICOCLAW_MASTER_KEY=" + encoded)
+			fmt.Println("  export DRAGONSCALE_MASTER_KEY=" + encoded)
 			fmt.Println()
-			fmt.Println("Then store secrets with: picoclaw secret add <name>")
+			fmt.Println("Then store secrets with: dragonscale secret add <name>")
 		}
 	}
 
 	fmt.Println("\nNext steps:")
 	fmt.Println("  1. Add your API key to", configPath)
 	fmt.Println("     Get one at: https://openrouter.ai/keys")
-	fmt.Println("  2. Chat: picoclaw agent -m \"Hello!\"")
+	fmt.Println("  2. Chat: dragonscale agent -m \"Hello!\"")
 }
 
 // seedEmbeddedIdentity copies identity template files from the embedded FS
-// into the XDG identity directory ($XDG_CONFIG_HOME/picoclaw/identity/).
+// into the XDG identity directory ($XDG_CONFIG_HOME/dragonscale/identity/).
 func seedEmbeddedIdentity(identityDir string) error {
 	identityFiles := []string{"AGENT.md", "IDENTITY.md", "SOUL.md", "USER.md"}
 	for _, name := range identityFiles {
@@ -297,7 +297,7 @@ func seedEmbeddedIdentity(identityDir string) error {
 }
 
 // seedEmbeddedSkills copies skill templates from the embedded FS into the
-// XDG skills directory ($XDG_DATA_HOME/picoclaw/skills/).
+// XDG skills directory ($XDG_DATA_HOME/dragonscale/skills/).
 func seedEmbeddedSkills(skillsDir string) error {
 	return fs.WalkDir(embeddedFiles, "workspace/skills", func(path string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
@@ -366,7 +366,7 @@ func migrateCmd() {
 				opts.OpenClawHome = args[i+1]
 				i++
 			}
-		case "--picoclaw-home":
+		case "--dragonscale-home":
 			if i+1 < len(args) {
 				opts.PicoClawHome = args[i+1]
 				i++
@@ -390,9 +390,9 @@ func migrateCmd() {
 }
 
 func migrateHelp() {
-	fmt.Println("\nMigrate from OpenClaw to PicoClaw")
+	fmt.Println("\nMigrate from OpenClaw to DragonScale")
 	fmt.Println()
-	fmt.Println("Usage: picoclaw migrate [options]")
+	fmt.Println("Usage: dragonscale migrate [options]")
 	fmt.Println()
 	fmt.Println("Options:")
 	fmt.Println("  --dry-run          Show what would be migrated without making changes")
@@ -401,13 +401,13 @@ func migrateHelp() {
 	fmt.Println("  --workspace-only   Only migrate workspace files, skip config")
 	fmt.Println("  --force            Skip confirmation prompts")
 	fmt.Println("  --openclaw-home    Override OpenClaw home directory (default: ~/.openclaw)")
-	fmt.Println("  --picoclaw-home    Override PicoClaw home directory (default: ~/.picoclaw)")
+	fmt.Println("  --dragonscale-home    Override DragonScale home directory (default: ~/.dragonscale)")
 	fmt.Println()
 	fmt.Println("Examples:")
-	fmt.Println("  picoclaw migrate              Detect and migrate from OpenClaw")
-	fmt.Println("  picoclaw migrate --dry-run    Show what would be migrated")
-	fmt.Println("  picoclaw migrate --refresh    Re-sync workspace files")
-	fmt.Println("  picoclaw migrate --force      Migrate without confirmation")
+	fmt.Println("  dragonscale migrate              Detect and migrate from OpenClaw")
+	fmt.Println("  dragonscale migrate --dry-run    Show what would be migrated")
+	fmt.Println("  dragonscale migrate --refresh    Re-sync workspace files")
+	fmt.Println("  dragonscale migrate --force      Migrate without confirmation")
 }
 
 func agentCmd() {
@@ -479,7 +479,7 @@ func interactiveMode(ctx context.Context, agentLoop *agent.AgentLoop, sessionKey
 
 	rl, err := readline.NewEx(&readline.Config{
 		Prompt:          prompt,
-		HistoryFile:     filepath.Join(os.TempDir(), ".picoclaw_history"),
+		HistoryFile:     filepath.Join(os.TempDir(), ".dragonscale_history"),
 		HistoryLimit:    100,
 		InterruptPrompt: "^C",
 		EOFPrompt:       "exit",
@@ -611,14 +611,19 @@ func gatewayCmd() {
 	execTimeout := time.Duration(cfg.Tools.Cron.ExecTimeoutMinutes) * time.Minute
 	var cronOpts []cron.CronOption
 	if del := agentLoop.MemoryDelegate(); del != nil {
-		cronOpts = append(cronOpts, cron.WithCronDelegate(del, "picoclaw"))
+		cronOpts = append(cronOpts, cron.WithCronDelegate(del, "dragonscale"))
 	}
 	cronService := setupCronTool(appCtx, agentLoop, msgBus, cfg.SandboxPath(), cfg.RestrictToSandbox(), execTimeout, cronOpts...)
 
+	var heartbeatStateOpts []state.Option
+	if del := agentLoop.MemoryDelegate(); del != nil {
+		heartbeatStateOpts = append(heartbeatStateOpts, state.WithDelegate(del))
+	}
 	heartbeatService := heartbeat.NewHeartbeatService(
 		cfg.SandboxPath(),
 		cfg.Heartbeat.Interval,
 		cfg.Heartbeat.Enabled,
+		heartbeatStateOpts...,
 	)
 	heartbeatService.SetBus(msgBus)
 	heartbeatService.SetHandler(func(prompt, channel, chatID string) *tools.ToolResult {
@@ -638,6 +643,40 @@ func gatewayCmd() {
 		// sent to user via processSystemMessage when the async task completes
 		return tools.SilentResult(response)
 	})
+	if del := agentLoop.MemoryDelegate(); del != nil {
+		obligations := tools.NewObligationTool(del, "dragonscale")
+		heartbeatService.SetDueContextProvider(func(now time.Time) (string, error) {
+			ctx, cancel := context.WithTimeout(appCtx, 10*time.Second)
+			defer cancel()
+
+			due, err := obligations.CollectDueObligations(ctx, now, "heartbeat")
+			if err != nil {
+				return "", err
+			}
+			if len(due) == 0 {
+				return "", nil
+			}
+
+			var b strings.Builder
+			b.WriteString("The following obligations are currently due and require action:\n")
+			for _, rec := range due {
+				dueAt := rec.DueAt
+				if dueAt.IsZero() {
+					dueAt = rec.ScheduledAt
+				}
+				dueLabel := "unspecified"
+				if !dueAt.IsZero() {
+					dueLabel = dueAt.Format(time.RFC3339)
+				}
+				b.WriteString(fmt.Sprintf("- [%s] %s (state=%s, due_at=%s)\n", rec.ID, rec.Title, rec.State, dueLabel))
+				if strings.TrimSpace(rec.Details) != "" {
+					b.WriteString(fmt.Sprintf("  details: %s\n", strings.TrimSpace(rec.Details)))
+				}
+			}
+			b.WriteString("For each due obligation, complete the action, then call obligation update_state with executed and obligation add_evidence describing what was done.\n")
+			return b.String(), nil
+		})
+	}
 
 	channelManager, err := channels.NewManager(cfg, msgBus)
 	if err != nil {
@@ -762,7 +801,7 @@ func memoryCmd() {
 func memoryHelp() {
 	fmt.Println("\nMemory system management")
 	fmt.Println()
-	fmt.Println("Usage: picoclaw memory <subcommand>")
+	fmt.Println("Usage: dragonscale memory <subcommand>")
 	fmt.Println()
 	fmt.Println("Subcommands:")
 	fmt.Println("  migrate-sessions   Import file-based sessions into recall memory")
@@ -793,7 +832,7 @@ func memoryMigrateSessions() {
 	}
 
 	sessionsDir := filepath.Join(cfg.SandboxPath(), "sessions")
-	stats, err := picomemory.MigrateFileSessions(ctx, del, "picoclaw", sessionsDir)
+	stats, err := picomemory.MigrateFileSessions(ctx, del, "dragonscale", sessionsDir)
 	if err != nil {
 		fmt.Printf("Migration error: %v\n", err)
 		os.Exit(1)
@@ -841,7 +880,7 @@ func statusCmd() {
 
 	configPath := getConfigPath()
 
-	fmt.Printf("%s picoclaw Status\n", logo)
+	fmt.Printf("%s dragonscale Status\n", logo)
 	fmt.Printf("Version: %s\n", formatVersion())
 	build, _ := formatBuildInfo()
 	if build != "" {
@@ -924,7 +963,7 @@ func statusCmd() {
 		}
 		memDBPath := cfg.Memory.DBPath
 		if memDBPath == "" {
-			memDBPath = filepath.Join(cfg.WorkspacePath(), "memory", "picoclaw.db")
+			memDBPath = filepath.Join(cfg.WorkspacePath(), "memory", "dragonscale.db")
 		}
 		if fi, err := os.Stat(memDBPath); err == nil {
 			fmt.Printf("  DB size: %.1f KB\n", float64(fi.Size())/1024)
@@ -962,11 +1001,11 @@ func authHelp() {
 	fmt.Println("  --device-code        Use device code flow (for headless environments)")
 	fmt.Println()
 	fmt.Println("Examples:")
-	fmt.Println("  picoclaw auth login --provider openai")
-	fmt.Println("  picoclaw auth login --provider openai --device-code")
-	fmt.Println("  picoclaw auth login --provider anthropic")
-	fmt.Println("  picoclaw auth logout --provider openai")
-	fmt.Println("  picoclaw auth status")
+	fmt.Println("  dragonscale auth login --provider openai")
+	fmt.Println("  dragonscale auth login --provider openai --device-code")
+	fmt.Println("  dragonscale auth login --provider anthropic")
+	fmt.Println("  dragonscale auth logout --provider openai")
+	fmt.Println("  dragonscale auth status")
 }
 
 func authLoginCmd() {
@@ -1125,7 +1164,7 @@ func authStatusCmd() {
 
 	if len(store.Credentials) == 0 {
 		fmt.Println("No authenticated providers.")
-		fmt.Println("Run: picoclaw auth login --provider <name>")
+		fmt.Println("Run: dragonscale auth login --provider <name>")
 		return
 	}
 
@@ -1178,7 +1217,7 @@ func secretCmd() {
 func secretHelp() {
 	fmt.Println("\nSecret management (encrypted at rest)")
 	fmt.Println()
-	fmt.Println("Usage: picoclaw secret <subcommand>")
+	fmt.Println("Usage: dragonscale secret <subcommand>")
 	fmt.Println()
 	fmt.Println("Subcommands:")
 	fmt.Println("  init              Generate a master key (stored in keyring or env)")
@@ -1187,24 +1226,24 @@ func secretHelp() {
 	fmt.Println("  delete <name>     Remove a secret")
 	fmt.Println()
 	fmt.Println("Environment:")
-	fmt.Println("  PICOCLAW_MASTER_KEY   32-byte key (hex or base64) for encryption")
+	fmt.Println("  DRAGONSCALE_MASTER_KEY   32-byte key (hex or base64) for encryption")
 	fmt.Println()
 	fmt.Println("Examples:")
-	fmt.Println("  picoclaw secret init")
-	fmt.Println("  picoclaw secret add github_token")
-	fmt.Println("  picoclaw secret list")
-	fmt.Println("  picoclaw secret delete github_token")
+	fmt.Println("  dragonscale secret init")
+	fmt.Println("  dragonscale secret add github_token")
+	fmt.Println("  dragonscale secret list")
+	fmt.Println("  dragonscale secret delete github_token")
 }
 
 func secretStorePath() string {
 	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".picoclaw", "secrets.json")
+	return filepath.Join(home, ".dragonscale", "secrets.json")
 }
 
 func loadSecretStore() (*security.SecretStore, error) {
 	var keyring security.KeyringProvider
-	if mk := os.Getenv("PICOCLAW_MASTER_KEY"); mk != "" {
-		keyring = security.NewEnvKeyring("PICOCLAW_MASTER_KEY")
+	if mk := os.Getenv("DRAGONSCALE_MASTER_KEY"); mk != "" {
+		keyring = security.NewEnvKeyring("DRAGONSCALE_MASTER_KEY")
 	} else {
 		keyring = security.NewNoopKeyring(nil)
 	}
@@ -1224,14 +1263,14 @@ func secretInit() {
 	fmt.Println("  " + encoded)
 	fmt.Println()
 	fmt.Println("Set it as an environment variable:")
-	fmt.Println("  export PICOCLAW_MASTER_KEY=" + encoded)
+	fmt.Println("  export DRAGONSCALE_MASTER_KEY=" + encoded)
 	fmt.Println()
 	fmt.Println("Or add to your shell profile (~/.bashrc, ~/.zshrc).")
 }
 
 func secretAdd() {
 	if len(os.Args) < 4 {
-		fmt.Println("Usage: picoclaw secret add <name>")
+		fmt.Println("Usage: dragonscale secret add <name>")
 		return
 	}
 	name := os.Args[3]
@@ -1274,7 +1313,7 @@ func secretList() {
 	names := ss.List()
 	if len(names) == 0 {
 		fmt.Println("No secrets stored.")
-		fmt.Println("Add one with: picoclaw secret add <name>")
+		fmt.Println("Add one with: dragonscale secret add <name>")
 		return
 	}
 
@@ -1286,7 +1325,7 @@ func secretList() {
 
 func secretDelete() {
 	if len(os.Args) < 4 {
-		fmt.Println("Usage: picoclaw secret delete <name>")
+		fmt.Println("Usage: dragonscale secret delete <name>")
 		return
 	}
 	name := os.Args[3]
@@ -1312,12 +1351,12 @@ func secretDelete() {
 
 func daemonSocketPath() string {
 	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".picoclaw", "daemon.sock")
+	return filepath.Join(home, ".dragonscale", "daemon.sock")
 }
 
 func daemonPIDPath() string {
 	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".picoclaw", "daemon.pid")
+	return filepath.Join(home, ".dragonscale", "daemon.pid")
 }
 
 func daemonCmd() {
@@ -1345,14 +1384,14 @@ func daemonCmd() {
 func daemonHelp() {
 	fmt.Println("\nDaemon mode (Unix socket transport)")
 	fmt.Println()
-	fmt.Println("Usage: picoclaw daemon <subcommand>")
+	fmt.Println("Usage: dragonscale daemon <subcommand>")
 	fmt.Println()
 	fmt.Println("Subcommands:")
 	fmt.Println("  start       Start the daemon (foreground)")
 	fmt.Println("  stop        Stop a running daemon")
 	fmt.Println("  status      Check daemon status")
 	fmt.Println()
-	fmt.Println("The daemon listens on ~/.picoclaw/daemon.sock and provides")
+	fmt.Println("The daemon listens on ~/.dragonscale/daemon.sock and provides")
 	fmt.Println("tool execution services via the SecureBus.")
 }
 
@@ -1376,7 +1415,7 @@ func daemonStart() {
 
 	pid := os.Getpid()
 	home, _ := os.UserHomeDir()
-	_ = os.MkdirAll(filepath.Join(home, ".picoclaw"), 0700)
+	_ = os.MkdirAll(filepath.Join(home, ".dragonscale"), 0700)
 	_ = os.WriteFile(pidPath, []byte(fmt.Sprintf("%d", pid)), 0600)
 	defer os.Remove(pidPath)
 
@@ -1416,7 +1455,7 @@ func daemonStart() {
 	secureBus := securebus.New(busCfg, ss, capLookup, executor)
 	defer secureBus.Close()
 
-	fmt.Printf("picoclaw daemon started (pid=%d, socket=%s)\n", pid, sockPath)
+	fmt.Printf("dragonscale daemon started (pid=%d, socket=%s)\n", pid, sockPath)
 	fmt.Printf("  sandbox: %s\n", sandbox)
 	fmt.Printf("  tools: %d registered\n", len(registry.List()))
 	fmt.Println("Press Ctrl+C to stop.")
@@ -1510,9 +1549,9 @@ func getConfigPath() string {
 	if p, err := config.DefaultConfigPath(); err == nil {
 		return p
 	}
-	// Fallback: legacy ~/.picoclaw/config.json for systems where XDG resolution fails.
+	// Fallback: legacy ~/.dragonscale/config.json for systems where XDG resolution fails.
 	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".picoclaw", "config.json")
+	return filepath.Join(home, ".dragonscale", "config.json")
 }
 
 func setupCronTool(appCtx context.Context, agentLoop *agent.AgentLoop, msgBus *bus.MessageBus, workspace string, restrict bool, execTimeout time.Duration, cronOpts ...cron.CronOption) *cron.CronService {
@@ -1546,7 +1585,7 @@ func bootstrapAgentRuntime(appCtx context.Context, cfg *config.Config) (*picorun
 }
 
 // setupSecureBus wires the Isolated Tool Runtime into an AgentLoop.
-// It loads (or lazily creates) the SecretStore from the picoclaw home directory
+// It loads (or lazily creates) the SecretStore from the dragonscale home directory
 // and calls agentLoop.SetupSecureBus so all tool calls are routed through
 // capability enforcement, secret injection, leak scanning, and audit logging.
 //
@@ -1556,30 +1595,30 @@ func bootstrapAgentRuntime(appCtx context.Context, cfg *config.Config) (*picorun
 func setupSecureBus(agentLoop *agent.AgentLoop) (closer func()) {
 	cfgDir, err := config.ConfigDir()
 	if err != nil {
-		// Fallback to ~/.picoclaw if XDG resolution fails.
+		// Fallback to ~/.dragonscale if XDG resolution fails.
 		home, herr := os.UserHomeDir()
 		if herr != nil {
 			logger.WarnC("itr", "SecureBus: cannot determine config dir — running without ITR")
 			return func() {}
 		}
-		cfgDir = filepath.Join(home, ".picoclaw")
+		cfgDir = filepath.Join(home, ".dragonscale")
 	}
 
 	secretsPath := filepath.Join(cfgDir, "secrets.json")
 
-	// Use NoopKeyring by default; EnvKeyring when PICOCLAW_MASTER_KEY is set.
-	var keyring security.KeyringProvider
-	if mk := os.Getenv("PICOCLAW_MASTER_KEY"); mk != "" {
-		keyring = security.NewEnvKeyring("PICOCLAW_MASTER_KEY")
-	} else {
-		keyring = security.NewNoopKeyring(nil)
-	}
+	// Always use EnvKeyring in runtime wiring. We intentionally avoid
+	// in-memory fallback keyrings in production execution paths.
+	keyring := security.NewEnvKeyring(security.MasterKeyEnvVar)
 
 	ss, err := security.NewSecretStore(secretsPath, keyring)
 	if err != nil {
 		logger.WarnCF("itr", "SecureBus: failed to load secret store — running without secret injection",
 			map[string]interface{}{"error": err.Error()})
 		ss = nil
+	}
+	if os.Getenv(security.MasterKeyEnvVar) == "" {
+		logger.WarnCF("itr", "SecureBus: master key env var is not set; secret injection requiring stored secrets will fail",
+			map[string]interface{}{"env_var": security.MasterKeyEnvVar})
 	}
 
 	bus := agentLoop.SetupSecureBus(ss, securebus.DefaultBusConfig())
@@ -1611,7 +1650,7 @@ func cronCmd() {
 		cronAddCmd(cronStorePath)
 	case "remove":
 		if len(os.Args) < 4 {
-			fmt.Println("Usage: picoclaw cron remove <job_id>")
+			fmt.Println("Usage: dragonscale cron remove <job_id>")
 			return
 		}
 		cronRemoveCmd(cronStorePath, os.Args[3])
@@ -1781,7 +1820,7 @@ func cronRemoveCmd(storePath, jobID string) {
 
 func cronEnableCmd(storePath string, disable bool) {
 	if len(os.Args) < 4 {
-		fmt.Println("Usage: picoclaw cron enable/disable <job_id>")
+		fmt.Println("Usage: dragonscale cron enable/disable <job_id>")
 		return
 	}
 
@@ -1812,11 +1851,11 @@ func skillsHelp() {
 	fmt.Println("  show <name>             Show skill details")
 	fmt.Println()
 	fmt.Println("Examples:")
-	fmt.Println("  picoclaw skills list")
-	fmt.Println("  picoclaw skills install sipeed/picoclaw-skills/weather")
-	fmt.Println("  picoclaw skills install-builtin")
-	fmt.Println("  picoclaw skills list-builtin")
-	fmt.Println("  picoclaw skills remove weather")
+	fmt.Println("  dragonscale skills list")
+	fmt.Println("  dragonscale skills install sipeed/dragonscale-skills/weather")
+	fmt.Println("  dragonscale skills install-builtin")
+	fmt.Println("  dragonscale skills list-builtin")
+	fmt.Println("  dragonscale skills remove weather")
 }
 
 func skillsListCmd(loader *skills.SkillsLoader) {
@@ -1839,8 +1878,8 @@ func skillsListCmd(loader *skills.SkillsLoader) {
 
 func skillsInstallCmd(installer *skills.SkillInstaller) {
 	if len(os.Args) < 4 {
-		fmt.Println("Usage: picoclaw skills install <github-repo>")
-		fmt.Println("Example: picoclaw skills install sipeed/picoclaw-skills/weather")
+		fmt.Println("Usage: dragonscale skills install <github-repo>")
+		fmt.Println("Example: dragonscale skills install sipeed/dragonscale-skills/weather")
 		return
 	}
 
@@ -1870,7 +1909,7 @@ func skillsRemoveCmd(installer *skills.SkillInstaller, skillName string) {
 }
 
 func skillsInstallBuiltinCmd(workspace string) {
-	builtinSkillsDir := "./picoclaw/skills"
+	builtinSkillsDir := "./dragonscale/skills"
 	workspaceSkillsDir := filepath.Join(workspace, "skills")
 
 	fmt.Printf("Copying builtin skills to workspace...\n")

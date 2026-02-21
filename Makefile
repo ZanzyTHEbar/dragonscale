@@ -1,8 +1,9 @@
 .PHONY: all build install uninstall clean help test lint hooks \
-	fantasy-check fantasy-diff fantasy-sync fantasy-patch
+	fantasy-check fantasy-diff fantasy-sync fantasy-patch \
+	flatc-check devcontainer-up devcontainer-build devcontainer-generate devcontainer-verify
 
 # Build variables
-BINARY_NAME=picoclaw
+BINARY_NAME=dragonscale
 BUILD_DIR=bin
 CMD_DIR=cmd/$(BINARY_NAME)
 MAIN_GO=$(CMD_DIR)/main.go
@@ -24,8 +25,8 @@ INSTALL_BIN_DIR=$(INSTALL_PREFIX)/bin
 INSTALL_MAN_DIR=$(INSTALL_PREFIX)/share/man/man1
 
 # Workspace and Skills
-PICOCLAW_HOME?=$(HOME)/.picoclaw
-WORKSPACE_DIR?=$(PICOCLAW_HOME)/workspace
+DRAGONSCALE_HOME?=$(HOME)/.dragonscale
+WORKSPACE_DIR?=$(DRAGONSCALE_HOME)/workspace
 WORKSPACE_SKILLS_DIR=$(WORKSPACE_DIR)/skills
 BUILTIN_SKILLS_DIR=$(CURDIR)/skills
 
@@ -73,7 +74,7 @@ generate:
 	@$(GO) generate ./...
 	@echo "Run generate complete"
 
-## build: Build the picoclaw binary for current platform
+## build: Build the dragonscale binary for current platform
 build: generate
 	@echo "Building $(BINARY_NAME) for $(PLATFORM)/$(ARCH)..."
 	@mkdir -p $(BUILD_DIR)
@@ -81,7 +82,7 @@ build: generate
 	@echo "Build complete: $(BINARY_PATH)"
 	@ln -sf $(BINARY_NAME)-$(PLATFORM)-$(ARCH) $(BUILD_DIR)/$(BINARY_NAME)
 
-## build-all: Build picoclaw for all platforms
+## build-all: Build dragonscale for all platforms
 build-all: generate
 	@echo "Building for multiple platforms..."
 	@mkdir -p $(BUILD_DIR)
@@ -93,7 +94,7 @@ build-all: generate
 	GOOS=windows GOARCH=amd64 $(GO) build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-windows-amd64.exe ./$(CMD_DIR)
 	@echo "All builds complete"
 
-## install: Install picoclaw to system and copy builtin skills
+## install: Install dragonscale to system and copy builtin skills
 install: build
 	@echo "Installing $(BINARY_NAME)..."
 	@mkdir -p $(INSTALL_BIN_DIR)
@@ -102,7 +103,7 @@ install: build
 	@echo "Installed binary to $(INSTALL_BIN_DIR)/$(BINARY_NAME)"
 	@echo "Installation complete!"
 
-## uninstall: Remove picoclaw from system
+## uninstall: Remove dragonscale from system
 uninstall:
 	@echo "Uninstalling $(BINARY_NAME)..."
 	@rm -f $(INSTALL_BIN_DIR)/$(BINARY_NAME)
@@ -110,11 +111,11 @@ uninstall:
 	@echo "Note: Only the executable file has been deleted."
 	@echo "If you need to delete all configurations (config.json, workspace, etc.), run 'make uninstall-all'"
 
-## uninstall-all: Remove picoclaw and all data
+## uninstall-all: Remove dragonscale and all data
 uninstall-all:
 	@echo "Removing workspace and skills..."
-	@rm -rf $(PICOCLAW_HOME)
-	@echo "Removed workspace: $(PICOCLAW_HOME)"
+	@rm -rf $(DRAGONSCALE_HOME)
+	@echo "Removed workspace: $(DRAGONSCALE_HOME)"
 	@echo "Complete uninstallation done!"
 
 ## clean: Remove build artifacts
@@ -160,12 +161,47 @@ update-deps:
 	@$(GO) get -u ./...
 	@$(GO) mod tidy
 
-## sqlc-check: Verify sqlc-generated code is up to date
+## sqlc-check: Verify sqlc generation is idempotent for current tree
 sqlc-check:
 	@echo "Checking sqlc generation..."
-	@sqlc generate -f pkg/memory/sqlc/sqlc.yaml
-	@git diff --exit-code -- pkg/memory/sqlc/ || (echo "::error::sqlc generated code is stale. Run 'sqlc generate -f pkg/memory/sqlc/sqlc.yaml' and commit." && exit 1)
+	@set -e; repo="$$(pwd)"; before="$$(mktemp)"; after="$$(mktemp)"; \
+	snapshot() { \
+		git -c safe.directory="$$repo" diff --binary -- pkg/memory/sqlc/; \
+		git -c safe.directory="$$repo" ls-files --others --exclude-standard -- pkg/memory/sqlc/ | LC_ALL=C sort | while IFS= read -r f; do \
+			[ -f "$$f" ] && sha256sum "$$f"; \
+		done; \
+	}; \
+	snapshot > "$$before"; \
+	sqlc generate -f pkg/memory/sqlc/sqlc.yaml; \
+	snapshot > "$$after"; \
+	if ! cmp -s "$$before" "$$after"; then \
+		echo "::error::sqlc generated code is stale. Run 'sqlc generate -f pkg/memory/sqlc/sqlc.yaml' and commit."; \
+		rm -f "$$before" "$$after"; \
+		exit 1; \
+	fi; \
+	rm -f "$$before" "$$after"
 	@echo "sqlc OK"
+
+## flatc-check: Verify FlatBuffers generation is idempotent for current tree
+flatc-check:
+	@echo "Checking flatc generation..."
+	@set -e; repo="$$(pwd)"; before="$$(mktemp)"; after="$$(mktemp)"; \
+	snapshot() { \
+		git -c safe.directory="$$repo" diff --binary -- pkg/itr/itrfb/ pkg/tools/mapopsfb/; \
+		git -c safe.directory="$$repo" ls-files --others --exclude-standard -- pkg/itr/itrfb/ pkg/tools/mapopsfb/ | LC_ALL=C sort | while IFS= read -r f; do \
+			[ -f "$$f" ] && sha256sum "$$f"; \
+		done; \
+	}; \
+	snapshot > "$$before"; \
+	$(GO) generate ./pkg/itr ./pkg/tools; \
+	snapshot > "$$after"; \
+	if ! cmp -s "$$before" "$$after"; then \
+		echo "::error::FlatBuffers generated code is stale. Run 'go generate ./pkg/itr ./pkg/tools' and commit."; \
+		rm -f "$$before" "$$after"; \
+		exit 1; \
+	fi; \
+	rm -f "$$before" "$$after"
+	@echo "flatc OK"
 
 ## sqlc-vet: Run sqlc vet rules (no-unbounded-delete, one-select-requires-limit-1)
 sqlc-vet:
@@ -205,9 +241,25 @@ test-integration:
 ## check: Run vet, fmt, sqlc vet, and verify dependencies
 check: deps fmt vet sqlc-vet test
 
-## run: Build and run picoclaw
+## run: Build and run dragonscale
 run: build
 	@$(BUILD_DIR)/$(BINARY_NAME) $(ARGS)
+
+## devcontainer-build: Build the local devcontainer image via npx devcontainer CLI
+devcontainer-build:
+	@npx --yes @devcontainers/cli build --workspace-folder .
+
+## devcontainer-up: Start/update the local devcontainer via npx devcontainer CLI
+devcontainer-up:
+	@npx --yes @devcontainers/cli up --workspace-folder .
+
+## devcontainer-generate: Run go/sqlc/flatc generation inside devcontainer
+devcontainer-generate:
+	@npx --yes @devcontainers/cli exec --workspace-folder . -- bash -lc "go generate ./pkg/itr ./pkg/tools && sqlc generate -f pkg/memory/sqlc/sqlc.yaml"
+
+## devcontainer-verify: Validate generated code inside devcontainer
+devcontainer-verify:
+	@npx --yes @devcontainers/cli exec --workspace-folder . -- make flatc-check sqlc-check
 
 # ---------------------------------------------------------------------------
 # Evaluation Harness
@@ -225,27 +277,27 @@ eval-build: generate
 ## eval: Run the eval suite against the current build
 eval: eval-build eval-fixtures
 	@echo "Running eval suite..."
-	@cd eval && PICOCLAW_EVAL_CONFIG="./configs/default.json" npx promptfoo eval --config promptfooconfig.yaml --no-cache --no-progress-bar
+	@cd eval && DRAGONSCALE_EVAL_CONFIG="./configs/default.json" npx promptfoo eval --config promptfooconfig.yaml --no-cache --no-progress-bar
 	@echo "Results: eval/results/latest.json"
 	@echo "View: cd eval && npx promptfoo view"
 
 ## eval-fixtures: Reset workspace to a known state and seed fixture files for eval
-## Uses XDG paths: ~/.local/share/picoclaw/sandbox/ and ~/.local/share/picoclaw/skills/
+## Uses XDG paths: ~/.local/share/dragonscale/sandbox/ and ~/.local/share/dragonscale/skills/
 eval-fixtures:
-	@mkdir -p $(HOME)/.local/share/picoclaw/sandbox
-	@rm -f $(HOME)/.local/share/picoclaw/sandbox/eval_test_output.txt \
-	       $(HOME)/.local/share/picoclaw/sandbox/test_steps.txt \
-	       $(HOME)/.local/share/picoclaw/sandbox/eval_checkpoint.txt \
-	       $(HOME)/.local/share/picoclaw/sandbox/chain_test.txt \
-	       $(HOME)/.local/share/picoclaw/sandbox/current_year.txt \
-	       $(HOME)/.local/share/picoclaw/sandbox/result.txt \
-	       $(HOME)/.local/share/picoclaw/sandbox/progressive_test.txt \
-	       $(HOME)/.local/share/picoclaw/sandbox/os_name.txt
-	@rm -rf $(HOME)/.local/share/picoclaw/sandbox/project
-	@printf 'picoclaw eval fixture — hello from the eval harness\nThis is line two of the fixture file.\n' > $(HOME)/.local/share/picoclaw/sandbox/eval_fixture.txt
-	@cp -f eval/fixtures/sample_data.txt $(HOME)/.local/share/picoclaw/sandbox/sample_data.txt
-	@mkdir -p $(HOME)/.local/share/picoclaw/skills
-	@cp -rf eval/fixtures/skills/* $(HOME)/.local/share/picoclaw/skills/ 2>/dev/null || true
+	@mkdir -p $(HOME)/.local/share/dragonscale/sandbox
+	@rm -f $(HOME)/.local/share/dragonscale/sandbox/eval_test_output.txt \
+	       $(HOME)/.local/share/dragonscale/sandbox/test_steps.txt \
+	       $(HOME)/.local/share/dragonscale/sandbox/eval_checkpoint.txt \
+	       $(HOME)/.local/share/dragonscale/sandbox/chain_test.txt \
+	       $(HOME)/.local/share/dragonscale/sandbox/current_year.txt \
+	       $(HOME)/.local/share/dragonscale/sandbox/result.txt \
+	       $(HOME)/.local/share/dragonscale/sandbox/progressive_test.txt \
+	       $(HOME)/.local/share/dragonscale/sandbox/os_name.txt
+	@rm -rf $(HOME)/.local/share/dragonscale/sandbox/project
+	@printf 'dragonscale eval fixture — hello from the eval harness\nThis is line two of the fixture file.\n' > $(HOME)/.local/share/dragonscale/sandbox/eval_fixture.txt
+	@cp -f eval/fixtures/sample_data.txt $(HOME)/.local/share/dragonscale/sandbox/sample_data.txt
+	@mkdir -p $(HOME)/.local/share/dragonscale/skills
+	@cp -rf eval/fixtures/skills/* $(HOME)/.local/share/dragonscale/skills/ 2>/dev/null || true
 
 ## eval-view: Open the promptfoo results viewer
 eval-view:
@@ -266,7 +318,7 @@ eval-test:
 
 ## help: Show this help message
 help:
-	@echo "picoclaw Makefile"
+	@echo "dragonscale Makefile"
 	@echo ""
 	@echo "Usage:"
 	@echo "  make [target]"
@@ -282,7 +334,7 @@ help:
 	@echo ""
 	@echo "Environment Variables:"
 	@echo "  INSTALL_PREFIX          # Installation prefix (default: ~/.local)"
-	@echo "  WORKSPACE_DIR           # Workspace directory (default: ~/.picoclaw/workspace)"
+	@echo "  WORKSPACE_DIR           # Workspace directory (default: ~/.dragonscale/workspace)"
 	@echo "  VERSION                 # Version string (default: git describe)"
 	@echo ""
 	@echo "Current Configuration:"

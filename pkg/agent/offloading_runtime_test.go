@@ -9,8 +9,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/sipeed/picoclaw/pkg/agent"
-	"github.com/sipeed/picoclaw/pkg/ids"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/agent"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/ids"
 )
 
 // staticToolRuntime is a test ToolRuntime that returns pre-defined results.

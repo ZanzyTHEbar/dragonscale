@@ -1,9 +1,12 @@
-// Package security provides credential management for PicoClaw.
+// Package security provides credential management for DragonScale.
 // This file defines the KeyringProvider interface and the master key
 // sourcing strategy used by SecretStore.
 package security
 
 import "fmt"
+
+// MasterKeyEnvVar is the canonical environment variable used by EnvKeyring.
+const MasterKeyEnvVar = "DRAGONSCALE_MASTER_KEY"
 
 // KeyringProvider abstracts OS keyring backends. The implementation is
 // selected at runtime (or via build tags for platform-specific backends).
@@ -23,7 +26,7 @@ type KeyringProvider interface {
 }
 
 // ErrNoMasterKey is returned by KeyringProvider when no master key is available.
-var ErrNoMasterKey = fmt.Errorf("no master key configured: run `picoclaw secret init` to set one")
+var ErrNoMasterKey = fmt.Errorf("no master key configured: run `dragonscale secret init` to set one")
 
 // ErrKeyringReadOnly is returned when SetMasterKey is called on a read-only provider.
 var ErrKeyringReadOnly = fmt.Errorf("keyring is read-only")

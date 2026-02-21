@@ -1,5 +1,5 @@
 // Package rlm implements the Recursive Language Model (RLM) engine for
-// PicoClaw. RLM enables unbounded context processing by recursively
+// DragonScale. RLM enables unbounded context processing by recursively
 // decomposing long contexts into manageable partitions, processing each
 // through the SecureBus, and synthesizing the results.
 //

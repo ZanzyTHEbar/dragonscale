@@ -5,7 +5,7 @@ import (
 	"log/slog"
 	"sync"
 
-	"github.com/sipeed/picoclaw/pkg/memory"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/memory"
 )
 
 // Manager orchestrates the observation lifecycle: threshold detection,

@@ -15,7 +15,7 @@ import (
 	jsonv2 "github.com/go-json-experiment/json"
 	"github.com/go-json-experiment/json/jsontext"
 
-	"github.com/sipeed/picoclaw/pkg/memory"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/memory"
 )
 
 type CronSchedule struct {

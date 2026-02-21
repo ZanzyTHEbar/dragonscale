@@ -19,5 +19,5 @@ When asked to greet someone, use one of the following templates:
 
 ## Notes
 
-This skill is a fixture for the picoclaw evaluation harness.
+This skill is a fixture for the dragonscale evaluation harness.
 The marker `eval-skill-loaded` confirms this skill was successfully read.

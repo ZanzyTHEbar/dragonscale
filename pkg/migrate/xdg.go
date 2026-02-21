@@ -7,29 +7,29 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/config"
 )
 
-// MigrateToXDG moves files from the legacy ~/.picoclaw/workspace/ layout to
+// MigrateToXDG moves files from the legacy ~/.dragonscale/workspace/ layout to
 // XDG-compliant directories. It is idempotent: files are only copied if they
 // don't already exist at the destination, and it never deletes the source.
 //
 // Layout mapping:
 //
-//	~/.picoclaw/workspace/AGENT.md     → $XDG_CONFIG_HOME/picoclaw/identity/AGENT.md
-//	~/.picoclaw/workspace/IDENTITY.md  → $XDG_CONFIG_HOME/picoclaw/identity/IDENTITY.md
-//	~/.picoclaw/workspace/SOUL.md      → $XDG_CONFIG_HOME/picoclaw/identity/SOUL.md
-//	~/.picoclaw/workspace/USER.md      → $XDG_CONFIG_HOME/picoclaw/identity/USER.md
-//	~/.picoclaw/workspace/skills/*     → $XDG_DATA_HOME/picoclaw/skills/*
-//	~/.picoclaw/workspace/memory/*.db  → $XDG_DATA_HOME/picoclaw/picoclaw.db
-//	~/.picoclaw/workspace/*            → $XDG_DATA_HOME/picoclaw/sandbox/* (remaining files)
+//	~/.dragonscale/workspace/AGENT.md     → $XDG_CONFIG_HOME/dragonscale/identity/AGENT.md
+//	~/.dragonscale/workspace/IDENTITY.md  → $XDG_CONFIG_HOME/dragonscale/identity/IDENTITY.md
+//	~/.dragonscale/workspace/SOUL.md      → $XDG_CONFIG_HOME/dragonscale/identity/SOUL.md
+//	~/.dragonscale/workspace/USER.md      → $XDG_CONFIG_HOME/dragonscale/identity/USER.md
+//	~/.dragonscale/workspace/skills/*     → $XDG_DATA_HOME/dragonscale/skills/*
+//	~/.dragonscale/workspace/memory/*.db  → $XDG_DATA_HOME/dragonscale/dragonscale.db
+//	~/.dragonscale/workspace/*            → $XDG_DATA_HOME/dragonscale/sandbox/* (remaining files)
 func MigrateToXDG(legacyWorkspace string) error {
 	if legacyWorkspace == "" {
 		home, err := os.UserHomeDir()
 		if err != nil {
 			return fmt.Errorf("resolve home: %w", err)
 		}
-		legacyWorkspace = filepath.Join(home, ".picoclaw", "workspace")
+		legacyWorkspace = filepath.Join(home, ".dragonscale", "workspace")
 	}
 
 	if _, err := os.Stat(legacyWorkspace); os.IsNotExist(err) {
@@ -73,9 +73,9 @@ func MigrateToXDG(legacyWorkspace string) error {
 		}
 	}
 
-	legacyDB := filepath.Join(legacyWorkspace, "memory", "picoclaw.db")
+	legacyDB := filepath.Join(legacyWorkspace, "memory", "dragonscale.db")
 	if _, err := os.Stat(legacyDB); err == nil {
-		newDB := filepath.Join(dataDir, "picoclaw.db")
+		newDB := filepath.Join(dataDir, "dragonscale.db")
 		if err := copyIfMissing(legacyDB, newDB); err != nil {
 			return fmt.Errorf("migrate database: %w", err)
 		}

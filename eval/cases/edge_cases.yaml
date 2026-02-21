@@ -54,7 +54,7 @@
 
 - description: "unicode content: handles non-ASCII text"
   vars:
-    prompt: "Write the text '你好世界 🌍 picoclaw' to a file called unicode_test.txt, then read it back."
+    prompt: "Write the text '你好世界 🌍 dragonscale' to a file called unicode_test.txt, then read it back."
   assert:
     - type: javascript
       value: |

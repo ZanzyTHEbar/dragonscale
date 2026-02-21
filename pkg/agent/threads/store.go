@@ -9,9 +9,9 @@ import (
 	jsonv2 "github.com/go-json-experiment/json"
 	"strings"
 
-	"github.com/sipeed/picoclaw/pkg/ids"
-	sqlc "github.com/sipeed/picoclaw/pkg/memory/sqlc"
-	"github.com/sipeed/picoclaw/pkg/pcerrors"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/dserrors"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/ids"
+	sqlc "github.com/ZanzyTHEbar/dragonscale/pkg/memory/sqlc"
 )
 
 // Store wraps the SQLC queries for thread operations.
@@ -38,11 +38,11 @@ type CreateParams struct {
 func (s *Store) Create(ctx context.Context, p CreateParams) (sqlc.AgentThread, error) {
 	convIDStr := strings.TrimSpace(p.ConversationID)
 	if convIDStr == "" {
-		return sqlc.AgentThread{}, pcerrors.New(pcerrors.CodeInvalidArgument, "conversation_id is required")
+		return sqlc.AgentThread{}, dserrors.New(dserrors.CodeInvalidArgument, "conversation_id is required")
 	}
 	convID, err := ids.Parse(convIDStr)
 	if err != nil {
-		return sqlc.AgentThread{}, pcerrors.Wrapf(pcerrors.CodeInvalidArgument, err, "parse conversation_id %q", convIDStr)
+		return sqlc.AgentThread{}, dserrors.Wrapf(dserrors.CodeInvalidArgument, err, "parse conversation_id %q", convIDStr)
 	}
 
 	metaJSON, _ := jsonv2.Marshal(p.Metadata)
@@ -66,11 +66,11 @@ type ListParams struct {
 func (s *Store) List(ctx context.Context, p ListParams) ([]sqlc.AgentThread, error) {
 	convIDStr := strings.TrimSpace(p.ConversationID)
 	if convIDStr == "" {
-		return nil, pcerrors.New(pcerrors.CodeInvalidArgument, "conversation_id is required")
+		return nil, dserrors.New(dserrors.CodeInvalidArgument, "conversation_id is required")
 	}
 	convID, err := ids.Parse(convIDStr)
 	if err != nil {
-		return nil, pcerrors.Wrapf(pcerrors.CodeInvalidArgument, err, "parse conversation_id %q", convIDStr)
+		return nil, dserrors.Wrapf(dserrors.CodeInvalidArgument, err, "parse conversation_id %q", convIDStr)
 	}
 	return s.q.ListAgentThreadsByConversationID(ctx,
 		sqlc.ListAgentThreadsByConversationIDParams{ConversationID: convID})
@@ -91,11 +91,11 @@ type AddMessageParams struct {
 func (s *Store) AddMessage(ctx context.Context, p AddMessageParams) (sqlc.AgentThreadMessage, error) {
 	threadIDStr := strings.TrimSpace(p.ThreadID)
 	if threadIDStr == "" {
-		return sqlc.AgentThreadMessage{}, pcerrors.New(pcerrors.CodeInvalidArgument, "thread_id is required")
+		return sqlc.AgentThreadMessage{}, dserrors.New(dserrors.CodeInvalidArgument, "thread_id is required")
 	}
 	threadID, err := ids.Parse(threadIDStr)
 	if err != nil {
-		return sqlc.AgentThreadMessage{}, pcerrors.Wrapf(pcerrors.CodeInvalidArgument, err, "parse thread_id %q", threadIDStr)
+		return sqlc.AgentThreadMessage{}, dserrors.Wrapf(dserrors.CodeInvalidArgument, err, "parse thread_id %q", threadIDStr)
 	}
 
 	role := strings.TrimSpace(p.Role)
@@ -105,7 +105,7 @@ func (s *Store) AddMessage(ctx context.Context, p AddMessageParams) (sqlc.AgentT
 
 	content := strings.TrimSpace(p.Content)
 	if content == "" {
-		return sqlc.AgentThreadMessage{}, pcerrors.New(pcerrors.CodeInvalidArgument, "content is empty")
+		return sqlc.AgentThreadMessage{}, dserrors.New(dserrors.CodeInvalidArgument, "content is empty")
 	}
 
 	metaJSON, _ := jsonv2.Marshal(p.Metadata)
@@ -134,11 +134,11 @@ type ListMessagesParams struct {
 func (s *Store) ListMessages(ctx context.Context, p ListMessagesParams) ([]sqlc.AgentThreadMessage, error) {
 	threadIDStr := strings.TrimSpace(p.ThreadID)
 	if threadIDStr == "" {
-		return nil, pcerrors.New(pcerrors.CodeInvalidArgument, "thread_id is required")
+		return nil, dserrors.New(dserrors.CodeInvalidArgument, "thread_id is required")
 	}
 	threadID, err := ids.Parse(threadIDStr)
 	if err != nil {
-		return nil, pcerrors.Wrapf(pcerrors.CodeInvalidArgument, err, "parse thread_id %q", threadIDStr)
+		return nil, dserrors.Wrapf(dserrors.CodeInvalidArgument, err, "parse thread_id %q", threadIDStr)
 	}
 
 	limit := int64(p.Limit)

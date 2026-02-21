@@ -17,19 +17,11 @@ func GetRootAsCodeExec(buf []byte, offset flatbuffers.UOffsetT) *CodeExec {
 	return x
 }
 
-func FinishCodeExecBuffer(builder *flatbuffers.Builder, offset flatbuffers.UOffsetT) {
-	builder.Finish(offset)
-}
-
 func GetSizePrefixedRootAsCodeExec(buf []byte, offset flatbuffers.UOffsetT) *CodeExec {
 	n := flatbuffers.GetUOffsetT(buf[offset+flatbuffers.SizeUint32:])
 	x := &CodeExec{}
 	x.Init(buf, n+offset+flatbuffers.SizeUint32)
 	return x
-}
-
-func FinishSizePrefixedCodeExecBuffer(builder *flatbuffers.Builder, offset flatbuffers.UOffsetT) {
-	builder.FinishSizePrefixed(offset)
 }
 
 func (rcv *CodeExec) Init(buf []byte, i flatbuffers.UOffsetT) {

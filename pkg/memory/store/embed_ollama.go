@@ -9,7 +9,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/sipeed/picoclaw/pkg/memory"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/memory"
 )
 
 const (

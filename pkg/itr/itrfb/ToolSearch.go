@@ -17,19 +17,11 @@ func GetRootAsToolSearch(buf []byte, offset flatbuffers.UOffsetT) *ToolSearch {
 	return x
 }
 
-func FinishToolSearchBuffer(builder *flatbuffers.Builder, offset flatbuffers.UOffsetT) {
-	builder.Finish(offset)
-}
-
 func GetSizePrefixedRootAsToolSearch(buf []byte, offset flatbuffers.UOffsetT) *ToolSearch {
 	n := flatbuffers.GetUOffsetT(buf[offset+flatbuffers.SizeUint32:])
 	x := &ToolSearch{}
 	x.Init(buf, n+offset+flatbuffers.SizeUint32)
 	return x
-}
-
-func FinishSizePrefixedToolSearchBuffer(builder *flatbuffers.Builder, offset flatbuffers.UOffsetT) {
-	builder.FinishSizePrefixed(offset)
 }
 
 func (rcv *ToolSearch) Init(buf []byte, i flatbuffers.UOffsetT) {

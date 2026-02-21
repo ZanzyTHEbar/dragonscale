@@ -5,8 +5,8 @@ import (
 	"testing"
 
 	"charm.land/fantasy"
-	"github.com/sipeed/picoclaw/pkg/bus"
-	"github.com/sipeed/picoclaw/pkg/tools"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/bus"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/tools"
 )
 
 // --- Mock tool implementations ---

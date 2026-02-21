@@ -6,7 +6,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/sipeed/picoclaw/pkg/memory"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/memory"
 )
 
 const ftsSearchQuery = `

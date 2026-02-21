@@ -5,8 +5,8 @@ import (
 	"os"
 	"testing"
 
+	"github.com/ZanzyTHEbar/dragonscale/pkg/skills"
 	jsonv2 "github.com/go-json-experiment/json"
-	"github.com/sipeed/picoclaw/pkg/skills"
 )
 
 func TestToolSearchTool_Name(t *testing.T) {

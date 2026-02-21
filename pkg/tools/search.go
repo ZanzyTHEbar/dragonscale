@@ -6,8 +6,8 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/ZanzyTHEbar/dragonscale/pkg/skills"
 	jsonv2 "github.com/go-json-experiment/json"
-	"github.com/sipeed/picoclaw/pkg/skills"
 )
 
 // ToolSearchTool implements unified discovery via fuzzy search over the registry

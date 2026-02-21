@@ -9,9 +9,9 @@ import (
 	"github.com/go-json-experiment/json/jsontext"
 
 	"charm.land/fantasy"
-	"github.com/sipeed/picoclaw/pkg/ids"
-	"github.com/sipeed/picoclaw/pkg/memory/sqlc"
-	"github.com/sipeed/picoclaw/pkg/pcerrors"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/dserrors"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/ids"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/memory/sqlc"
 )
 
 type ToolResultSearchView struct {
@@ -145,7 +145,7 @@ func NewToolResultSearchTool(q *sqlc.Queries, kv KVDelegate) fantasy.AgentTool {
 
 func loadToolResultRows(ctx context.Context, q *sqlc.Queries, input ToolResultSearchInput) ([]sqlc.AgentToolResult, error) {
 	if q == nil {
-		return nil, pcerrors.New(pcerrors.CodeUnknown, "db is not configured")
+		return nil, dserrors.New(dserrors.CodeUnknown, "db is not configured")
 	}
 
 	if strings.TrimSpace(input.RunID) != "" && strings.TrimSpace(input.ToolCallID) != "" {
@@ -184,7 +184,7 @@ func loadToolResultRows(ctx context.Context, q *sqlc.Queries, input ToolResultSe
 		})
 	}
 
-	return nil, pcerrors.New(pcerrors.CodeUnknown, "conversation_id or run_id is required (and tool_call_id requires run_id)")
+	return nil, dserrors.New(dserrors.CodeUnknown, "conversation_id or run_id is required (and tool_call_id requires run_id)")
 }
 
 func normalizeLineView(v *ToolResultSearchView) (startLine int, endLine int) {
@@ -243,7 +243,7 @@ func normalizeChunkView(v *ToolResultSearchView) (startChunk int, endChunk int) 
 
 func loadView(ctx context.Context, kv KVDelegate, row sqlc.AgentToolResult, startLine, endLine, startChunk, endChunk int) (string, map[string]int, error) {
 	if kv == nil {
-		return "", nil, pcerrors.New(pcerrors.CodeUnknown, "KV delegate is nil")
+		return "", nil, dserrors.New(dserrors.CodeUnknown, "KV delegate is nil")
 	}
 
 	if row.ChunkCount > 0 {

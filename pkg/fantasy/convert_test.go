@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"charm.land/fantasy"
-	"github.com/sipeed/picoclaw/pkg/messages"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/messages"
 )
 
 // --- MessagesToFantasy Tests ---
@@ -417,7 +417,7 @@ func TestAgentResultToMessages_MultipleSteps(t *testing.T) {
 // --- Round-trip fidelity test ---
 
 func TestRoundTrip_PicoClawToFantasyAndBack(t *testing.T) {
-	// Start with PicoClaw messages representing a typical conversation
+	// Start with DragonScale messages representing a typical conversation
 	original := []messages.Message{
 		{Role: "user", Content: "Read the file"},
 		{

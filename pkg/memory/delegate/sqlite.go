@@ -7,11 +7,12 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/ZanzyTHEbar/dragonscale/pkg/ids"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/memory"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/memory/dag"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/memory/migrations"
+	memsqlc "github.com/ZanzyTHEbar/dragonscale/pkg/memory/sqlc"
 	"github.com/pressly/goose/v3"
-	"github.com/sipeed/picoclaw/pkg/ids"
-	"github.com/sipeed/picoclaw/pkg/memory"
-	"github.com/sipeed/picoclaw/pkg/memory/migrations"
-	memsqlc "github.com/sipeed/picoclaw/pkg/memory/sqlc"
 
 	libsql "github.com/tursodatabase/go-libsql"
 )
@@ -687,6 +688,11 @@ func (d *LibSQLDelegate) CountAuditEntriesByAction(ctx context.Context, agentID,
 		Action:  action,
 	})
 	return int(count), err
+}
+
+// PersistDAG implements dag.DAGPersister. Persists DAG snapshot to storage.
+func (d *LibSQLDelegate) PersistDAG(ctx context.Context, agentID, sessionKey string, snap *dag.PersistSnapshot) error {
+	return dag.PersistDAG(ctx, d.db, d.queries, agentID, sessionKey, snap)
 }
 
 // --- Conversion helpers ---

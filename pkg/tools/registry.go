@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/sipeed/picoclaw/pkg/logger"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/logger"
 )
 
 type ToolRegistry struct {

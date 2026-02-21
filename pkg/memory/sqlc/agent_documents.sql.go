@@ -8,7 +8,7 @@ package sqlc
 import (
 	"context"
 
-	"github.com/sipeed/picoclaw/pkg/ids"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/ids"
 )
 
 const DeleteDocument = `-- name: DeleteDocument :exec

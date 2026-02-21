@@ -9,9 +9,9 @@ import (
 
 	jsonv2 "github.com/go-json-experiment/json"
 
-	"github.com/sipeed/picoclaw/pkg/itr"
-	"github.com/sipeed/picoclaw/pkg/security"
-	"github.com/sipeed/picoclaw/pkg/tools"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/itr"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/security"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/tools"
 )
 
 // ToolExecutor is the function signature the SecureBus calls to run a tool.

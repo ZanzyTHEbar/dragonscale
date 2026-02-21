@@ -12,10 +12,10 @@ import (
 	jsonv2 "github.com/go-json-experiment/json"
 	"github.com/go-json-experiment/json/jsontext"
 
-	"github.com/sipeed/picoclaw/pkg/memory"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/memory"
 )
 
-const kvAgentID = "picoclaw"
+const kvAgentID = "dragonscale"
 
 // State represents the persistent state for a workspace.
 // It includes information about the last active channel/chat.

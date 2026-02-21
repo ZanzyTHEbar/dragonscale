@@ -13,8 +13,8 @@ import (
 
 	jsonv2 "github.com/go-json-experiment/json"
 
-	"github.com/sipeed/picoclaw/pkg/logger"
-	"github.com/sipeed/picoclaw/pkg/utils"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/logger"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/utils"
 )
 
 type GroqTranscriber struct {

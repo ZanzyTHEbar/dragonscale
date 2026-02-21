@@ -11,11 +11,11 @@ import (
 	jsonv2 "github.com/go-json-experiment/json"
 	"github.com/go-json-experiment/json/jsontext"
 
-	"github.com/sipeed/picoclaw/pkg/cache"
-	"github.com/sipeed/picoclaw/pkg/ids"
-	"github.com/sipeed/picoclaw/pkg/logger"
-	"github.com/sipeed/picoclaw/pkg/memory"
-	"github.com/sipeed/picoclaw/pkg/messages"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/cache"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/ids"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/logger"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/memory"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/messages"
 )
 
 type Session struct {
@@ -100,34 +100,142 @@ func (sm *SessionManager) loadSessionsFromDelegate() {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	items, err := sm.delegate.ListRecallItems(ctx, sm.agentID, "", 500, 0)
-	if err != nil {
-		logger.WarnCF("session", "Failed to load sessions from delegate",
-			map[string]interface{}{"error": err.Error()})
-		return
+	const pageSize = 500
+	offset := 0
+	sessionKeys := make(map[string]struct{})
+	for {
+		items, err := sm.delegate.ListRecallItems(ctx, sm.agentID, "", pageSize, offset)
+		if err != nil {
+			logger.WarnCF("session", "Failed to load sessions from delegate",
+				map[string]interface{}{"error": err.Error()})
+			return
+		}
+		if len(items) == 0 {
+			break
+		}
+		for _, item := range items {
+			if !strings.Contains(item.Tags, "session-message") {
+				continue
+			}
+			sessionKeys[item.SessionKey] = struct{}{}
+		}
+		if len(items) < pageSize {
+			break
+		}
+		offset += len(items)
 	}
 
-	for _, item := range items {
-		if !strings.Contains(item.Tags, "session-message") {
-			continue
+	type sessionLister interface {
+		ListSessionMessages(ctx context.Context, agentID, sessionKey, role string, limit int) ([]*memory.RecallItem, error)
+	}
+	lister, hasSessionLister := sm.delegate.(sessionLister)
+	sessionsScanned := 0
+	pointersUpdated := 0
+
+	for sessionKey := range sessionKeys {
+		sessionsScanned++
+		session := &Session{
+			Key:      sessionKey,
+			Messages: []messages.Message{},
+			Created:  time.Now(),
+			Updated:  time.Time{},
 		}
-		session := sm.sessions[item.SessionKey]
-		if session == nil {
-			session = &Session{
-				Key:      item.SessionKey,
-				Messages: []messages.Message{},
-				Created:  item.CreatedAt,
-				Updated:  item.CreatedAt,
+		sm.sessions[sessionKey] = session
+
+		var chronItems []*memory.RecallItem
+
+		if hasSessionLister {
+			count, _ := sm.delegate.CountRecallItems(ctx, sm.agentID, sessionKey)
+			limit := count + 32
+			if limit < 32 {
+				limit = 32
 			}
-			sm.sessions[item.SessionKey] = session
+			rows, err := lister.ListSessionMessages(ctx, sm.agentID, sessionKey, "", limit)
+			if err == nil {
+				chronItems = rows
+				for _, item := range rows {
+					session.Messages = append(session.Messages, messages.Message{
+						Role:    item.Role,
+						Content: item.Content,
+					})
+					if item.CreatedAt.Before(session.Created) {
+						session.Created = item.CreatedAt
+					}
+					if item.CreatedAt.After(session.Updated) {
+						session.Updated = item.CreatedAt
+					}
+				}
+			}
 		}
-		session.Messages = append(session.Messages, messages.Message{
-			Role:    item.Role,
-			Content: item.Content,
-		})
-		if item.CreatedAt.After(session.Updated) {
-			session.Updated = item.CreatedAt
+
+		if len(session.Messages) == 0 {
+			// Fallback when delegate doesn't expose ListSessionMessages.
+			offset := 0
+			descItems := make([]*memory.RecallItem, 0, pageSize)
+			for {
+				batch, err := sm.delegate.ListRecallItems(ctx, sm.agentID, sessionKey, pageSize, offset)
+				if err != nil {
+					logger.WarnCF("session", "Failed fallback session restore page",
+						map[string]interface{}{"session": sessionKey, "offset": offset, "error": err.Error()})
+					break
+				}
+				if len(batch) == 0 {
+					break
+				}
+				for _, item := range batch {
+					if !strings.Contains(item.Tags, "session-message") {
+						continue
+					}
+					descItems = append(descItems, item)
+				}
+				if len(batch) < pageSize {
+					break
+				}
+				offset += len(batch)
+			}
+			for i := len(descItems) - 1; i >= 0; i-- {
+				item := descItems[i]
+				if !strings.Contains(item.Tags, "session-message") {
+					continue
+				}
+				chronItems = append(chronItems, item)
+				session.Messages = append(session.Messages, messages.Message{
+					Role:    item.Role,
+					Content: item.Content,
+				})
+				if item.CreatedAt.Before(session.Created) {
+					session.Created = item.CreatedAt
+				}
+				if item.CreatedAt.After(session.Updated) {
+					session.Updated = item.CreatedAt
+				}
+			}
 		}
+
+		// Integrity validation and projection pointer persistence for deterministic resume.
+		restoredPtr := projectFromItems(chronItems)
+		if restoredPtr != nil {
+			priorPtr, _ := sm.loadProjectionPointer(ctx, sessionKey)
+			sm.validateAndLogRestore(sessionKey, priorPtr, restoredPtr)
+			if !projectionPointerEqual(priorPtr, restoredPtr) {
+				if err := sm.persistProjectionPointer(ctx, sessionKey, restoredPtr); err != nil {
+					logger.WarnCF("session", "Failed to persist projection pointer",
+						map[string]interface{}{"session": sessionKey, "error": err.Error()})
+				} else {
+					pointersUpdated++
+				}
+			}
+		}
+	}
+
+	if err := sm.persistProjectionBackfillStatus(ctx, ProjectionBackfillStatus{
+		Version:         1,
+		SessionsScanned: sessionsScanned,
+		PointersUpdated: pointersUpdated,
+		CompletedAt:     time.Now().UTC(),
+	}); err != nil {
+		logger.WarnCF("session", "Failed to persist projection backfill status",
+			map[string]interface{}{"error": err.Error()})
 	}
 }
 
@@ -245,19 +353,6 @@ func (sm *SessionManager) AddFullMessage(sessionKey string, msg messages.Message
 		sm.persistMessageToDelegate(sessionKey, msg)
 	}
 
-	// Hard cap: prevent unbounded growth if summarization keeps failing.
-	// Keep last 50 messages when we exceed 200.
-	const hardCap = 200
-	const keepOnOverflow = 50
-	if len(session.Messages) > hardCap {
-		logger.InfoCF("session", "Session exceeded hard cap, force-truncating",
-			map[string]interface{}{
-				"session":  sessionKey,
-				"messages": len(session.Messages),
-				"keep":     keepOnOverflow,
-			})
-		session.Messages = session.Messages[len(session.Messages)-keepOnOverflow:]
-	}
 }
 
 func (sm *SessionManager) persistMessageToDelegate(sessionKey string, msg messages.Message) {
@@ -281,6 +376,13 @@ func (sm *SessionManager) persistMessageToDelegate(sessionKey string, msg messag
 	}
 	if err := sm.delegate.InsertRecallItem(ctx, item); err != nil {
 		logger.WarnCF("session", "Failed to persist message to delegate",
+			map[string]interface{}{"session": sessionKey, "error": err.Error()})
+		return
+	}
+	priorPtr, _ := sm.loadProjectionPointer(ctx, sessionKey)
+	newPtr := advancePointer(priorPtr, item.ID, now)
+	if err := sm.persistProjectionPointer(ctx, sessionKey, newPtr); err != nil {
+		logger.WarnCF("session", "Failed to persist projection pointer after append",
 			map[string]interface{}{"session": sessionKey, "error": err.Error()})
 	}
 }

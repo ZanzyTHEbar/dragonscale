@@ -8,8 +8,8 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/sipeed/picoclaw/pkg/ids"
-	"github.com/sipeed/picoclaw/pkg/memory"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/ids"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/memory"
 )
 
 type AgentAuditLog struct {
@@ -191,6 +191,47 @@ type ArchivalChunk struct {
 	CreatedAt  time.Time        `db:"created_at" json:"created_at"`
 }
 
+type DagEdge struct {
+	ID           ids.UUID        `db:"id" json:"id"`
+	SnapshotID   ids.UUID        `db:"snapshot_id" json:"snapshot_id"`
+	ParentNodeID ids.UUID        `db:"parent_node_id" json:"parent_node_id"`
+	ChildNodeID  ids.UUID        `db:"child_node_id" json:"child_node_id"`
+	EdgeIndex    int64           `db:"edge_index" json:"edge_index"`
+	MetadataJson json.RawMessage `db:"metadata_json" json:"metadata_json"`
+	CreatedAt    time.Time       `db:"created_at" json:"created_at"`
+	UpdatedAt    time.Time       `db:"updated_at" json:"updated_at"`
+}
+
+type DagNode struct {
+	ID           ids.UUID        `db:"id" json:"id"`
+	SnapshotID   ids.UUID        `db:"snapshot_id" json:"snapshot_id"`
+	NodeID       string          `db:"node_id" json:"node_id"`
+	Level        int64           `db:"level" json:"level"`
+	Summary      string          `db:"summary" json:"summary"`
+	Tokens       int64           `db:"tokens" json:"tokens"`
+	StartIdx     int64           `db:"start_idx" json:"start_idx"`
+	EndIdx       int64           `db:"end_idx" json:"end_idx"`
+	Span         int64           `db:"span" json:"span"`
+	ContentHash  string          `db:"content_hash" json:"content_hash"`
+	MetricsJson  json.RawMessage `db:"metrics_json" json:"metrics_json"`
+	MetadataJson json.RawMessage `db:"metadata_json" json:"metadata_json"`
+	CreatedAt    time.Time       `db:"created_at" json:"created_at"`
+	UpdatedAt    time.Time       `db:"updated_at" json:"updated_at"`
+}
+
+type DagSnapshot struct {
+	ID          ids.UUID  `db:"id" json:"id"`
+	AgentID     string    `db:"agent_id" json:"agent_id"`
+	SessionKey  string    `db:"session_key" json:"session_key"`
+	FromMsgIdx  int64     `db:"from_msg_idx" json:"from_msg_idx"`
+	ToMsgIdx    int64     `db:"to_msg_idx" json:"to_msg_idx"`
+	MsgCount    int64     `db:"msg_count" json:"msg_count"`
+	RootsJson   string    `db:"roots_json" json:"roots_json"`
+	ContentHash string    `db:"content_hash" json:"content_hash"`
+	CreatedAt   time.Time `db:"created_at" json:"created_at"`
+	UpdatedAt   time.Time `db:"updated_at" json:"updated_at"`
+}
+
 type Job struct {
 	ID          ids.UUID        `db:"id" json:"id"`
 	Kind        string          `db:"kind" json:"kind"`
@@ -206,6 +247,41 @@ type Job struct {
 	CreatedAt   time.Time       `db:"created_at" json:"created_at"`
 	UpdatedAt   time.Time       `db:"updated_at" json:"updated_at"`
 	CompletedAt *time.Time      `db:"completed_at" json:"completed_at"`
+}
+
+type MapItem struct {
+	ID          ids.UUID   `db:"id" json:"id"`
+	RunID       ids.UUID   `db:"run_id" json:"run_id"`
+	ItemIndex   int64      `db:"item_index" json:"item_index"`
+	Status      string     `db:"status" json:"status"`
+	Attempts    int64      `db:"attempts" json:"attempts"`
+	LastError   *string    `db:"last_error" json:"last_error"`
+	InputFb     []byte     `db:"input_fb" json:"input_fb"`
+	OutputFb    []byte     `db:"output_fb" json:"output_fb"`
+	InputHash   *string    `db:"input_hash" json:"input_hash"`
+	OutputHash  *string    `db:"output_hash" json:"output_hash"`
+	CreatedAt   time.Time  `db:"created_at" json:"created_at"`
+	UpdatedAt   time.Time  `db:"updated_at" json:"updated_at"`
+	CompletedAt *time.Time `db:"completed_at" json:"completed_at"`
+}
+
+type MapRun struct {
+	ID             ids.UUID   `db:"id" json:"id"`
+	AgentID        string     `db:"agent_id" json:"agent_id"`
+	SessionKey     string     `db:"session_key" json:"session_key"`
+	OperatorKind   string     `db:"operator_kind" json:"operator_kind"`
+	IdempotencyKey *string    `db:"idempotency_key" json:"idempotency_key"`
+	Status         string     `db:"status" json:"status"`
+	TotalItems     int64      `db:"total_items" json:"total_items"`
+	QueuedItems    int64      `db:"queued_items" json:"queued_items"`
+	RunningItems   int64      `db:"running_items" json:"running_items"`
+	SucceededItems int64      `db:"succeeded_items" json:"succeeded_items"`
+	FailedItems    int64      `db:"failed_items" json:"failed_items"`
+	SpecFb         []byte     `db:"spec_fb" json:"spec_fb"`
+	LastError      *string    `db:"last_error" json:"last_error"`
+	CreatedAt      time.Time  `db:"created_at" json:"created_at"`
+	UpdatedAt      time.Time  `db:"updated_at" json:"updated_at"`
+	CompletedAt    *time.Time `db:"completed_at" json:"completed_at"`
 }
 
 type MemorySummary struct {

@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/sipeed/picoclaw/pkg/agent"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/agent"
 )
 
 func newDelegateKV(t *testing.T, agentID string) *agent.DelegateKV {

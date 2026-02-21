@@ -1,4 +1,4 @@
-package pcerrors
+package dserrors
 
 import (
 	"fmt"
@@ -10,7 +10,7 @@ import (
 	jsonv2 "github.com/go-json-experiment/json"
 )
 
-// CLIHandler is the PicoClaw error lifecycle boundary for the CLI.
+// CLIHandler is the DragonScale error lifecycle boundary for the CLI.
 //
 // It renders a user-facing message to Writer and returns an appropriate exit
 // code. Optional Verbose and Redact flags layer on debug traces and sensitive-

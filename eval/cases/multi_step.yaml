@@ -3,7 +3,7 @@
 
 - description: "create and verify: write a file then read it back"
   vars:
-    prompt: "Write the text 'picoclaw eval checkpoint' to a file called eval_checkpoint.txt, then read it back and confirm the contents match."
+    prompt: "Write the text 'dragonscale eval checkpoint' to a file called eval_checkpoint.txt, then read it back and confirm the contents match."
   assert:
     - type: javascript
       value: |

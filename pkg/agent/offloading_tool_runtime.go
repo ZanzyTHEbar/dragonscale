@@ -8,9 +8,9 @@ import (
 	"strings"
 
 	"charm.land/fantasy"
-	"github.com/sipeed/picoclaw/pkg/ids"
-	"github.com/sipeed/picoclaw/pkg/memory/sqlc"
-	"github.com/sipeed/picoclaw/pkg/pcerrors"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/dserrors"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/ids"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/memory/sqlc"
 )
 
 const defaultToolMaxConcurrency = 4
@@ -59,13 +59,13 @@ func (r OffloadingToolRuntime) Execute(ctx context.Context, tools []fantasy.Agen
 		r.Base = fantasy.DAGToolRuntime{MaxConcurrency: defaultToolMaxConcurrency}
 	}
 	if r.KV == nil {
-		return nil, pcerrors.New(pcerrors.CodeFailedPrecondition, "KV delegate is nil")
+		return nil, dserrors.New(dserrors.CodeFailedPrecondition, "KV delegate is nil")
 	}
 	if r.Queries == nil {
-		return nil, pcerrors.New(pcerrors.CodeFailedPrecondition, "db queries is nil")
+		return nil, dserrors.New(dserrors.CodeFailedPrecondition, "db queries is nil")
 	}
 	if r.ConversationID.IsZero() || r.RunID.IsZero() {
-		return nil, pcerrors.New(pcerrors.CodeInvalidArgument, "conversation_id/run_id is required")
+		return nil, dserrors.New(dserrors.CodeInvalidArgument, "conversation_id/run_id is required")
 	}
 
 	threshold := r.ThresholdChars

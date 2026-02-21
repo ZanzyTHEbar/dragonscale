@@ -6,10 +6,10 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/config"
 )
 
-const EvalConfigEnvVar = "PICOCLAW_EVAL_CONFIG"
+const EvalConfigEnvVar = "DRAGONSCALE_EVAL_CONFIG"
 
 type LoadConfigOptions struct {
 	BaseConfigPath     string
@@ -18,7 +18,7 @@ type LoadConfigOptions struct {
 }
 
 func ResolveBaseConfigPath() string {
-	// Prefer XDG standard path (~/.config/picoclaw/config.json) when present.
+	// Prefer XDG standard path (~/.config/dragonscale/config.json) when present.
 	if xdgPath, err := config.DefaultConfigPath(); err == nil {
 		if _, statErr := os.Stat(xdgPath); statErr == nil {
 			return xdgPath
@@ -26,7 +26,7 @@ func ResolveBaseConfigPath() string {
 	}
 
 	home, _ := os.UserHomeDir()
-	legacy := filepath.Join(home, ".picoclaw", "config.json")
+	legacy := filepath.Join(home, ".dragonscale", "config.json")
 	if _, err := os.Stat(legacy); err == nil {
 		return legacy
 	}

@@ -4,10 +4,15 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
+	"sort"
+	"strings"
+	"sync"
 	"time"
 
-	"github.com/sipeed/picoclaw/pkg/ids"
-	"github.com/sipeed/picoclaw/pkg/memory"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/ids"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/memory"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/memory/observation"
+	memsqlc "github.com/ZanzyTHEbar/dragonscale/pkg/memory/sqlc"
 )
 
 // Config controls the MemoryStore behavior.
@@ -33,11 +38,12 @@ func DefaultConfig() Config {
 
 // MemoryStore implements memory.Memory by composing a MemoryDelegate, EmbeddingProvider, and Chunker.
 type MemoryStore struct {
-	delegate memory.MemoryDelegate
-	embedder memory.EmbeddingProvider // may be nil if embeddings disabled
-	chunker  memory.Chunker
-	cfg      Config
-	agentID  string
+	delegate          memory.MemoryDelegate
+	embedder          memory.EmbeddingProvider // may be nil if embeddings disabled
+	chunker           memory.Chunker
+	cfg               Config
+	agentID           string
+	retrievalPolicyMu sync.Mutex
 }
 
 // New creates a MemoryStore.
@@ -226,8 +232,8 @@ func (m *MemoryStore) Search(ctx context.Context, query string, opts memory.Sear
 		limit = 10
 	}
 
-	var resultSets [][]memory.SearchResult
-	var weights []float64
+	var baselineSets [][]memory.SearchResult
+	var baselineWeights []float64
 
 	// 1. Keyword search (via delegate)
 	kwWeight := opts.KeywordWeight
@@ -236,8 +242,8 @@ func (m *MemoryStore) Search(ctx context.Context, query string, opts memory.Sear
 	}
 	kwResults, err := m.keywordSearch(ctx, query, opts, limit*2) // fetch extra for fusion
 	if err == nil && len(kwResults) > 0 {
-		resultSets = append(resultSets, kwResults)
-		weights = append(weights, kwWeight)
+		baselineSets = append(baselineSets, kwResults)
+		baselineWeights = append(baselineWeights, kwWeight)
 	}
 
 	// 2. Vector search (if embedder available)
@@ -248,23 +254,77 @@ func (m *MemoryStore) Search(ctx context.Context, query string, opts memory.Sear
 	if m.embedder != nil {
 		vecResults, err := m.vectorSearch(ctx, query, opts, limit*2)
 		if err == nil && len(vecResults) > 0 {
-			resultSets = append(resultSets, vecResults)
-			weights = append(weights, vecWeight)
+			baselineSets = append(baselineSets, vecResults)
+			baselineWeights = append(baselineWeights, vecWeight)
 		}
 	}
 
-	if len(resultSets) == 0 {
+	var baselineFinal []memory.SearchResult
+	if len(baselineSets) > 0 {
+		baselineMerged := ReciprocalRankFusion(baselineSets, baselineWeights, 60)
+		baselineFinal = m.postProcessMergedResults(ctx, baselineMerged, opts, limit)
+	}
+
+	// 3. Projection-aware retrieval (working-context + DAG summaries)
+	hybridWeight := opts.RecencyWeight
+	if hybridWeight <= 0 {
+		hybridWeight = 0.6
+	}
+
+	hybridResults, err := m.hybridProjectionSearch(ctx, query, opts, limit*2)
+	augmentedFinal := baselineFinal
+	augmentedUsed := false
+	if err == nil && len(hybridResults) > 0 {
+		augmentedSets := append([][]memory.SearchResult{}, baselineSets...)
+		augmentedWeights := append([]float64{}, baselineWeights...)
+		augmentedSets = append(augmentedSets, hybridResults)
+		augmentedWeights = append(augmentedWeights, hybridWeight)
+
+		augmentedMerged := ReciprocalRankFusion(augmentedSets, augmentedWeights, 60)
+		augmentedFinal = m.postProcessMergedResults(ctx, augmentedMerged, opts, limit)
+		if len(augmentedFinal) > 0 {
+			augmentedUsed = true
+		}
+	}
+
+	if len(baselineFinal) == 0 && len(augmentedFinal) == 0 {
 		return nil, nil
 	}
 
-	// 3. RRF fusion
-	merged := ReciprocalRankFusion(resultSets, weights, 60)
+	m.retrievalPolicyMu.Lock()
+	state := m.loadRetrievalPolicyState(ctx)
+	gates := m.loadRetrievalPromotionGates(ctx)
+	metrics := m.loadRetrievalShadowMetrics(ctx)
+	parity := computeRetrievalParity(baselineFinal, augmentedFinal, limit)
+	state = m.updateRetrievalPolicy(ctx, state, gates, metrics, parity, augmentedUsed, baselineFinal)
+	m.retrievalPolicyMu.Unlock()
 
-	// 4. Recency decay
+	switch state.Mode {
+	case retrievalModePromoted:
+		return augmentedFinal, nil
+	case retrievalModeRollback, retrievalModeShadow:
+		return baselineFinal, nil
+	default:
+		return baselineFinal, nil
+	}
+}
+
+func (m *MemoryStore) postProcessMergedResults(
+	ctx context.Context,
+	merged []memory.SearchResult,
+	opts memory.SearchOptions,
+	limit int,
+) []memory.SearchResult {
+	if len(merged) == 0 {
+		return nil
+	}
+
+	// 1. Recency decay
 	halfLife := opts.HalfLifeHours
 	if halfLife <= 0 {
 		halfLife = m.cfg.DefaultHalfLifeHours
 	}
+
 	// Build a createdAt lookup from recall items
 	createdAtMap := make(map[ids.UUID]time.Time)
 	for _, r := range merged {
@@ -277,10 +337,10 @@ func (m *MemoryStore) Search(ctx context.Context, query string, opts memory.Sear
 		return createdAtMap[id]
 	})
 
-	// 5. Metadata pre-filtering (sectors, session_key, date range)
+	// 2. Metadata pre-filtering (sectors, session_key, date range)
 	merged = m.applyMetadataFilters(ctx, merged, opts)
 
-	// 6. Filter by min score
+	// 3. Filter by min score
 	if opts.MinScore > 0 {
 		filtered := merged[:0]
 		for _, r := range merged {
@@ -291,12 +351,86 @@ func (m *MemoryStore) Search(ctx context.Context, query string, opts memory.Sear
 		merged = filtered
 	}
 
-	// 7. Limit
+	// 4. Limit
 	if len(merged) > limit {
 		merged = merged[:limit]
 	}
+	return merged
+}
 
-	return merged, nil
+func (m *MemoryStore) hybridProjectionSearch(ctx context.Context, query string, opts memory.SearchOptions, limit int) ([]memory.SearchResult, error) {
+	if opts.SessionKey == "" || limit <= 0 {
+		return nil, nil
+	}
+
+	queryLower := strings.ToLower(strings.TrimSpace(query))
+	results := make([]memory.SearchResult, 0, limit)
+
+	// Working-context view
+	wc, err := m.delegate.GetWorkingContext(ctx, m.agentID, opts.SessionKey)
+	if err == nil && wc != nil && strings.TrimSpace(wc.Content) != "" {
+		score := 0.4
+		if queryLower != "" && strings.Contains(strings.ToLower(wc.Content), queryLower) {
+			score = 0.95
+		}
+		content := wc.Content
+		if len(content) > 1200 {
+			content = content[:1200] + "..."
+		}
+		results = append(results, memory.SearchResult{
+			ID:      ids.New(),
+			Content: content,
+			Source:  "working-context:" + opts.SessionKey,
+			Score:   score,
+			Sector:  memory.SectorReflective,
+		})
+	}
+
+	// DAG summary view
+	type dagQueryProvider interface {
+		Queries() *memsqlc.Queries
+	}
+	if provider, ok := m.delegate.(dagQueryProvider); ok && provider.Queries() != nil {
+		snap, err := provider.Queries().GetLatestDAGSnapshotBySession(ctx, memsqlc.GetLatestDAGSnapshotBySessionParams{
+			AgentID:    m.agentID,
+			SessionKey: opts.SessionKey,
+		})
+		if err == nil {
+			nodes, err := provider.Queries().ListDAGNodesBySnapshotID(ctx, memsqlc.ListDAGNodesBySnapshotIDParams{
+				SnapshotID: snap.ID,
+			})
+			if err == nil {
+				for _, node := range nodes {
+					if queryLower != "" && !strings.Contains(strings.ToLower(node.Summary), queryLower) {
+						continue
+					}
+					score := 0.55 + (0.1 * float64(node.Level))
+					if score > 0.95 {
+						score = 0.95
+					}
+					results = append(results, memory.SearchResult{
+						ID:      ids.New(),
+						Content: node.Summary,
+						Source:  fmt.Sprintf("dag:%s:%s", opts.SessionKey, node.NodeID),
+						Score:   score,
+						Sector:  memory.SectorReflective,
+					})
+				}
+			}
+		}
+	}
+
+	if len(results) == 0 {
+		return nil, nil
+	}
+
+	sort.Slice(results, func(i, j int) bool {
+		return results[i].Score > results[j].Score
+	})
+	if len(results) > limit {
+		results = results[:limit]
+	}
+	return results, nil
 }
 
 // applyMetadataFilters removes results that don't match the requested sector,
@@ -319,6 +453,24 @@ func (m *MemoryStore) applyMetadataFilters(ctx context.Context, results []memory
 
 	filtered := results[:0]
 	for _, r := range results {
+		// Synthetic projection entries (working-context + DAG summaries) are
+		// already scoped by session and do not map to recall item IDs.
+		if strings.HasPrefix(r.Source, "working-context:") || strings.HasPrefix(r.Source, "dag:") {
+			if needSessionFilter && !strings.Contains(r.Source, opts.SessionKey) {
+				continue
+			}
+			if needSectorFilter && !sectorSet[r.Sector] {
+				continue
+			}
+			// Synthetic entries do not carry durable timestamps, so honor
+			// explicit date filters conservatively by excluding them.
+			if needDateFilter {
+				continue
+			}
+			filtered = append(filtered, r)
+			continue
+		}
+
 		item, err := m.delegate.GetRecallItem(ctx, m.agentID, r.ID)
 		if err != nil || item == nil {
 			continue
@@ -455,8 +607,12 @@ func (m *MemoryStore) ContextUsage(ctx context.Context, agentID, sessionKey stri
 		return nil, err
 	}
 
-	// Rough estimate: recall items avg ~100 tokens each
-	estimatedTotal := wcTokens + (recallCount * 100)
+	recallTokens, err := m.estimateRecallTokens(ctx, agentID, sessionKey, recallCount)
+	if err != nil {
+		return nil, err
+	}
+
+	estimatedTotal := wcTokens + recallTokens
 	ratio := float64(estimatedTotal) / float64(m.cfg.ContextWindowTokens)
 	if ratio > 1.0 {
 		ratio = 1.0
@@ -530,11 +686,44 @@ func (m *MemoryStore) Close() error {
 
 // --- helpers ---
 
+func (m *MemoryStore) estimateRecallTokens(ctx context.Context, agentID, sessionKey string, recallCount int) (int, error) {
+	if recallCount <= 0 {
+		return 0, nil
+	}
+
+	// Sample and scale for very large recall sets to avoid expensive full scans.
+	const maxSampleSize = 200
+	sampleSize := recallCount
+	if sampleSize > maxSampleSize {
+		sampleSize = maxSampleSize
+	}
+
+	items, err := m.delegate.ListRecallItems(ctx, agentID, sessionKey, sampleSize, 0)
+	if err != nil {
+		return 0, fmt.Errorf("list recall items for token estimate: %w", err)
+	}
+	if len(items) == 0 {
+		return 0, nil
+	}
+
+	sampleTokens := 0
+	for _, item := range items {
+		sampleTokens += estimateTokens(item.Content)
+	}
+
+	if recallCount <= len(items) {
+		return sampleTokens, nil
+	}
+
+	avgTokens := sampleTokens / len(items)
+	return sampleTokens + avgTokens*(recallCount-len(items)), nil
+}
+
 func estimateTokens(s string) int {
 	if len(s) == 0 {
 		return 0
 	}
-	return (len(s) + 3) / 4
+	return observation.EstimateTokens(s)
 }
 
 func truncate(s string, maxChars int) string {

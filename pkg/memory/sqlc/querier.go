@@ -7,7 +7,7 @@ package sqlc
 import (
 	"context"
 
-	"github.com/sipeed/picoclaw/pkg/ids"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/ids"
 )
 
 type Querier interface {
@@ -135,6 +135,20 @@ type Querier interface {
 	//  FROM jobs
 	//  GROUP BY status
 	CountJobsByStatus(ctx context.Context) ([]CountJobsByStatusRow, error)
+	//CountMapItemsByRun
+	//
+	//  SELECT count(*) AS count
+	//  FROM map_items
+	//  WHERE run_id = ?1
+	CountMapItemsByRun(ctx context.Context, arg CountMapItemsByRunParams) (int64, error)
+	//CountMapItemsByRunAndStatus
+	//
+	//  SELECT status,
+	//      count(*) AS count
+	//  FROM map_items
+	//  WHERE run_id = ?1
+	//  GROUP BY status
+	CountMapItemsByRunAndStatus(ctx context.Context, arg CountMapItemsByRunAndStatusParams) ([]CountMapItemsByRunAndStatusRow, error)
 	//CountRecallItems
 	//
 	//  SELECT COUNT(*)
@@ -356,6 +370,43 @@ type Querier interface {
 	//  WHERE ac.id IN (/*SLICE:ids*/?)
 	//      AND ri.agent_id = ?2
 	GetArchivalChunksByIDs(ctx context.Context, arg GetArchivalChunksByIDsParams) ([]ArchivalChunk, error)
+	//GetDAGNodeBySnapshotAndNodeID
+	//
+	//  SELECT id,
+	//      snapshot_id,
+	//      node_id,
+	//      level,
+	//      summary,
+	//      tokens,
+	//      start_idx,
+	//      end_idx,
+	//      span,
+	//      content_hash,
+	//      metrics_json,
+	//      metadata_json,
+	//      created_at,
+	//      updated_at
+	//  FROM dag_nodes
+	//  WHERE snapshot_id = ?1
+	//      AND node_id = ?2
+	//  LIMIT 1
+	GetDAGNodeBySnapshotAndNodeID(ctx context.Context, arg GetDAGNodeBySnapshotAndNodeIDParams) (DagNode, error)
+	//GetDAGSnapshotByID
+	//
+	//  SELECT id,
+	//      agent_id,
+	//      session_key,
+	//      from_msg_idx,
+	//      to_msg_idx,
+	//      msg_count,
+	//      roots_json,
+	//      content_hash,
+	//      created_at,
+	//      updated_at
+	//  FROM dag_snapshots
+	//  WHERE id = ?1
+	//  LIMIT 1
+	GetDAGSnapshotByID(ctx context.Context, arg GetDAGSnapshotByIDParams) (DagSnapshot, error)
 	// Agent Documents queries
 	//
 	//  SELECT id,
@@ -406,6 +457,56 @@ type Querier interface {
 	//  ORDER BY step_index DESC
 	//  LIMIT 1
 	GetLatestAgentRunStateByRunID(ctx context.Context, arg GetLatestAgentRunStateByRunIDParams) (AgentRunState, error)
+	//GetLatestDAGSnapshotBySession
+	//
+	//  SELECT id,
+	//      agent_id,
+	//      session_key,
+	//      from_msg_idx,
+	//      to_msg_idx,
+	//      msg_count,
+	//      roots_json,
+	//      content_hash,
+	//      created_at,
+	//      updated_at
+	//  FROM dag_snapshots
+	//  WHERE agent_id = ?1
+	//      AND session_key = ?2
+	//  ORDER BY created_at DESC
+	//  LIMIT 1
+	GetLatestDAGSnapshotBySession(ctx context.Context, arg GetLatestDAGSnapshotBySessionParams) (DagSnapshot, error)
+	//GetMapItemByID
+	//
+	//  SELECT id, run_id, item_index, status, attempts, last_error, input_fb, output_fb, input_hash, output_hash, created_at, updated_at, completed_at
+	//  FROM map_items
+	//  WHERE id = ?1
+	//  LIMIT 1
+	GetMapItemByID(ctx context.Context, arg GetMapItemByIDParams) (MapItem, error)
+	//GetMapItemByRunAndIndex
+	//
+	//  SELECT id, run_id, item_index, status, attempts, last_error, input_fb, output_fb, input_hash, output_hash, created_at, updated_at, completed_at
+	//  FROM map_items
+	//  WHERE run_id = ?1
+	//      AND item_index = ?2
+	//  LIMIT 1
+	GetMapItemByRunAndIndex(ctx context.Context, arg GetMapItemByRunAndIndexParams) (MapItem, error)
+	//GetMapRunByID
+	//
+	//  SELECT id, agent_id, session_key, operator_kind, idempotency_key, status, total_items, queued_items, running_items, succeeded_items, failed_items, spec_fb, last_error, created_at, updated_at, completed_at
+	//  FROM map_runs
+	//  WHERE id = ?1
+	//  LIMIT 1
+	GetMapRunByID(ctx context.Context, arg GetMapRunByIDParams) (MapRun, error)
+	//GetMapRunByIdempotencyKey
+	//
+	//  SELECT id, agent_id, session_key, operator_kind, idempotency_key, status, total_items, queued_items, running_items, succeeded_items, failed_items, spec_fb, last_error, created_at, updated_at, completed_at
+	//  FROM map_runs
+	//  WHERE agent_id = ?1
+	//      AND session_key = ?2
+	//      AND operator_kind = ?3
+	//      AND idempotency_key = ?4
+	//  LIMIT 1
+	GetMapRunByIdempotencyKey(ctx context.Context, arg GetMapRunByIdempotencyKeyParams) (MapRun, error)
 	//GetRecallItem
 	//
 	//  SELECT id,
@@ -504,6 +605,165 @@ type Querier interface {
 	//      )
 	//  RETURNING id, agent_id, session_key, action, target, input, output, duration_ms, created_at
 	InsertAuditEntry(ctx context.Context, arg InsertAuditEntryParams) (AgentAuditLog, error)
+	//InsertDAGEdge
+	//
+	//  INSERT INTO dag_edges (
+	//          id,
+	//          snapshot_id,
+	//          parent_node_id,
+	//          child_node_id,
+	//          edge_index,
+	//          metadata_json
+	//      )
+	//  VALUES (
+	//          ?1,
+	//          ?2,
+	//          ?3,
+	//          ?4,
+	//          ?5,
+	//          ?6
+	//      )
+	InsertDAGEdge(ctx context.Context, arg InsertDAGEdgeParams) error
+	//InsertDAGNode
+	//
+	//  INSERT INTO dag_nodes (
+	//          id,
+	//          snapshot_id,
+	//          node_id,
+	//          level,
+	//          summary,
+	//          tokens,
+	//          start_idx,
+	//          end_idx,
+	//          span,
+	//          content_hash,
+	//          metrics_json,
+	//          metadata_json
+	//      )
+	//  VALUES (
+	//          ?1,
+	//          ?2,
+	//          ?3,
+	//          ?4,
+	//          ?5,
+	//          ?6,
+	//          ?7,
+	//          ?8,
+	//          ?9,
+	//          ?10,
+	//          ?11,
+	//          ?12
+	//      )
+	//  RETURNING id,
+	//      snapshot_id,
+	//      node_id,
+	//      level,
+	//      summary,
+	//      tokens,
+	//      start_idx,
+	//      end_idx,
+	//      span,
+	//      content_hash,
+	//      metrics_json,
+	//      metadata_json,
+	//      created_at,
+	//      updated_at
+	InsertDAGNode(ctx context.Context, arg InsertDAGNodeParams) (DagNode, error)
+	// DAG persistence queries
+	//
+	//  INSERT INTO dag_snapshots (
+	//          id,
+	//          agent_id,
+	//          session_key,
+	//          from_msg_idx,
+	//          to_msg_idx,
+	//          msg_count,
+	//          roots_json,
+	//          content_hash
+	//      )
+	//  VALUES (
+	//          ?1,
+	//          ?2,
+	//          ?3,
+	//          ?4,
+	//          ?5,
+	//          ?6,
+	//          ?7,
+	//          ?8
+	//      )
+	//  RETURNING id,
+	//      agent_id,
+	//      session_key,
+	//      from_msg_idx,
+	//      to_msg_idx,
+	//      msg_count,
+	//      roots_json,
+	//      content_hash,
+	//      created_at,
+	//      updated_at
+	InsertDAGSnapshot(ctx context.Context, arg InsertDAGSnapshotParams) (DagSnapshot, error)
+	//InsertMapItem
+	//
+	//  INSERT INTO map_items (
+	//          id,
+	//          run_id,
+	//          item_index,
+	//          status,
+	//          attempts,
+	//          last_error,
+	//          input_fb,
+	//          output_fb,
+	//          input_hash,
+	//          output_hash
+	//      )
+	//  VALUES (
+	//          ?1,
+	//          ?2,
+	//          ?3,
+	//          ?4,
+	//          ?5,
+	//          ?6,
+	//          ?7,
+	//          ?8,
+	//          ?9,
+	//          ?10
+	//      )
+	//  RETURNING id, run_id, item_index, status, attempts, last_error, input_fb, output_fb, input_hash, output_hash, created_at, updated_at, completed_at
+	InsertMapItem(ctx context.Context, arg InsertMapItemParams) (MapItem, error)
+	//InsertMapRun
+	//
+	//  INSERT INTO map_runs (
+	//          id,
+	//          agent_id,
+	//          session_key,
+	//          operator_kind,
+	//          idempotency_key,
+	//          status,
+	//          total_items,
+	//          queued_items,
+	//          running_items,
+	//          succeeded_items,
+	//          failed_items,
+	//          spec_fb,
+	//          last_error
+	//      )
+	//  VALUES (
+	//          ?1,
+	//          ?2,
+	//          ?3,
+	//          ?4,
+	//          ?5,
+	//          ?6,
+	//          ?7,
+	//          ?8,
+	//          ?9,
+	//          ?10,
+	//          ?11,
+	//          ?12,
+	//          ?13
+	//      )
+	//  RETURNING id, agent_id, session_key, operator_kind, idempotency_key, status, total_items, queued_items, running_items, succeeded_items, failed_items, spec_fb, last_error, created_at, updated_at, completed_at
+	InsertMapRun(ctx context.Context, arg InsertMapRunParams) (MapRun, error)
 	// Recall Item queries
 	//
 	//  INSERT INTO recall_items (
@@ -534,7 +794,18 @@ type Querier interface {
 	//          datetime('now'),
 	//          datetime('now')
 	//      )
-	//  RETURNING id, agent_id, session_key, role, sector, importance, salience, decay_rate, content, tags, created_at, updated_at
+	//  RETURNING id,
+	//      agent_id,
+	//      session_key,
+	//      role,
+	//      sector,
+	//      importance,
+	//      salience,
+	//      decay_rate,
+	//      content,
+	//      tags,
+	//      created_at,
+	//      updated_at
 	InsertRecallItem(ctx context.Context, arg InsertRecallItemParams) (RecallItem, error)
 	//InsertSessionMessage
 	//
@@ -566,7 +837,18 @@ type Querier interface {
 	//          datetime('now'),
 	//          datetime('now')
 	//      )
-	//  RETURNING id, agent_id, session_key, role, sector, importance, salience, decay_rate, content, tags, created_at, updated_at
+	//  RETURNING id,
+	//      agent_id,
+	//      session_key,
+	//      role,
+	//      sector,
+	//      importance,
+	//      salience,
+	//      decay_rate,
+	//      content,
+	//      tags,
+	//      created_at,
+	//      updated_at
 	InsertSessionMessage(ctx context.Context, arg InsertSessionMessageParams) (RecallItem, error)
 	// Memory Summary queries
 	//
@@ -816,6 +1098,41 @@ type Querier interface {
 	//  ORDER BY created_at DESC
 	//  LIMIT ?3
 	ListAuditEntriesBySession(ctx context.Context, arg ListAuditEntriesBySessionParams) ([]AgentAuditLog, error)
+	//ListDAGEdgesBySnapshotID
+	//
+	//  SELECT id,
+	//      snapshot_id,
+	//      parent_node_id,
+	//      child_node_id,
+	//      edge_index,
+	//      metadata_json,
+	//      created_at,
+	//      updated_at
+	//  FROM dag_edges
+	//  WHERE snapshot_id = ?1
+	//  ORDER BY edge_index ASC,
+	//      created_at ASC
+	ListDAGEdgesBySnapshotID(ctx context.Context, arg ListDAGEdgesBySnapshotIDParams) ([]DagEdge, error)
+	//ListDAGNodesBySnapshotID
+	//
+	//  SELECT id,
+	//      snapshot_id,
+	//      node_id,
+	//      level,
+	//      summary,
+	//      tokens,
+	//      start_idx,
+	//      end_idx,
+	//      span,
+	//      content_hash,
+	//      metrics_json,
+	//      metadata_json,
+	//      created_at,
+	//      updated_at
+	//  FROM dag_nodes
+	//  WHERE snapshot_id = ?1
+	//  ORDER BY start_idx ASC
+	ListDAGNodesBySnapshotID(ctx context.Context, arg ListDAGNodesBySnapshotIDParams) ([]DagNode, error)
 	//ListDocumentsByCategory
 	//
 	//  SELECT id,
@@ -853,6 +1170,23 @@ type Querier interface {
 	//  ORDER BY key
 	//  LIMIT ?3
 	ListKVByPrefix(ctx context.Context, arg ListKVByPrefixParams) ([]AgentKv, error)
+	//ListMapItemsByRunPaged
+	//
+	//  SELECT id, run_id, item_index, status, attempts, last_error, input_fb, output_fb, input_hash, output_hash, created_at, updated_at, completed_at
+	//  FROM map_items
+	//  WHERE run_id = ?1
+	//  ORDER BY item_index ASC
+	//  LIMIT ?3 OFFSET ?2
+	ListMapItemsByRunPaged(ctx context.Context, arg ListMapItemsByRunPagedParams) ([]MapItem, error)
+	//ListMapRunsBySession
+	//
+	//  SELECT id, agent_id, session_key, operator_kind, idempotency_key, status, total_items, queued_items, running_items, succeeded_items, failed_items, spec_fb, last_error, created_at, updated_at, completed_at
+	//  FROM map_runs
+	//  WHERE agent_id = ?1
+	//      AND session_key = ?2
+	//  ORDER BY created_at DESC
+	//  LIMIT ?4 OFFSET ?3
+	ListMapRunsBySession(ctx context.Context, arg ListMapRunsBySessionParams) ([]MapRun, error)
 	//ListRecallItems
 	//
 	//  SELECT id,
@@ -901,6 +1235,31 @@ type Querier interface {
 	//  ORDER BY created_at ASC
 	//  LIMIT ?4
 	ListSessionMessages(ctx context.Context, arg ListSessionMessagesParams) ([]RecallItem, error)
+	//ListSessionMessagesPaged
+	//
+	//  SELECT id,
+	//      agent_id,
+	//      session_key,
+	//      role,
+	//      sector,
+	//      importance,
+	//      salience,
+	//      decay_rate,
+	//      content,
+	//      tags,
+	//      created_at,
+	//      updated_at
+	//  FROM recall_items
+	//  WHERE agent_id = ?1
+	//      AND session_key = ?2
+	//      AND tags = 'session-message'
+	//      AND (
+	//          role = ?3
+	//          OR ?3 = ''
+	//      )
+	//  ORDER BY created_at ASC
+	//  LIMIT ?5 OFFSET ?4
+	ListSessionMessagesPaged(ctx context.Context, arg ListSessionMessagesPagedParams) ([]RecallItem, error)
 	//ListSummaries
 	//
 	//  SELECT id,
@@ -939,6 +1298,38 @@ type Querier interface {
 	//  WHERE id = ?1
 	//  RETURNING id, kind, status, run_at, attempts, max_attempts, locked_at, locked_by, payload_json, dedupe_key, last_error, created_at, updated_at, completed_at
 	MarkJobSucceeded(ctx context.Context, arg MarkJobSucceededParams) (Job, error)
+	//MarkMapItemFailed
+	//
+	//  UPDATE map_items
+	//  SET status = 'failed',
+	//      last_error = ?1,
+	//      updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+	//      completed_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+	//  WHERE id = ?2
+	//  RETURNING id, run_id, item_index, status, attempts, last_error, input_fb, output_fb, input_hash, output_hash, created_at, updated_at, completed_at
+	MarkMapItemFailed(ctx context.Context, arg MarkMapItemFailedParams) (MapItem, error)
+	//MarkMapItemRunning
+	//
+	//  UPDATE map_items
+	//  SET status = 'running',
+	//      attempts = attempts + 1,
+	//      last_error = NULL,
+	//      updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+	//  WHERE id = ?1
+	//  RETURNING id, run_id, item_index, status, attempts, last_error, input_fb, output_fb, input_hash, output_hash, created_at, updated_at, completed_at
+	MarkMapItemRunning(ctx context.Context, arg MarkMapItemRunningParams) (MapItem, error)
+	//MarkMapItemSucceeded
+	//
+	//  UPDATE map_items
+	//  SET status = 'succeeded',
+	//      output_fb = ?1,
+	//      output_hash = ?2,
+	//      last_error = NULL,
+	//      updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+	//      completed_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+	//  WHERE id = ?3
+	//  RETURNING id, run_id, item_index, status, attempts, last_error, input_fb, output_fb, input_hash, output_hash, created_at, updated_at, completed_at
+	MarkMapItemSucceeded(ctx context.Context, arg MarkMapItemSucceededParams) (MapItem, error)
 	//PruneOldAuditEntries
 	//
 	//  DELETE FROM agent_audit_log
@@ -1005,6 +1396,20 @@ type Querier interface {
 	//  WHERE id = ?
 	//  RETURNING id, conversation_id, status, metadata_json, created_at, updated_at
 	UpdateAgentRunStatus(ctx context.Context, arg UpdateAgentRunStatusParams) (AgentRun, error)
+	//UpdateMapRunProgress
+	//
+	//  UPDATE map_runs
+	//  SET status = ?1,
+	//      queued_items = ?2,
+	//      running_items = ?3,
+	//      succeeded_items = ?4,
+	//      failed_items = ?5,
+	//      last_error = ?6,
+	//      updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+	//      completed_at = ?7
+	//  WHERE id = ?8
+	//  RETURNING id, agent_id, session_key, operator_kind, idempotency_key, status, total_items, queued_items, running_items, succeeded_items, failed_items, spec_fb, last_error, created_at, updated_at, completed_at
+	UpdateMapRunProgress(ctx context.Context, arg UpdateMapRunProgressParams) (MapRun, error)
 	//UpdateRecallItem
 	//
 	//  UPDATE recall_items

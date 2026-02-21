@@ -1,4 +1,4 @@
-package pcerrors
+package dserrors
 
 import (
 	"context"
@@ -9,7 +9,7 @@ import (
 	errbuilder "github.com/ZanzyTHEbar/errbuilder-go"
 )
 
-// Code is the canonical PicoClaw error code type.
+// Code is the canonical DragonScale error code type.
 //
 // We intentionally re-export errbuilder's gRPC-inspired code set so callers can
 // classify errors without inventing ad-hoc sentinels.
@@ -78,7 +78,7 @@ func WithDetails(m ErrMap) Option {
 	}
 }
 
-// New constructs a structured PicoClaw error.
+// New constructs a structured DragonScale error.
 //
 // This returns an *errbuilder.ErrBuilder which:
 // - implements error

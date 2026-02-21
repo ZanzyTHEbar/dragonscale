@@ -60,13 +60,13 @@ func (info SkillInfo) validate() error {
 
 type SkillsLoader struct {
 	primarySkills string // primary skills directory (XDG data dir or workspace/skills)
-	globalSkills  string // user-level override skills (~/.config/picoclaw/skills)
+	globalSkills  string // user-level override skills (~/.config/dragonscale/skills)
 	builtinSkills string // built-in skills (bundled with binary)
 }
 
 // NewSkillsLoader creates a loader that searches for skills in three directories
 // with priority: primary > global > builtin. The primary directory is typically
-// $XDG_DATA_HOME/picoclaw/skills; the global directory allows user overrides;
+// $XDG_DATA_HOME/dragonscale/skills; the global directory allows user overrides;
 // and the builtin directory ships with the binary.
 func NewSkillsLoader(primarySkillsDir string, globalSkills string, builtinSkills string) *SkillsLoader {
 	return &SkillsLoader{
@@ -108,7 +108,7 @@ func (sl *SkillsLoader) ListSkills() []SkillInfo {
 		}
 	}
 
-	// 全局 skills (~/.picoclaw/skills) - 被 workspace skills 覆盖
+	// 全局 skills (~/.dragonscale/skills) - 被 workspace skills 覆盖
 	if sl.globalSkills != "" {
 		if dirs, err := os.ReadDir(sl.globalSkills); err == nil {
 			for _, dir := range dirs {
@@ -202,7 +202,7 @@ func (sl *SkillsLoader) LoadSkill(name string) (string, bool) {
 		}
 	}
 
-	// 2. 其次从全局 skills 加载 (~/.picoclaw/skills)
+	// 2. 其次从全局 skills 加载 (~/.dragonscale/skills)
 	if sl.globalSkills != "" {
 		skillFile := filepath.Join(sl.globalSkills, name, "SKILL.md")
 		if content, err := os.ReadFile(skillFile); err == nil {

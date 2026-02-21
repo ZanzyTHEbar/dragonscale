@@ -1,4 +1,4 @@
-module github.com/sipeed/picoclaw
+module github.com/ZanzyTHEbar/dragonscale
 
 go 1.26
 

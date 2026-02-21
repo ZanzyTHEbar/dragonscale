@@ -12,9 +12,9 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/ZanzyTHEbar/dragonscale/pkg/ids"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/memory"
 	"github.com/fsnotify/fsnotify"
-	"github.com/sipeed/picoclaw/pkg/ids"
-	"github.com/sipeed/picoclaw/pkg/memory"
 )
 
 // IdentityFiles are the canonical set of bootstrap identity documents.
@@ -56,7 +56,7 @@ type IdentitySync struct {
 }
 
 // New creates a new IdentitySync. identityDir is the path to the directory
-// containing the identity markdown files ($XDG_CONFIG_HOME/picoclaw/identity).
+// containing the identity markdown files ($XDG_CONFIG_HOME/dragonscale/identity).
 func New(identityDir, agentID string, store DocumentStore) *IdentitySync {
 	s := &IdentitySync{
 		identityDir: identityDir,
@@ -70,7 +70,7 @@ func New(identityDir, agentID string, store DocumentStore) *IdentitySync {
 // SyncAll performs a full reconciliation: reads every identity file from disk,
 // compares its content hash against the stored hash in agent_kv, and upserts
 // any that differ. This is the startup path and catches all changes made while
-// picoclaw was not running.
+// dragonscale was not running.
 func (s *IdentitySync) SyncAll(ctx context.Context) error {
 	for _, name := range IdentityFiles {
 		if err := s.syncFile(ctx, name); err != nil {

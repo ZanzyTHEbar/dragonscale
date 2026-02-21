@@ -8,9 +8,9 @@ import (
 	jsonv2 "github.com/go-json-experiment/json"
 	"strings"
 
-	"github.com/sipeed/picoclaw/pkg/ids"
-	sqlc "github.com/sipeed/picoclaw/pkg/memory/sqlc"
-	"github.com/sipeed/picoclaw/pkg/pcerrors"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/dserrors"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/ids"
+	sqlc "github.com/ZanzyTHEbar/dragonscale/pkg/memory/sqlc"
 )
 
 // Store wraps the SQLC queries for mention operations.
@@ -46,34 +46,34 @@ type AddParams struct {
 func (s *Store) Add(ctx context.Context, p AddParams) (sqlc.AgentMention, error) {
 	convIDStr := strings.TrimSpace(p.ConversationID)
 	if convIDStr == "" {
-		return sqlc.AgentMention{}, pcerrors.New(pcerrors.CodeInvalidArgument, "conversation_id is required")
+		return sqlc.AgentMention{}, dserrors.New(dserrors.CodeInvalidArgument, "conversation_id is required")
 	}
 	convID, err := ids.Parse(convIDStr)
 	if err != nil {
-		return sqlc.AgentMention{}, pcerrors.Wrapf(pcerrors.CodeInvalidArgument, err, "parse conversation_id %q", convIDStr)
+		return sqlc.AgentMention{}, dserrors.Wrapf(dserrors.CodeInvalidArgument, err, "parse conversation_id %q", convIDStr)
 	}
 
 	msgIDStr := strings.TrimSpace(p.MessageID)
 	if msgIDStr == "" {
-		return sqlc.AgentMention{}, pcerrors.New(pcerrors.CodeInvalidArgument, "message_id is required")
+		return sqlc.AgentMention{}, dserrors.New(dserrors.CodeInvalidArgument, "message_id is required")
 	}
 	msgID, err := ids.Parse(msgIDStr)
 	if err != nil {
-		return sqlc.AgentMention{}, pcerrors.Wrapf(pcerrors.CodeInvalidArgument, err, "parse message_id %q", msgIDStr)
+		return sqlc.AgentMention{}, dserrors.Wrapf(dserrors.CodeInvalidArgument, err, "parse message_id %q", msgIDStr)
 	}
 
 	kind := strings.TrimSpace(p.Kind)
 	if kind == "" {
-		return sqlc.AgentMention{}, pcerrors.New(pcerrors.CodeInvalidArgument, "kind is required")
+		return sqlc.AgentMention{}, dserrors.New(dserrors.CodeInvalidArgument, "kind is required")
 	}
 
 	targetIDStr := strings.TrimSpace(p.TargetID)
 	if targetIDStr == "" {
-		return sqlc.AgentMention{}, pcerrors.New(pcerrors.CodeInvalidArgument, "target_id is required")
+		return sqlc.AgentMention{}, dserrors.New(dserrors.CodeInvalidArgument, "target_id is required")
 	}
 	targetID, err := ids.Parse(targetIDStr)
 	if err != nil {
-		return sqlc.AgentMention{}, pcerrors.Wrapf(pcerrors.CodeInvalidArgument, err, "parse target_id %q", targetIDStr)
+		return sqlc.AgentMention{}, dserrors.Wrapf(dserrors.CodeInvalidArgument, err, "parse target_id %q", targetIDStr)
 	}
 
 	metaJSON, _ := jsonv2.Marshal(p.Metadata)
@@ -100,11 +100,11 @@ type ListByConversationParams struct {
 func (s *Store) ListByConversation(ctx context.Context, p ListByConversationParams) ([]sqlc.AgentMention, error) {
 	convIDStr := strings.TrimSpace(p.ConversationID)
 	if convIDStr == "" {
-		return nil, pcerrors.New(pcerrors.CodeInvalidArgument, "conversation_id is required")
+		return nil, dserrors.New(dserrors.CodeInvalidArgument, "conversation_id is required")
 	}
 	convID, err := ids.Parse(convIDStr)
 	if err != nil {
-		return nil, pcerrors.Wrapf(pcerrors.CodeInvalidArgument, err, "parse conversation_id %q", convIDStr)
+		return nil, dserrors.Wrapf(dserrors.CodeInvalidArgument, err, "parse conversation_id %q", convIDStr)
 	}
 	return s.q.ListAgentMentionsByConversationID(ctx,
 		sqlc.ListAgentMentionsByConversationIDParams{ConversationID: convID})

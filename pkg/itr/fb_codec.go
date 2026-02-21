@@ -3,8 +3,8 @@ package itr
 import (
 	"fmt"
 
+	"github.com/ZanzyTHEbar/dragonscale/pkg/itr/itrfb"
 	flatbuffers "github.com/google/flatbuffers/go"
-	"github.com/sipeed/picoclaw/pkg/itr/itrfb"
 )
 
 // ── Domain ↔ FlatBuffers enum mapping ───────────────────────────────────────
@@ -67,7 +67,7 @@ func MarshalRequestFB(r ToolRequest) ([]byte, error) {
 		itrfb.ToolRequestAddSessionKey(b, skOff)
 		itrfb.ToolRequestAddToolCallId(b, tcOff)
 		reqOff := itrfb.ToolRequestEnd(b)
-		itrfb.FinishToolRequestBuffer(b, reqOff)
+		b.Finish(reqOff)
 		return b.FinishedBytes(), nil
 	}
 
@@ -86,7 +86,7 @@ func MarshalRequestFB(r ToolRequest) ([]byte, error) {
 	itrfb.ToolRequestAddSessionKey(b, skOff)
 	itrfb.ToolRequestAddToolCallId(b, tcOff)
 	reqOff := itrfb.ToolRequestEnd(b)
-	itrfb.FinishToolRequestBuffer(b, reqOff)
+	b.Finish(reqOff)
 	return b.FinishedBytes(), nil
 }
 
@@ -161,7 +161,7 @@ func MarshalResponseFB(r ToolResponse) ([]byte, error) {
 		itrfb.ToolResponseAddRedactedKeys(b, keysOff)
 	}
 	respOff := itrfb.ToolResponseEnd(b)
-	itrfb.FinishToolResponseBuffer(b, respOff)
+	b.Finish(respOff)
 	return b.FinishedBytes(), nil
 }
 

@@ -7,8 +7,8 @@ import (
 	"strings"
 
 	"charm.land/fantasy"
-	"github.com/sipeed/picoclaw/pkg/memory"
-	"github.com/sipeed/picoclaw/pkg/security"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/memory"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/security"
 )
 
 // ScoreResult is the output of scoring a piece of content.

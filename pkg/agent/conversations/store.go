@@ -9,9 +9,9 @@ import (
 
 	jsonv2 "github.com/go-json-experiment/json"
 
-	"github.com/sipeed/picoclaw/pkg/ids"
-	sqlc "github.com/sipeed/picoclaw/pkg/memory/sqlc"
-	"github.com/sipeed/picoclaw/pkg/pcerrors"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/dserrors"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/ids"
+	sqlc "github.com/ZanzyTHEbar/dragonscale/pkg/memory/sqlc"
 )
 
 // Store wraps the SQLC queries for conversation operations.
@@ -79,16 +79,16 @@ type EditMessageParams struct {
 func (s *Store) EditMessage(ctx context.Context, p EditMessageParams) (sqlc.AgentMessage, error) {
 	msgIDStr := strings.TrimSpace(p.MessageID)
 	if msgIDStr == "" {
-		return sqlc.AgentMessage{}, pcerrors.New(pcerrors.CodeInvalidArgument, "message_id is required")
+		return sqlc.AgentMessage{}, dserrors.New(dserrors.CodeInvalidArgument, "message_id is required")
 	}
 	msgID, err := ids.Parse(msgIDStr)
 	if err != nil {
-		return sqlc.AgentMessage{}, pcerrors.Wrapf(pcerrors.CodeInvalidArgument, err, "parse message_id %q", msgIDStr)
+		return sqlc.AgentMessage{}, dserrors.Wrapf(dserrors.CodeInvalidArgument, err, "parse message_id %q", msgIDStr)
 	}
 
 	newText := strings.TrimSpace(p.NewText)
 	if newText == "" {
-		return sqlc.AgentMessage{}, pcerrors.New(pcerrors.CodeInvalidArgument, "new content is empty")
+		return sqlc.AgentMessage{}, dserrors.New(dserrors.CodeInvalidArgument, "new content is empty")
 	}
 
 	editor := strings.TrimSpace(p.Editor)
@@ -141,16 +141,16 @@ type ForkFromCheckpointParams struct {
 func (s *Store) ForkFromCheckpoint(ctx context.Context, p ForkFromCheckpointParams) (sqlc.AgentConversation, error) {
 	fromIDStr := strings.TrimSpace(p.FromConversationID)
 	if fromIDStr == "" {
-		return sqlc.AgentConversation{}, pcerrors.New(pcerrors.CodeInvalidArgument, "from_conversation_id is required")
+		return sqlc.AgentConversation{}, dserrors.New(dserrors.CodeInvalidArgument, "from_conversation_id is required")
 	}
 	fromID, err := ids.Parse(fromIDStr)
 	if err != nil {
-		return sqlc.AgentConversation{}, pcerrors.Wrapf(pcerrors.CodeInvalidArgument, err, "parse from_conversation_id %q", fromIDStr)
+		return sqlc.AgentConversation{}, dserrors.Wrapf(dserrors.CodeInvalidArgument, err, "parse from_conversation_id %q", fromIDStr)
 	}
 
 	cpName := strings.TrimSpace(p.CheckpointName)
 	if cpName == "" {
-		return sqlc.AgentConversation{}, pcerrors.New(pcerrors.CodeInvalidArgument, "checkpoint_name is required")
+		return sqlc.AgentConversation{}, dserrors.New(dserrors.CodeInvalidArgument, "checkpoint_name is required")
 	}
 
 	cp, err := s.q.GetAgentCheckpointByConversationIDAndName(ctx,
@@ -177,7 +177,7 @@ func (s *Store) ForkFromCheckpoint(ctx context.Context, p ForkFromCheckpointPara
 	var snap snapshot
 	if len(runState.SnapshotJson) > 0 {
 		if err := jsonv2.Unmarshal(runState.SnapshotJson, &snap); err != nil {
-			return sqlc.AgentConversation{}, pcerrors.Wrapf(pcerrors.CodeInternal, err, "parse snapshot for run state %s", cp.RunStateID)
+			return sqlc.AgentConversation{}, dserrors.Wrapf(dserrors.CodeInternal, err, "parse snapshot for run state %s", cp.RunStateID)
 		}
 	}
 
@@ -253,24 +253,24 @@ type MergeAsLinkedContextParams struct {
 func (s *Store) MergeAsLinkedContext(ctx context.Context, p MergeAsLinkedContextParams) (sqlc.AgentConversation, error) {
 	baseIDStr := strings.TrimSpace(p.BaseConversationID)
 	if baseIDStr == "" {
-		return sqlc.AgentConversation{}, pcerrors.New(pcerrors.CodeInvalidArgument, "base_conversation_id is required")
+		return sqlc.AgentConversation{}, dserrors.New(dserrors.CodeInvalidArgument, "base_conversation_id is required")
 	}
 	baseID, err := ids.Parse(baseIDStr)
 	if err != nil {
-		return sqlc.AgentConversation{}, pcerrors.Wrapf(pcerrors.CodeInvalidArgument, err, "parse base_conversation_id %q", baseIDStr)
+		return sqlc.AgentConversation{}, dserrors.Wrapf(dserrors.CodeInvalidArgument, err, "parse base_conversation_id %q", baseIDStr)
 	}
 
 	otherIDStr := strings.TrimSpace(p.OtherConversationID)
 	if otherIDStr == "" {
-		return sqlc.AgentConversation{}, pcerrors.New(pcerrors.CodeInvalidArgument, "other_conversation_id is required")
+		return sqlc.AgentConversation{}, dserrors.New(dserrors.CodeInvalidArgument, "other_conversation_id is required")
 	}
 	otherID, err := ids.Parse(otherIDStr)
 	if err != nil {
-		return sqlc.AgentConversation{}, pcerrors.Wrapf(pcerrors.CodeInvalidArgument, err, "parse other_conversation_id %q", otherIDStr)
+		return sqlc.AgentConversation{}, dserrors.Wrapf(dserrors.CodeInvalidArgument, err, "parse other_conversation_id %q", otherIDStr)
 	}
 
 	if baseID == otherID {
-		return sqlc.AgentConversation{}, pcerrors.New(pcerrors.CodeInvalidArgument, "base and other conversations must differ")
+		return sqlc.AgentConversation{}, dserrors.New(dserrors.CodeInvalidArgument, "base and other conversations must differ")
 	}
 
 	conv, err := s.q.CreateAgentConversation(ctx, sqlc.CreateAgentConversationParams{
@@ -335,11 +335,11 @@ type AncestryResult struct {
 func (s *Store) Ancestry(ctx context.Context, p AncestryParams) (AncestryResult, error) {
 	convIDStr := strings.TrimSpace(p.ConversationID)
 	if convIDStr == "" {
-		return AncestryResult{}, pcerrors.New(pcerrors.CodeInvalidArgument, "conversation_id is required")
+		return AncestryResult{}, dserrors.New(dserrors.CodeInvalidArgument, "conversation_id is required")
 	}
 	convID, err := ids.Parse(convIDStr)
 	if err != nil {
-		return AncestryResult{}, pcerrors.Wrapf(pcerrors.CodeInvalidArgument, err, "parse conversation_id %q", convIDStr)
+		return AncestryResult{}, dserrors.Wrapf(dserrors.CodeInvalidArgument, err, "parse conversation_id %q", convIDStr)
 	}
 
 	conv, err := s.q.GetAgentConversation(ctx, sqlc.GetAgentConversationParams{ID: convID})
@@ -377,11 +377,11 @@ type LinksListParams struct {
 func (s *Store) LinksList(ctx context.Context, p LinksListParams) ([]sqlc.AgentConversationLink, error) {
 	convIDStr := strings.TrimSpace(p.ConversationID)
 	if convIDStr == "" {
-		return nil, pcerrors.New(pcerrors.CodeInvalidArgument, "conversation_id is required")
+		return nil, dserrors.New(dserrors.CodeInvalidArgument, "conversation_id is required")
 	}
 	convID, err := ids.Parse(convIDStr)
 	if err != nil {
-		return nil, pcerrors.Wrapf(pcerrors.CodeInvalidArgument, err, "parse conversation_id %q", convIDStr)
+		return nil, dserrors.Wrapf(dserrors.CodeInvalidArgument, err, "parse conversation_id %q", convIDStr)
 	}
 	return s.q.ListAgentConversationLinksByConversationID(ctx,
 		sqlc.ListAgentConversationLinksByConversationIDParams{ConversationID: convID})
@@ -399,20 +399,20 @@ type LinksRemoveParams struct {
 func (s *Store) LinksRemove(ctx context.Context, p LinksRemoveParams) error {
 	convIDStr := strings.TrimSpace(p.ConversationID)
 	if convIDStr == "" {
-		return pcerrors.New(pcerrors.CodeInvalidArgument, "conversation_id is required")
+		return dserrors.New(dserrors.CodeInvalidArgument, "conversation_id is required")
 	}
 	convID, err := ids.Parse(convIDStr)
 	if err != nil {
-		return pcerrors.Wrapf(pcerrors.CodeInvalidArgument, err, "parse conversation_id %q", convIDStr)
+		return dserrors.Wrapf(dserrors.CodeInvalidArgument, err, "parse conversation_id %q", convIDStr)
 	}
 
 	linkedIDStr := strings.TrimSpace(p.LinkedConversationID)
 	if linkedIDStr == "" {
-		return pcerrors.New(pcerrors.CodeInvalidArgument, "linked_conversation_id is required")
+		return dserrors.New(dserrors.CodeInvalidArgument, "linked_conversation_id is required")
 	}
 	linkedID, err := ids.Parse(linkedIDStr)
 	if err != nil {
-		return pcerrors.Wrapf(pcerrors.CodeInvalidArgument, err, "parse linked_conversation_id %q", linkedIDStr)
+		return dserrors.Wrapf(dserrors.CodeInvalidArgument, err, "parse linked_conversation_id %q", linkedIDStr)
 	}
 
 	kind := strings.TrimSpace(p.Kind)
@@ -467,11 +467,11 @@ type GraphResult struct {
 func (s *Store) Graph(ctx context.Context, p GraphParams) (GraphResult, error) {
 	convIDStr := strings.TrimSpace(p.ConversationID)
 	if convIDStr == "" {
-		return GraphResult{}, pcerrors.New(pcerrors.CodeInvalidArgument, "conversation_id is required")
+		return GraphResult{}, dserrors.New(dserrors.CodeInvalidArgument, "conversation_id is required")
 	}
 	rootID, err := ids.Parse(convIDStr)
 	if err != nil {
-		return GraphResult{}, pcerrors.Wrapf(pcerrors.CodeInvalidArgument, err, "parse conversation_id %q", convIDStr)
+		return GraphResult{}, dserrors.Wrapf(dserrors.CodeInvalidArgument, err, "parse conversation_id %q", convIDStr)
 	}
 
 	depth := p.Depth

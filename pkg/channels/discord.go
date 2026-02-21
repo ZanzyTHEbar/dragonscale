@@ -7,12 +7,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ZanzyTHEbar/dragonscale/pkg/bus"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/config"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/logger"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/utils"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/voice"
 	"github.com/bwmarrin/discordgo"
-	"github.com/sipeed/picoclaw/pkg/bus"
-	"github.com/sipeed/picoclaw/pkg/config"
-	"github.com/sipeed/picoclaw/pkg/logger"
-	"github.com/sipeed/picoclaw/pkg/utils"
-	"github.com/sipeed/picoclaw/pkg/voice"
 )
 
 const (
@@ -50,7 +50,7 @@ func (c *DiscordChannel) SetTranscriber(transcriber *voice.GroqTranscriber) {
 
 func (c *DiscordChannel) getContext() context.Context {
 	if c.ctx == nil {
-		return context.TODO()
+		return context.Background()
 	}
 	return c.ctx
 }

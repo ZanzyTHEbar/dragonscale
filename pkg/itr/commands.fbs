@@ -1,4 +1,4 @@
-// PicoClaw Isolated Tool Runtime — Command Protocol
+// DragonScale Isolated Tool Runtime — Command Protocol
 // Namespace: itrfb (FlatBuffers generated types)
 //
 // This schema defines the binary command protocol between the agent loop

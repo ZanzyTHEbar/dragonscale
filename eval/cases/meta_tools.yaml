@@ -41,7 +41,7 @@
       value: |
         const trace = JSON.parse(output);
         const out = (trace.output || '');
-        const hasMarker = out.includes('picoclaw-fixture-marker-abc123') || out.includes('fixture');
+        const hasMarker = out.includes('dragonscale-fixture-marker-abc123') || out.includes('fixture');
         return { pass: hasMarker, score: hasMarker ? 1.0 : 0.0, reason: hasMarker ? 'returned fixture content' : 'did not return expected file content' };
 
 - description: "meta tools: tool_call dispatches exec correctly"

@@ -2,13 +2,17 @@ package store
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
-	"github.com/sipeed/picoclaw/pkg/ids"
-	"github.com/sipeed/picoclaw/pkg/memory"
-	"github.com/sipeed/picoclaw/pkg/memory/delegate"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/ids"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/memory"
+	memdag "github.com/ZanzyTHEbar/dragonscale/pkg/memory/dag"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/memory/delegate"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -16,6 +20,20 @@ import (
 // mockEmbedder is a simple embedding provider for testing.
 type mockEmbedder struct {
 	dim int
+}
+
+type failingKVDelegate struct {
+	memory.MemoryDelegate
+	failKeys map[string]error
+}
+
+func (d *failingKVDelegate) UpsertKV(ctx context.Context, agentID, key, value string) error {
+	if d.failKeys != nil {
+		if err, ok := d.failKeys[key]; ok {
+			return err
+		}
+	}
+	return d.MemoryDelegate.UpsertKV(ctx, agentID, key, value)
 }
 
 func (m *mockEmbedder) Embed(_ context.Context, text string) (memory.Embedding, error) {
@@ -264,6 +282,299 @@ func TestSearch_HybridWithEmbeddings(t *testing.T) {
 	assert.NotEmpty(t, results)
 }
 
+func TestSearch_ShadowModeUsesBaselineAndTracksParity(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t, false)
+
+	// Baseline recall hit.
+	require.NoError(t, store.StoreRecall(ctx, &memory.RecallItem{
+		AgentID:    "agent-1",
+		SessionKey: "s1",
+		Role:       "user",
+		Sector:     memory.SectorSemantic,
+		Importance: 0.8,
+		Content:    "Grocery checklist includes milk and eggs.",
+	}))
+
+	// Augmented projection hit (would win if promoted).
+	require.NoError(t, store.SetWorkingContext(ctx, "agent-1", "s1", "Weekly planning notes include grocery tasks and laundry reminders."))
+
+	results, err := store.Search(ctx, "grocery", memory.SearchOptions{
+		AgentID:    "agent-1",
+		SessionKey: "s1",
+		Limit:      5,
+	})
+	require.NoError(t, err)
+	require.NotEmpty(t, results)
+	// Shadow mode should keep baseline result ordering for production output.
+	assert.NotContains(t, results[0].Source, "working-context:s1")
+
+	metricsRaw, err := store.delegate.GetKV(ctx, "agent-1", retrievalPolicyMetricsKey)
+	require.NoError(t, err)
+	require.NotEmpty(t, metricsRaw)
+
+	var metrics retrievalShadowMetrics
+	require.NoError(t, json.Unmarshal([]byte(metricsRaw), &metrics))
+	assert.Equal(t, 1, metrics.TotalQueries)
+}
+
+func TestSearch_DoesNotPromoteWithoutAugmentedSignals(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t, false)
+
+	gates := retrievalPromotionGates{
+		MinSamples:           1,
+		MinAugmentedSamples:  1,
+		MinTop1Parity:        0.0001,
+		MinOverlapAtK:        0.0001,
+		MinPromotedSamples:   1,
+		RollbackTop1Parity:   0.0001,
+		RollbackOverlapAtK:   0.0001,
+		MaxNoResultRate:      1.0,
+		PromotedNoResultRate: 1.0,
+	}
+	gatesPayload, err := json.Marshal(gates)
+	require.NoError(t, err)
+	require.NoError(t, store.delegate.UpsertKV(ctx, "agent-1", retrievalPolicyGatesKey, string(gatesPayload)))
+
+	require.NoError(t, store.StoreRecall(ctx, &memory.RecallItem{
+		AgentID:    "agent-1",
+		SessionKey: "s1",
+		Role:       "user",
+		Sector:     memory.SectorSemantic,
+		Importance: 0.8,
+		Content:    "Baseline-only query signal.",
+	}))
+
+	_, err = store.Search(ctx, "baseline-only", memory.SearchOptions{
+		AgentID:    "agent-1",
+		SessionKey: "s1",
+		Limit:      5,
+	})
+	require.NoError(t, err)
+
+	stateRaw, err := store.delegate.GetKV(ctx, "agent-1", retrievalPolicyStateKey)
+	require.NoError(t, err)
+	var state retrievalPolicyState
+	require.NoError(t, json.Unmarshal([]byte(stateRaw), &state))
+	assert.Equal(t, retrievalModeShadow, state.Mode)
+}
+
+func TestSearch_PromoteOnlyOnGateWin(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t, false)
+
+	gates := retrievalPromotionGates{
+		MinSamples:           1,
+		MinAugmentedSamples:  1,
+		MinTop1Parity:        0.0001,
+		MinOverlapAtK:        0.0001,
+		MinPromotedSamples:   1,
+		RollbackTop1Parity:   0.0001,
+		RollbackOverlapAtK:   0.0001,
+		MaxNoResultRate:      1.0,
+		PromotedNoResultRate: 1.0,
+	}
+	gatesPayload, err := json.Marshal(gates)
+	require.NoError(t, err)
+	require.NoError(t, store.delegate.UpsertKV(ctx, "agent-1", retrievalPolicyGatesKey, string(gatesPayload)))
+
+	require.NoError(t, store.StoreRecall(ctx, &memory.RecallItem{
+		AgentID:    "agent-1",
+		SessionKey: "s1",
+		Role:       "user",
+		Sector:     memory.SectorSemantic,
+		Importance: 0.8,
+		Content:    "Baseline grocery memory entry.",
+	}))
+	require.NoError(t, store.SetWorkingContext(ctx, "agent-1", "s1", "Augmented grocery projection content."))
+
+	_, err = store.Search(ctx, "grocery", memory.SearchOptions{
+		AgentID:    "agent-1",
+		SessionKey: "s1",
+		Limit:      5,
+	})
+	require.NoError(t, err)
+
+	stateRaw, err := store.delegate.GetKV(ctx, "agent-1", retrievalPolicyStateKey)
+	require.NoError(t, err)
+	require.NotEmpty(t, stateRaw)
+
+	var state retrievalPolicyState
+	require.NoError(t, json.Unmarshal([]byte(stateRaw), &state))
+	assert.Equal(t, retrievalModePromoted, state.Mode)
+}
+
+func TestSearch_FastRollbackPreservesBaselinePath(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t, false)
+
+	del, ok := store.delegate.(*delegate.LibSQLDelegate)
+	require.True(t, ok)
+
+	gates := retrievalPromotionGates{
+		MinSamples:           1,
+		MinAugmentedSamples:  1,
+		MinTop1Parity:        0.0001,
+		MinOverlapAtK:        0.0001,
+		MinPromotedSamples:   1,
+		RollbackTop1Parity:   1.0, // Force rollback if top-1 diverges.
+		RollbackOverlapAtK:   1.0, // Force rollback if overlap is not perfect.
+		MaxNoResultRate:      1.0,
+		PromotedNoResultRate: 1.0,
+	}
+	gatesPayload, err := json.Marshal(gates)
+	require.NoError(t, err)
+	require.NoError(t, store.delegate.UpsertKV(ctx, "agent-1", retrievalPolicyGatesKey, string(gatesPayload)))
+
+	statePayload, err := json.Marshal(retrievalPolicyState{
+		Mode:      retrievalModePromoted,
+		Reason:    "test_bootstrap",
+		UpdatedAt: time.Now().UTC(),
+	})
+	require.NoError(t, err)
+	require.NoError(t, store.delegate.UpsertKV(ctx, "agent-1", retrievalPolicyStateKey, string(statePayload)))
+
+	require.NoError(t, store.StoreRecall(ctx, &memory.RecallItem{
+		AgentID:    "agent-1",
+		SessionKey: "s1",
+		Role:       "user",
+		Sector:     memory.SectorSemantic,
+		Importance: 0.8,
+		Content:    "Baseline grocery memory entry.",
+	}))
+
+	snap := &memdag.PersistSnapshot{
+		FromMsgIdx: 0,
+		ToMsgIdx:   4,
+		MsgCount:   4,
+		DAG: &memdag.DAG{
+			Nodes: map[string]*memdag.Node{
+				"n-session": {
+					ID:       "n-session",
+					Level:    memdag.LevelSession,
+					Summary:  "Household grocery commitments with Friday reminder schedule.",
+					Tokens:   12,
+					StartIdx: 0,
+					EndIdx:   4,
+				},
+			},
+			Roots: []string{"n-session"},
+		},
+	}
+	require.NoError(t, del.PersistDAG(ctx, "agent-1", "s1", snap))
+	require.NoError(t, store.SetWorkingContext(ctx, "agent-1", "s1", "Working context grocery signal."))
+
+	// First call in promoted mode should evaluate and trigger rollback.
+	_, err = store.Search(ctx, "grocery", memory.SearchOptions{
+		AgentID:    "agent-1",
+		SessionKey: "s1",
+		Limit:      10,
+	})
+	require.NoError(t, err)
+
+	stateRaw, err := store.delegate.GetKV(ctx, "agent-1", retrievalPolicyStateKey)
+	require.NoError(t, err)
+	var state retrievalPolicyState
+	require.NoError(t, json.Unmarshal([]byte(stateRaw), &state))
+	assert.Equal(t, retrievalModeRollback, state.Mode)
+
+	// Subsequent calls should return baseline-only path again.
+	results, err := store.Search(ctx, "grocery", memory.SearchOptions{
+		AgentID:    "agent-1",
+		SessionKey: "s1",
+		Limit:      10,
+	})
+	require.NoError(t, err)
+	require.NotEmpty(t, results)
+	assert.NotContains(t, results[0].Source, "working-context:")
+	assert.NotContains(t, results[0].Source, "dag:")
+}
+
+func TestUpdateRetrievalPolicy_PersistFailuresDoNotBlockTransitions(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t, true)
+
+	baseDelegate := store.delegate
+	store.delegate = &failingKVDelegate{
+		MemoryDelegate: baseDelegate,
+		failKeys: map[string]error{
+			retrievalPolicyStateKey:   errors.New("state kv unavailable"),
+			retrievalPolicyMetricsKey: errors.New("metrics kv unavailable"),
+		},
+	}
+
+	state := defaultRetrievalPolicyState()
+	gates := retrievalPromotionGates{
+		MinSamples:           1,
+		MinAugmentedSamples:  1,
+		MinTop1Parity:        0.5,
+		MinOverlapAtK:        0.5,
+		MinPromotedSamples:   1,
+		RollbackTop1Parity:   0.1,
+		RollbackOverlapAtK:   0.1,
+		MaxNoResultRate:      1.0,
+		PromotedNoResultRate: 1.0,
+	}
+	metrics := defaultRetrievalShadowMetrics()
+	parity := retrievalParity{
+		Top1Match:  true,
+		OverlapAtK: 1.0,
+	}
+	baseline := []memory.SearchResult{
+		{ID: ids.New(), Content: "baseline"},
+	}
+
+	next := store.updateRetrievalPolicy(ctx, state, gates, metrics, parity, true, baseline)
+	assert.Equal(t, retrievalModePromoted, next.Mode)
+}
+
+func TestSearch_ConcurrentRetrievalPolicyUpdates(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t, true)
+
+	require.NoError(t, store.StoreRecall(ctx, &memory.RecallItem{
+		AgentID:    "agent-1",
+		SessionKey: "s1",
+		Role:       "user",
+		Sector:     memory.SectorSemantic,
+		Importance: 0.9,
+		Content:    "Grocery planning memory for retrieval policy concurrency tests.",
+		Tags:       "grocery",
+	}))
+
+	const workers = 16
+	var wg sync.WaitGroup
+	errCh := make(chan error, workers)
+
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, err := store.Search(ctx, "grocery", memory.SearchOptions{
+				AgentID:    "agent-1",
+				SessionKey: "s1",
+				Limit:      10,
+			})
+			if err != nil {
+				errCh <- err
+			}
+		}()
+	}
+	wg.Wait()
+	close(errCh)
+
+	for err := range errCh {
+		require.NoError(t, err)
+	}
+
+	metricsRaw, err := store.delegate.GetKV(ctx, "agent-1", retrievalPolicyMetricsKey)
+	require.NoError(t, err)
+	var metrics retrievalShadowMetrics
+	require.NoError(t, json.Unmarshal([]byte(metricsRaw), &metrics))
+	assert.GreaterOrEqual(t, metrics.TotalQueries, workers)
+}
+
 func TestContextUsage(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t, false)
@@ -285,6 +596,40 @@ func TestContextUsage(t *testing.T) {
 	assert.Greater(t, pressure.EstimatedTotalTokens, 0)
 }
 
+func TestContextUsage_RecallTokenEstimateUsesContent(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t, false)
+
+	contentA := strings.Repeat("schedule follow-up reminder ", 80)
+	contentB := strings.Repeat("prepare project update summary ", 80)
+
+	require.NoError(t, store.StoreRecall(ctx, &memory.RecallItem{
+		AgentID:    "agent-1",
+		SessionKey: "session-1",
+		Role:       "user",
+		Sector:     memory.SectorEpisodic,
+		Importance: 0.7,
+		Content:    contentA,
+		Tags:       "reminder",
+	}))
+	require.NoError(t, store.StoreRecall(ctx, &memory.RecallItem{
+		AgentID:    "agent-1",
+		SessionKey: "session-1",
+		Role:       "assistant",
+		Sector:     memory.SectorEpisodic,
+		Importance: 0.7,
+		Content:    contentB,
+		Tags:       "summary",
+	}))
+
+	pressure, err := store.ContextUsage(ctx, "agent-1", "session-1")
+	require.NoError(t, err)
+
+	expectedRecallTokens := estimateTokens(contentA) + estimateTokens(contentB)
+	assert.GreaterOrEqual(t, pressure.EstimatedTotalTokens, expectedRecallTokens)
+	assert.Equal(t, 2, pressure.RecallItemCount)
+}
+
 func TestContextUsage_PressureLevels(t *testing.T) {
 	ctx := context.Background()
 
@@ -301,8 +646,8 @@ func TestContextUsage_PressureLevels(t *testing.T) {
 		OffloadThresholdTokens: 50,
 	})
 
-	// Set working context to ~80 tokens (320 chars / 4)
-	err = store.SetWorkingContext(ctx, "agent-1", "s1", strings.Repeat("a", 320))
+	// Set working context to ~80 tokens.
+	err = store.SetWorkingContext(ctx, "agent-1", "s1", contentAtLeastTokens(80))
 	require.NoError(t, err)
 
 	pressure, err := store.ContextUsage(ctx, "agent-1", "s1")
@@ -314,7 +659,7 @@ func TestShouldOffload(t *testing.T) {
 	store := &MemoryStore{cfg: Config{OffloadThresholdTokens: 100}}
 
 	assert.False(t, store.ShouldOffload("short"))
-	assert.True(t, store.ShouldOffload(strings.Repeat("x", 500))) // 500 chars ≈ 125 tokens
+	assert.True(t, store.ShouldOffload(contentAtLeastTokens(120)))
 }
 
 func TestOffloadToolResult(t *testing.T) {

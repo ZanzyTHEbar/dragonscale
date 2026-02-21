@@ -1,4 +1,4 @@
-// Package dag implements the DAG Task Executor for PicoClaw. It receives a
+// Package dag implements the DAG Task Executor for DragonScale. It receives a
 // DAGPlan (a set of nodes with dependency edges), dispatches them in
 // topological wave order via the SecureBus, and synthesises a final result
 // using the Joiner pattern.
@@ -18,8 +18,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/sipeed/picoclaw/pkg/itr"
-	"github.com/sipeed/picoclaw/pkg/security/securebus"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/itr"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/security/securebus"
 )
 
 // JoinerFunc synthesises a final answer from all node results.

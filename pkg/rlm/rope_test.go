@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sipeed/picoclaw/pkg/rlm"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/rlm"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/sipeed/picoclaw/pkg/config"
-	"github.com/sipeed/picoclaw/pkg/tools"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/config"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/tools"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -127,12 +127,12 @@ func TestToolExecution_ExecBlocking(t *testing.T) {
 
 	execTool := tools.NewExecTool(workspace, false)
 	result := execTool.Execute(context.Background(), map[string]interface{}{
-		"command": "echo picoclaw-eval-test",
+		"command": "echo dragonscale-eval-test",
 	})
 
 	require.NotNil(t, result)
 	assert.False(t, result.IsError, "echo should succeed")
-	assert.Contains(t, result.ForLLM, "picoclaw-eval-test")
+	assert.Contains(t, result.ForLLM, "dragonscale-eval-test")
 }
 
 func TestToolExecution_ListDir(t *testing.T) {
@@ -165,7 +165,7 @@ func TestToolExecution_EditFile(t *testing.T) {
 	result := editTool.Execute(context.Background(), map[string]interface{}{
 		"path":     "edit_target.txt",
 		"old_text": "world",
-		"new_text": "picoclaw",
+		"new_text": "dragonscale",
 	})
 	require.NotNil(t, result)
 	assert.False(t, result.IsError, "edit should succeed: %s", result.ForLLM)
@@ -174,7 +174,7 @@ func TestToolExecution_EditFile(t *testing.T) {
 	readResult := readTool.Execute(context.Background(), map[string]interface{}{
 		"path": "edit_target.txt",
 	})
-	assert.Contains(t, readResult.ForLLM, "picoclaw")
+	assert.Contains(t, readResult.ForLLM, "dragonscale")
 	assert.NotContains(t, readResult.ForLLM, "world")
 }
 
@@ -244,7 +244,7 @@ func TestToolExecution_ReadFile_PathTraversal(t *testing.T) {
 func TestToolExecution_Unrestricted(t *testing.T) {
 	workspace := testWorkspace(t)
 
-	tmpFile := filepath.Join(os.TempDir(), "picoclaw_unrestricted_test.txt")
+	tmpFile := filepath.Join(os.TempDir(), "dragonscale_unrestricted_test.txt")
 	os.WriteFile(tmpFile, []byte("unrestricted content"), 0644)
 	defer os.Remove(tmpFile)
 

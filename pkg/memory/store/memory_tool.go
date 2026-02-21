@@ -6,8 +6,8 @@ import (
 	jsonv2 "github.com/go-json-experiment/json"
 	"strings"
 
-	"github.com/sipeed/picoclaw/pkg/ids"
-	"github.com/sipeed/picoclaw/pkg/memory"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/ids"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/memory"
 )
 
 // MemoryToolAction is the action to perform on the memory system.

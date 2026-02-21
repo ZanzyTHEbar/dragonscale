@@ -11,9 +11,9 @@ import (
 	"time"
 
 	fantasy "charm.land/fantasy"
-	"github.com/sipeed/picoclaw/pkg/config"
-	"github.com/sipeed/picoclaw/pkg/logger"
-	picoruntime "github.com/sipeed/picoclaw/pkg/runtime"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/config"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/logger"
+	picoruntime "github.com/ZanzyTHEbar/dragonscale/pkg/runtime"
 )
 
 // Trace is the structured output emitted by the eval runner.
@@ -247,7 +247,7 @@ func truncate(s string, maxLen int) string {
 
 func evalRunnerTimeout() time.Duration {
 	const defaultTimeout = 180 * time.Second
-	raw := strings.TrimSpace(os.Getenv("PICOCLAW_EVAL_TIMEOUT_MS"))
+	raw := strings.TrimSpace(os.Getenv("DRAGONSCALE_EVAL_TIMEOUT_MS"))
 	if raw == "" {
 		return defaultTimeout
 	}

@@ -7,9 +7,9 @@ import (
 	"os"
 	"time"
 
+	"github.com/ZanzyTHEbar/dragonscale/pkg/dserrors"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/memory/sqlc"
 	"github.com/rs/zerolog"
-	"github.com/sipeed/picoclaw/pkg/memory/sqlc"
-	"github.com/sipeed/picoclaw/pkg/pcerrors"
 )
 
 // HandlerFunc processes a single claimed job. Returning nil marks it succeeded.
@@ -71,7 +71,7 @@ func (o *Options) logger() zerolog.Logger {
 // RunOnce claims and executes a single job if available.
 func RunOnce(ctx context.Context, q *sqlc.Queries, opts *Options) error {
 	if q == nil {
-		return pcerrors.New(pcerrors.CodeFailedPrecondition, "queries is nil")
+		return dserrors.New(dserrors.CodeFailedPrecondition, "queries is nil")
 	}
 
 	l := opts.logger()

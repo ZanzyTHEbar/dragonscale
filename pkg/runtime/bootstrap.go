@@ -6,10 +6,10 @@ import (
 	"time"
 
 	fantasy "charm.land/fantasy"
-	"github.com/sipeed/picoclaw/pkg/agent"
-	"github.com/sipeed/picoclaw/pkg/bus"
-	"github.com/sipeed/picoclaw/pkg/config"
-	picofantasy "github.com/sipeed/picoclaw/pkg/fantasy"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/agent"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/bus"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/config"
+	picofantasy "github.com/ZanzyTHEbar/dragonscale/pkg/fantasy"
 )
 
 type OutboundMode string
@@ -34,6 +34,11 @@ type RuntimeHandle struct {
 	agentLoop *agent.AgentLoop
 	msgBus    *bus.MessageBus
 	outDone   chan struct{}
+}
+
+type kernelInvariantChecker interface {
+	HasSecureBus() bool
+	HasUnifiedRuntimeDeps() bool
 }
 
 func (h *RuntimeHandle) Context() context.Context {
@@ -94,6 +99,13 @@ func Bootstrap(parent context.Context, cfg *config.Config, opts BootstrapOptions
 		}
 		return nil, fmt.Errorf("agent loop init error: %w", err)
 	}
+	if err := validateKernelInvariants(agentLoop); err != nil {
+		cancel()
+		if outDone != nil {
+			<-outDone
+		}
+		return nil, fmt.Errorf("agent loop init error: %w", err)
+	}
 
 	return &RuntimeHandle{
 		ctx:       ctx,
@@ -102,6 +114,19 @@ func Bootstrap(parent context.Context, cfg *config.Config, opts BootstrapOptions
 		msgBus:    msgBus,
 		outDone:   outDone,
 	}, nil
+}
+
+func validateKernelInvariants(loop kernelInvariantChecker) error {
+	if loop == nil {
+		return fmt.Errorf("agent loop is nil")
+	}
+	if !loop.HasSecureBus() {
+		return fmt.Errorf("secure bus is not configured")
+	}
+	if !loop.HasUnifiedRuntimeDeps() {
+		return fmt.Errorf("unified runtime dependencies are missing")
+	}
+	return nil
 }
 
 func withExecutionContext(parent context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {

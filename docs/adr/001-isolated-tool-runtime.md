@@ -8,7 +8,7 @@
 
 ## Context
 
-PicoClaw tools execute in-process with the agent loop. The `Vault`   (XChaCha20-Poly1305) exists for encrypting secrets at rest, but there is no pipeline for injecting those secrets into tool execution. The `Redactor` scans for sensitive patterns, but only in log paths — not on tool output before it reaches the LLM. There is no privilege boundary
+DragonScale tools execute in-process with the agent loop. The `Vault`   (XChaCha20-Poly1305) exists for encrypting secrets at rest, but there is no pipeline for injecting those secrets into tool execution. The `Redactor` scans for sensitive patterns, but only in log paths — not on tool output before it reaches the LLM. There is no privilege boundary
 between the LLM-facing agent code and the tool execution path.
 
 A compromised tool — via prompt injection, malicious skill, or supply chain attack — has the same memory-space access as the agent itself. This is the same class of vulnerability that led to the OpenClaw token exfiltration incident (Feb 2026), where malicious skills on ClawHub could read API keys from the host environment and exfiltrate them through tool output.
@@ -18,7 +18,7 @@ Competing frameworks have responded:
 - **IronClaw** (NEAR AI, Rust): WASM container isolation, capability-based permissions, encrypted credential vault with runtime injection, network interception for leak detection.
 - **WyrmLock** (ZanzyTHEbar, Rust): ZKP-based application locking via proc connector, cryptographic authentication before process execution, system keyring integration.
 
-PicoClaw's constraint is unique: the binary must remain under 20MB and run on 64MB RAM embedded boards. A full WASM runtime or separate daemon process is not viable as a mandatory dependency. The solution must be **progressive** — lightweight in-process enforcement by default, with optional heavier isolation for richer platforms.
+DragonScale's constraint is unique: the binary must remain under 20MB and run on 64MB RAM embedded boards. A full WASM runtime or separate daemon process is not viable as a mandatory dependency. The solution must be **progressive** — lightweight in-process enforcement by default, with optional heavier isolation for richer platforms.
 
 **RLM convergence**: Independently, Recursive Language Models (Zhang & Khattab, MIT CSAIL, Oct 2025; arXiv:2512.24601 v2) demonstrate that long-context systems suffer from "context rot" — performance degrades as context length grows, not from technical limits but from information overload and distributional mismatch. RLM's solution is **context-as-variable** + **recursive decomposition**: the LM never sees the full context directly. Instead, it interacts with context through structured operations (peek, grep, partition, recurse) in a REPL-like environment, spawning recursive sub-calls over partitioned subsets.
 
@@ -37,7 +37,7 @@ The ITR's SecureBus is therefore not just a security layer — it is the RLM exe
 
 3. **RLM** (already described above): Unbounded context via recursive decomposition.
 
-These three systems compose naturally: **the LLMCompiler DAG planner produces the execution plan, the SecureBus DAG executor dispatches nodes in parallel with PTC-style context isolation, and the RLM engine activates when any node's context exceeds the LM's window**. PicoClaw's current agent loop (`RunToolLoop`) uses Fantasy's ReAct pattern — each tool call requires a full inference pass, and all intermediate results accumulate in context. The DAG executor replaces this sequential loop for complex multi-tool workflows while preserving ReAct for simple cases.
+These three systems compose naturally: **the LLMCompiler DAG planner produces the execution plan, the SecureBus DAG executor dispatches nodes in parallel with PTC-style context isolation, and the RLM engine activates when any node's context exceeds the LM's window**. DragonScale's current agent loop (`RunToolLoop`) uses Fantasy's ReAct pattern — each tool call requires a full inference pass, and all intermediate results accumulate in context. The DAG executor replaces this sequential loop for complex multi-tool workflows while preserving ReAct for simple cases.
 
 **Anthropic Tool Search** (Nov 2025): Separately, Anthropic's Tool Search Tool demonstrates that loading all tool definitions upfront (55K+ tokens for a modest 5-server setup) is itself a form of context pollution. On-demand tool discovery reduces token consumption by 85% while improving accuracy (Opus 4: 49% → 74%). This maps directly to a `ToolSearch` command variant in our FlatBuffers schema, enabling the DAG planner to discover tools lazily rather than seeing all definitions.
 
@@ -142,7 +142,7 @@ type WasmTransport   struct { /* wazero isolate, untrusted tools */ }
 **Command protocol**: Tool requests use a structured, schema-enforced format rather than free-form JSON. FlatBuffers (google/flatbuffers, zero-copy serialization) defines the canonical `ToolRequest` schema, covering both traditional tool calls and RLM recursive operations:
 
 ```flatbuffers
-namespace picoclaw.itr;
+namespace dragonscale.itr;
 
 // --- Individual command types ---
 table Peek      { start: uint64; length: uint32; }
@@ -199,7 +199,7 @@ This schema serves four purposes: (1) zero-copy reads eliminate serialization ov
 
 ### Layer 3: Secret Store + Keyring Integration
 
-The `SecretStore` maps logical secret names to encrypted ciphertext, persisted to a local file (`~/.picoclaw/secrets.enc`). The `Vault` handles encryption/decryption.
+The `SecretStore` maps logical secret names to encrypted ciphertext, persisted to a local file (`~/.dragonscale/secrets.enc`). The `Vault` handles encryption/decryption.
 
 The master key for the `Vault` is sourced from one of three backends, selected at
 onboarding:
@@ -215,11 +215,11 @@ Keyring support is gated behind a build tag (`!embedded`) to avoid pulling in CG
 **CLI surface**:
 
 ```
-picoclaw secret add <name>       # interactive prompt for value
-picoclaw secret list             # names only, no values
-picoclaw secret delete <name>
-picoclaw secret export           # encrypted backup
-picoclaw secret import <file>    # restore from backup
+dragonscale secret add <name>       # interactive prompt for value
+dragonscale secret list             # names only, no values
+dragonscale secret delete <name>
+dragonscale secret export           # encrypted backup
+dragonscale secret import <file>    # restore from backup
 ```
 
 The `onboard` command is extended to include master key setup as part of the interactive wizard.
@@ -241,7 +241,7 @@ For non-embedded deployments (desktop, server), the SecureBus can optionally run
 
 **Session establishment** uses a Schnorr-based zero-knowledge proof:
 
-1. Client connects to `~/.picoclaw/daemon.sock`
+1. Client connects to `~/.dragonscale/daemon.sock`
 2. Daemon sends a random 32-byte challenge `c`
 3. Client computes commitment and response from passphrase-derived secret
 4. Daemon verifies against stored verifier (passphrase never crosses the socket)
@@ -256,9 +256,9 @@ For non-embedded deployments (desktop, server), the SecureBus can optionally run
 **Daemon lifecycle**:
 
 ```
-picoclaw daemon start            # background, creates pidfile + socket
-picoclaw daemon stop             # graceful shutdown, zeroes key material
-picoclaw daemon status           # running/stopped, uptime, client count
+dragonscale daemon start            # background, creates pidfile + socket
+dragonscale daemon stop             # graceful shutdown, zeroes key material
+dragonscale daemon status           # running/stopped, uptime, client count
 ```
 
 Systemd and launchd service templates are provided in `deploy/`.
@@ -303,7 +303,7 @@ TinyGo produces smaller binaries (~100KB-1MB) suitable for embedded constraints.
 ### RLM Integration: Recursive Context Decomposition Engine
 
 The Isolated Tool Runtime subsumes and secures the RLM execution model. Rather than
-implementing RLM as a standalone system, PicoClaw treats RLM operations as first-class
+implementing RLM as a standalone system, DragonScale treats RLM operations as first-class
 tool calls flowing through the SecureBus. This section describes the concrete
 integration.
 
@@ -392,7 +392,7 @@ When the budget is exhausted, remaining sub-calls are canceled via Go context
 propagation and the best partial result is synthesized.
 
 **Integration with existing memory tiers**: RLM operates on the archival tier of
-PicoClaw's 3-tier memory system. When the agent issues a `memory search` that returns
+DragonScale's 3-tier memory system. When the agent issues a `memory search` that returns
 results exceeding the context window, the RLM engine activates automatically — treating
 the search results as the context variable and recursively decomposing them. This is
 transparent to the agent: it issued a search, it gets a synthesized answer.
@@ -450,7 +450,7 @@ every DAG node is a `ToolRequest` that flows through capability checking, secret
 injection, and leak scanning. The DAG is a batch of `ToolRequest`s with dependency
 metadata.
 
-**Why this replaces ReAct for complex workflows**: PicoClaw's current `RunToolLoop`
+**Why this replaces ReAct for complex workflows**: DragonScale's current `RunToolLoop`
 uses Fantasy's ReAct pattern. Each tool call requires a full LLM inference pass
 (hundreds of ms to seconds), and all intermediate results accumulate in the LLM's
 context window. For a 20-tool workflow, that's 20 inference passes and potentially
@@ -643,7 +643,7 @@ A lightweight classifier (heuristic or cheap LM call) routes queries to the
 appropriate executor. The `ToolLoopConfig` gains a `Mode` field:
 `ModeReAct | ModeDAG | ModeAuto`.
 
-**Relationship to PTC**: PicoClaw implements PTC's core principle — intermediate
+**Relationship to PTC**: DragonScale implements PTC's core principle — intermediate
 results never pollute the LM's context — without depending on Anthropic's specific
 code execution sandbox. The DAG executor IS the sandbox: it holds all intermediate
 node outputs in a `sync.Map`, resolves references internally, and only the Joiner's
@@ -717,10 +717,10 @@ Use Anthropic's Programmatic Tool Calling directly, where Claude writes Python
 orchestration code that runs in Anthropic's sandboxed environment.
 
 **Rejected because**: PTC is provider-specific (requires Anthropic's
-`code_execution_20250825` server tool). PicoClaw is LLM-agnostic — it works with
+`code_execution_20250825` server tool). DragonScale is LLM-agnostic — it works with
 OpenAI, Anthropic, Ollama, and any Fantasy-compatible provider. The DAG executor
 implements PTC's core principle (intermediate results isolated from context) without
-provider lock-in. Additionally, PTC's Python sandbox cannot enforce PicoClaw's
+provider lock-in. Additionally, PTC's Python sandbox cannot enforce DragonScale's
 capability manifests or leak scanning — our SecureBus provides stronger guarantees.
 
 ### G. Pure LLMCompiler without RLM integration
@@ -772,7 +772,7 @@ complementary, not alternatives.
   context window. The DAG executor's `sync.Map` holds all node outputs internally,
   resolving `#nodeN` references without LLM involvement. Only the Joiner's compact
   output crosses back to the agent loop.
-- **LLM-agnostic PTC**: PicoClaw achieves Anthropic PTC's benefits (37% token
+- **LLM-agnostic PTC**: DragonScale achieves Anthropic PTC's benefits (37% token
   reduction, parallel execution, context isolation) without provider lock-in. Any
   Fantasy-compatible LLM can produce DAG plans.
 - **Recursive DAG expansion**: When RLM detects a node with oversized context, it
@@ -799,6 +799,17 @@ complementary, not alternatives.
 - **FlatBuffers tooling**: Requires `flatc` compiler in the build pipeline for codegen.
   Generated Go code is committed to the repo, so downstream consumers do not need
   `flatc`. Schema changes require regeneration.
+  - Schema files:
+    - `pkg/itr/commands.fbs` → `pkg/itr/itrfb/*`
+    - `pkg/tools/map_payloads.fbs` → `pkg/tools/mapopsfb/*`
+  - `go:generate` hooks:
+    - `pkg/itr/generate_flatbuffers.go`
+    - `pkg/tools/generate_flatbuffers.go`
+  - Verification:
+    - Local: `make flatc-check`
+    - CI: `.github/workflows/pr.yml` (`flatc-check` job)
+    - Devcontainer: `make devcontainer-generate`, `make devcontainer-verify`
+  - Check semantics: generation checks compare pre/post fingerprints (tracked diffs + untracked hashes) on generated directories, which keeps validation deterministic in both clean and dirty worktrees.
 - **DAG planning quality**: The LLM must produce valid DAGs with correct dependency
   edges. Malformed DAGs (cycles, missing dependencies) are caught at validation time
   but waste an inference pass. Mitigated by structured output constraints (FlatBuffers
@@ -846,7 +857,7 @@ complementary, not alternatives.
 | 2     | Migrate | Built-in tools (`shell`, `filesystem`, `web`) implement `CapableTool` | P0 |
 | 3     | DAG | `DAGExecutor`: topological dispatch, dependency resolution, parallel wave execution via errgroup, Joiner synthesis, replanning loop. ReAct/DAG routing in agent loop. `ToolSearch` command variant. | P0 |
 | 4     | RLM | `RLMEngine` with rope context, strategy planning via cheap sub-LM, parallel fan-out through SecureBus, cost tracking, integration with archival memory tier, recursive DAG expansion | P0 |
-| 5     | 3     | Keyring integration, `picoclaw secret` CLI, onboard wizard extension | P1 |
+| 5     | 3     | Keyring integration, `dragonscale secret` CLI, onboard wizard extension | P1 |
 | 6     | 4     | `SocketTransport`, daemon mode, Schnorr ZKP handshake, systemd/launchd templates | P2 |
 | 7     | 5     | `WasmTransport` via wazero, WASM tool isolation for untrusted tools, `CodeExec` command variant, RLM sub-call isolation | P2 |
 
@@ -857,7 +868,9 @@ complementary, not alternatives.
 | Path | Purpose |
 |------|---------|
 | `pkg/itr/commands.fbs` | FlatBuffers schema defining the command protocol (Peek, Grep, Partition, Recurse, ToolExec, ExecWasm, Final, ToolSearch, CodeExec, DAGNode, DAGPlan) |
-| `pkg/itr/commands_generated.go` | Generated Go code from `flatc --go` (committed, no build-time flatc dependency) |
+| `pkg/itr/itrfb/*` | Generated Go code from `flatc --go` for ITR command protocol (committed) |
+| `pkg/tools/map_payloads.fbs` | FlatBuffers schema for map operator run/item payload persistence |
+| `pkg/tools/mapopsfb/*` | Generated Go code from `flatc --go` for map payload tables (committed) |
 | `pkg/itr/dag/executor.go` | `DAGExecutor`: topological dispatch, parallel wave execution, dependency resolution, Joiner synthesis |
 | `pkg/itr/dag/planner.go` | `DAGPlanner`: LLM-driven DAG generation with structured output, few-shot examples, validation |
 | `pkg/itr/dag/resolver.go` | Dependency reference resolver: `#nodeN` substitution, type coercion, error propagation |
@@ -889,7 +902,7 @@ complementary, not alternatives.
 | `pkg/tools/toolloop.go` | Add `ToolLoopMode` enum, DAG executor integration, routing logic |
 | `pkg/agent/loop.go` | Route tool execution through SecureBus; integrate DAGExecutor + RLMEngine; ReAct/DAG mode selection |
 | `pkg/memory/store/memory_store.go` | Add RLM activation when search results exceed context window |
-| `cmd/picoclaw/main.go` | Wire SecureBus + DAGExecutor + RLMEngine, add `secret` and `daemon` subcommands |
+| `cmd/dragonscale/main.go` | Wire SecureBus + DAGExecutor + RLMEngine, add `secret` and `daemon` subcommands |
 | `go.mod` | Add `tetratelabs/wazero`, `zyedidia/rope`, `google/flatbuffers` |
 | `ROADMAP.md` | Update to reference DAG executor convergence and this ADR |
 

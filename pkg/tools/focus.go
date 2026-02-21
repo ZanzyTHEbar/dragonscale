@@ -8,9 +8,9 @@ import (
 
 	jsonv2 "github.com/go-json-experiment/json"
 
-	"github.com/sipeed/picoclaw/pkg/logger"
-	"github.com/sipeed/picoclaw/pkg/messages"
-	"github.com/sipeed/picoclaw/pkg/session"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/logger"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/messages"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/session"
 )
 
 // KVStore is the minimal interface needed for focus persistence.
@@ -23,7 +23,7 @@ type KVStore interface {
 const (
 	focusKVPrefix     = "focus:"
 	knowledgeKVPrefix = "knowledge:"
-	focusAgentID      = "picoclaw"
+	focusAgentID      = "dragonscale"
 )
 
 // FocusState tracks an active focus investigation.

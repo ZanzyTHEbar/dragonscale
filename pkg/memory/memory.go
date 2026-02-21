@@ -1,4 +1,4 @@
-// Package memory provides a MemGPT-style 3-tier memory system for the PicoClaw agent.
+// Package memory provides a MemGPT-style 3-tier memory system for the DragonScale agent.
 //
 // Architecture follows the Memory (logic) + MemoryDelegate (backend) pattern:
 //   - Memory: orchestrates tiers, scoring, context pressure, retrieval pipeline
@@ -18,7 +18,7 @@ import (
 	"math"
 	"time"
 
-	"github.com/sipeed/picoclaw/pkg/ids"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/ids"
 )
 
 // Sector classifies the type of memory for retrieval and scoring.

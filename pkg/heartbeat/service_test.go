@@ -3,10 +3,11 @@ package heartbeat
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
-	"github.com/sipeed/picoclaw/pkg/tools"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/tools"
 )
 
 func TestExecuteHeartbeat_Async(t *testing.T) {
@@ -211,11 +212,48 @@ func TestHeartbeatFilePath(t *testing.T) {
 	hs := NewHeartbeatService(tmpDir, 30, true)
 
 	// Trigger default template creation
-	hs.buildPrompt()
+	hs.buildPrompt("")
 
 	// Verify HEARTBEAT.md exists at workspace root
 	expectedPath := filepath.Join(tmpDir, "HEARTBEAT.md")
 	if _, err := os.Stat(expectedPath); os.IsNotExist(err) {
 		t.Errorf("Expected HEARTBEAT.md at %s, but it doesn't exist", expectedPath)
+	}
+}
+
+func TestExecuteHeartbeat_UsesDueContextWithoutHeartbeatFile(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "heartbeat-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	hs := NewHeartbeatService(tmpDir, 30, true)
+	hs.stopChan = make(chan struct{}) // Enable for testing
+
+	dueCalled := false
+	handlerCalled := false
+	hs.SetDueContextProvider(func(now time.Time) (string, error) {
+		dueCalled = true
+		return "- [obl-1] send follow-up message", nil
+	})
+	hs.SetHandler(func(prompt, channel, chatID string) *tools.ToolResult {
+		handlerCalled = true
+		if prompt == "" {
+			t.Fatal("expected heartbeat prompt with due context")
+		}
+		if !strings.Contains(prompt, "obl-1") {
+			t.Fatalf("expected due context in prompt, got: %s", prompt)
+		}
+		return tools.SilentResult("HEARTBEAT_OK")
+	})
+
+	hs.executeHeartbeat()
+
+	if !dueCalled {
+		t.Fatal("expected due context provider to be called")
+	}
+	if !handlerCalled {
+		t.Fatal("expected heartbeat handler to be called")
 	}
 }

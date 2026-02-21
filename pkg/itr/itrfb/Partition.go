@@ -17,19 +17,11 @@ func GetRootAsPartition(buf []byte, offset flatbuffers.UOffsetT) *Partition {
 	return x
 }
 
-func FinishPartitionBuffer(builder *flatbuffers.Builder, offset flatbuffers.UOffsetT) {
-	builder.Finish(offset)
-}
-
 func GetSizePrefixedRootAsPartition(buf []byte, offset flatbuffers.UOffsetT) *Partition {
 	n := flatbuffers.GetUOffsetT(buf[offset+flatbuffers.SizeUint32:])
 	x := &Partition{}
 	x.Init(buf, n+offset+flatbuffers.SizeUint32)
 	return x
-}
-
-func FinishSizePrefixedPartitionBuffer(builder *flatbuffers.Builder, offset flatbuffers.UOffsetT) {
-	builder.FinishSizePrefixed(offset)
 }
 
 func (rcv *Partition) Init(buf []byte, i flatbuffers.UOffsetT) {

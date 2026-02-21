@@ -1,18 +1,18 @@
-# PicoClaw Eval Harness - promptfoo configuration
+# DragonScale Eval Harness - promptfoo configuration
 # Run: make eval
 # View: cd eval && npx promptfoo view
 
-description: "PicoClaw agent end-to-end evaluation"
+description: "DragonScale agent end-to-end evaluation"
 
 maxConcurrency: 1
 
 providers:
   - id: "exec:./bin/eval-runner"
-    label: "picoclaw"
+    label: "dragonscale"
     config:
       timeout: 180000
     env:
-      PICOCLAW_EVAL_CONFIG: "./configs/default.json"
+      DRAGONSCALE_EVAL_CONFIG: "./configs/default.json"
 
 # Default assertions applied to every test case
 defaultTest:

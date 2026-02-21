@@ -3,16 +3,17 @@
 ## What This Is
 
 This directory contains a vendored copy of `charm.land/fantasy`, the Charmbracelet
-Fantasy LLM agent framework. We vendor it to enable direct modifications for PicoClaw-specific
+Fantasy LLM agent framework. We vendor it to enable direct modifications for
 features (progressive disclosure, custom streaming hooks, tool call repair, etc.).
 
-PicoClaw's `go.mod` contains a `replace` directive:
+The project `go.mod` contains a `replace` directive:
 
 ```
 replace charm.land/fantasy v0.8.1 => ./internal/fantasy
 ```
 
-This redirects all `charm.land/fantasy` imports to this local copy. No import paths need to change in either PicoClaw code or the fantasy source itself.
+This redirects all `charm.land/fantasy` imports to this local copy. No import paths
+need to change in either project code or the fantasy source itself.
 
 ## Automated Sync System
 

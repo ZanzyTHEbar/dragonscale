@@ -1,4 +1,4 @@
--- PicoClaw Memory System Schema (SQLite / libSQL)
+-- DragonScale Memory System Schema (SQLite / libSQL)
 -- 3-tier MemGPT-style: working_context (hot), recall_items (warm), archival_chunks (cold)
 -- NOTE: This schema is parsed by sqlc. The actual runtime DDL (with F32_BLOB, etc.)
 -- is in delegate/schemaDDL(). Keep column names and types in sync.
@@ -208,6 +208,57 @@ CREATE INDEX IF NOT EXISTS idx_jobs_status_run_at ON jobs(status, run_at);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_jobs_kind_dedupe ON jobs(kind, dedupe_key)
 WHERE dedupe_key IS NOT NULL;
 -- ============================================================================
+-- Map Operator Runs / Items (FlatBuffers payload persistence)
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS map_runs (
+    id BLOB PRIMARY KEY,
+    agent_id TEXT NOT NULL,
+    session_key TEXT NOT NULL,
+    operator_kind TEXT NOT NULL,
+    -- llm_map | agentic_map
+    idempotency_key TEXT,
+    status TEXT NOT NULL DEFAULT 'queued',
+    -- queued | running | succeeded | failed | cancelled
+    total_items INTEGER NOT NULL DEFAULT 0,
+    queued_items INTEGER NOT NULL DEFAULT 0,
+    running_items INTEGER NOT NULL DEFAULT 0,
+    succeeded_items INTEGER NOT NULL DEFAULT 0,
+    failed_items INTEGER NOT NULL DEFAULT 0,
+    spec_fb BLOB NOT NULL,
+    last_error TEXT,
+    created_at DATETIME NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    updated_at DATETIME NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    completed_at DATETIME
+);
+CREATE INDEX IF NOT EXISTS idx_map_runs_agent_session_created_at ON map_runs(agent_id, session_key, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_map_runs_status_updated_at ON map_runs(status, updated_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_map_runs_dedupe ON map_runs(
+    agent_id,
+    session_key,
+    operator_kind,
+    idempotency_key
+)
+WHERE idempotency_key IS NOT NULL;
+CREATE TABLE IF NOT EXISTS map_items (
+    id BLOB PRIMARY KEY,
+    run_id BLOB NOT NULL REFERENCES map_runs(id) ON DELETE CASCADE,
+    item_index INTEGER NOT NULL,
+    status TEXT NOT NULL DEFAULT 'queued',
+    -- queued | running | succeeded | failed
+    attempts INTEGER NOT NULL DEFAULT 0,
+    last_error TEXT,
+    input_fb BLOB NOT NULL,
+    output_fb BLOB,
+    input_hash TEXT,
+    output_hash TEXT,
+    created_at DATETIME NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    updated_at DATETIME NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    completed_at DATETIME,
+    UNIQUE(run_id, item_index)
+);
+CREATE INDEX IF NOT EXISTS idx_map_items_run_id_status_item_index ON map_items(run_id, status, item_index);
+CREATE INDEX IF NOT EXISTS idx_map_items_run_id_item_index ON map_items(run_id, item_index);
+-- ============================================================================
 -- Conversation Graph (forks, links, threads, mentions, edits)
 -- ============================================================================
 -- Forks: parent→child conversation via checkpoint.
@@ -282,3 +333,55 @@ CREATE TABLE IF NOT EXISTS agent_message_revisions (
     updated_at DATETIME NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
 CREATE INDEX IF NOT EXISTS idx_agent_message_revisions_message_id_created_at ON agent_message_revisions(message_id, created_at DESC);
+-- ============================================================================
+-- DAG Compression (persistent node/edge schema for lossless expand, describe, grep)
+-- ============================================================================
+-- Snapshots: one per compression run, keyed by agent/session.
+CREATE TABLE IF NOT EXISTS dag_snapshots (
+    id BLOB PRIMARY KEY,
+    agent_id TEXT NOT NULL,
+    session_key TEXT NOT NULL DEFAULT '',
+    from_msg_idx INTEGER NOT NULL DEFAULT 0,
+    to_msg_idx INTEGER NOT NULL DEFAULT 0,
+    msg_count INTEGER NOT NULL DEFAULT 0,
+    roots_json TEXT NOT NULL DEFAULT '[]',
+    content_hash TEXT NOT NULL DEFAULT '',
+    created_at DATETIME NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    updated_at DATETIME NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+CREATE INDEX IF NOT EXISTS idx_dag_snapshots_agent_session ON dag_snapshots(agent_id, session_key);
+CREATE INDEX IF NOT EXISTS idx_dag_snapshots_created_at ON dag_snapshots(created_at DESC);
+-- Nodes: DAG nodes with summary, spans, metrics, hashes.
+CREATE TABLE IF NOT EXISTS dag_nodes (
+    id BLOB PRIMARY KEY,
+    snapshot_id BLOB NOT NULL REFERENCES dag_snapshots(id) ON DELETE CASCADE,
+    node_id TEXT NOT NULL,
+    level INTEGER NOT NULL DEFAULT 1,
+    summary TEXT NOT NULL DEFAULT '',
+    tokens INTEGER NOT NULL DEFAULT 0,
+    start_idx INTEGER NOT NULL DEFAULT 0,
+    end_idx INTEGER NOT NULL DEFAULT 0,
+    span INTEGER NOT NULL DEFAULT 0,
+    content_hash TEXT NOT NULL DEFAULT '',
+    metrics_json JSON NOT NULL DEFAULT '{}',
+    metadata_json JSON NOT NULL DEFAULT '{}',
+    created_at DATETIME NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    updated_at DATETIME NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+CREATE INDEX IF NOT EXISTS idx_dag_nodes_snapshot ON dag_nodes(snapshot_id);
+CREATE INDEX IF NOT EXISTS idx_dag_nodes_node_id ON dag_nodes(snapshot_id, node_id);
+CREATE INDEX IF NOT EXISTS idx_dag_nodes_level_start ON dag_nodes(snapshot_id, level, start_idx);
+-- Edges: parent->child relationships.
+CREATE TABLE IF NOT EXISTS dag_edges (
+    id BLOB PRIMARY KEY,
+    snapshot_id BLOB NOT NULL REFERENCES dag_snapshots(id) ON DELETE CASCADE,
+    parent_node_id BLOB NOT NULL REFERENCES dag_nodes(id) ON DELETE CASCADE,
+    child_node_id BLOB NOT NULL REFERENCES dag_nodes(id) ON DELETE CASCADE,
+    edge_index INTEGER NOT NULL DEFAULT 0,
+    metadata_json JSON NOT NULL DEFAULT '{}',
+    created_at DATETIME NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    updated_at DATETIME NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+CREATE INDEX IF NOT EXISTS idx_dag_edges_snapshot ON dag_edges(snapshot_id);
+CREATE INDEX IF NOT EXISTS idx_dag_edges_parent ON dag_edges(parent_node_id);
+CREATE INDEX IF NOT EXISTS idx_dag_edges_child ON dag_edges(child_node_id);

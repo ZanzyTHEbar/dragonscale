@@ -17,19 +17,11 @@ func GetRootAsGrep(buf []byte, offset flatbuffers.UOffsetT) *Grep {
 	return x
 }
 
-func FinishGrepBuffer(builder *flatbuffers.Builder, offset flatbuffers.UOffsetT) {
-	builder.Finish(offset)
-}
-
 func GetSizePrefixedRootAsGrep(buf []byte, offset flatbuffers.UOffsetT) *Grep {
 	n := flatbuffers.GetUOffsetT(buf[offset+flatbuffers.SizeUint32:])
 	x := &Grep{}
 	x.Init(buf, n+offset+flatbuffers.SizeUint32)
 	return x
-}
-
-func FinishSizePrefixedGrepBuffer(builder *flatbuffers.Builder, offset flatbuffers.UOffsetT) {
-	builder.FinishSizePrefixed(offset)
 }
 
 func (rcv *Grep) Init(buf []byte, i flatbuffers.UOffsetT) {

@@ -4,7 +4,7 @@
 
 - description: "memory write and search: store a fact then retrieve it"
   vars:
-    prompt: "Remember this important fact: 'The picoclaw eval harness was built in February 2026.' Then search your memory for 'eval harness' to confirm you stored it."
+    prompt: "Remember this important fact: 'The dragonscale eval harness was built in February 2026.' Then search your memory for 'eval harness' to confirm you stored it."
   assert:
     - type: javascript
       value: |

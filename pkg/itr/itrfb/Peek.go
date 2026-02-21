@@ -17,19 +17,11 @@ func GetRootAsPeek(buf []byte, offset flatbuffers.UOffsetT) *Peek {
 	return x
 }
 
-func FinishPeekBuffer(builder *flatbuffers.Builder, offset flatbuffers.UOffsetT) {
-	builder.Finish(offset)
-}
-
 func GetSizePrefixedRootAsPeek(buf []byte, offset flatbuffers.UOffsetT) *Peek {
 	n := flatbuffers.GetUOffsetT(buf[offset+flatbuffers.SizeUint32:])
 	x := &Peek{}
 	x.Init(buf, n+offset+flatbuffers.SizeUint32)
 	return x
-}
-
-func FinishSizePrefixedPeekBuffer(builder *flatbuffers.Builder, offset flatbuffers.UOffsetT) {
-	builder.FinishSizePrefixed(offset)
 }
 
 func (rcv *Peek) Init(buf []byte, i flatbuffers.UOffsetT) {

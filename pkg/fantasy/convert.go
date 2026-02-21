@@ -1,7 +1,7 @@
-// PicoClaw - Ultra-lightweight personal AI agent
+// DragonScale - Ultra-lightweight personal AI agent
 // License: MIT
 //
-// Copyright (c) 2026 PicoClaw contributors
+// Copyright (c) 2026 DragonScale contributors
 
 package fantasy
 
@@ -9,10 +9,10 @@ import (
 	"charm.land/fantasy"
 	jsonv2 "github.com/go-json-experiment/json"
 
-	"github.com/sipeed/picoclaw/pkg/messages"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/messages"
 )
 
-// MessagesToFantasy converts PicoClaw session messages to Fantasy's multipart format.
+// MessagesToFantasy converts DragonScale session messages to Fantasy's multipart format.
 func MessagesToFantasy(msgs []messages.Message) []fantasy.Message {
 	out := make([]fantasy.Message, 0, len(msgs))
 
@@ -23,7 +23,7 @@ func MessagesToFantasy(msgs []messages.Message) []fantasy.Message {
 	return out
 }
 
-// MessageToFantasy converts a single PicoClaw message to Fantasy format.
+// MessageToFantasy converts a single DragonScale message to Fantasy format.
 func MessageToFantasy(msg messages.Message) fantasy.Message {
 	var parts []fantasy.MessagePart
 
@@ -72,7 +72,7 @@ func MessageToFantasy(msg messages.Message) fantasy.Message {
 	}
 }
 
-// StepToMessages converts a Fantasy StepResult back to PicoClaw message format
+// StepToMessages converts a Fantasy StepResult back to DragonScale message format
 // for session storage. Each step may produce an assistant message with tool calls
 // and zero or more tool result messages.
 func StepToMessages(step fantasy.StepResult) []messages.Message {
@@ -129,7 +129,7 @@ func StepToMessages(step fantasy.StepResult) []messages.Message {
 	return out
 }
 
-// AgentResultToMessages converts a complete AgentResult to PicoClaw messages.
+// AgentResultToMessages converts a complete AgentResult to DragonScale messages.
 // This flattens all steps into a single message sequence.
 func AgentResultToMessages(result *fantasy.AgentResult) []messages.Message {
 	var out []messages.Message

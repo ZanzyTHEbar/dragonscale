@@ -1,4 +1,4 @@
-// PicoClaw - Ultra-lightweight personal AI agent
+// DragonScale - Ultra-lightweight personal AI agent
 // DingTalk channel implementation using Stream Mode
 
 package channels
@@ -8,12 +8,12 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/ZanzyTHEbar/dragonscale/pkg/bus"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/config"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/logger"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/utils"
 	"github.com/open-dingtalk/dingtalk-stream-sdk-go/chatbot"
 	"github.com/open-dingtalk/dingtalk-stream-sdk-go/client"
-	"github.com/sipeed/picoclaw/pkg/bus"
-	"github.com/sipeed/picoclaw/pkg/config"
-	"github.com/sipeed/picoclaw/pkg/logger"
-	"github.com/sipeed/picoclaw/pkg/utils"
 )
 
 // DingTalkChannel implements the Channel interface for DingTalk (钉钉)
@@ -175,7 +175,7 @@ func (c *DingTalkChannel) SendDirectReply(ctx context.Context, sessionWebhook, c
 
 	// Convert string content to []byte for the API
 	contentBytes := []byte(content)
-	titleBytes := []byte("PicoClaw")
+	titleBytes := []byte("DragonScale")
 
 	// Send markdown formatted reply
 	err := replier.SimpleReplyMarkdown(

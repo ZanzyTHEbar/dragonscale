@@ -6,7 +6,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/sipeed/picoclaw/pkg/skills"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/skills"
 )
 
 // SkillSearchTool performs fuzzy search across skill names, descriptions, tags, and domains.

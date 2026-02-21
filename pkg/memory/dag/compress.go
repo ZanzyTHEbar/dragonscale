@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/ZanzyTHEbar/dragonscale/pkg/memory/observation"
 )
 
 // Message is a minimal message representation for DAG compression.
@@ -226,7 +228,7 @@ func findSentenceEnd(s string) int {
 	return -1
 }
 
-// estimateTokens provides a rough token count (chars * 2/5 heuristic).
+// estimateTokens uses the shared runtime estimator for consistent budgeting.
 func estimateTokens(s string) int {
-	return utf8.RuneCountInString(s) * 2 / 5
+	return observation.EstimateTokens(s)
 }

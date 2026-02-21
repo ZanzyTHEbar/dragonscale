@@ -1,7 +1,7 @@
-// PicoClaw - Ultra-lightweight personal AI agent
+// DragonScale - Ultra-lightweight personal AI agent
 // License: MIT
 //
-// Copyright (c) 2026 PicoClaw contributors
+// Copyright (c) 2026 DragonScale contributors
 
 package agent
 
@@ -9,11 +9,11 @@ import (
 	"context"
 	jsonv2 "github.com/go-json-experiment/json"
 
-	memstore "github.com/sipeed/picoclaw/pkg/memory/store"
-	"github.com/sipeed/picoclaw/pkg/tools"
+	memstore "github.com/ZanzyTHEbar/dragonscale/pkg/memory/store"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/tools"
 )
 
-// MemGPTTool wraps store.MemoryTool as a PicoClaw tools.Tool so it can be
+// MemGPTTool wraps store.MemoryTool as a DragonScale tools.Tool so it can be
 // registered in the ToolRegistry and executed by the Fantasy agent loop.
 type MemGPTTool struct {
 	inner *memstore.MemoryTool
@@ -21,7 +21,7 @@ type MemGPTTool struct {
 
 var _ tools.Tool = (*MemGPTTool)(nil)
 
-// NewMemGPTTool creates a PicoClaw tool wrapper around a MemoryTool.
+// NewMemGPTTool creates a DragonScale tool wrapper around a MemoryTool.
 func NewMemGPTTool(store *memstore.MemoryStore, agentID, session string) *MemGPTTool {
 	return &MemGPTTool{
 		inner: memstore.NewMemoryTool(store, agentID, session),

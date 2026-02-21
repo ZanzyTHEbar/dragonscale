@@ -17,19 +17,11 @@ func GetRootAsToolExec(buf []byte, offset flatbuffers.UOffsetT) *ToolExec {
 	return x
 }
 
-func FinishToolExecBuffer(builder *flatbuffers.Builder, offset flatbuffers.UOffsetT) {
-	builder.Finish(offset)
-}
-
 func GetSizePrefixedRootAsToolExec(buf []byte, offset flatbuffers.UOffsetT) *ToolExec {
 	n := flatbuffers.GetUOffsetT(buf[offset+flatbuffers.SizeUint32:])
 	x := &ToolExec{}
 	x.Init(buf, n+offset+flatbuffers.SizeUint32)
 	return x
-}
-
-func FinishSizePrefixedToolExecBuffer(builder *flatbuffers.Builder, offset flatbuffers.UOffsetT) {
-	builder.FinishSizePrefixed(offset)
 }
 
 func (rcv *ToolExec) Init(buf []byte, i flatbuffers.UOffsetT) {

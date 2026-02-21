@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/sipeed/picoclaw/pkg/itr"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/itr"
 )
 
 // Transport implements the SecureBus transport interface for WASM-isolated

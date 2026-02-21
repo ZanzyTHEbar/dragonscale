@@ -45,6 +45,14 @@ func (t *SpawnTool) Parameters() map[string]interface{} {
 				"type":        "string",
 				"description": "Optional short label for the task (for display)",
 			},
+			"delegated_scope": map[string]interface{}{
+				"type":        "string",
+				"description": "What part of parent work is delegated. Required for nested delegation.",
+			},
+			"kept_work": map[string]interface{}{
+				"type":        "string",
+				"description": "What work remains with delegator. Required for nested delegation.",
+			},
 		},
 		"required": []string{"task"},
 	}
@@ -62,13 +70,15 @@ func (t *SpawnTool) Execute(ctx context.Context, args map[string]interface{}) *T
 	}
 
 	label, _ := args["label"].(string)
+	delegatedScope, _ := args["delegated_scope"].(string)
+	keptWork, _ := args["kept_work"].(string)
 
 	if t.manager == nil {
 		return ErrorResult("Subagent manager not configured")
 	}
 
 	// Pass callback to manager for async completion notification
-	result, err := t.manager.Spawn(ctx, task, label, t.originChannel, t.originChatID, t.callback)
+	result, err := t.manager.Spawn(ctx, task, label, delegatedScope, keptWork, t.originChannel, t.originChatID, t.callback)
 	if err != nil {
 		return ErrorResult(fmt.Sprintf("failed to spawn subagent: %v", err))
 	}

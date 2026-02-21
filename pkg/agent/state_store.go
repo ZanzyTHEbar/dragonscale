@@ -9,9 +9,9 @@ import (
 	jsonv2 "github.com/go-json-experiment/json"
 
 	"charm.land/fantasy"
-	"github.com/sipeed/picoclaw/pkg/ids"
-	"github.com/sipeed/picoclaw/pkg/memory/sqlc"
-	"github.com/sipeed/picoclaw/pkg/pcerrors"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/dserrors"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/ids"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/memory/sqlc"
 )
 
 // StateStore persists agent run state snapshots and transition logs.
@@ -25,10 +25,10 @@ func NewStateStore(q *sqlc.Queries) *StateStore {
 
 func (s *StateStore) CreateRun(ctx context.Context, conversationID ids.UUID) (sqlc.AgentRun, error) {
 	if s == nil || s.q == nil {
-		return sqlc.AgentRun{}, pcerrors.New(pcerrors.CodeUnknown, "state store is not configured")
+		return sqlc.AgentRun{}, dserrors.New(dserrors.CodeUnknown, "state store is not configured")
 	}
 	if conversationID.IsZero() {
-		return sqlc.AgentRun{}, pcerrors.New(pcerrors.CodeUnknown, "conversation id is empty")
+		return sqlc.AgentRun{}, dserrors.New(dserrors.CodeUnknown, "conversation id is empty")
 	}
 
 	return s.q.CreateAgentRun(ctx, sqlc.CreateAgentRunParams{
@@ -41,13 +41,13 @@ func (s *StateStore) CreateRun(ctx context.Context, conversationID ids.UUID) (sq
 
 func (s *StateStore) UpdateRunStatus(ctx context.Context, runID ids.UUID, status string, meta map[string]any) (sqlc.AgentRun, error) {
 	if s == nil || s.q == nil {
-		return sqlc.AgentRun{}, pcerrors.New(pcerrors.CodeUnknown, "state store is not configured")
+		return sqlc.AgentRun{}, dserrors.New(dserrors.CodeUnknown, "state store is not configured")
 	}
 	if runID.IsZero() {
-		return sqlc.AgentRun{}, pcerrors.New(pcerrors.CodeUnknown, "run id is empty")
+		return sqlc.AgentRun{}, dserrors.New(dserrors.CodeUnknown, "run id is empty")
 	}
 	if status == "" {
-		return sqlc.AgentRun{}, pcerrors.New(pcerrors.CodeUnknown, "status is empty")
+		return sqlc.AgentRun{}, dserrors.New(dserrors.CodeUnknown, "status is empty")
 	}
 
 	metaJSON := json.RawMessage(`{}`)
@@ -66,13 +66,13 @@ func (s *StateStore) UpdateRunStatus(ctx context.Context, runID ids.UUID, status
 
 func (s *StateStore) AddRunState(ctx context.Context, runID ids.UUID, stepIndex int, state fantasy.ReActState, snapshot any) (sqlc.AgentRunState, error) {
 	if s == nil || s.q == nil {
-		return sqlc.AgentRunState{}, pcerrors.New(pcerrors.CodeUnknown, "state store is not configured")
+		return sqlc.AgentRunState{}, dserrors.New(dserrors.CodeUnknown, "state store is not configured")
 	}
 	if runID.IsZero() {
-		return sqlc.AgentRunState{}, pcerrors.New(pcerrors.CodeUnknown, "run id is empty")
+		return sqlc.AgentRunState{}, dserrors.New(dserrors.CodeUnknown, "run id is empty")
 	}
 	if stepIndex < 0 {
-		return sqlc.AgentRunState{}, pcerrors.New(pcerrors.CodeUnknown, "step index is negative")
+		return sqlc.AgentRunState{}, dserrors.New(dserrors.CodeUnknown, "step index is negative")
 	}
 
 	snapJSON := json.RawMessage(`{}`)
@@ -93,10 +93,10 @@ func (s *StateStore) AddRunState(ctx context.Context, runID ids.UUID, stepIndex 
 
 func (s *StateStore) AddTransition(ctx context.Context, runID ids.UUID, t fantasy.ReActTransition) (sqlc.AgentStateTransition, error) {
 	if s == nil || s.q == nil {
-		return sqlc.AgentStateTransition{}, pcerrors.New(pcerrors.CodeUnknown, "state store is not configured")
+		return sqlc.AgentStateTransition{}, dserrors.New(dserrors.CodeUnknown, "state store is not configured")
 	}
 	if runID.IsZero() {
-		return sqlc.AgentStateTransition{}, pcerrors.New(pcerrors.CodeUnknown, "run id is empty")
+		return sqlc.AgentStateTransition{}, dserrors.New(dserrors.CodeUnknown, "run id is empty")
 	}
 
 	metaJSON := json.RawMessage(`{}`)
@@ -140,16 +140,16 @@ func NewCheckpointStore(q *sqlc.Queries) *CheckpointStore {
 
 func (s *CheckpointStore) CreateCheckpoint(ctx context.Context, conversationID ids.UUID, name string, runStateID ids.UUID, meta map[string]any) (sqlc.AgentCheckpoint, error) {
 	if s == nil || s.q == nil {
-		return sqlc.AgentCheckpoint{}, pcerrors.New(pcerrors.CodeUnknown, "checkpoint store is not configured")
+		return sqlc.AgentCheckpoint{}, dserrors.New(dserrors.CodeUnknown, "checkpoint store is not configured")
 	}
 	if conversationID.IsZero() {
-		return sqlc.AgentCheckpoint{}, pcerrors.New(pcerrors.CodeUnknown, "conversation id is empty")
+		return sqlc.AgentCheckpoint{}, dserrors.New(dserrors.CodeUnknown, "conversation id is empty")
 	}
 	if strings.TrimSpace(name) == "" {
-		return sqlc.AgentCheckpoint{}, pcerrors.New(pcerrors.CodeUnknown, "checkpoint name is empty")
+		return sqlc.AgentCheckpoint{}, dserrors.New(dserrors.CodeUnknown, "checkpoint name is empty")
 	}
 	if runStateID.IsZero() {
-		return sqlc.AgentCheckpoint{}, pcerrors.New(pcerrors.CodeUnknown, "run state id is empty")
+		return sqlc.AgentCheckpoint{}, dserrors.New(dserrors.CodeUnknown, "run state id is empty")
 	}
 
 	metaJSON := json.RawMessage(`{}`)
@@ -170,10 +170,10 @@ func (s *CheckpointStore) CreateCheckpoint(ctx context.Context, conversationID i
 
 func (s *CheckpointStore) ListCheckpoints(ctx context.Context, conversationID ids.UUID) ([]sqlc.AgentCheckpoint, error) {
 	if s == nil || s.q == nil {
-		return nil, pcerrors.New(pcerrors.CodeUnknown, "checkpoint store is not configured")
+		return nil, dserrors.New(dserrors.CodeUnknown, "checkpoint store is not configured")
 	}
 	if conversationID.IsZero() {
-		return nil, pcerrors.New(pcerrors.CodeUnknown, "conversation id is empty")
+		return nil, dserrors.New(dserrors.CodeUnknown, "conversation id is empty")
 	}
 	return s.q.ListAgentCheckpointsByConversationID(ctx, sqlc.ListAgentCheckpointsByConversationIDParams{
 		ConversationID: conversationID,
@@ -183,13 +183,13 @@ func (s *CheckpointStore) ListCheckpoints(ctx context.Context, conversationID id
 
 func (s *CheckpointStore) GetCheckpoint(ctx context.Context, conversationID ids.UUID, name string) (sqlc.AgentCheckpoint, error) {
 	if s == nil || s.q == nil {
-		return sqlc.AgentCheckpoint{}, pcerrors.New(pcerrors.CodeUnknown, "checkpoint store is not configured")
+		return sqlc.AgentCheckpoint{}, dserrors.New(dserrors.CodeUnknown, "checkpoint store is not configured")
 	}
 	if conversationID.IsZero() {
-		return sqlc.AgentCheckpoint{}, pcerrors.New(pcerrors.CodeUnknown, "conversation id is empty")
+		return sqlc.AgentCheckpoint{}, dserrors.New(dserrors.CodeUnknown, "conversation id is empty")
 	}
 	if strings.TrimSpace(name) == "" {
-		return sqlc.AgentCheckpoint{}, pcerrors.New(pcerrors.CodeUnknown, "checkpoint name is empty")
+		return sqlc.AgentCheckpoint{}, dserrors.New(dserrors.CodeUnknown, "checkpoint name is empty")
 	}
 	return s.q.GetAgentCheckpointByConversationIDAndName(ctx, sqlc.GetAgentCheckpointByConversationIDAndNameParams{
 		ConversationID: conversationID,

@@ -1,6 +1,6 @@
-# PicoClaw Eval Harness
+# DragonScale Eval Harness
 
-End-to-end evaluation system for the PicoClaw agent runtime.
+End-to-end evaluation system for the DragonScale agent runtime.
 
 ## Quick Start
 
@@ -33,7 +33,7 @@ The current agent architecture has these always-on behaviors:
 
 ```
 eval/
-├── cmd/eval-runner/     # Go binary that wraps picoclaw for promptfoo
+├── cmd/eval-runner/     # Go binary that wraps dragonscale for promptfoo
 ├── cases/               # Golden dataset (YAML test cases)
 │   ├── tool_calling.yaml
 │   ├── token_efficiency.yaml
@@ -44,6 +44,9 @@ eval/
 │   ├── skills.yaml
 │   ├── subagent.yaml
 │   ├── reasoning.yaml
+│   ├── assistant_proactive.yaml
+│   ├── assistant_first_metrics.yaml
+│   ├── procedural_long_context.yaml
 │   └── error_recovery.yaml
 ├── go_evals/            # Go-native component tests (memory, tools)
 ├── scripts/             # CI/comparison scripts
@@ -55,7 +58,7 @@ eval/
 
 ## How It Works
 
-1. **eval-runner** wraps picoclaw with an instrumented language model that captures every LLM call, tool invocation, token count, and timing.
+1. **eval-runner** wraps dragonscale with an instrumented language model that captures every LLM call, tool invocation, token count, and timing.
 
 2. **promptfoo** invokes `eval-runner` via `exec:` provider, sending prompts as JSON on stdin and parsing the structured trace JSON from stdout.
 
@@ -99,7 +102,7 @@ Create a new YAML file in `eval/cases/` following this pattern:
 ```yaml
 - description: "what this tests"
   vars:
-    prompt: "the prompt to send to picoclaw"
+    prompt: "the prompt to send to dragonscale"
   assert:
     - type: javascript
       value: |
@@ -108,11 +111,17 @@ Create a new YAML file in `eval/cases/` following this pattern:
         return { pass: true, score: 1.0, reason: 'explanation' };
 ```
 
+For generated long-context suites:
+
+```bash
+python eval/scripts/generate_long_context_cases.py --count 12 --seed 20260221
+```
+
 ## A/B Comparison
 
 `make eval-compare` builds both your current branch and main, then runs the identical test suite against both. Results show a side-by-side comparison matrix with per-test scores.
 
 ## Environment Variables
 
-- `PICOCLAW_EVAL_CONFIG` - Optional overlay config path applied on top of user base config.
-- Base config discovery uses XDG first (`~/.config/picoclaw/config.json`), then legacy (`~/.picoclaw/config.json`), then XDG fallback if neither exists.
+- `DRAGONSCALE_EVAL_CONFIG` - Optional overlay config path applied on top of user base config.
+- Base config discovery uses XDG first (`~/.config/dragonscale/config.json`), then legacy (`~/.dragonscale/config.json`), then XDG fallback if neither exists.

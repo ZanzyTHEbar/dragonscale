@@ -7,10 +7,23 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sipeed/picoclaw/pkg/bus"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/bus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+type stubKernelChecker struct {
+	secure bool
+	deps   bool
+}
+
+func (s stubKernelChecker) HasSecureBus() bool {
+	return s.secure
+}
+
+func (s stubKernelChecker) HasUnifiedRuntimeDeps() bool {
+	return s.deps
+}
 
 func TestResolveBaseConfigPath_PrefersXDGOverLegacy(t *testing.T) {
 	home := t.TempDir()
@@ -18,8 +31,8 @@ func TestResolveBaseConfigPath_PrefersXDGOverLegacy(t *testing.T) {
 	t.Setenv("HOME", home)
 	t.Setenv("XDG_CONFIG_HOME", xdg)
 
-	xdgPath := filepath.Join(xdg, "picoclaw", "config.json")
-	legacyPath := filepath.Join(home, ".picoclaw", "config.json")
+	xdgPath := filepath.Join(xdg, "dragonscale", "config.json")
+	legacyPath := filepath.Join(home, ".dragonscale", "config.json")
 	require.NoError(t, os.MkdirAll(filepath.Dir(xdgPath), 0o755))
 	require.NoError(t, os.MkdirAll(filepath.Dir(legacyPath), 0o755))
 	require.NoError(t, os.WriteFile(xdgPath, []byte(`{}`), 0o644))
@@ -35,7 +48,7 @@ func TestResolveBaseConfigPath_FallsBackToLegacyWhenXDGMissing(t *testing.T) {
 	t.Setenv("HOME", home)
 	t.Setenv("XDG_CONFIG_HOME", xdg)
 
-	legacyPath := filepath.Join(home, ".picoclaw", "config.json")
+	legacyPath := filepath.Join(home, ".dragonscale", "config.json")
 	require.NoError(t, os.MkdirAll(filepath.Dir(legacyPath), 0o755))
 	require.NoError(t, os.WriteFile(legacyPath, []byte(`{}`), 0o644))
 
@@ -141,4 +154,29 @@ func TestStartOutbound_CallbackReceivesMessages(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("did not receive callback outbound message")
 	}
+}
+
+func TestValidateKernelInvariants(t *testing.T) {
+	t.Run("nil loop", func(t *testing.T) {
+		err := validateKernelInvariants(nil)
+		require.Error(t, err)
+		assert.ErrorContains(t, err, "agent loop is nil")
+	})
+
+	t.Run("secure bus missing", func(t *testing.T) {
+		err := validateKernelInvariants(stubKernelChecker{secure: false, deps: true})
+		require.Error(t, err)
+		assert.ErrorContains(t, err, "secure bus is not configured")
+	})
+
+	t.Run("unified deps missing", func(t *testing.T) {
+		err := validateKernelInvariants(stubKernelChecker{secure: true, deps: false})
+		require.Error(t, err)
+		assert.ErrorContains(t, err, "unified runtime dependencies are missing")
+	})
+
+	t.Run("all invariants satisfied", func(t *testing.T) {
+		err := validateKernelInvariants(stubKernelChecker{secure: true, deps: true})
+		require.NoError(t, err)
+	})
 }

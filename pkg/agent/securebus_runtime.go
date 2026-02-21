@@ -3,11 +3,12 @@ package agent
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	fantasy "charm.land/fantasy"
-	"github.com/sipeed/picoclaw/pkg/ids"
-	"github.com/sipeed/picoclaw/pkg/itr"
-	"github.com/sipeed/picoclaw/pkg/security/securebus"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/ids"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/itr"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/security/securebus"
 )
 
 // SecureBusToolRuntime is a fantasy.ToolRuntime that routes every tool call
@@ -20,7 +21,7 @@ import (
 //  4. Otherwise delegate to Base runtime for actual execution
 //  5. If bus detected a leak, replace Base output with the redacted version
 type SecureBusToolRuntime struct {
-	// Base is the underlying runtime. If nil, the bus result is used directly.
+	// Base is the underlying runtime and is required.
 	Base fantasy.ToolRuntime
 
 	// Bus is required.
@@ -28,6 +29,11 @@ type SecureBusToolRuntime struct {
 
 	// SessionKey is forwarded to bus requests for audit tracing.
 	SessionKey string
+
+	// Optional state persistence for runtime execution.
+	StateStore *StateStore
+	RunID      ids.UUID
+	StepIndex  int
 }
 
 // Execute implements fantasy.ToolRuntime.
@@ -37,16 +43,24 @@ func (r SecureBusToolRuntime) Execute(
 	toolCalls []fantasy.ToolCallContent,
 	onResult func(fantasy.ToolResultContent) error,
 ) ([]fantasy.ToolResultContent, error) {
-	if r.Bus == nil || len(toolCalls) == 0 {
-		if r.Base != nil {
-			return r.Base.Execute(ctx, tools, toolCalls, onResult)
-		}
+	if len(toolCalls) == 0 {
 		return nil, nil
+	}
+	if r.Bus == nil {
+		return nil, fmt.Errorf("secure bus runtime requires bus")
+	}
+	if r.Base == nil {
+		return nil, fmt.Errorf("secure bus runtime requires base runtime")
 	}
 
 	results := make([]fantasy.ToolResultContent, 0, len(toolCalls))
 
-	for _, tc := range toolCalls {
+	for i, tc := range toolCalls {
+		step := r.StepIndex + i
+		r.recordRunState(ctx, step, "tool_call", map[string]any{
+			"tool_name": tc.ToolName,
+		})
+
 		reqID := ids.New().String()
 		req := itr.NewToolExecRequest(reqID, r.SessionKey, tc.ToolCallID, tc.ToolName, tc.Input)
 		busResp := r.Bus.Execute(ctx, req)
@@ -58,22 +72,10 @@ func (r SecureBusToolRuntime) Execute(
 				ToolName:   tc.ToolName,
 				Result:     fantasy.ToolResultOutputContentError{Error: errors.New(busResp.Result)},
 			}
-			results = append(results, tr)
-			if onResult != nil {
-				if err := onResult(tr); err != nil {
-					return results, err
-				}
-			}
-			continue
-		}
-
-		// Bus accepted — delegate to Base for actual execution.
-		if r.Base == nil {
-			tr := fantasy.ToolResultContent{
-				ToolCallID: tc.ToolCallID,
-				ToolName:   tc.ToolName,
-				Result:     fantasy.ToolResultOutputContentText{Text: busResp.Result},
-			}
+			r.recordRunState(ctx, step, "tool_call_error", map[string]any{
+				"tool_name": tc.ToolName,
+				"error":     busResp.Result,
+			})
 			results = append(results, tr)
 			if onResult != nil {
 				if err := onResult(tr); err != nil {
@@ -94,6 +96,9 @@ func (r SecureBusToolRuntime) Execute(
 				br = overrideResultText(br, busResp.Result)
 			}
 			results = append(results, br)
+			r.recordRunState(ctx, step, "tool_result", map[string]any{
+				"tool_name": tc.ToolName,
+			})
 			if onResult != nil {
 				if err := onResult(br); err != nil {
 					return results, err
@@ -103,6 +108,13 @@ func (r SecureBusToolRuntime) Execute(
 	}
 
 	return results, nil
+}
+
+func (r SecureBusToolRuntime) recordRunState(ctx context.Context, stepIndex int, state string, snapshot map[string]any) {
+	if r.StateStore == nil || r.RunID.IsZero() {
+		return
+	}
+	_, _ = r.StateStore.AddRunState(ctx, r.RunID, stepIndex, fantasy.ReActState(state), snapshot)
 }
 
 // overrideResultText replaces the text output of a ToolResultContent with

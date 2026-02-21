@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sipeed/picoclaw/pkg/memory"
-	"github.com/sipeed/picoclaw/pkg/memory/delegate"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/memory"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/memory/delegate"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -45,8 +45,8 @@ func TestQueueManager_WarnPressure(t *testing.T) {
 	ctx := context.Background()
 	qm, store := newTestQueueManager(t, 100) // tiny window
 
-	// Fill working context to ~75% (300 chars ≈ 75 tokens, 75% of 100)
-	err := store.SetWorkingContext(ctx, "agent-1", "s1", strings.Repeat("x", 300))
+	// Fill working context to ~75% of context window.
+	err := store.SetWorkingContext(ctx, "agent-1", "s1", contentAtLeastTokens(75))
 	require.NoError(t, err)
 
 	decision, err := qm.Evaluate(ctx, "agent-1", "s1")
@@ -59,8 +59,8 @@ func TestQueueManager_OffloadPressure(t *testing.T) {
 	ctx := context.Background()
 	qm, store := newTestQueueManager(t, 100) // tiny window
 
-	// Fill to ~82% (328 chars ≈ 82 tokens)
-	err := store.SetWorkingContext(ctx, "agent-1", "s1", strings.Repeat("x", 328))
+	// Fill to ~82% of context window.
+	err := store.SetWorkingContext(ctx, "agent-1", "s1", contentAtLeastTokens(82))
 	require.NoError(t, err)
 
 	decision, err := qm.Evaluate(ctx, "agent-1", "s1")
@@ -73,8 +73,8 @@ func TestQueueManager_FlushPressure(t *testing.T) {
 	ctx := context.Background()
 	qm, store := newTestQueueManager(t, 100) // tiny window
 
-	// Fill to ~88% (352 chars ≈ 88 tokens)
-	err := store.SetWorkingContext(ctx, "agent-1", "s1", strings.Repeat("x", 352))
+	// Fill to ~88% of context window.
+	err := store.SetWorkingContext(ctx, "agent-1", "s1", contentAtLeastTokens(88))
 	require.NoError(t, err)
 
 	decision, err := qm.Evaluate(ctx, "agent-1", "s1")

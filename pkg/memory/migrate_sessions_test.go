@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sipeed/picoclaw/pkg/ids"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/ids"
 )
 
 // mockDelegate captures all calls for testing migration without a real DB.
@@ -134,7 +134,7 @@ func TestMigrateFileSessions_Basic(t *testing.T) {
 		},
 	})
 
-	result, err := MigrateFileSessions(context.Background(), del, "picoclaw", sessDir)
+	result, err := MigrateFileSessions(context.Background(), del, "dragonscale", sessDir)
 	if err != nil {
 		t.Fatalf("MigrateFileSessions: %v", err)
 	}
@@ -170,7 +170,7 @@ func TestMigrateFileSessions_Basic(t *testing.T) {
 	}
 
 	// Check summary was stored as working context
-	wc, err := del.GetWorkingContext(context.Background(), "picoclaw", "session-2")
+	wc, err := del.GetWorkingContext(context.Background(), "dragonscale", "session-2")
 	if err != nil {
 		t.Fatalf("GetWorkingContext: %v", err)
 	}
@@ -191,7 +191,7 @@ func TestMigrateFileSessions_Idempotent(t *testing.T) {
 	})
 
 	// First run
-	result1, err := MigrateFileSessions(context.Background(), del, "picoclaw", sessDir)
+	result1, err := MigrateFileSessions(context.Background(), del, "dragonscale", sessDir)
 	if err != nil {
 		t.Fatalf("first migration: %v", err)
 	}
@@ -200,7 +200,7 @@ func TestMigrateFileSessions_Idempotent(t *testing.T) {
 	}
 
 	// Second run should be a no-op (marker file exists)
-	result2, err := MigrateFileSessions(context.Background(), del, "picoclaw", sessDir)
+	result2, err := MigrateFileSessions(context.Background(), del, "dragonscale", sessDir)
 	if err != nil {
 		t.Fatalf("second migration: %v", err)
 	}
@@ -218,7 +218,7 @@ func TestMigrateFileSessions_EmptyDir(t *testing.T) {
 	sessDir := t.TempDir()
 	del := newMockDelegate()
 
-	result, err := MigrateFileSessions(context.Background(), del, "picoclaw", sessDir)
+	result, err := MigrateFileSessions(context.Background(), del, "dragonscale", sessDir)
 	if err != nil {
 		t.Fatalf("MigrateFileSessions: %v", err)
 	}
@@ -230,7 +230,7 @@ func TestMigrateFileSessions_EmptyDir(t *testing.T) {
 func TestMigrateFileSessions_NonexistentDir(t *testing.T) {
 	del := newMockDelegate()
 
-	result, err := MigrateFileSessions(context.Background(), del, "picoclaw", "/nonexistent/path")
+	result, err := MigrateFileSessions(context.Background(), del, "dragonscale", "/nonexistent/path")
 	if err != nil {
 		t.Fatalf("MigrateFileSessions: %v", err)
 	}
@@ -252,7 +252,7 @@ func TestMigrateFileSessions_SkipsEmptyMessages(t *testing.T) {
 		},
 	})
 
-	result, err := MigrateFileSessions(context.Background(), del, "picoclaw", sessDir)
+	result, err := MigrateFileSessions(context.Background(), del, "dragonscale", sessDir)
 	if err != nil {
 		t.Fatalf("MigrateFileSessions: %v", err)
 	}
@@ -273,7 +273,7 @@ func TestMigrateFileSessions_FallbackKey(t *testing.T) {
 		},
 	})
 
-	result, err := MigrateFileSessions(context.Background(), del, "picoclaw", sessDir)
+	result, err := MigrateFileSessions(context.Background(), del, "dragonscale", sessDir)
 	if err != nil {
 		t.Fatalf("MigrateFileSessions: %v", err)
 	}
@@ -300,7 +300,7 @@ func TestMigrateFileSessions_MalformedJSON(t *testing.T) {
 		},
 	})
 
-	result, err := MigrateFileSessions(context.Background(), del, "picoclaw", sessDir)
+	result, err := MigrateFileSessions(context.Background(), del, "dragonscale", sessDir)
 	if err != nil {
 		t.Fatalf("MigrateFileSessions: %v", err)
 	}

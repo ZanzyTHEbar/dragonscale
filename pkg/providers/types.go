@@ -3,7 +3,7 @@ package providers
 import (
 	"context"
 
-	"github.com/sipeed/picoclaw/pkg/messages"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/messages"
 )
 
 // Type aliases: canonical types now live in pkg/messages.

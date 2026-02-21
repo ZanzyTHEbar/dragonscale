@@ -5,8 +5,8 @@ import (
 	jsonv2 "github.com/go-json-experiment/json"
 	"testing"
 
-	"github.com/sipeed/picoclaw/pkg/ids"
-	"github.com/sipeed/picoclaw/pkg/memory"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/ids"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/memory"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -14,7 +14,7 @@ import (
 func TestCronKVBackend_Roundtrip(t *testing.T) {
 	d := newTestDelegate(t)
 	ctx := context.Background()
-	agentID := "picoclaw"
+	agentID := "dragonscale"
 	kvKey := "cron:store"
 
 	type cronStore struct {
@@ -61,7 +61,7 @@ func TestCronKVBackend_Roundtrip(t *testing.T) {
 func TestCronKVBackend_UpdatePreservesShape(t *testing.T) {
 	d := newTestDelegate(t)
 	ctx := context.Background()
-	agentID := "picoclaw"
+	agentID := "dragonscale"
 	kvKey := "cron:store"
 
 	v1 := `{"version":1,"jobs":[{"id":"j1","name":"test","enabled":true}]}`
@@ -78,7 +78,7 @@ func TestCronKVBackend_UpdatePreservesShape(t *testing.T) {
 func TestCronKVBackend_PrefixScan(t *testing.T) {
 	d := newTestDelegate(t)
 	ctx := context.Background()
-	agentID := "picoclaw"
+	agentID := "dragonscale"
 
 	require.NoError(t, d.UpsertKV(ctx, agentID, "cron:store", "{}"))
 	require.NoError(t, d.UpsertKV(ctx, agentID, "cron:lock", "held"))
@@ -149,14 +149,14 @@ func TestEndToEnd_SessionAndAuditFlow(t *testing.T) {
 		AgentID:  agentID,
 		Name:     "AGENT.md",
 		Category: "core",
-		Content:  "# Agent Identity\nI am picoclaw.",
+		Content:  "# Agent Identity\nI am dragonscale.",
 	}
 	require.NoError(t, d.UpsertDocument(ctx, doc))
 
 	loadedDoc, err := d.GetDocument(ctx, agentID, "AGENT.md")
 	require.NoError(t, err)
 	require.NotNil(t, loadedDoc)
-	assert.Equal(t, "# Agent Identity\nI am picoclaw.", loadedDoc.Content)
+	assert.Equal(t, "# Agent Identity\nI am dragonscale.", loadedDoc.Content)
 
 	// 8. Verify cross-table isolation: different session sees nothing
 	otherMsgs, err := d.ListSessionMessages(ctx, agentID, "sess-other", "", 50)

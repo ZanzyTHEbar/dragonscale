@@ -1,4 +1,4 @@
-// Package itr defines the binary command protocol for the PicoClaw Isolated
+// Package itr defines the binary command protocol for the DragonScale Isolated
 // Tool Runtime (ITR). All tool invocations — traditional tools and RLM
 // recursive decomposition operations — are serialized as ToolRequest /
 // ToolResponse pairs.

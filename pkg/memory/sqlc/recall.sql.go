@@ -9,8 +9,8 @@ import (
 	"context"
 	"strings"
 
-	"github.com/sipeed/picoclaw/pkg/ids"
-	"github.com/sipeed/picoclaw/pkg/memory"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/ids"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/memory"
 )
 
 const CountRecallItems = `-- name: CountRecallItems :one
@@ -270,7 +270,18 @@ VALUES (
         datetime('now'),
         datetime('now')
     )
-RETURNING id, agent_id, session_key, role, sector, importance, salience, decay_rate, content, tags, created_at, updated_at
+RETURNING id,
+    agent_id,
+    session_key,
+    role,
+    sector,
+    importance,
+    salience,
+    decay_rate,
+    content,
+    tags,
+    created_at,
+    updated_at
 `
 
 type InsertRecallItemParams struct {
@@ -316,7 +327,18 @@ type InsertRecallItemParams struct {
 //	        datetime('now'),
 //	        datetime('now')
 //	    )
-//	RETURNING id, agent_id, session_key, role, sector, importance, salience, decay_rate, content, tags, created_at, updated_at
+//	RETURNING id,
+//	    agent_id,
+//	    session_key,
+//	    role,
+//	    sector,
+//	    importance,
+//	    salience,
+//	    decay_rate,
+//	    content,
+//	    tags,
+//	    created_at,
+//	    updated_at
 func (q *Queries) InsertRecallItem(ctx context.Context, arg InsertRecallItemParams) (RecallItem, error) {
 	row := q.db.QueryRowContext(ctx, InsertRecallItem,
 		arg.ID,
@@ -377,7 +399,18 @@ VALUES (
         datetime('now'),
         datetime('now')
     )
-RETURNING id, agent_id, session_key, role, sector, importance, salience, decay_rate, content, tags, created_at, updated_at
+RETURNING id,
+    agent_id,
+    session_key,
+    role,
+    sector,
+    importance,
+    salience,
+    decay_rate,
+    content,
+    tags,
+    created_at,
+    updated_at
 `
 
 type InsertSessionMessageParams struct {
@@ -418,7 +451,18 @@ type InsertSessionMessageParams struct {
 //	        datetime('now'),
 //	        datetime('now')
 //	    )
-//	RETURNING id, agent_id, session_key, role, sector, importance, salience, decay_rate, content, tags, created_at, updated_at
+//	RETURNING id,
+//	    agent_id,
+//	    session_key,
+//	    role,
+//	    sector,
+//	    importance,
+//	    salience,
+//	    decay_rate,
+//	    content,
+//	    tags,
+//	    created_at,
+//	    updated_at
 func (q *Queries) InsertSessionMessage(ctx context.Context, arg InsertSessionMessageParams) (RecallItem, error) {
 	row := q.db.QueryRowContext(ctx, InsertSessionMessage,
 		arg.ID,
@@ -599,6 +643,105 @@ func (q *Queries) ListSessionMessages(ctx context.Context, arg ListSessionMessag
 		arg.AgentID,
 		arg.SessionKey,
 		arg.Role,
+		arg.Lim,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []RecallItem{}
+	for rows.Next() {
+		var i RecallItem
+		if err := rows.Scan(
+			&i.ID,
+			&i.AgentID,
+			&i.SessionKey,
+			&i.Role,
+			&i.Sector,
+			&i.Importance,
+			&i.Salience,
+			&i.DecayRate,
+			&i.Content,
+			&i.Tags,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const ListSessionMessagesPaged = `-- name: ListSessionMessagesPaged :many
+SELECT id,
+    agent_id,
+    session_key,
+    role,
+    sector,
+    importance,
+    salience,
+    decay_rate,
+    content,
+    tags,
+    created_at,
+    updated_at
+FROM recall_items
+WHERE agent_id = ?1
+    AND session_key = ?2
+    AND tags = 'session-message'
+    AND (
+        role = ?3
+        OR ?3 = ''
+    )
+ORDER BY created_at ASC
+LIMIT ?5 OFFSET ?4
+`
+
+type ListSessionMessagesPagedParams struct {
+	AgentID    string `db:"agent_id" json:"agent_id"`
+	SessionKey string `db:"session_key" json:"session_key"`
+	Role       string `db:"role" json:"role"`
+	Off        int64  `db:"off" json:"off"`
+	Lim        int64  `db:"lim" json:"lim"`
+}
+
+// ListSessionMessagesPaged
+//
+//	SELECT id,
+//	    agent_id,
+//	    session_key,
+//	    role,
+//	    sector,
+//	    importance,
+//	    salience,
+//	    decay_rate,
+//	    content,
+//	    tags,
+//	    created_at,
+//	    updated_at
+//	FROM recall_items
+//	WHERE agent_id = ?1
+//	    AND session_key = ?2
+//	    AND tags = 'session-message'
+//	    AND (
+//	        role = ?3
+//	        OR ?3 = ''
+//	    )
+//	ORDER BY created_at ASC
+//	LIMIT ?5 OFFSET ?4
+func (q *Queries) ListSessionMessagesPaged(ctx context.Context, arg ListSessionMessagesPagedParams) ([]RecallItem, error) {
+	rows, err := q.db.QueryContext(ctx, ListSessionMessagesPaged,
+		arg.AgentID,
+		arg.SessionKey,
+		arg.Role,
+		arg.Off,
 		arg.Lim,
 	)
 	if err != nil {

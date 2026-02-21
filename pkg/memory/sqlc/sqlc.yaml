@@ -27,185 +27,227 @@ sql:
           # Only entity-owned PKs and their FKs — NOT agent_id/session_key (external identifiers)
           - column: "recall_items.id"
             go_type:
-              import: "github.com/sipeed/picoclaw/pkg/ids"
+              import: "github.com/ZanzyTHEbar/dragonscale/pkg/ids"
               type: "UUID"
           - column: "archival_chunks.id"
             go_type:
-              import: "github.com/sipeed/picoclaw/pkg/ids"
+              import: "github.com/ZanzyTHEbar/dragonscale/pkg/ids"
               type: "UUID"
           - column: "archival_chunks.recall_id"
             go_type:
-              import: "github.com/sipeed/picoclaw/pkg/ids"
+              import: "github.com/ZanzyTHEbar/dragonscale/pkg/ids"
               type: "UUID"
           - column: "memory_summaries.id"
             go_type:
-              import: "github.com/sipeed/picoclaw/pkg/ids"
+              import: "github.com/ZanzyTHEbar/dragonscale/pkg/ids"
               type: "UUID"
           - column: "agent_documents.id"
             go_type:
-              import: "github.com/sipeed/picoclaw/pkg/ids"
+              import: "github.com/ZanzyTHEbar/dragonscale/pkg/ids"
               type: "UUID"
           - column: "agent_audit_log.id"
             go_type:
-              import: "github.com/sipeed/picoclaw/pkg/ids"
+              import: "github.com/ZanzyTHEbar/dragonscale/pkg/ids"
               type: "UUID"
           # Agent conversations
           - column: "agent_conversations.id"
             go_type:
-              import: "github.com/sipeed/picoclaw/pkg/ids"
+              import: "github.com/ZanzyTHEbar/dragonscale/pkg/ids"
               type: "UUID"
           # Agent messages
           - column: "agent_messages.id"
             go_type:
-              import: "github.com/sipeed/picoclaw/pkg/ids"
+              import: "github.com/ZanzyTHEbar/dragonscale/pkg/ids"
               type: "UUID"
           - column: "agent_messages.conversation_id"
             go_type:
-              import: "github.com/sipeed/picoclaw/pkg/ids"
+              import: "github.com/ZanzyTHEbar/dragonscale/pkg/ids"
               type: "UUID"
           # Agent runs
           - column: "agent_runs.id"
             go_type:
-              import: "github.com/sipeed/picoclaw/pkg/ids"
+              import: "github.com/ZanzyTHEbar/dragonscale/pkg/ids"
               type: "UUID"
           - column: "agent_runs.conversation_id"
             go_type:
-              import: "github.com/sipeed/picoclaw/pkg/ids"
+              import: "github.com/ZanzyTHEbar/dragonscale/pkg/ids"
               type: "UUID"
           # Agent run states
           - column: "agent_run_states.id"
             go_type:
-              import: "github.com/sipeed/picoclaw/pkg/ids"
+              import: "github.com/ZanzyTHEbar/dragonscale/pkg/ids"
               type: "UUID"
           - column: "agent_run_states.run_id"
             go_type:
-              import: "github.com/sipeed/picoclaw/pkg/ids"
+              import: "github.com/ZanzyTHEbar/dragonscale/pkg/ids"
               type: "UUID"
           # Agent state transitions
           - column: "agent_state_transitions.id"
             go_type:
-              import: "github.com/sipeed/picoclaw/pkg/ids"
+              import: "github.com/ZanzyTHEbar/dragonscale/pkg/ids"
               type: "UUID"
           - column: "agent_state_transitions.run_id"
             go_type:
-              import: "github.com/sipeed/picoclaw/pkg/ids"
+              import: "github.com/ZanzyTHEbar/dragonscale/pkg/ids"
               type: "UUID"
           # Agent checkpoints
           - column: "agent_checkpoints.id"
             go_type:
-              import: "github.com/sipeed/picoclaw/pkg/ids"
+              import: "github.com/ZanzyTHEbar/dragonscale/pkg/ids"
               type: "UUID"
           - column: "agent_checkpoints.conversation_id"
             go_type:
-              import: "github.com/sipeed/picoclaw/pkg/ids"
+              import: "github.com/ZanzyTHEbar/dragonscale/pkg/ids"
               type: "UUID"
           - column: "agent_checkpoints.run_state_id"
             go_type:
-              import: "github.com/sipeed/picoclaw/pkg/ids"
+              import: "github.com/ZanzyTHEbar/dragonscale/pkg/ids"
               type: "UUID"
           # Agent tool results
           - column: "agent_tool_results.id"
             go_type:
-              import: "github.com/sipeed/picoclaw/pkg/ids"
+              import: "github.com/ZanzyTHEbar/dragonscale/pkg/ids"
               type: "UUID"
           - column: "agent_tool_results.conversation_id"
             go_type:
-              import: "github.com/sipeed/picoclaw/pkg/ids"
+              import: "github.com/ZanzyTHEbar/dragonscale/pkg/ids"
               type: "UUID"
           - column: "agent_tool_results.run_id"
             go_type:
-              import: "github.com/sipeed/picoclaw/pkg/ids"
+              import: "github.com/ZanzyTHEbar/dragonscale/pkg/ids"
               type: "UUID"
           # Jobs
           - column: "jobs.id"
             go_type:
-              import: "github.com/sipeed/picoclaw/pkg/ids"
+              import: "github.com/ZanzyTHEbar/dragonscale/pkg/ids"
+              type: "UUID"
+          # Map operator runs/items
+          - column: "map_runs.id"
+            go_type:
+              import: "github.com/ZanzyTHEbar/dragonscale/pkg/ids"
+              type: "UUID"
+          - column: "map_items.id"
+            go_type:
+              import: "github.com/ZanzyTHEbar/dragonscale/pkg/ids"
+              type: "UUID"
+          - column: "map_items.run_id"
+            go_type:
+              import: "github.com/ZanzyTHEbar/dragonscale/pkg/ids"
               type: "UUID"
           # Conversation forks
           - column: "agent_conversation_forks.id"
             go_type:
-              import: "github.com/sipeed/picoclaw/pkg/ids"
+              import: "github.com/ZanzyTHEbar/dragonscale/pkg/ids"
               type: "UUID"
           - column: "agent_conversation_forks.parent_conversation_id"
             go_type:
-              import: "github.com/sipeed/picoclaw/pkg/ids"
+              import: "github.com/ZanzyTHEbar/dragonscale/pkg/ids"
               type: "UUID"
           - column: "agent_conversation_forks.child_conversation_id"
             go_type:
-              import: "github.com/sipeed/picoclaw/pkg/ids"
+              import: "github.com/ZanzyTHEbar/dragonscale/pkg/ids"
               type: "UUID"
           - column: "agent_conversation_forks.checkpoint_id"
             go_type:
-              import: "github.com/sipeed/picoclaw/pkg/ids"
+              import: "github.com/ZanzyTHEbar/dragonscale/pkg/ids"
               type: "UUID"
           # Conversation links
           - column: "agent_conversation_links.id"
             go_type:
-              import: "github.com/sipeed/picoclaw/pkg/ids"
+              import: "github.com/ZanzyTHEbar/dragonscale/pkg/ids"
               type: "UUID"
           - column: "agent_conversation_links.conversation_id"
             go_type:
-              import: "github.com/sipeed/picoclaw/pkg/ids"
+              import: "github.com/ZanzyTHEbar/dragonscale/pkg/ids"
               type: "UUID"
           - column: "agent_conversation_links.linked_conversation_id"
             go_type:
-              import: "github.com/sipeed/picoclaw/pkg/ids"
+              import: "github.com/ZanzyTHEbar/dragonscale/pkg/ids"
               type: "UUID"
           # Threads
           - column: "agent_threads.id"
             go_type:
-              import: "github.com/sipeed/picoclaw/pkg/ids"
+              import: "github.com/ZanzyTHEbar/dragonscale/pkg/ids"
               type: "UUID"
           - column: "agent_threads.conversation_id"
             go_type:
-              import: "github.com/sipeed/picoclaw/pkg/ids"
+              import: "github.com/ZanzyTHEbar/dragonscale/pkg/ids"
               type: "UUID"
           # Thread messages
           - column: "agent_thread_messages.id"
             go_type:
-              import: "github.com/sipeed/picoclaw/pkg/ids"
+              import: "github.com/ZanzyTHEbar/dragonscale/pkg/ids"
               type: "UUID"
           - column: "agent_thread_messages.thread_id"
             go_type:
-              import: "github.com/sipeed/picoclaw/pkg/ids"
+              import: "github.com/ZanzyTHEbar/dragonscale/pkg/ids"
               type: "UUID"
           # Mentions
           - column: "agent_mentions.id"
             go_type:
-              import: "github.com/sipeed/picoclaw/pkg/ids"
+              import: "github.com/ZanzyTHEbar/dragonscale/pkg/ids"
               type: "UUID"
           - column: "agent_mentions.conversation_id"
             go_type:
-              import: "github.com/sipeed/picoclaw/pkg/ids"
+              import: "github.com/ZanzyTHEbar/dragonscale/pkg/ids"
               type: "UUID"
           - column: "agent_mentions.message_id"
             go_type:
-              import: "github.com/sipeed/picoclaw/pkg/ids"
+              import: "github.com/ZanzyTHEbar/dragonscale/pkg/ids"
               type: "UUID"
           - column: "agent_mentions.target_id"
             go_type:
-              import: "github.com/sipeed/picoclaw/pkg/ids"
+              import: "github.com/ZanzyTHEbar/dragonscale/pkg/ids"
               type: "UUID"
           # Message revisions
           - column: "agent_message_revisions.id"
             go_type:
-              import: "github.com/sipeed/picoclaw/pkg/ids"
+              import: "github.com/ZanzyTHEbar/dragonscale/pkg/ids"
               type: "UUID"
           - column: "agent_message_revisions.message_id"
             go_type:
-              import: "github.com/sipeed/picoclaw/pkg/ids"
+              import: "github.com/ZanzyTHEbar/dragonscale/pkg/ids"
+              type: "UUID"
+          # DAG
+          - column: "dag_snapshots.id"
+            go_type:
+              import: "github.com/ZanzyTHEbar/dragonscale/pkg/ids"
+              type: "UUID"
+          - column: "dag_nodes.id"
+            go_type:
+              import: "github.com/ZanzyTHEbar/dragonscale/pkg/ids"
+              type: "UUID"
+          - column: "dag_nodes.snapshot_id"
+            go_type:
+              import: "github.com/ZanzyTHEbar/dragonscale/pkg/ids"
+              type: "UUID"
+          - column: "dag_edges.id"
+            go_type:
+              import: "github.com/ZanzyTHEbar/dragonscale/pkg/ids"
+              type: "UUID"
+          - column: "dag_edges.snapshot_id"
+            go_type:
+              import: "github.com/ZanzyTHEbar/dragonscale/pkg/ids"
+              type: "UUID"
+          - column: "dag_edges.parent_node_id"
+            go_type:
+              import: "github.com/ZanzyTHEbar/dragonscale/pkg/ids"
+              type: "UUID"
+          - column: "dag_edges.child_node_id"
+            go_type:
+              import: "github.com/ZanzyTHEbar/dragonscale/pkg/ids"
               type: "UUID"
           # Domain type: recall_items.sector → memory.Sector
           - column: "recall_items.sector"
             go_type:
-              import: "github.com/sipeed/picoclaw/pkg/memory"
+              import: "github.com/ZanzyTHEbar/dragonscale/pkg/memory"
               type: "Sector"
           # F32_BLOB: archival_chunks.embedding → memory.Embedding
           # Implements driver.Valuer/sql.Scanner for transparent blob↔float32 conversion.
           # Empty embeddings serialize as SQL NULL (not 0-byte blob).
           - column: "archival_chunks.embedding"
             go_type:
-              import: "github.com/sipeed/picoclaw/pkg/memory"
+              import: "github.com/ZanzyTHEbar/dragonscale/pkg/memory"
               type: "Embedding"
           # Timestamp types → time.Time (consistent with go-libsql DATETIME handling)
           - db_type: "DATETIME"

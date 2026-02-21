@@ -9,7 +9,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/sipeed/picoclaw/pkg/ids"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/ids"
 )
 
 const CountAuditEntries = `-- name: CountAuditEntries :one

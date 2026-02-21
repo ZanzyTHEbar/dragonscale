@@ -5,8 +5,8 @@ import (
 	"fmt"
 	jsonv2 "github.com/go-json-experiment/json"
 
-	"github.com/sipeed/picoclaw/pkg/itr"
-	"github.com/sipeed/picoclaw/pkg/tools"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/itr"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/tools"
 )
 
 // PlannerFunc calls the LLM with a system prompt and user query, returning
