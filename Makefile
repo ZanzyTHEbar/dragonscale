@@ -12,12 +12,25 @@ MAIN_GO=$(CMD_DIR)/main.go
 VERSION?=$(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 GIT_COMMIT=$(shell git rev-parse --short=8 HEAD 2>/dev/null || echo "dev")
 BUILD_TIME=$(shell date +%FT%T%z)
-GO_VERSION=$(shell $(GO) version | awk '{print $$3}')
+GO_VERSION=$(shell $(PIPELINE_GO) version | awk '{print $$3}')
 LDFLAGS=-ldflags "-X main.version=$(VERSION) -X main.gitCommit=$(GIT_COMMIT) -X main.buildTime=$(BUILD_TIME) -X main.goVersion=$(GO_VERSION) -s -w"
 
 # Go variables
 GO?=go
 GOFLAGS?=-v -trimpath -tags stdjson
+
+# Go command execution can optionally run through the devcontainer to match build env.
+HAS_NPX := $(shell command -v npx >/dev/null 2>&1; echo $$?)
+DEVCONTAINER_EXEC ?= 
+ifeq ($(strip $(DEVCONTAINER_EXEC)),)
+ifeq ($(HAS_NPX),0)
+	DEVCONTAINER_EXEC := npx --yes @devcontainers/cli exec --workspace-folder .
+endif
+endif
+EVAL_BASH := $(if $(DEVCONTAINER_EXEC),$(DEVCONTAINER_EXEC) -- bash -lc,bash -lc)
+PIPELINE_GO := $(if $(DEVCONTAINER_EXEC),$(DEVCONTAINER_EXEC) -- bash -lc 'git config --global --add safe.directory "$$PWD" >/dev/null 2>&1 || true; $(GO) "$$0" "$$@"',$(GO))
+EVAL_GO := $(PIPELINE_GO)
+EVAL_NPM := npx
 
 # Installation
 INSTALL_PREFIX?=$(HOME)/.local
@@ -71,14 +84,14 @@ all: build
 generate:
 	@echo "Run generate..."
 	@rm -r ./$(CMD_DIR)/workspace 2>/dev/null || true
-	@$(GO) generate ./...
+	@$(PIPELINE_GO) generate ./...
 	@echo "Run generate complete"
 
 ## build: Build the dragonscale binary for current platform
 build: generate
 	@echo "Building $(BINARY_NAME) for $(PLATFORM)/$(ARCH)..."
 	@mkdir -p $(BUILD_DIR)
-	@$(GO) build $(GOFLAGS) $(LDFLAGS) -o $(BINARY_PATH) ./$(CMD_DIR)
+	@$(PIPELINE_GO) build $(GOFLAGS) $(LDFLAGS) -o $(BINARY_PATH) ./$(CMD_DIR)
 	@echo "Build complete: $(BINARY_PATH)"
 	@ln -sf $(BINARY_NAME)-$(PLATFORM)-$(ARCH) $(BUILD_DIR)/$(BINARY_NAME)
 
@@ -86,12 +99,12 @@ build: generate
 build-all: generate
 	@echo "Building for multiple platforms..."
 	@mkdir -p $(BUILD_DIR)
-	GOOS=linux GOARCH=amd64 $(GO) build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-linux-amd64 ./$(CMD_DIR)
-	GOOS=linux GOARCH=arm64 $(GO) build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-linux-arm64 ./$(CMD_DIR)
-	GOOS=linux GOARCH=loong64 $(GO) build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-linux-loong64 ./$(CMD_DIR)
-	GOOS=linux GOARCH=riscv64 $(GO) build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-linux-riscv64 ./$(CMD_DIR)
-	GOOS=darwin GOARCH=arm64 $(GO) build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-darwin-arm64 ./$(CMD_DIR)
-	GOOS=windows GOARCH=amd64 $(GO) build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-windows-amd64.exe ./$(CMD_DIR)
+	GOOS=linux GOARCH=amd64 $(PIPELINE_GO) build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-linux-amd64 ./$(CMD_DIR)
+	GOOS=linux GOARCH=arm64 $(PIPELINE_GO) build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-linux-arm64 ./$(CMD_DIR)
+	GOOS=linux GOARCH=loong64 $(PIPELINE_GO) build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-linux-loong64 ./$(CMD_DIR)
+	GOOS=linux GOARCH=riscv64 $(PIPELINE_GO) build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-linux-riscv64 ./$(CMD_DIR)
+	GOOS=darwin GOARCH=arm64 $(PIPELINE_GO) build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-darwin-arm64 ./$(CMD_DIR)
+	GOOS=windows GOARCH=amd64 $(PIPELINE_GO) build $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME)-windows-amd64.exe ./$(CMD_DIR)
 	@echo "All builds complete"
 
 ## install: Install dragonscale to system and copy builtin skills
@@ -126,19 +139,19 @@ clean:
 
 ## vet: Run go vet for static analysis
 vet:
-	@$(GO) vet ./...
+	@$(PIPELINE_GO) vet ./...
 
 ## test: Run tests
 test:
-	@$(GO) test ./...
+	@$(PIPELINE_GO) test ./...
 
 ## fmt: Format Go code
 fmt:
-	@$(GO) fmt ./...
+	@$(PIPELINE_GO) fmt ./...
 
 ## lint: Run all linting checks (format + vet + build)
 lint: fmt vet
-	@$(GO) build ./...
+	@$(PIPELINE_GO) build ./...
 	@echo "Lint OK"
 
 ## hooks: Install git pre-commit and commit-msg hooks
@@ -153,13 +166,13 @@ hooks:
 
 ## deps: Download dependencies
 deps:
-	@$(GO) mod download
-	@$(GO) mod verify
+	@$(PIPELINE_GO) mod download
+	@$(PIPELINE_GO) mod verify
 
 ## update-deps: Update dependencies
 update-deps:
-	@$(GO) get -u ./...
-	@$(GO) mod tidy
+	@$(PIPELINE_GO) get -u ./...
+	@$(PIPELINE_GO) mod tidy
 
 ## sqlc-check: Verify sqlc generation is idempotent for current tree
 sqlc-check:
@@ -193,7 +206,7 @@ flatc-check:
 		done; \
 	}; \
 	snapshot > "$$before"; \
-	$(GO) generate ./pkg/itr ./pkg/tools; \
+	$(PIPELINE_GO) generate ./pkg/itr ./pkg/tools; \
 	snapshot > "$$after"; \
 	if ! cmp -s "$$before" "$$after"; then \
 		echo "::error::FlatBuffers generated code is stale. Run 'go generate ./pkg/itr ./pkg/tools' and commit."; \
@@ -235,7 +248,7 @@ fantasy-patch:
 ## test-integration: Run integration tests (requires build tags)
 test-integration:
 	@echo "Running integration tests..."
-	@$(GO) test -tags integration -count=1 -timeout 120s -v ./pkg/memory/...
+	@$(PIPELINE_GO) test -tags integration -count=1 -timeout 120s -v ./pkg/memory/...
 	@echo "Integration tests OK"
 
 ## check: Run vet, fmt, sqlc vet, and verify dependencies
@@ -268,40 +281,42 @@ devcontainer-verify:
 # ---------------------------------------------------------------------------
 
 ## eval-build: Build the eval runner from the current branch
-eval-build: generate
+eval-build:
 	@echo "Building eval runner..."
+	@$(EVAL_GO) generate ./...
 	@mkdir -p eval/bin
-	@$(GO) build $(GOFLAGS) $(LDFLAGS) -o eval/bin/eval-runner ./eval/cmd/eval-runner
+	@$(EVAL_GO) build $(GOFLAGS) $(LDFLAGS) -o eval/bin/eval-runner ./eval/cmd/eval-runner
 	@echo "Eval runner built: eval/bin/eval-runner"
 
 ## eval: Run the eval suite against the current build
 eval: eval-build eval-fixtures
 	@echo "Running eval suite..."
-	@cd eval && DRAGONSCALE_EVAL_CONFIG="./configs/default.json" npx promptfoo eval --config promptfooconfig.yaml --no-cache --no-progress-bar
+	@$(EVAL_BASH) 'cd eval && DRAGONSCALE_EVAL_CONFIG="./configs/default.json" $(EVAL_NPM) promptfoo eval --config promptfooconfig.yaml --no-cache --no-progress-bar'
 	@echo "Results: eval/results/latest.json"
-	@echo "View: cd eval && npx promptfoo view"
+	@echo "View: cd eval && $(EVAL_NPM) promptfoo view"
 
 ## eval-fixtures: Reset workspace to a known state and seed fixture files for eval
 ## Uses XDG paths: ~/.local/share/dragonscale/sandbox/ and ~/.local/share/dragonscale/skills/
 eval-fixtures:
-	@mkdir -p $(HOME)/.local/share/dragonscale/sandbox
-	@rm -f $(HOME)/.local/share/dragonscale/sandbox/eval_test_output.txt \
-	       $(HOME)/.local/share/dragonscale/sandbox/test_steps.txt \
-	       $(HOME)/.local/share/dragonscale/sandbox/eval_checkpoint.txt \
-	       $(HOME)/.local/share/dragonscale/sandbox/chain_test.txt \
-	       $(HOME)/.local/share/dragonscale/sandbox/current_year.txt \
-	       $(HOME)/.local/share/dragonscale/sandbox/result.txt \
-	       $(HOME)/.local/share/dragonscale/sandbox/progressive_test.txt \
-	       $(HOME)/.local/share/dragonscale/sandbox/os_name.txt
-	@rm -rf $(HOME)/.local/share/dragonscale/sandbox/project
-	@printf 'dragonscale eval fixture — hello from the eval harness\nThis is line two of the fixture file.\n' > $(HOME)/.local/share/dragonscale/sandbox/eval_fixture.txt
-	@cp -f eval/fixtures/sample_data.txt $(HOME)/.local/share/dragonscale/sandbox/sample_data.txt
-	@mkdir -p $(HOME)/.local/share/dragonscale/skills
-	@cp -rf eval/fixtures/skills/* $(HOME)/.local/share/dragonscale/skills/ 2>/dev/null || true
+	@$(EVAL_BASH) '\
+	mkdir -p "$$HOME/.local/share/dragonscale/sandbox"; \
+	rm -f "$$HOME/.local/share/dragonscale/sandbox/eval_test_output.txt" \
+	      "$$HOME/.local/share/dragonscale/sandbox/test_steps.txt" \
+	      "$$HOME/.local/share/dragonscale/sandbox/eval_checkpoint.txt" \
+	      "$$HOME/.local/share/dragonscale/sandbox/chain_test.txt" \
+	      "$$HOME/.local/share/dragonscale/sandbox/current_year.txt" \
+	      "$$HOME/.local/share/dragonscale/sandbox/result.txt" \
+	      "$$HOME/.local/share/dragonscale/sandbox/progressive_test.txt" \
+	      "$$HOME/.local/share/dragonscale/sandbox/os_name.txt"; \
+	rm -rf "$$HOME/.local/share/dragonscale/sandbox/project"; \
+	printf '"'"'dragonscale eval fixture — hello from the eval harness\nThis is line two of the fixture file.\n'"'"' > "$$HOME/.local/share/dragonscale/sandbox/eval_fixture.txt"; \
+	cp -f eval/fixtures/sample_data.txt "$$HOME/.local/share/dragonscale/sandbox/sample_data.txt"; \
+	mkdir -p "$$HOME/.local/share/dragonscale/skills"; \
+	cp -rf eval/fixtures/skills/* "$$HOME/.local/share/dragonscale/skills/" 2>/dev/null || true'
 
 ## eval-view: Open the promptfoo results viewer
 eval-view:
-	@cd eval && npx promptfoo view
+	@$(EVAL_BASH) 'cd eval && $(EVAL_NPM) promptfoo view'
 
 eval-clean:
 	@rm -rf eval/results
@@ -309,12 +324,12 @@ eval-clean:
 
 ## eval-compare: A/B comparison of current branch vs main
 eval-compare:
-	@./eval/scripts/compare.sh --repeat 3
+	@$(EVAL_BASH) 'cd eval && EVAL_NPM_CMD=$(EVAL_NPM) ./scripts/compare.sh --repeat 3'
 
 ## eval-test: Run Go-native component evals
 eval-test:
 	@echo "Running Go-native evals..."
-	@$(GO) test -v ./eval/go_evals/...
+	@$(EVAL_GO) test -v ./eval/go_evals/...
 
 ## help: Show this help message
 help:
@@ -333,6 +348,7 @@ help:
 	@echo "  make install-skills     # Install skills to workspace"
 	@echo ""
 	@echo "Environment Variables:"
+	@echo "  DEVCONTAINER_EXEC        # Override to force host or custom container command (set empty to disable)"
 	@echo "  INSTALL_PREFIX          # Installation prefix (default: ~/.local)"
 	@echo "  WORKSPACE_DIR           # Workspace directory (default: ~/.dragonscale/workspace)"
 	@echo "  VERSION                 # Version string (default: git describe)"

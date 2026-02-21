@@ -1,11 +1,11 @@
 {
-  "name": "picoclaw-dev",
+  "name": "dragonscale-dev",
   "build": {
     "dockerfile": "Dockerfile",
     "context": ".."
   },
   "remoteUser": "vscode",
-  "workspaceFolder": "/workspaces/picoclaw",
+  "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
   "postCreateCommand": "make deps",
   "customizations": {
     "vscode": {

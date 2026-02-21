@@ -10,7 +10,13 @@ npm install -g promptfoo
 
 # Build eval runner and run suite
 make eval
+```
 
+`make eval`, `make eval-test`, `make eval-compare`, and `make eval-fixtures` run inside the devcontainer when `npx` is available, keeping command execution aligned with the container build environment.
+
+Set `DEVCONTAINER_EXEC=` to force host execution for these targets.
+
+```bash
 # View results in browser
 make eval-view
 

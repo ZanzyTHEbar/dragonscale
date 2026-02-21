@@ -8,6 +8,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 EVAL_DIR="$(dirname "$SCRIPT_DIR")"
 PROJECT_ROOT="$(dirname "$EVAL_DIR")"
 REPEAT=${1:-3}
+NPM_CMD="${EVAL_NPM_CMD:-npx}"
 
 if [[ "${1:-}" == "--repeat" ]]; then
   REPEAT="${2:-3}"
@@ -54,10 +55,14 @@ providers:
     label: "branch"
     config:
       timeout: 120000
+    env:
+      DRAGONSCALE_EVAL_CONFIG: "./configs/default.json"
   - id: "exec:./bin/eval-runner-main"
     label: "main"
     config:
       timeout: 120000
+    env:
+      DRAGONSCALE_EVAL_CONFIG: "./configs/default.json"
 
 defaultTest:
   assert:
@@ -84,9 +89,9 @@ YAML
 
 # 4. Run comparison
 echo "[3/4] Running eval comparison (${REPEAT}x)..."
-npx promptfoo eval -c promptfooconfig-compare.yaml --repeat "$REPEAT" --no-progress-bar
+"${NPM_CMD}" promptfoo eval -c promptfooconfig-compare.yaml --repeat "$REPEAT" --no-progress-bar
 
 echo ""
 echo "[4/4] Results saved to eval/results/comparison.json"
 echo ""
-echo "View results: cd eval && npx promptfoo view"
+echo "View results: cd eval && ${NPM_CMD} promptfoo view"
