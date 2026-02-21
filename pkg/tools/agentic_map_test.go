@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	jsonv2 "github.com/go-json-experiment/json"
+	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -41,9 +42,9 @@ func TestAgenticMapTool_Execute_Success(t *testing.T) {
 		} `json:"summary"`
 	}
 	require.NoError(t, jsonv2.Unmarshal([]byte(result.ForLLM), &payload))
-	assert.Equal(t, 2, payload.Count)
-	assert.Equal(t, 2, payload.Summary.SuccessCount)
-	assert.Equal(t, 0, payload.Summary.FailureCount)
+	assert.Empty(t, cmp.Diff(2, payload.Count))
+	assert.Empty(t, cmp.Diff(2, payload.Summary.SuccessCount))
+	assert.Empty(t, cmp.Diff(0, payload.Summary.FailureCount))
 }
 
 func TestAgenticMapTool_Execute_RetriesFailedItems(t *testing.T) {
@@ -78,7 +79,7 @@ func TestAgenticMapTool_Execute_RetriesFailedItems(t *testing.T) {
 	require.NoError(t, jsonv2.Unmarshal([]byte(result.ForLLM), &payload))
 	require.Len(t, payload.Results, 1)
 	assert.True(t, payload.Results[0].Success)
-	assert.Equal(t, 2, payload.Results[0].Attempts)
+	assert.Empty(t, cmp.Diff(2, payload.Results[0].Attempts))
 }
 
 func TestAgenticMapTool_Execute_RequiresPlaceholders(t *testing.T) {

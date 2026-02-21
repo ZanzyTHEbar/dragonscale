@@ -8,6 +8,8 @@ import (
 	"charm.land/fantasy"
 	"charm.land/fantasy/providers/openai"
 	"charm.land/x/vcr"
+	"github.com/google/go-cmp/cmp"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -95,5 +97,5 @@ func testOpenAIResponsesThinkingWithSummaryThinking(t *testing.T, result *fantas
 	}
 	require.Greater(t, reasoningContentCount, 0)
 	require.Greater(t, encryptedData, 0)
-	require.Equal(t, reasoningContentCount, encryptedData)
+	assert.Empty(t, cmp.Diff(reasoningContentCount, encryptedData))
 }

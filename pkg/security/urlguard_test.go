@@ -4,6 +4,7 @@ import (
 	"net"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -121,7 +122,7 @@ func TestIsBlockedIP(t *testing.T) {
 			if ip == nil {
 				t.Fatalf("invalid IP: %s", tc.ip)
 			}
-			assert.Equal(t, tc.blocked, isBlockedIP(ip))
+			assert.Empty(t, cmp.Diff(tc.blocked, isBlockedIP(ip)))
 		})
 	}
 }

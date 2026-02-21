@@ -3,6 +3,7 @@ package security
 import (
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -92,7 +93,7 @@ func TestRedactor_SafeText(t *testing.T) {
 	t.Parallel()
 	r := NewRedactor()
 	safe := "This is a normal log message about processing 42 items."
-	assert.Equal(t, safe, r.Redact(safe))
+	assert.Empty(t, cmp.Diff(safe, r.Redact(safe)))
 	assert.False(t, r.ContainsSensitive(safe))
 }
 
@@ -109,10 +110,10 @@ func TestRedactor_RedactMap(t *testing.T) {
 	}
 	out := r.RedactMap(m)
 	assert.Contains(t, out["command"].(string), "[REDACTED:")
-	assert.Equal(t, "normal output", out["output"])
+	assert.Empty(t, cmp.Diff("normal output", out["output"]))
 	nested := out["nested"].(map[string]interface{})
 	assert.Contains(t, nested["secret"].(string), "[REDACTED:")
-	assert.Equal(t, 42, out["count"])
+	assert.Empty(t, cmp.Diff(42, out["count"]))
 }
 
 func TestMaskKey(t *testing.T) {
@@ -128,7 +129,7 @@ func TestMaskKey(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.input, func(t *testing.T) {
-			assert.Equal(t, tc.want, MaskKey(tc.input))
+			assert.Empty(t, cmp.Diff(tc.want, MaskKey(tc.input)))
 		})
 	}
 }

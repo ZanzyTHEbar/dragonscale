@@ -5,6 +5,8 @@ import (
 
 	"github.com/ZanzyTHEbar/dragonscale/pkg/memory/dag"
 	memsqlc "github.com/ZanzyTHEbar/dragonscale/pkg/memory/sqlc"
+	"github.com/google/go-cmp/cmp"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -38,9 +40,9 @@ func TestLibSQLDelegate_PersistDAG(t *testing.T) {
 		SessionKey: "session1",
 	})
 	require.NoError(t, err)
-	require.Equal(t, "agent1", row.AgentID)
-	require.Equal(t, "session1", row.SessionKey)
-	require.Equal(t, int64(16), row.MsgCount)
+	assert.Empty(t, cmp.Diff("agent1", row.AgentID))
+	assert.Empty(t, cmp.Diff("session1", row.SessionKey))
+	assert.Empty(t, cmp.Diff(int64(16), row.MsgCount))
 
 	nodes, err := d.Queries().ListDAGNodesBySnapshotID(ctx, memsqlc.ListDAGNodesBySnapshotIDParams{
 		SnapshotID: row.ID,

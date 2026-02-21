@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/ZanzyTHEbar/dragonscale/pkg/memory"
+	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -73,7 +74,7 @@ func TestHeuristicScorer_SectorClassification(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			result, err := scorer.Score(ctx, tt.content, "user", "")
 			require.NoError(t, err)
-			assert.Equal(t, tt.sector, result.Sector)
+			assert.Empty(t, cmp.Diff(tt.sector, result.Sector))
 		})
 	}
 }
@@ -85,7 +86,7 @@ func TestParseScoringResponse_ValidJSON(t *testing.T) {
 	require.NoError(t, err)
 	assert.InDelta(t, 0.85, result.Importance, 0.001)
 	assert.InDelta(t, 0.6, result.Salience, 0.001)
-	assert.Equal(t, memory.SectorSemantic, result.Sector)
+	assert.Empty(t, cmp.Diff(memory.SectorSemantic, result.Sector))
 }
 
 func TestParseScoringResponse_WithCodeFences(t *testing.T) {
@@ -94,7 +95,7 @@ func TestParseScoringResponse_WithCodeFences(t *testing.T) {
 	result, err := parseScoringResponse(input)
 	require.NoError(t, err)
 	assert.InDelta(t, 0.9, result.Importance, 0.001)
-	assert.Equal(t, memory.SectorProcedural, result.Sector)
+	assert.Empty(t, cmp.Diff(memory.SectorProcedural, result.Sector))
 }
 
 func TestParseScoringResponse_ClampsValues(t *testing.T) {
@@ -111,7 +112,7 @@ func TestParseScoringResponse_UnknownSector(t *testing.T) {
 	input := `{"importance": 0.5, "salience": 0.5, "sector": "unknown_sector"}`
 	result, err := parseScoringResponse(input)
 	require.NoError(t, err)
-	assert.Equal(t, memory.SectorEpisodic, result.Sector, "unknown sector should default to episodic")
+	assert.Empty(t, cmp.Diff(memory.SectorEpisodic, result.Sector), "unknown sector should default to episodic")
 }
 
 func TestNormalizeSector(t *testing.T) {
@@ -129,7 +130,7 @@ func TestNormalizeSector(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
-			assert.Equal(t, tt.expected, normalizeSector(tt.input))
+			assert.Empty(t, cmp.Diff(tt.expected, normalizeSector(tt.input)))
 		})
 	}
 }

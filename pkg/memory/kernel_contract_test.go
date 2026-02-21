@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/ZanzyTHEbar/dragonscale/pkg/ids"
+	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -17,7 +18,7 @@ func TestActiveContextProjection_TotalTokens(t *testing.T) {
 			{Tokens: 35},
 		},
 	}
-	assert.Equal(t, 235, p.TotalTokens())
+	assert.Empty(t, cmp.Diff(235, p.TotalTokens()))
 }
 
 func TestActiveContextProjection_HasLosslessRefs(t *testing.T) {

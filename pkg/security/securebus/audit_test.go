@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -24,12 +25,12 @@ func TestAuditLogAppendAndRetrieve(t *testing.T) {
 	}
 
 	require.NoError(t, al.Append(event))
-	assert.Equal(t, 1, al.Len())
+	assert.Empty(t, cmp.Diff(1, al.Len()))
 
 	events := al.Events()
 	require.Len(t, events, 1)
-	assert.Equal(t, "req-1", events[0].RequestID)
-	assert.Equal(t, "read_file", events[0].ToolName)
+	assert.Empty(t, cmp.Diff("req-1", events[0].RequestID))
+	assert.Empty(t, cmp.Diff("read_file", events[0].ToolName))
 }
 
 func TestAuditLogConcurrentAppend(t *testing.T) {
@@ -50,7 +51,7 @@ func TestAuditLogConcurrentAppend(t *testing.T) {
 	}
 	wg.Wait()
 
-	assert.Equal(t, n, al.Len())
+	assert.Empty(t, cmp.Diff(n, al.Len()))
 }
 
 func TestAuditLogFilterBySession(t *testing.T) {
@@ -81,8 +82,8 @@ func TestAuditLogLeakEvents(t *testing.T) {
 
 	leaks := al.LeakEvents()
 	assert.Len(t, leaks, 2)
-	assert.Equal(t, "r2", leaks[0].RequestID)
-	assert.Equal(t, "r3", leaks[1].RequestID)
+	assert.Empty(t, cmp.Diff("r2", leaks[0].RequestID))
+	assert.Empty(t, cmp.Diff("r3", leaks[1].RequestID))
 }
 
 type mockSink struct {
@@ -109,7 +110,7 @@ func TestAuditLogSinkIntegration(t *testing.T) {
 	_ = al.Append(AuditEvent{RequestID: "r1"})
 	_ = al.Append(AuditEvent{RequestID: "r2"})
 
-	assert.Equal(t, 2, al.Len())
+	assert.Empty(t, cmp.Diff(2, al.Len()))
 	assert.Len(t, sink.events, 2)
 }
 
@@ -123,7 +124,7 @@ func TestAuditLogSinkError(t *testing.T) {
 	err := al.Append(AuditEvent{RequestID: "r2"})
 	assert.Error(t, err)
 
-	assert.Equal(t, 2, al.Len(), "in-memory log should always append")
+	assert.Empty(t, cmp.Diff(2, al.Len()), "in-memory log should always append")
 }
 
 func TestAuditLogEventsImmutable(t *testing.T) {
@@ -135,5 +136,5 @@ func TestAuditLogEventsImmutable(t *testing.T) {
 	events[0].RequestID = "mutated"
 
 	original := al.Events()
-	assert.Equal(t, "r1", original[0].RequestID, "original should be unaffected")
+	assert.Empty(t, cmp.Diff("r1", original[0].RequestID), "original should be unaffected")
 }

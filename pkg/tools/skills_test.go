@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/ZanzyTHEbar/dragonscale/pkg/skills"
+	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -62,7 +63,7 @@ func TestSkillSearchTool(t *testing.T) {
 	loader := setupTestSkills(t)
 	tool := NewSkillSearchTool(loader)
 
-	assert.Equal(t, "skill_search", tool.Name())
+	assert.Empty(t, cmp.Diff("skill_search", tool.Name()))
 
 	t.Run("finds matching skills", func(t *testing.T) {
 		result := tool.Execute(t.Context(), map[string]interface{}{"query": "trading"})
@@ -88,7 +89,7 @@ func TestSkillReadTool(t *testing.T) {
 	loader := setupTestSkills(t)
 	tool := NewSkillReadTool(loader)
 
-	assert.Equal(t, "skill_read", tool.Name())
+	assert.Empty(t, cmp.Diff("skill_read", tool.Name()))
 
 	t.Run("reads existing skill", func(t *testing.T) {
 		result := tool.Execute(t.Context(), map[string]interface{}{"name": "risk-management"})
@@ -114,7 +115,7 @@ func TestSkillTraverseTool(t *testing.T) {
 	loader := setupTestSkills(t)
 	tool := NewSkillTraverseTool(loader)
 
-	assert.Equal(t, "skill_traverse", tool.Name())
+	assert.Empty(t, cmp.Diff("skill_traverse", tool.Name()))
 
 	t.Run("traverses links at depth 1", func(t *testing.T) {
 		result := tool.Execute(t.Context(), map[string]interface{}{"name": "risk-management"})

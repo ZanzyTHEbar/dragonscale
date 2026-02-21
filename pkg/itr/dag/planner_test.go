@@ -7,6 +7,7 @@ import (
 	jsonv2 "github.com/go-json-experiment/json"
 
 	"github.com/ZanzyTHEbar/dragonscale/pkg/itr"
+	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -14,34 +15,34 @@ import (
 func TestExtractJSON_PlainJSON(t *testing.T) {
 	t.Parallel()
 	input := `{"nodes": [{"id": "n1"}]}`
-	assert.Equal(t, input, extractJSON(input))
+	assert.Empty(t, cmp.Diff(input, extractJSON(input)))
 }
 
 func TestExtractJSON_MarkdownFenced(t *testing.T) {
 	t.Parallel()
 	input := "Here is the plan:\n```json\n{\"nodes\": [{\"id\": \"n1\"}]}\n```\nDone."
-	assert.Equal(t, `{"nodes": [{"id": "n1"}]}`, extractJSON(input))
+	assert.Empty(t, cmp.Diff(`{"nodes": [{"id": "n1"}]}`, extractJSON(input)))
 }
 
 func TestExtractJSON_GenericFenced(t *testing.T) {
 	t.Parallel()
 	input := "```\n{\"nodes\": []}\n```"
-	assert.Equal(t, `{"nodes": []}`, extractJSON(input))
+	assert.Empty(t, cmp.Diff(`{"nodes": []}`, extractJSON(input)))
 }
 
 func TestExtractJSON_LeadingText(t *testing.T) {
 	t.Parallel()
 	input := "The plan is: {\"nodes\":[]}"
-	assert.Equal(t, `{"nodes":[]}`, extractJSON(input))
+	assert.Empty(t, cmp.Diff(`{"nodes":[]}`, extractJSON(input)))
 }
 
 func TestFindIndex(t *testing.T) {
 	t.Parallel()
-	assert.Equal(t, 0, findIndex("abc", "a"))
-	assert.Equal(t, 2, findIndex("abc", "c"))
-	assert.Equal(t, -1, findIndex("abc", "z"))
-	assert.Equal(t, -1, findIndex("", "a"))
-	assert.Equal(t, -1, findIndex("ab", "abc"))
+	assert.Empty(t, cmp.Diff(0, findIndex("abc", "a")))
+	assert.Empty(t, cmp.Diff(2, findIndex("abc", "c")))
+	assert.Empty(t, cmp.Diff(-1, findIndex("abc", "z")))
+	assert.Empty(t, cmp.Diff(-1, findIndex("", "a")))
+	assert.Empty(t, cmp.Diff(-1, findIndex("ab", "abc")))
 }
 
 func TestValidatePlan_Valid(t *testing.T) {
@@ -135,13 +136,13 @@ func TestParsePlanResponse_ValidJSON(t *testing.T) {
 	plan, err := parsePlanResponse(input)
 	require.NoError(t, err)
 	require.Len(t, plan.Nodes, 1)
-	assert.Equal(t, "n1", plan.Nodes[0].ID)
-	assert.Equal(t, itr.CmdToolExec, plan.Nodes[0].Type)
-	assert.Equal(t, "summarize", plan.JoinerQuery)
+	assert.Empty(t, cmp.Diff("n1", plan.Nodes[0].ID))
+	assert.Empty(t, cmp.Diff(itr.CmdToolExec, plan.Nodes[0].Type))
+	assert.Empty(t, cmp.Diff("summarize", plan.JoinerQuery))
 
 	te, ok := plan.Nodes[0].Payload.(itr.ToolExec)
 	require.True(t, ok)
-	assert.Equal(t, "read_file", te.ToolName)
+	assert.Empty(t, cmp.Diff("read_file", te.ToolName))
 }
 
 func TestParsePlanResponse_WithMarkdownFence(t *testing.T) {
@@ -154,7 +155,7 @@ func TestParsePlanResponse_WithMarkdownFence(t *testing.T) {
 
 	ts, ok := plan.Nodes[0].Payload.(itr.ToolSearch)
 	require.True(t, ok)
-	assert.Equal(t, "files", ts.Query)
+	assert.Empty(t, cmp.Diff("files", ts.Query))
 }
 
 func TestParsePlanResponse_InvalidJSON(t *testing.T) {
@@ -183,10 +184,10 @@ func TestPlannerPlanE2E(t *testing.T) {
 	planner := NewPlanner(mockLLM, nil, DefaultPlannerConfig())
 	plan, tokens, err := planner.Plan(t.Context(), "search and read", nil)
 	require.NoError(t, err)
-	assert.Equal(t, uint32(100), tokens)
+	assert.Empty(t, cmp.Diff(uint32(100), tokens))
 	require.Len(t, plan.Nodes, 2)
-	assert.Equal(t, "search", plan.Nodes[0].ID)
-	assert.Equal(t, uint8(8), plan.MaxParallel)
+	assert.Empty(t, cmp.Diff("search", plan.Nodes[0].ID))
+	assert.Empty(t, cmp.Diff(uint8(8), plan.MaxParallel))
 }
 
 func TestPlannerPlanLLMError(t *testing.T) {
@@ -198,5 +199,5 @@ func TestPlannerPlanLLMError(t *testing.T) {
 	planner := NewPlanner(mockLLM, nil, DefaultPlannerConfig())
 	_, tokens, err := planner.Plan(t.Context(), "anything", nil)
 	assert.Error(t, err)
-	assert.Equal(t, uint32(50), tokens)
+	assert.Empty(t, cmp.Diff(uint32(50), tokens))
 }

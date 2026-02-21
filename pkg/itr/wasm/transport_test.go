@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/ZanzyTHEbar/dragonscale/pkg/itr"
+	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -25,7 +26,7 @@ func TestTransportNonCodeExecForwarded(t *testing.T) {
 	resp, err := transport.Send(t.Context(), req)
 	require.NoError(t, err)
 	assert.True(t, forwarded)
-	assert.Equal(t, "forwarded", resp.Result)
+	assert.Empty(t, cmp.Diff("forwarded", resp.Result))
 	assert.False(t, resp.IsError)
 }
 

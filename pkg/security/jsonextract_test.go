@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -25,7 +26,7 @@ func TestExtractJSON_RawJSON(t *testing.T) {
 			var result map[string]interface{}
 			err := ExtractJSON(tc.input, &result, nil)
 			require.NoError(t, err)
-			assert.Equal(t, tc.wantVal, result[tc.wantKey])
+			assert.Empty(t, cmp.Diff(tc.wantVal, result[tc.wantKey]))
 		})
 	}
 }
@@ -54,7 +55,7 @@ func TestExtractJSON_CodeFence(t *testing.T) {
 			var result map[string]interface{}
 			err := ExtractJSON(tc.input, &result, nil)
 			require.NoError(t, err)
-			assert.Equal(t, float64(42), result["score"])
+			assert.Empty(t, cmp.Diff(float64(42), result["score"]))
 		})
 	}
 }
@@ -68,8 +69,8 @@ func TestExtractJSON_EmbeddedInProse(t *testing.T) {
 	}
 	err := ExtractJSON(input, &result, nil)
 	require.NoError(t, err)
-	assert.Equal(t, 0.9, result.Importance)
-	assert.Equal(t, "semantic", result.Sector)
+	assert.Empty(t, cmp.Diff(0.9, result.Importance))
+	assert.Empty(t, cmp.Diff("semantic", result.Sector))
 }
 
 func TestExtractJSON_NestedBracesInStrings(t *testing.T) {
@@ -78,8 +79,8 @@ func TestExtractJSON_NestedBracesInStrings(t *testing.T) {
 	var result map[string]interface{}
 	err := ExtractJSON(input, &result, nil)
 	require.NoError(t, err)
-	assert.Equal(t, "function() { return {}; }", result["content"])
-	assert.Equal(t, float64(1), result["count"])
+	assert.Empty(t, cmp.Diff("function() { return {}; }", result["content"]))
+	assert.Empty(t, cmp.Diff(float64(1), result["count"]))
 }
 
 func TestExtractJSON_InjectionAttempts(t *testing.T) {
@@ -148,7 +149,7 @@ func TestExtractJSON_MultipleFences_TakesFirst(t *testing.T) {
 	var result map[string]interface{}
 	err := ExtractJSON(input, &result, nil)
 	require.NoError(t, err)
-	assert.Equal(t, true, result["first"])
+	assert.Empty(t, cmp.Diff(true, result["first"]))
 	_, hasSecond := result["second"]
 	assert.False(t, hasSecond)
 }
@@ -168,9 +169,9 @@ func TestSanitizeToolArgs_ValidInput(t *testing.T) {
 
 	result, err := SanitizeToolArgs(args, schema)
 	require.NoError(t, err)
-	assert.Equal(t, "/tmp/test.txt", result["path"])
-	assert.Equal(t, "hello world", result["content"])
-	assert.Equal(t, "overwrite", result["mode"])
+	assert.Empty(t, cmp.Diff("/tmp/test.txt", result["path"]))
+	assert.Empty(t, cmp.Diff("hello world", result["content"]))
+	assert.Empty(t, cmp.Diff("overwrite", result["mode"]))
 }
 
 func TestSanitizeToolArgs_MissingRequired(t *testing.T) {
@@ -224,7 +225,7 @@ func TestSanitizeToolArgs_TypeCoercion(t *testing.T) {
 				assert.Error(t, err)
 			} else {
 				require.NoError(t, err)
-				assert.Equal(t, tc.expected, result["arg"])
+				assert.Empty(t, cmp.Diff(tc.expected, result["arg"]))
 			}
 		})
 	}
@@ -234,7 +235,7 @@ func TestExtractFirstBraced_EscapedQuotes(t *testing.T) {
 	t.Parallel()
 	input := `{"msg": "say \"hello\" world"}`
 	result := extractFirstBraced(input)
-	assert.Equal(t, input, result)
+	assert.Empty(t, cmp.Diff(input, result))
 }
 
 func TestExtractFirstBraced_UnbalancedBraces(t *testing.T) {

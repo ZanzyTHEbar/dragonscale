@@ -4,6 +4,8 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -19,8 +21,7 @@ func TestEnumSupport(t *testing.T) {
 	}
 
 	schema := Generate(reflect.TypeFor[WeatherInput]())
-
-	require.Equal(t, "object", schema.Type)
+	assert.Empty(t, cmp.Diff("object", schema.Type))
 
 	// Check units field has enum values
 	unitsSchema := schema.Properties["units"]
@@ -28,7 +29,7 @@ func TestEnumSupport(t *testing.T) {
 	require.Len(t, unitsSchema.Enum, 3)
 	expectedUnits := []string{"celsius", "fahrenheit", "kelvin"}
 	for i, expected := range expectedUnits {
-		require.Equal(t, expected, unitsSchema.Enum[i])
+		assert.Empty(t, cmp.Diff(expected, unitsSchema.Enum[i]))
 	}
 
 	// Check required fields (format should not be required due to omitempty)
@@ -69,20 +70,20 @@ func TestSchemaToParameters(t *testing.T) {
 	// Check name parameter
 	nameParam, ok := params["name"].(map[string]any)
 	require.True(t, ok, "Expected name parameter to exist")
-	require.Equal(t, "string", nameParam["type"])
-	require.Equal(t, "The name field", nameParam["description"])
+	assert.Empty(t, cmp.Diff("string", nameParam["type"]))
+	assert.Empty(t, cmp.Diff("The name field", nameParam["description"]))
 
 	// Check age parameter with min/max
 	ageParam, ok := params["age"].(map[string]any)
 	require.True(t, ok, "Expected age parameter to exist")
-	require.Equal(t, "integer", ageParam["type"])
-	require.Equal(t, 0.0, ageParam["minimum"])
-	require.Equal(t, 120.0, ageParam["maximum"])
+	assert.Empty(t, cmp.Diff("integer", ageParam["type"]))
+	assert.Empty(t, cmp.Diff(0.0, ageParam["minimum"]))
+	assert.Empty(t, cmp.Diff(120.0, ageParam["maximum"]))
 
 	// Check priority parameter with enum
 	priorityParam, ok := params["priority"].(map[string]any)
 	require.True(t, ok, "Expected priority parameter to exist")
-	require.Equal(t, "string", priorityParam["type"])
+	assert.Empty(t, cmp.Diff("string", priorityParam["type"]))
 	enumValues, ok := priorityParam["enum"].([]any)
 	require.True(t, ok)
 	require.Len(t, enumValues, 3)
@@ -137,7 +138,7 @@ func TestGenerateSchemaBasicTypes(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			schema := Generate(reflect.TypeOf(tt.input))
-			require.Equal(t, tt.expected.Type, schema.Type)
+			assert.Empty(t, cmp.Diff(tt.expected.Type, schema.Type))
 		})
 	}
 }
@@ -180,9 +181,9 @@ func TestGenerateSchemaArrayTypes(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			schema := Generate(reflect.TypeOf(tt.input))
-			require.Equal(t, tt.expected.Type, schema.Type)
+			assert.Empty(t, cmp.Diff(tt.expected.Type, schema.Type))
 			require.NotNil(t, schema.Items, "Expected items schema to exist")
-			require.Equal(t, tt.expected.Items.Type, schema.Items.Type)
+			assert.Empty(t, cmp.Diff(tt.expected.Items.Type, schema.Items.Type))
 		})
 	}
 }
@@ -216,7 +217,7 @@ func TestGenerateSchemaMapTypes(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			schema := Generate(reflect.TypeOf(tt.input))
-			require.Equal(t, tt.expected, schema.Type)
+			assert.Empty(t, cmp.Diff(tt.expected, schema.Type))
 		})
 	}
 }
@@ -253,10 +254,10 @@ func TestGenerateSchemaStructTypes(t *testing.T) {
 			name:  "simple struct",
 			input: SimpleStruct{},
 			validate: func(t *testing.T, schema Schema) {
-				require.Equal(t, "object", schema.Type)
+				assert.Empty(t, cmp.Diff("object", schema.Type))
 				require.Len(t, schema.Properties, 2)
 				require.NotNil(t, schema.Properties["name"], "Expected name property to exist")
-				require.Equal(t, "The name field", schema.Properties["name"].Description)
+				assert.Empty(t, cmp.Diff("The name field", schema.Properties["name"].Description))
 				require.Len(t, schema.Required, 2)
 			},
 		},
@@ -265,7 +266,7 @@ func TestGenerateSchemaStructTypes(t *testing.T) {
 			input: StructWithOmitEmpty{},
 			validate: func(t *testing.T, schema Schema) {
 				require.Len(t, schema.Required, 1)
-				require.Equal(t, "required", schema.Required[0])
+				assert.Empty(t, cmp.Diff("required", schema.Required[0]))
 			},
 		},
 		{
@@ -305,14 +306,13 @@ func TestGenerateSchemaPointerTypes(t *testing.T) {
 	}
 
 	schema := Generate(reflect.TypeFor[StructWithPointers]())
-
-	require.Equal(t, "object", schema.Type)
+	assert.Empty(t, cmp.Diff("object", schema.Type))
 
 	require.NotNil(t, schema.Properties["name"], "Expected name property to exist")
-	require.Equal(t, "string", schema.Properties["name"].Type)
+	assert.Empty(t, cmp.Diff("string", schema.Properties["name"].Type))
 
 	require.NotNil(t, schema.Properties["age"], "Expected age property to exist")
-	require.Equal(t, "integer", schema.Properties["age"].Type)
+	assert.Empty(t, cmp.Diff("integer", schema.Properties["age"].Type))
 }
 
 func TestGenerateSchemaNestedStructs(t *testing.T) {
@@ -329,13 +329,12 @@ func TestGenerateSchemaNestedStructs(t *testing.T) {
 	}
 
 	schema := Generate(reflect.TypeFor[Person]())
-
-	require.Equal(t, "object", schema.Type)
+	assert.Empty(t, cmp.Diff("object", schema.Type))
 
 	require.NotNil(t, schema.Properties["address"], "Expected address property to exist")
 
 	addressSchema := schema.Properties["address"]
-	require.Equal(t, "object", addressSchema.Type)
+	assert.Empty(t, cmp.Diff("object", addressSchema.Type))
 
 	require.NotNil(t, addressSchema.Properties["street"], "Expected street property in address to exist")
 	require.NotNil(t, addressSchema.Properties["city"], "Expected city property in address to exist")
@@ -350,8 +349,7 @@ func TestGenerateSchemaRecursiveStructs(t *testing.T) {
 	}
 
 	schema := Generate(reflect.TypeFor[Node]())
-
-	require.Equal(t, "object", schema.Type)
+	assert.Empty(t, cmp.Diff("object", schema.Type))
 
 	require.NotNil(t, schema.Properties["value"], "Expected value property to exist")
 
@@ -359,7 +357,7 @@ func TestGenerateSchemaRecursiveStructs(t *testing.T) {
 
 	// The recursive reference should be handled gracefully
 	nextSchema := schema.Properties["next"]
-	require.Equal(t, "object", nextSchema.Type)
+	assert.Empty(t, cmp.Diff("object", nextSchema.Type))
 }
 
 func TestGenerateSchemaWithEnumTags(t *testing.T) {
@@ -379,7 +377,7 @@ func TestGenerateSchemaWithEnumTags(t *testing.T) {
 	require.Len(t, levelSchema.Enum, 4)
 	expectedLevels := []string{"debug", "info", "warn", "error"}
 	for i, expected := range expectedLevels {
-		require.Equal(t, expected, levelSchema.Enum[i])
+		assert.Empty(t, cmp.Diff(expected, levelSchema.Enum[i]))
 	}
 
 	// Check format field
@@ -407,24 +405,24 @@ func TestGenerateSchemaComplexTypes(t *testing.T) {
 	// Check string slice
 	stringSliceSchema := schema.Properties["string_slice"]
 	require.NotNil(t, stringSliceSchema, "Expected string_slice property to exist")
-	require.Equal(t, "array", stringSliceSchema.Type)
-	require.Equal(t, "string", stringSliceSchema.Items.Type)
+	assert.Empty(t, cmp.Diff("array", stringSliceSchema.Type))
+	assert.Empty(t, cmp.Diff("string", stringSliceSchema.Items.Type))
 
 	// Check int map
 	intMapSchema := schema.Properties["int_map"]
 	require.NotNil(t, intMapSchema, "Expected int_map property to exist")
-	require.Equal(t, "object", intMapSchema.Type)
+	assert.Empty(t, cmp.Diff("object", intMapSchema.Type))
 
 	// Check nested slice
 	nestedSliceSchema := schema.Properties["nested_slice"]
 	require.NotNil(t, nestedSliceSchema, "Expected nested_slice property to exist")
-	require.Equal(t, "array", nestedSliceSchema.Type)
-	require.Equal(t, "object", nestedSliceSchema.Items.Type)
+	assert.Empty(t, cmp.Diff("array", nestedSliceSchema.Type))
+	assert.Empty(t, cmp.Diff("object", nestedSliceSchema.Items.Type))
 
 	// Check interface
 	interfaceSchema := schema.Properties["interface"]
 	require.NotNil(t, interfaceSchema, "Expected interface property to exist")
-	require.Equal(t, "object", interfaceSchema.Type)
+	assert.Empty(t, cmp.Diff("object", interfaceSchema.Type))
 }
 
 func TestToSnakeCase(t *testing.T) {
@@ -449,7 +447,7 @@ func TestToSnakeCase(t *testing.T) {
 		t.Run(tt.input, func(t *testing.T) {
 			t.Parallel()
 			result := toSnakeCase(tt.input)
-			require.Equal(t, tt.expected, result, "toSnakeCase(%s)", tt.input)
+			assert.Empty(t, cmp.Diff(tt.expected, result), "toSnakeCase(%s)", tt.input)
 		})
 	}
 }
@@ -530,7 +528,7 @@ func TestSchemaToParametersEdgeCases(t *testing.T) {
 				resultParam := result[key].(map[string]any)
 				expectedParam := expectedValue.(map[string]any)
 				for propKey, propValue := range expectedParam {
-					require.Equal(t, propValue, resultParam[propKey], "Expected %s.%s", key, propKey)
+					assert.Empty(t, cmp.Diff(propValue, resultParam[propKey]), "Expected %s.%s", key, propKey)
 				}
 			}
 		})
@@ -564,7 +562,7 @@ func TestNormalize_TypeArray(t *testing.T) {
 			require.Contains(t, variant, "items")
 		}
 	}
-	require.Equal(t, "Config value", val["description"])
+	assert.Empty(t, cmp.Diff("Config value", val["description"]))
 }
 
 func TestNormalize_SingleStringType(t *testing.T) {
@@ -580,7 +578,7 @@ func TestNormalize_SingleStringType(t *testing.T) {
 	Normalize(node)
 
 	val := node["properties"].(map[string]any)["name"].(map[string]any)
-	require.Equal(t, "string", val["type"])
+	assert.Empty(t, cmp.Diff("string", val["type"]))
 }
 
 func TestNormalize_BareArrayGetsItems(t *testing.T) {
@@ -596,7 +594,7 @@ func TestNormalize_BareArrayGetsItems(t *testing.T) {
 	Normalize(node)
 
 	val := node["properties"].(map[string]any)["tags"].(map[string]any)
-	require.Equal(t, "array", val["type"])
+	assert.Empty(t, cmp.Diff("array", val["type"]))
 	require.Contains(t, val, "items")
 }
 
@@ -617,7 +615,7 @@ func TestNormalize_SingleElementTypeArray(t *testing.T) {
 	anyOf, ok := val["anyOf"].([]any)
 	require.True(t, ok)
 	require.Len(t, anyOf, 1)
-	require.Equal(t, "string", anyOf[0].(map[string]any)["type"])
+	assert.Empty(t, cmp.Diff("string", anyOf[0].(map[string]any)["type"]))
 }
 
 func TestNormalize_NestedProperties(t *testing.T) {

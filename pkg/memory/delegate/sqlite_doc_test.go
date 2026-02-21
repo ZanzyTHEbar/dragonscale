@@ -6,6 +6,8 @@ import (
 
 	"github.com/ZanzyTHEbar/dragonscale/pkg/ids"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/memory"
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -79,9 +81,12 @@ func TestLibSQLDelegate_GetDocument(t *testing.T) {
 				return
 			}
 			require.NotNil(t, doc)
-			assert.Equal(t, tt.wantContent, doc.Content)
-			assert.Equal(t, tt.agentID, doc.AgentID)
-			assert.Equal(t, tt.docName, doc.Name)
+			assert.Empty(t, cmp.Diff(&memory.AgentDocument{
+				AgentID:  tt.agentID,
+				Name:     tt.docName,
+				Content:  tt.wantContent,
+				IsActive: true,
+			}, doc, cmpopts.IgnoreFields(memory.AgentDocument{}, "ID", "Category", "Version", "CreatedAt", "UpdatedAt")))
 		})
 	}
 }
@@ -148,7 +153,7 @@ func TestLibSQLDelegate_UpsertDocument(t *testing.T) {
 			got, err := d.GetDocument(ctx, tt.agentID, tt.docName)
 			require.NoError(t, err)
 			require.NotNil(t, got)
-			assert.Equal(t, tt.wantContent, got.Content)
+			assert.Empty(t, cmp.Diff(tt.wantContent, got.Content))
 		})
 	}
 }
@@ -202,7 +207,7 @@ func TestLibSQLDelegate_DeleteDocument(t *testing.T) {
 				other, err := d.GetDocument(ctx, "a2", "shared")
 				require.NoError(t, err)
 				require.NotNil(t, other, "other agent's document must survive")
-				assert.Equal(t, "a2-doc", other.Content)
+				assert.Empty(t, cmp.Diff("a2-doc", other.Content))
 			}
 		})
 	}
@@ -268,7 +273,7 @@ func TestLibSQLDelegate_ListDocumentsByCategory(t *testing.T) {
 			require.NoError(t, err)
 			assert.Len(t, docs, tt.wantLen)
 			if tt.wantName != "" && len(docs) > 0 {
-				assert.Equal(t, tt.wantName, docs[0].Name)
+				assert.Empty(t, cmp.Diff(tt.wantName, docs[0].Name))
 			}
 		})
 	}

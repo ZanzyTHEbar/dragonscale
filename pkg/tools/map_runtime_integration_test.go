@@ -8,6 +8,7 @@ import (
 
 	fantasy "charm.land/fantasy"
 	jsonv2 "github.com/go-json-experiment/json"
+	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -110,13 +111,13 @@ func TestLLMMap_WorkerJSONL_StatusAndRead(t *testing.T) {
 	}))
 	runID, _ := enqueue["run_id"].(string)
 	require.NotEmpty(t, runID)
-	assert.Equal(t, "worker", enqueue["execution_mode"])
+	assert.Empty(t, cmp.Diff("worker", enqueue["execution_mode"]))
 
 	status := decodeResultMap(t, statusTool.Execute(t.Context(), map[string]interface{}{
 		"run_id":        runID,
 		"process_steps": float64(20),
 	}))
-	assert.Equal(t, mapRunStatusSucceeded, status["status"])
+	assert.Empty(t, cmp.Diff(mapRunStatusSucceeded, status["status"]))
 	assert.EqualValues(t, 2, status["succeeded_items"])
 
 	readJSON := decodeResultMap(t, readTool.Execute(t.Context(), map[string]interface{}{
@@ -158,8 +159,8 @@ func TestLLMMap_IdempotencyReuse(t *testing.T) {
 	first := decodeResultMap(t, mapTool.Execute(t.Context(), args))
 	second := decodeResultMap(t, mapTool.Execute(t.Context(), args))
 
-	assert.Equal(t, first["run_id"], second["run_id"])
-	assert.Equal(t, true, second["idempotent_reuse"])
+	assert.Empty(t, cmp.Diff(first["run_id"], second["run_id"]))
+	assert.Empty(t, cmp.Diff(true, second["idempotent_reuse"]))
 }
 
 func TestLLMMap_IdempotencyReuse_Concurrent(t *testing.T) {
@@ -248,7 +249,7 @@ func TestLLMMap_InlineRetriesThenSucceeds(t *testing.T) {
 		"execution_mode": "inline",
 		"max_retries":    float64(2),
 	}))
-	assert.Equal(t, mapRunStatusSucceeded, result["status"])
+	assert.Empty(t, cmp.Diff(mapRunStatusSucceeded, result["status"]))
 	runID, _ := result["run_id"].(string)
 	require.NotEmpty(t, runID)
 
@@ -261,7 +262,7 @@ func TestLLMMap_InlineRetriesThenSucceeds(t *testing.T) {
 	require.Len(t, itemsAny, 1)
 	item0 := itemsAny[0].(map[string]interface{})
 	assert.EqualValues(t, 2, item0["attempts"])
-	assert.Equal(t, mapItemStatusSucceeded, item0["status"])
+	assert.Empty(t, cmp.Diff(mapItemStatusSucceeded, item0["status"]))
 }
 
 func TestLLMMap_InlineExhaustedRetriesFailsRun(t *testing.T) {
@@ -282,7 +283,7 @@ func TestLLMMap_InlineExhaustedRetriesFailsRun(t *testing.T) {
 		"execution_mode": "inline",
 		"max_retries":    float64(1),
 	}))
-	assert.Equal(t, mapRunStatusFailed, payload["status"])
+	assert.Empty(t, cmp.Diff(mapRunStatusFailed, payload["status"]))
 	summary, ok := payload["summary"].(map[string]interface{})
 	require.True(t, ok)
 	assert.EqualValues(t, 1, summary["failure_count"])
@@ -360,7 +361,7 @@ func TestAgenticMap_WorkerLifecycle(t *testing.T) {
 		"run_id":        runID,
 		"process_steps": float64(20),
 	}))
-	assert.Equal(t, mapRunStatusSucceeded, status["status"])
+	assert.Empty(t, cmp.Diff(mapRunStatusSucceeded, status["status"]))
 
 	read := decodeResultMap(t, readTool.Execute(t.Context(), map[string]interface{}{
 		"run_id": runID,
@@ -370,7 +371,7 @@ func TestAgenticMap_WorkerLifecycle(t *testing.T) {
 	require.True(t, ok)
 	require.Len(t, itemsAny, 1)
 	item0 := itemsAny[0].(map[string]interface{})
-	assert.Equal(t, mapItemStatusSucceeded, item0["status"])
+	assert.Empty(t, cmp.Diff(mapItemStatusSucceeded, item0["status"]))
 }
 
 func TestLLMMap_InvalidJSONLIngestFails(t *testing.T) {

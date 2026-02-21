@@ -5,6 +5,8 @@ import (
 	"testing"
 
 	"charm.land/fantasy"
+	"github.com/google/go-cmp/cmp"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -41,7 +43,7 @@ func TestToPrompt_DropsEmptyMessages(t *testing.T) {
 		require.Empty(t, systemBlocks)
 		require.Len(t, messages, 1, "should only have user message, assistant message should be dropped")
 		require.Len(t, warnings, 1)
-		require.Equal(t, fantasy.CallWarningTypeOther, warnings[0].Type)
+		assert.Empty(t, cmp.Diff(fantasy.CallWarningTypeOther, warnings[0].Type))
 		require.Contains(t, warnings[0].Message, "dropping empty assistant message")
 		require.Contains(t, warnings[0].Message, "neither user-facing content nor tool calls")
 	})
@@ -76,9 +78,9 @@ func TestToPrompt_DropsEmptyMessages(t *testing.T) {
 		require.Empty(t, systemBlocks)
 		require.Len(t, messages, 1, "should only have user message, assistant message should be dropped")
 		require.Len(t, warnings, 2)
-		require.Equal(t, fantasy.CallWarningTypeOther, warnings[0].Type)
+		assert.Empty(t, cmp.Diff(fantasy.CallWarningTypeOther, warnings[0].Type))
 		require.Contains(t, warnings[0].Message, "sending reasoning content is disabled")
-		require.Equal(t, fantasy.CallWarningTypeOther, warnings[1].Type)
+		assert.Empty(t, cmp.Diff(fantasy.CallWarningTypeOther, warnings[1].Type))
 		require.Contains(t, warnings[1].Message, "dropping empty assistant message")
 	})
 
@@ -103,7 +105,7 @@ func TestToPrompt_DropsEmptyMessages(t *testing.T) {
 		require.Empty(t, systemBlocks)
 		require.Len(t, messages, 1, "should only have user message")
 		require.Len(t, warnings, 1)
-		require.Equal(t, fantasy.CallWarningTypeOther, warnings[0].Type)
+		assert.Empty(t, cmp.Diff(fantasy.CallWarningTypeOther, warnings[0].Type))
 		require.Contains(t, warnings[0].Message, "dropping empty assistant message")
 	})
 
@@ -188,7 +190,7 @@ func TestToPrompt_DropsEmptyMessages(t *testing.T) {
 		require.Empty(t, systemBlocks)
 		require.Len(t, messages, 1, "should only have user message")
 		require.Len(t, warnings, 1)
-		require.Equal(t, fantasy.CallWarningTypeOther, warnings[0].Type)
+		assert.Empty(t, cmp.Diff(fantasy.CallWarningTypeOther, warnings[0].Type))
 		require.Contains(t, warnings[0].Message, "dropping empty assistant message")
 	})
 
@@ -267,7 +269,7 @@ func TestToPrompt_DropsEmptyMessages(t *testing.T) {
 		require.Empty(t, systemBlocks)
 		require.Empty(t, messages)
 		require.Len(t, warnings, 1)
-		require.Equal(t, fantasy.CallWarningTypeOther, warnings[0].Type)
+		assert.Empty(t, cmp.Diff(fantasy.CallWarningTypeOther, warnings[0].Type))
 		require.Contains(t, warnings[0].Message, "dropping empty user message")
 		require.Contains(t, warnings[0].Message, "neither user-facing content nor tool results")
 	})

@@ -11,6 +11,7 @@ import (
 	"github.com/ZanzyTHEbar/dragonscale/pkg/itr/dag"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/security/securebus"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/tools"
+	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -95,8 +96,8 @@ func TestExecutor_ParallelNodes(t *testing.T) {
 
 	result, err := executor.Execute(t.Context(), "test-sess", plan)
 	require.NoError(t, err)
-	assert.Equal(t, "a-result", result.NodeResults["n1"])
-	assert.Equal(t, "b-result", result.NodeResults["n2"])
+	assert.Empty(t, cmp.Diff("a-result", result.NodeResults["n1"]))
+	assert.Empty(t, cmp.Diff("b-result", result.NodeResults["n2"]))
 }
 
 func TestExecutor_CycleDetection(t *testing.T) {
@@ -148,7 +149,7 @@ func TestExecutor_WithJoiner(t *testing.T) {
 	result, err := executor.Execute(t.Context(), "test-sess", plan)
 	require.NoError(t, err)
 	assert.Contains(t, result.FinalAnswer, "synthesized:")
-	assert.Equal(t, uint32(50), result.TotalTokens)
+	assert.Empty(t, cmp.Diff(uint32(50), result.TotalTokens))
 }
 
 func TestExecutor_EmptyPlan(t *testing.T) {
@@ -192,21 +193,21 @@ func TestRouter_SimpleQuerySelectsReAct(t *testing.T) {
 	t.Parallel()
 	cfg := dag.DefaultRouterConfig()
 	mode := dag.Route(dag.ModeAuto, "What is the weather?", cfg)
-	assert.Equal(t, dag.ModeReAct, mode)
+	assert.Empty(t, cmp.Diff(dag.ModeReAct, mode))
 }
 
 func TestRouter_ComplexQuerySelectsDAG(t *testing.T) {
 	t.Parallel()
 	cfg := dag.DefaultRouterConfig()
 	mode := dag.Route(dag.ModeAuto, "Search for the latest news about AI, read the top 3 articles, and compare their viewpoints to create a summary report with aggregate statistics", cfg)
-	assert.Equal(t, dag.ModeDAG, mode)
+	assert.Empty(t, cmp.Diff(dag.ModeDAG, mode))
 }
 
 func TestRouter_ExplicitModeOverridesAuto(t *testing.T) {
 	t.Parallel()
 	cfg := dag.DefaultRouterConfig()
 	mode := dag.Route(dag.ModeReAct, "Do many complex parallel things simultaneously", cfg)
-	assert.Equal(t, dag.ModeReAct, mode)
+	assert.Empty(t, cmp.Diff(dag.ModeReAct, mode))
 }
 
 func TestPlanner_ValidatePlan(t *testing.T) {

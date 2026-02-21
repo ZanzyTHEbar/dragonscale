@@ -9,6 +9,7 @@ import (
 
 	"github.com/ZanzyTHEbar/dragonscale/pkg"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/bus"
+	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -40,11 +41,10 @@ func TestResolveBaseConfigPath_PrefersXDGOverLegacy(t *testing.T) {
 	require.NoError(t, os.WriteFile(legacyPath, []byte(`{}`), 0o644))
 
 	got := ResolveBaseConfigPath()
-	assert.Equal(t, xdgPath, got)
+	assert.Empty(t, cmp.Diff(xdgPath, got))
 }
 
 func TestResolveBaseConfigPath_FallsBackToLegacyWhenXDGMissing(t *testing.T) {
-	t.Parallel()
 	home := t.TempDir()
 	xdg := t.TempDir()
 	t.Setenv("HOME", home)
@@ -55,7 +55,7 @@ func TestResolveBaseConfigPath_FallsBackToLegacyWhenXDGMissing(t *testing.T) {
 	require.NoError(t, os.WriteFile(legacyPath, []byte(`{}`), 0o644))
 
 	got := ResolveBaseConfigPath()
-	assert.Equal(t, legacyPath, got)
+	assert.Empty(t, cmp.Diff(legacyPath, got))
 }
 
 func TestLoadResolvedConfig_AppliesOverlayAndKeepsBaseValues(t *testing.T) {
@@ -79,7 +79,7 @@ func TestLoadResolvedConfig_AppliesOverlayAndKeepsBaseValues(t *testing.T) {
 		OverlayConfigPath: overlayPath,
 	})
 	require.NoError(t, err)
-	assert.Equal(t, "base-key", cfg.Providers.OpenAI.APIKey)
+	assert.Empty(t, cmp.Diff("base-key", cfg.Providers.OpenAI.APIKey))
 	assert.True(t, cfg.Agents.Defaults.RestrictToSandbox)
 }
 
@@ -94,7 +94,7 @@ func TestEnsureMinProviderTimeout_SetsFloor(t *testing.T) {
 		MinProviderTimeout: 180 * time.Second,
 	})
 	require.NoError(t, err)
-	assert.Equal(t, 180, cfg.Providers.OpenAI.Timeout)
+	assert.Empty(t, cmp.Diff(180, cfg.Providers.OpenAI.Timeout))
 }
 
 func TestStartOutbound_DropAndConsumeDoNotBlockPublishers(t *testing.T) {
@@ -156,7 +156,7 @@ func TestStartOutbound_CallbackReceivesMessages(t *testing.T) {
 
 	select {
 	case got := <-received:
-		assert.Equal(t, "hello", got.Content)
+		assert.Empty(t, cmp.Diff("hello", got.Content))
 	case <-time.After(2 * time.Second):
 		t.Fatal("did not receive callback outbound message")
 	}

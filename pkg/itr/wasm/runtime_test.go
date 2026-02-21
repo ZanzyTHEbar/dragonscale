@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -62,7 +63,7 @@ func TestExecuteMinimalModule(t *testing.T) {
 
 	result, err := rt.Execute(ctx, minimalWASM, "")
 	require.NoError(t, err)
-	assert.Equal(t, uint32(0), result.ExitCode)
+	assert.Empty(t, cmp.Diff(uint32(0), result.ExitCode))
 	assert.Empty(t, result.Stderr)
 	assert.True(t, result.Duration > 0)
 }
@@ -80,7 +81,7 @@ func TestExecuteTimeout(t *testing.T) {
 	// Minimal module is fast enough to succeed even with 1ms timeout.
 	// This test validates that the timeout machinery doesn't break normal execution.
 	if err == nil {
-		assert.Equal(t, uint32(0), result.ExitCode)
+		assert.Empty(t, cmp.Diff(uint32(0), result.ExitCode))
 	}
 }
 
@@ -123,8 +124,8 @@ func TestLimitedBuffer(t *testing.T) {
 	lb := &limitedBuffer{max: 5}
 	n, err := lb.Write([]byte("hello world"))
 	assert.NoError(t, err)
-	assert.Equal(t, 11, n)
-	assert.Equal(t, "hello", lb.String())
+	assert.Empty(t, cmp.Diff(11, n))
+	assert.Empty(t, cmp.Diff("hello", lb.String()))
 }
 
 func TestLimitedBufferExactFit(t *testing.T) {
@@ -132,11 +133,11 @@ func TestLimitedBufferExactFit(t *testing.T) {
 	lb := &limitedBuffer{max: 5}
 	n, err := lb.Write([]byte("hello"))
 	assert.NoError(t, err)
-	assert.Equal(t, 5, n)
-	assert.Equal(t, "hello", lb.String())
+	assert.Empty(t, cmp.Diff(5, n))
+	assert.Empty(t, cmp.Diff("hello", lb.String()))
 
 	n, err = lb.Write([]byte("more"))
 	assert.NoError(t, err)
-	assert.Equal(t, 4, n)
-	assert.Equal(t, "hello", lb.String())
+	assert.Empty(t, cmp.Diff(4, n))
+	assert.Empty(t, cmp.Diff("hello", lb.String()))
 }

@@ -3,6 +3,7 @@ package security
 import (
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -30,7 +31,7 @@ func TestVault_RoundTrip(t *testing.T) {
 
 			dec, err := v.DecryptString(enc)
 			require.NoError(t, err)
-			assert.Equal(t, secret, dec)
+			assert.Empty(t, cmp.Diff(secret, dec))
 		})
 	}
 }
@@ -92,7 +93,7 @@ func TestVault_EmptyInput(t *testing.T) {
 
 	dec, err := v.DecryptString(enc)
 	require.NoError(t, err)
-	assert.Equal(t, "", dec)
+	assert.Empty(t, cmp.Diff("", dec))
 }
 
 func TestVault_BinaryData(t *testing.T) {
@@ -106,5 +107,5 @@ func TestVault_BinaryData(t *testing.T) {
 
 	dec, err := v.Decrypt(enc)
 	require.NoError(t, err)
-	assert.Equal(t, binary, dec)
+	assert.Empty(t, cmp.Diff(binary, dec))
 }

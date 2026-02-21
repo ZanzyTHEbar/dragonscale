@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -30,9 +31,9 @@ func TestTypedToolFuncExample(t *testing.T) {
 
 	// Check the tool info
 	info := tool.Info()
-	require.Equal(t, "calculator", info.Name)
+	assert.Empty(t, cmp.Diff("calculator", info.Name))
 	require.Len(t, info.Required, 1)
-	require.Equal(t, "expression", info.Required[0])
+	assert.Empty(t, cmp.Diff("expression", info.Required[0]))
 
 	// Test execution
 	call := ToolCall{
@@ -43,7 +44,7 @@ func TestTypedToolFuncExample(t *testing.T) {
 
 	result, err := tool.Run(t.Context(), call)
 	require.NoError(t, err)
-	require.Equal(t, "4", result.Content)
+	assert.Empty(t, cmp.Diff("4", result.Content))
 	require.False(t, result.IsError)
 }
 

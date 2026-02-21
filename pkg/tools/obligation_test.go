@@ -5,6 +5,7 @@ import (
 	"time"
 
 	jsonv2 "github.com/go-json-experiment/json"
+	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -32,7 +33,7 @@ func TestObligationTool_CreateAndList(t *testing.T) {
 	var rec ObligationRecord
 	require.NoError(t, jsonv2.Unmarshal([]byte(create.ForLLM), &rec))
 	require.NotEmpty(t, rec.ID)
-	assert.Equal(t, ObligationStateScheduled, rec.State)
+	assert.Empty(t, cmp.Diff(ObligationStateScheduled, rec.State))
 
 	list := tool.Execute(ctx, map[string]interface{}{"action": "list"})
 	require.NotNil(t, list)
@@ -110,7 +111,7 @@ func TestObligationTool_StateMachineAndEvidence(t *testing.T) {
 
 	var verified ObligationRecord
 	require.NoError(t, jsonv2.Unmarshal([]byte(toVerified.ForLLM), &verified))
-	assert.Equal(t, ObligationStateVerified, verified.State)
+	assert.Empty(t, cmp.Diff(ObligationStateVerified, verified.State))
 	assert.NotZero(t, verified.VerifiedAt)
 	require.Len(t, verified.Evidence, 1)
 }
@@ -133,15 +134,15 @@ func TestObligationTool_CollectDueObligations_TransitionsScheduledToDue(t *testi
 
 	var created ObligationRecord
 	require.NoError(t, jsonv2.Unmarshal([]byte(create.ForLLM), &created))
-	require.Equal(t, ObligationStateScheduled, created.State)
+	assert.Empty(t, cmp.Diff(ObligationStateScheduled, created.State))
 
 	due, err := tool.CollectDueObligations(ctx, time.Now().UTC(), "heartbeat")
 	require.NoError(t, err)
 	require.Len(t, due, 1)
-	assert.Equal(t, created.ID, due[0].ID)
-	assert.Equal(t, ObligationStateDue, due[0].State)
+	assert.Empty(t, cmp.Diff(created.ID, due[0].ID))
+	assert.Empty(t, cmp.Diff(ObligationStateDue, due[0].State))
 	require.NotEmpty(t, due[0].Evidence)
-	assert.Equal(t, "heartbeat", due[0].Evidence[0].Source)
+	assert.Empty(t, cmp.Diff("heartbeat", due[0].Evidence[0].Source))
 
 	get := tool.Execute(ctx, map[string]interface{}{
 		"action":        "get",
@@ -151,7 +152,7 @@ func TestObligationTool_CollectDueObligations_TransitionsScheduledToDue(t *testi
 
 	var persisted ObligationRecord
 	require.NoError(t, jsonv2.Unmarshal([]byte(get.ForLLM), &persisted))
-	assert.Equal(t, ObligationStateDue, persisted.State)
+	assert.Empty(t, cmp.Diff(ObligationStateDue, persisted.State))
 	require.Len(t, persisted.Evidence, 1)
 }
 
@@ -182,5 +183,5 @@ func TestObligationTool_CollectDueObligations_DoesNotDuplicateDueEvidence(t *tes
 	require.NoError(t, err)
 	require.Len(t, second, 1)
 	require.Len(t, second[0].Evidence, 1, "due transition evidence should be appended only once")
-	assert.Equal(t, created.ID, second[0].ID)
+	assert.Empty(t, cmp.Diff(created.ID, second[0].ID))
 }

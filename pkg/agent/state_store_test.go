@@ -204,12 +204,12 @@ func TestCheckpointStore_CreateAndList(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.False(t, cp.ID.IsZero())
-	assert.Equal(t, "after-step-0", cp.Name)
+	assert.Empty(t, cmp.Diff("after-step-0", cp.Name))
 
 	cps, err := cs.ListCheckpoints(ctx, convID)
 	require.NoError(t, err)
 	assert.Len(t, cps, 1)
-	assert.Equal(t, cp.ID, cps[0].ID)
+	assert.Empty(t, cmp.Diff(cp.ID, cps[0].ID))
 }
 
 func TestCheckpointStore_GetByName(t *testing.T) {
@@ -232,7 +232,7 @@ func TestCheckpointStore_GetByName(t *testing.T) {
 
 	cp, err := cs.GetCheckpoint(ctx, convID, "snap-1")
 	require.NoError(t, err)
-	assert.Equal(t, "snap-1", cp.Name)
+	assert.Empty(t, cmp.Diff("snap-1", cp.Name))
 }
 
 func TestCheckpointStore_EmptyName(t *testing.T) {

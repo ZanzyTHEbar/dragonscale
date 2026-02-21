@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/ZanzyTHEbar/dragonscale/pkg/rlm"
+	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -110,8 +111,8 @@ func TestFanOut_AllPartitions_Processed(t *testing.T) {
 
 	assert.Len(t, results, 4)
 	for i, r := range results {
-		assert.Equal(t, i, r.PartitionIdx)
-		assert.Equal(t, "ans-"+partitions[i], r.Answer)
+		assert.Empty(t, cmp.Diff(i, r.PartitionIdx))
+		assert.Empty(t, cmp.Diff("ans-"+partitions[i], r.Answer))
 	}
 }
 
@@ -126,7 +127,7 @@ func TestFanOut_UnboundedConcurrency(t *testing.T) {
 			return rlm.PartitionResult{PartitionIdx: idx, Answer: part, Tokens: 2}
 		})
 	assert.Len(t, results, 20)
-	assert.Equal(t, uint32(40), rlm.TotalTokens(results))
+	assert.Empty(t, cmp.Diff(uint32(40), rlm.TotalTokens(results)))
 }
 
 func TestFanOut_Empty(t *testing.T) {
@@ -147,7 +148,7 @@ func TestMergeResults_Deduplication(t *testing.T) {
 		{Answer: ""},      // empty — should be skipped
 	}
 	merged := rlm.MergeResults(results)
-	assert.Equal(t, "alpha\nbeta", merged)
+	assert.Empty(t, cmp.Diff("alpha\nbeta", merged))
 }
 
 func TestMergeResults_WithErrors(t *testing.T) {
@@ -157,7 +158,7 @@ func TestMergeResults_WithErrors(t *testing.T) {
 		{Err: fmt.Errorf("failed"), Answer: "should be skipped"},
 	}
 	merged := rlm.MergeResults(results)
-	assert.Equal(t, "good", merged)
+	assert.Empty(t, cmp.Diff("good", merged))
 }
 
 func TestStrategyPlanner_SmallContext_OpFinal(t *testing.T) {
@@ -167,7 +168,7 @@ func TestStrategyPlanner_SmallContext_OpFinal(t *testing.T) {
 	planner := rlm.NewStrategyPlanner(cfg)
 
 	op := planner.PlanNext(500, "any query", 0)
-	assert.Equal(t, rlm.OpFinal, op.Type)
+	assert.Empty(t, cmp.Diff(rlm.OpFinal, op.Type))
 }
 
 func TestStrategyPlanner_MaxDepth_OpFinal(t *testing.T) {
@@ -177,7 +178,7 @@ func TestStrategyPlanner_MaxDepth_OpFinal(t *testing.T) {
 	planner := rlm.NewStrategyPlanner(cfg)
 
 	op := planner.PlanNext(100000, "any query", 3) // depth == MaxDepth
-	assert.Equal(t, rlm.OpFinal, op.Type)
+	assert.Empty(t, cmp.Diff(rlm.OpFinal, op.Type))
 }
 
 func TestStrategyPlanner_KeywordQuery_OpGrep(t *testing.T) {
@@ -186,7 +187,7 @@ func TestStrategyPlanner_KeywordQuery_OpGrep(t *testing.T) {
 
 	// "find" prefix should trigger grep.
 	op := planner.PlanNext(100000, "find myFunction in code", 0)
-	assert.Equal(t, rlm.OpGrep, op.Type)
+	assert.Empty(t, cmp.Diff(rlm.OpGrep, op.Type))
 	assert.NotEmpty(t, op.GrepQuery)
 }
 
@@ -195,6 +196,6 @@ func TestStrategyPlanner_LargeContext_OpPartition(t *testing.T) {
 	planner := rlm.NewStrategyPlanner(rlm.DefaultStrategyConfig())
 
 	op := planner.PlanNext(100000, "summarise everything", 0)
-	assert.Equal(t, rlm.OpPartition, op.Type)
+	assert.Empty(t, cmp.Diff(rlm.OpPartition, op.Type))
 	assert.Greater(t, op.PartitionK, 0)
 }

@@ -9,6 +9,7 @@ import (
 
 	"github.com/ZanzyTHEbar/dragonscale/pkg/config"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/tools"
+	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -484,11 +485,11 @@ func TestConfig_DefaultValues(t *testing.T) {
 	cfg := config.DefaultConfig()
 
 	assert.True(t, cfg.Agents.Defaults.RestrictToSandbox, "restrict to sandbox should be on by default")
-	assert.Equal(t, 20, cfg.Agents.Defaults.MaxToolIterations, "max tool iterations default")
-	assert.Equal(t, 0.7, cfg.Agents.Defaults.Temperature, "temperature default")
-	assert.Equal(t, 8192, cfg.Agents.Defaults.MaxTokens, "max tokens default")
-	assert.Equal(t, 768, cfg.Memory.EmbeddingDims, "embedding dims default")
-	assert.Equal(t, 4000, cfg.Memory.OffloadThresholdTokens, "offload threshold default")
+	assert.Empty(t, cmp.Diff(20, cfg.Agents.Defaults.MaxToolIterations), "max tool iterations default")
+	assert.Empty(t, cmp.Diff(0.7, cfg.Agents.Defaults.Temperature), "temperature default")
+	assert.Empty(t, cmp.Diff(8192, cfg.Agents.Defaults.MaxTokens), "max tokens default")
+	assert.Empty(t, cmp.Diff(768, cfg.Memory.EmbeddingDims), "embedding dims default")
+	assert.Empty(t, cmp.Diff(4000, cfg.Memory.OffloadThresholdTokens), "offload threshold default")
 }
 
 func TestConfig_LoadEvalConfigs(t *testing.T) {
@@ -510,7 +511,7 @@ func TestConfig_LoadEvalConfigs(t *testing.T) {
 			require.NoError(t, err, "config should load without error")
 
 			assert.True(t, cfg.Agents.Defaults.RestrictToSandbox, "restrict_to_sandbox should always be true for eval")
-			assert.Equal(t, tc.expectIterations, cfg.Agents.Defaults.MaxToolIterations, "max_tool_iterations")
+			assert.Empty(t, cmp.Diff(tc.expectIterations, cfg.Agents.Defaults.MaxToolIterations), "max_tool_iterations")
 		})
 	}
 }
@@ -519,7 +520,7 @@ func TestConfig_MissingFileReturnsDefaults(t *testing.T) {
 	t.Parallel()
 	cfg, err := config.LoadConfig("/nonexistent/path/config.json")
 	require.NoError(t, err, "missing config should return defaults, not error")
-	assert.Equal(t, 768, cfg.Memory.EmbeddingDims, "should have default embedding dims")
+	assert.Empty(t, cmp.Diff(768, cfg.Memory.EmbeddingDims), "should have default embedding dims")
 }
 
 // ---------------------------------------------------------------------------
@@ -573,7 +574,7 @@ func TestToolSchema_JSONRoundtrip(t *testing.T) {
 			require.NoError(t, err, "schema JSON should parse back")
 
 			fn := parsed["function"].(map[string]interface{})
-			assert.Equal(t, tool.Name(), fn["name"])
+			assert.Empty(t, cmp.Diff(tool.Name(), fn["name"]))
 		})
 	}
 }

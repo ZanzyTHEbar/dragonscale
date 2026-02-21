@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -61,7 +62,7 @@ func TestParseWikilinks(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			got := ParseWikilinks(tc.content)
-			assert.Equal(t, tc.want, got)
+			assert.Empty(t, cmp.Diff(tc.want, got))
 		})
 	}
 }
@@ -83,7 +84,7 @@ func TestMergeUnique(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			got := mergeUnique(tc.a, tc.b)
-			assert.Equal(t, tc.want, got)
+			assert.Empty(t, cmp.Diff(tc.want, got))
 		})
 	}
 }
@@ -140,8 +141,8 @@ No wikilinks here.
 
 	rm := g.GetNode("risk-management")
 	require.NotNil(t, rm)
-	assert.Equal(t, []string{"trading", "risk"}, rm.Tags)
-	assert.Equal(t, "finance", rm.Domain)
+	assert.Empty(t, cmp.Diff([]string{"trading", "risk"}, rm.Tags))
+	assert.Empty(t, cmp.Diff("finance", rm.Domain))
 	assert.Contains(t, rm.Links, "position-sizing")
 	assert.Contains(t, rm.Links, "technical-analysis")
 
@@ -277,7 +278,7 @@ Content.
 
 	results = g.SearchSkills("software engineering")
 	require.True(t, len(results) >= 1)
-	assert.Equal(t, "code-review", results[0].Name)
+	assert.Empty(t, cmp.Diff("code-review", results[0].Name))
 
 	results = g.SearchSkills("")
 	assert.Empty(t, results)
@@ -307,7 +308,7 @@ Content.
 
 	mocs := g.ListMOCs()
 	assert.Len(t, mocs, 1)
-	assert.Equal(t, "trading-moc", mocs[0].Name)
+	assert.Empty(t, cmp.Diff("trading-moc", mocs[0].Name))
 	assert.True(t, mocs[0].IsMOC)
 }
 
@@ -333,7 +334,7 @@ Content.
 
 	idx := g.GetIndex()
 	require.NotNil(t, idx)
-	assert.Equal(t, "index", idx.Name)
+	assert.Empty(t, cmp.Diff("index", idx.Name))
 	assert.True(t, idx.IsIndex)
 	assert.Contains(t, idx.Links, "trading-moc")
 	assert.Contains(t, idx.Links, "engineering-moc")
@@ -369,9 +370,9 @@ Content with [[some-link]].
 	require.Len(t, skills, 1)
 
 	s := skills[0]
-	assert.Equal(t, "json-skill", s.Name)
-	assert.Equal(t, []string{"alpha", "beta"}, s.Tags)
-	assert.Equal(t, "testing", s.Domain)
+	assert.Empty(t, cmp.Diff("json-skill", s.Name))
+	assert.Empty(t, cmp.Diff([]string{"alpha", "beta"}, s.Tags))
+	assert.Empty(t, cmp.Diff("testing", s.Domain))
 }
 
 func nodeNames(nodes []*SkillNode) []string {

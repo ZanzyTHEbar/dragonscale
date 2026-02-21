@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -32,9 +33,9 @@ func TestFanOutUnbounded(t *testing.T) {
 
 	require.Len(t, results, 3)
 	for i, r := range results {
-		assert.Equal(t, i, r.PartitionIdx)
+		assert.Empty(t, cmp.Diff(i, r.PartitionIdx))
 		assert.Contains(t, r.Answer, fmt.Sprintf("part-%d", i))
-		assert.Equal(t, uint32(10), r.Tokens)
+		assert.Empty(t, cmp.Diff(uint32(10), r.Tokens))
 	}
 }
 
@@ -86,8 +87,8 @@ func TestFanOutPreservesOrder(t *testing.T) {
 
 	require.Len(t, results, 4)
 	for i, r := range results {
-		assert.Equal(t, i, r.PartitionIdx)
-		assert.Equal(t, partitions[i], r.Answer)
+		assert.Empty(t, cmp.Diff(i, r.PartitionIdx))
+		assert.Empty(t, cmp.Diff(partitions[i], r.Answer))
 	}
 }
 
@@ -102,7 +103,7 @@ func TestMergeResultsDeduplication(t *testing.T) {
 	}
 
 	merged := MergeResults(results)
-	assert.Equal(t, "answer one\nanswer two", merged)
+	assert.Empty(t, cmp.Diff("answer one\nanswer two", merged))
 }
 
 func TestMergeResultsAllErrors(t *testing.T) {
@@ -130,10 +131,10 @@ func TestTotalTokens(t *testing.T) {
 		{Tokens: 250},
 		{Tokens: 50},
 	}
-	assert.Equal(t, uint32(400), TotalTokens(results))
+	assert.Empty(t, cmp.Diff(uint32(400), TotalTokens(results)))
 }
 
 func TestTotalTokensEmpty(t *testing.T) {
 	t.Parallel()
-	assert.Equal(t, uint32(0), TotalTokens(nil))
+	assert.Empty(t, cmp.Diff(uint32(0), TotalTokens(nil)))
 }

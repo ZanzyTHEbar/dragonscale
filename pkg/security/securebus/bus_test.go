@@ -10,6 +10,7 @@ import (
 	"github.com/ZanzyTHEbar/dragonscale/pkg/security"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/security/securebus"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/tools"
+	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -86,8 +87,8 @@ func TestBus_SuccessfulToolExec(t *testing.T) {
 	resp := bus.Execute(t.Context(), req)
 
 	assert.False(t, resp.IsError)
-	assert.Equal(t, "hello world", resp.Result)
-	assert.Equal(t, 1, bus.AuditLog().Len())
+	assert.Empty(t, cmp.Diff("hello world", resp.Result))
+	assert.Empty(t, cmp.Diff(1, bus.AuditLog().Len()))
 }
 
 func TestBus_UnknownTool(t *testing.T) {
@@ -111,7 +112,7 @@ func TestBus_ToolReturnsError(t *testing.T) {
 	resp := bus.Execute(t.Context(), req)
 
 	assert.True(t, resp.IsError)
-	assert.Equal(t, 1, bus.AuditLog().Len())
+	assert.Empty(t, cmp.Diff(1, bus.AuditLog().Len()))
 	events := bus.AuditLog().Events()
 	assert.True(t, events[0].IsError)
 }
@@ -187,7 +188,7 @@ func TestBus_SecretInjection_ArgVariant(t *testing.T) {
 	resp := bus.Execute(t.Context(), req)
 
 	assert.False(t, resp.IsError)
-	assert.Equal(t, "supersecret", resp.Result, "injected secret should appear in tool output")
+	assert.Empty(t, cmp.Diff("supersecret", resp.Result), "injected secret should appear in tool output")
 
 	events := bus.AuditLog().Events()
 	require.Len(t, events, 1)
@@ -222,7 +223,7 @@ func TestBus_AuditLog_FilterBySession(t *testing.T) {
 		bus.Execute(t.Context(), req)
 	}
 
-	assert.Equal(t, 3, bus.AuditLog().Len())
+	assert.Empty(t, cmp.Diff(3, bus.AuditLog().Len()))
 	assert.Len(t, bus.AuditLog().FilterBySession("session-A"), 2)
 	assert.Len(t, bus.AuditLog().FilterBySession("session-B"), 1)
 }
@@ -237,7 +238,7 @@ func TestBus_Transport_Send(t *testing.T) {
 	resp, err := bus.Transport().Send(t.Context(), req)
 
 	require.NoError(t, err)
-	assert.Equal(t, "pong", resp.Result)
+	assert.Empty(t, cmp.Diff("pong", resp.Result))
 }
 
 func TestBus_InvalidArgsJSON(t *testing.T) {
@@ -261,7 +262,7 @@ func TestBus_RLMFinalCommand(t *testing.T) {
 	resp := bus.Execute(t.Context(), req)
 
 	assert.False(t, resp.IsError)
-	assert.Equal(t, "the answer", resp.Result)
+	assert.Empty(t, cmp.Diff("the answer", resp.Result))
 }
 
 func TestBus_CloseIdempotent(t *testing.T) {

@@ -3,6 +3,7 @@ package rlm
 import (
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -15,7 +16,7 @@ func TestStrategyPlanNextFinalAtMaxDepth(t *testing.T) {
 	})
 
 	op := sp.PlanNext(100000, "any query", 3)
-	assert.Equal(t, OpFinal, op.Type)
+	assert.Empty(t, cmp.Diff(OpFinal, op.Type))
 }
 
 func TestStrategyPlanNextFinalSmallContext(t *testing.T) {
@@ -23,7 +24,7 @@ func TestStrategyPlanNextFinalSmallContext(t *testing.T) {
 	sp := NewStrategyPlanner(DefaultStrategyConfig())
 
 	op := sp.PlanNext(1000, "any query", 0)
-	assert.Equal(t, OpFinal, op.Type)
+	assert.Empty(t, cmp.Diff(OpFinal, op.Type))
 }
 
 func TestStrategyPlanNextGrepForKeywordQuery(t *testing.T) {
@@ -43,7 +44,7 @@ func TestStrategyPlanNextGrepForKeywordQuery(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.query, func(t *testing.T) {
 			op := sp.PlanNext(1_000_000, tt.query, 0)
-			assert.Equal(t, OpGrep, op.Type)
+			assert.Empty(t, cmp.Diff(OpGrep, op.Type))
 			assert.NotEmpty(t, op.GrepQuery)
 		})
 	}
@@ -53,31 +54,31 @@ func TestStrategyPlanNextPartitionDefault(t *testing.T) {
 	t.Parallel()
 	sp := NewStrategyPlanner(DefaultStrategyConfig())
 	op := sp.PlanNext(100_000, "summarize this document", 0)
-	assert.Equal(t, OpPartition, op.Type)
-	assert.Equal(t, 4, op.PartitionK)
+	assert.Empty(t, cmp.Diff(OpPartition, op.Type))
+	assert.Empty(t, cmp.Diff(4, op.PartitionK))
 }
 
 func TestStrategyPlanNextPartitionLargeContext(t *testing.T) {
 	t.Parallel()
 	sp := NewStrategyPlanner(DefaultStrategyConfig())
 	op := sp.PlanNext(5_000_000, "summarize this corpus", 0)
-	assert.Equal(t, OpPartition, op.Type)
-	assert.Equal(t, 8, op.PartitionK, "large contexts should use more partitions")
+	assert.Empty(t, cmp.Diff(OpPartition, op.Type))
+	assert.Empty(t, cmp.Diff(8, op.PartitionK), "large contexts should use more partitions")
 }
 
 func TestExtractKeywordQuoted(t *testing.T) {
 	t.Parallel()
-	assert.Equal(t, "handleRequest", extractKeyword(`find "handleRequest" in the codebase`))
+	assert.Empty(t, cmp.Diff("handleRequest", extractKeyword(`find "handleRequest" in the codebase`)))
 }
 
 func TestExtractKeywordNoQuotes(t *testing.T) {
 	t.Parallel()
-	assert.Equal(t, "find", extractKeyword("find the main function"))
+	assert.Empty(t, cmp.Diff("find", extractKeyword("find the main function")))
 }
 
 func TestExtractKeywordEmpty(t *testing.T) {
 	t.Parallel()
-	assert.Equal(t, "", extractKeyword(""))
+	assert.Empty(t, cmp.Diff("", extractKeyword("")))
 }
 
 func TestLooksLikeKeywordQuery(t *testing.T) {

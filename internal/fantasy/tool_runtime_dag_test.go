@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -119,10 +121,11 @@ func TestDAGToolRuntime_DependenciesWaitAndInputIsResolved(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Len(t, res, 2)
+	assert.
 
-	// B should have received val=1 and returned "1".
-	require.Equal(t, "callB", res[1].ToolCallID)
-	require.Equal(t, "1", res[1].Result.(ToolResultOutputContentText).Text)
+		// B should have received val=1 and returned "1".
+		Empty(t, cmp.Diff("callB", res[1].ToolCallID))
+	assert.Empty(t, cmp.Diff("1", res[1].Result.(ToolResultOutputContentText).Text))
 }
 
 func TestDAGToolRuntime_CycleDetected(t *testing.T) {
@@ -178,7 +181,7 @@ func TestDAGToolRuntime_OnToolResultSerialized(t *testing.T) {
 
 	orderMu.Lock()
 	defer orderMu.Unlock()
-	require.Equal(t, []string{"a", "b"}, order)
+	assert.Empty(t, cmp.Diff([]string{"a", "b"}, order))
 }
 
 func TestDAGToolRuntime_MetricsAndLogHooks(t *testing.T) {

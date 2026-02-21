@@ -7,7 +7,9 @@ import (
 	"testing"
 
 	jsonv2 "github.com/go-json-experiment/json"
+	"github.com/google/go-cmp/cmp"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -104,7 +106,7 @@ func TestAgent_Generate_ResultContent_AllTypes(t *testing.T) {
 		"tool1",
 		"Test tool",
 		func(ctx context.Context, input TestInput, _ ToolCall) (ToolResponse, error) {
-			require.Equal(t, "value", input.Value)
+			assert.Empty(t, cmp.Diff("value", input.Value))
 			return ToolResponse{Content: "result1", IsError: false}, nil
 		},
 	)
@@ -159,33 +161,33 @@ func TestAgent_Generate_ResultContent_AllTypes(t *testing.T) {
 	// Verify each content type in order
 	textContent, ok := AsContentType[TextContent](result.Response.Content[0])
 	require.True(t, ok)
-	require.Equal(t, "Hello, world!", textContent.Text)
+	assert.Empty(t, cmp.Diff("Hello, world!", textContent.Text))
 
 	sourceContent, ok := AsContentType[SourceContent](result.Response.Content[1])
 	require.True(t, ok)
-	require.Equal(t, "123", sourceContent.ID)
+	assert.Empty(t, cmp.Diff("123", sourceContent.ID))
 
 	fileContent, ok := AsContentType[FileContent](result.Response.Content[2])
 	require.True(t, ok)
-	require.Equal(t, []byte{1, 2, 3}, fileContent.Data)
+	assert.Empty(t, cmp.Diff([]byte{1, 2, 3}, fileContent.Data))
 
 	reasoningContent, ok := AsContentType[ReasoningContent](result.Response.Content[3])
 	require.True(t, ok)
-	require.Equal(t, "I will open the conversation with witty banter.", reasoningContent.Text)
+	assert.Empty(t, cmp.Diff("I will open the conversation with witty banter.", reasoningContent.Text))
 
 	toolCallContent, ok := AsContentType[ToolCallContent](result.Response.Content[4])
 	require.True(t, ok)
-	require.Equal(t, "call-1", toolCallContent.ToolCallID)
+	assert.Empty(t, cmp.Diff("call-1", toolCallContent.ToolCallID))
 
 	moreTextContent, ok := AsContentType[TextContent](result.Response.Content[5])
 	require.True(t, ok)
-	require.Equal(t, "More text", moreTextContent.Text)
+	assert.Empty(t, cmp.Diff("More text", moreTextContent.Text))
 
 	// Tool result should be appended
 	toolResultContent, ok := AsContentType[ToolResultContent](result.Response.Content[6])
 	require.True(t, ok)
-	require.Equal(t, "call-1", toolResultContent.ToolCallID)
-	require.Equal(t, "tool1", toolResultContent.ToolName)
+	assert.Empty(t, cmp.Diff("call-1", toolResultContent.ToolCallID))
+	assert.Empty(t, cmp.Diff("tool1", toolResultContent.ToolName))
 }
 
 // Test result.text extraction
@@ -218,7 +220,7 @@ func TestAgent_Generate_ResultText(t *testing.T) {
 
 	// Test text extraction from content
 	text := result.Response.Content.Text()
-	require.Equal(t, "Hello, world!", text)
+	assert.Empty(t, cmp.Diff("Hello, world!", text))
 }
 
 // Test result.toolCalls extraction (matches TS test exactly)
@@ -254,11 +256,11 @@ func TestAgent_Generate_ResultToolCalls(t *testing.T) {
 		generateFunc: func(ctx context.Context, call Call) (*Response, error) {
 			// Verify tools are passed correctly
 			require.Len(t, call.Tools, 2)
-			require.Equal(t, ToolChoiceAuto, *call.ToolChoice) // Should be auto, not required
+			assert.Empty(t, cmp.Diff(ToolChoiceAuto, *call.ToolChoice)) // Should be auto, not required
 
 			// Verify prompt structure
 			require.Len(t, call.Prompt, 1)
-			require.Equal(t, MessageRoleUser, call.Prompt[0].Role)
+			assert.Empty(t, cmp.Diff(MessageRoleUser, call.Prompt[0].Role))
 
 			return &Response{
 				Content: []Content{
@@ -296,14 +298,14 @@ func TestAgent_Generate_ResultToolCalls(t *testing.T) {
 	}
 
 	require.Len(t, toolCalls, 1)
-	require.Equal(t, "call-1", toolCalls[0].ToolCallID)
-	require.Equal(t, "tool1", toolCalls[0].ToolName)
+	assert.Empty(t, cmp.Diff("call-1", toolCalls[0].ToolCallID))
+	assert.Empty(t, cmp.Diff("tool1", toolCalls[0].ToolName))
 
 	// Parse and verify input
 	var input map[string]any
 	err = jsonv2.Unmarshal([]byte(toolCalls[0].Input), &input)
 	require.NoError(t, err)
-	require.Equal(t, "value", input["value"])
+	assert.Empty(t, cmp.Diff("value", input["value"]))
 }
 
 // Test result.toolResults extraction (matches TS test exactly)
@@ -319,7 +321,7 @@ func TestAgent_Generate_ResultToolResults(t *testing.T) {
 		"tool1",
 		"Test tool",
 		func(ctx context.Context, input TestInput, _ ToolCall) (ToolResponse, error) {
-			require.Equal(t, "value", input.Value)
+			assert.Empty(t, cmp.Diff("value", input.Value))
 			return ToolResponse{Content: "result1", IsError: false}, nil
 		},
 	)
@@ -328,11 +330,11 @@ func TestAgent_Generate_ResultToolResults(t *testing.T) {
 		generateFunc: func(ctx context.Context, call Call) (*Response, error) {
 			// Verify tools and tool choice
 			require.Len(t, call.Tools, 1)
-			require.Equal(t, ToolChoiceAuto, *call.ToolChoice)
+			assert.Empty(t, cmp.Diff(ToolChoiceAuto, *call.ToolChoice))
 
 			// Verify prompt
 			require.Len(t, call.Prompt, 1)
-			require.Equal(t, MessageRoleUser, call.Prompt[0].Role)
+			assert.Empty(t, cmp.Diff(MessageRoleUser, call.Prompt[0].Role))
 
 			return &Response{
 				Content: []Content{
@@ -370,13 +372,13 @@ func TestAgent_Generate_ResultToolResults(t *testing.T) {
 	}
 
 	require.Len(t, toolResults, 1)
-	require.Equal(t, "call-1", toolResults[0].ToolCallID)
-	require.Equal(t, "tool1", toolResults[0].ToolName)
+	assert.Empty(t, cmp.Diff("call-1", toolResults[0].ToolCallID))
+	assert.Empty(t, cmp.Diff("tool1", toolResults[0].ToolName))
 
 	// Verify result content
 	textResult, ok := toolResults[0].Result.(ToolResultOutputContentText)
 	require.True(t, ok)
-	require.Equal(t, "result1", textResult.Text)
+	assert.Empty(t, cmp.Diff("result1", textResult.Text))
 }
 
 // Test multi-step scenario (matches TS "2 steps: initial, tool-result" test)
@@ -392,7 +394,7 @@ func TestAgent_Generate_MultipleSteps(t *testing.T) {
 		"tool1",
 		"Test tool",
 		func(ctx context.Context, input TestInput, _ ToolCall) (ToolResponse, error) {
-			require.Equal(t, "value", input.Value)
+			assert.Empty(t, cmp.Diff("value", input.Value))
 			return ToolResponse{Content: "result1", IsError: false}, nil
 		},
 	)
@@ -447,17 +449,20 @@ func TestAgent_Generate_MultipleSteps(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.Len(t, result.Steps, 2)
+	assert.
 
-	// Check total usage sums both steps
-	require.Equal(t, int64(13), result.TotalUsage.InputTokens)  // 10 + 3
-	require.Equal(t, int64(15), result.TotalUsage.OutputTokens) // 5 + 10
-	require.Equal(t, int64(28), result.TotalUsage.TotalTokens)  // 15 + 13
+		// Check total usage sums both steps
+		Empty(t, cmp.Diff(int64(13), result.TotalUsage.InputTokens))
+	assert. // 10 + 3
+		Empty(t, cmp.Diff(int64(15), result.TotalUsage.OutputTokens))
+	assert. // 5 + 10
+		Empty(t, cmp.Diff(int64(28), result.TotalUsage.TotalTokens)) // 15 + 13
 
 	// Final response should be from last step
 	require.Len(t, result.Response.Content, 1)
 	textContent, ok := AsContentType[TextContent](result.Response.Content[0])
 	require.True(t, ok)
-	require.Equal(t, "Hello, world!", textContent.Text)
+	assert.Empty(t, cmp.Diff("Hello, world!", textContent.Text))
 
 	// result.toolCalls should be empty (from last step)
 	var toolCalls []ToolCallContent
@@ -511,17 +516,19 @@ func TestAgent_Generate_BasicText(t *testing.T) {
 	require.Len(t, result.Response.Content, 1)
 	textContent, ok := AsContentType[TextContent](result.Response.Content[0])
 	require.True(t, ok)
-	require.Equal(t, "Hello, world!", textContent.Text)
+	assert.Empty(t, cmp.Diff("Hello, world!", textContent.Text))
+	assert.
 
-	// Check usage
-	require.Equal(t, int64(3), result.Response.Usage.InputTokens)
-	require.Equal(t, int64(10), result.Response.Usage.OutputTokens)
-	require.Equal(t, int64(13), result.Response.Usage.TotalTokens)
+		// Check usage
+		Empty(t, cmp.Diff(int64(3), result.Response.Usage.InputTokens))
+	assert.Empty(t, cmp.Diff(int64(10), result.Response.Usage.OutputTokens))
+	assert.Empty(t, cmp.Diff(int64(13), result.Response.Usage.TotalTokens))
+	assert.
 
-	// Check total usage
-	require.Equal(t, int64(3), result.TotalUsage.InputTokens)
-	require.Equal(t, int64(10), result.TotalUsage.OutputTokens)
-	require.Equal(t, int64(13), result.TotalUsage.TotalTokens)
+		// Check total usage
+		Empty(t, cmp.Diff(int64(3), result.TotalUsage.InputTokens))
+	assert.Empty(t, cmp.Diff(int64(10), result.TotalUsage.OutputTokens))
+	assert.Empty(t, cmp.Diff(int64(13), result.TotalUsage.TotalTokens))
 }
 
 // Test empty prompt error
@@ -547,13 +554,14 @@ func TestAgent_Generate_WithSystemPrompt(t *testing.T) {
 	model := &mockLanguageModel{
 		generateFunc: func(ctx context.Context, call Call) (*Response, error) {
 			// Verify system message is included
-			require.Len(t, call.Prompt, 2) // system + user
-			require.Equal(t, MessageRoleSystem, call.Prompt[0].Role)
-			require.Equal(t, MessageRoleUser, call.Prompt[1].Role)
+			require.Len(t, call.Prompt, 2)
+			assert. // system + user
+				Empty(t, cmp.Diff(MessageRoleSystem, call.Prompt[0].Role))
+			assert.Empty(t, cmp.Diff(MessageRoleUser, call.Prompt[1].Role))
 
 			systemPart, ok := call.Prompt[0].Content[0].(TextPart)
 			require.True(t, ok)
-			require.Equal(t, "You are a helpful assistant", systemPart.Text)
+			assert.Empty(t, cmp.Diff("You are a helpful assistant", systemPart.Text))
 
 			return &Response{
 				Content: []Content{
@@ -606,7 +614,7 @@ func TestAgent_Generate_OptionsActiveTools(t *testing.T) {
 			require.Len(t, call.Tools, 1)
 			functionTool, ok := call.Tools[0].(FunctionTool)
 			require.True(t, ok)
-			require.Equal(t, "tool1", functionTool.Name)
+			assert.Empty(t, cmp.Diff("tool1", functionTool.Name))
 
 			return &Response{
 				Content: []Content{
@@ -644,46 +652,48 @@ func TestResponseContent_Getters(t *testing.T) {
 		ToolCallContent{ToolCallID: "call1", ToolName: "test_tool", Input: `{"arg": "value"}`},
 		ToolResultContent{ToolCallID: "call1", ToolName: "test_tool", Result: ToolResultOutputContentText{Text: "result"}},
 	}
+	assert.
 
-	// Test Text()
-	require.Equal(t, "Hello world", content.Text())
+		// Test Text()
+		Empty(t, cmp.Diff("Hello world", content.Text()))
 
 	// Test Reasoning()
 	reasoning := content.Reasoning()
 	require.Len(t, reasoning, 1)
-	require.Equal(t, "Let me think...", reasoning[0].Text)
+	assert.Empty(t, cmp.Diff("Let me think...", reasoning[0].Text))
+	assert.
 
-	// Test ReasoningText()
-	require.Equal(t, "Let me think...", content.ReasoningText())
+		// Test ReasoningText()
+		Empty(t, cmp.Diff("Let me think...", content.ReasoningText()))
 
 	// Test Files()
 	files := content.Files()
 	require.Len(t, files, 1)
-	require.Equal(t, "text/plain", files[0].MediaType)
-	require.Equal(t, []byte("file data"), files[0].Data)
+	assert.Empty(t, cmp.Diff("text/plain", files[0].MediaType))
+	assert.Empty(t, cmp.Diff([]byte("file data"), files[0].Data))
 
 	// Test Sources()
 	sources := content.Sources()
 	require.Len(t, sources, 1)
-	require.Equal(t, SourceTypeURL, sources[0].SourceType)
-	require.Equal(t, "https://example.com", sources[0].URL)
-	require.Equal(t, "Example", sources[0].Title)
+	assert.Empty(t, cmp.Diff(SourceTypeURL, sources[0].SourceType))
+	assert.Empty(t, cmp.Diff("https://example.com", sources[0].URL))
+	assert.Empty(t, cmp.Diff("Example", sources[0].Title))
 
 	// Test ToolCalls()
 	toolCalls := content.ToolCalls()
 	require.Len(t, toolCalls, 1)
-	require.Equal(t, "call1", toolCalls[0].ToolCallID)
-	require.Equal(t, "test_tool", toolCalls[0].ToolName)
-	require.Equal(t, `{"arg": "value"}`, toolCalls[0].Input)
+	assert.Empty(t, cmp.Diff("call1", toolCalls[0].ToolCallID))
+	assert.Empty(t, cmp.Diff("test_tool", toolCalls[0].ToolName))
+	assert.Empty(t, cmp.Diff(`{"arg": "value"}`, toolCalls[0].Input))
 
 	// Test ToolResults()
 	toolResults := content.ToolResults()
 	require.Len(t, toolResults, 1)
-	require.Equal(t, "call1", toolResults[0].ToolCallID)
-	require.Equal(t, "test_tool", toolResults[0].ToolName)
+	assert.Empty(t, cmp.Diff("call1", toolResults[0].ToolCallID))
+	assert.Empty(t, cmp.Diff("test_tool", toolResults[0].ToolName))
 	result, ok := AsToolResultOutputType[ToolResultOutputContentText](toolResults[0].Result)
 	require.True(t, ok)
-	require.Equal(t, "result", result.Text)
+	assert.Empty(t, cmp.Diff("result", result.Text))
 }
 
 func TestResponseContent_Getters_Empty(t *testing.T) {
@@ -691,9 +701,8 @@ func TestResponseContent_Getters_Empty(t *testing.T) {
 
 	// Test with empty content
 	content := ResponseContent{}
-
-	require.Equal(t, "", content.Text())
-	require.Equal(t, "", content.ReasoningText())
+	assert.Empty(t, cmp.Diff("", content.Text()))
+	assert.Empty(t, cmp.Diff("", content.ReasoningText()))
 	require.Empty(t, content.Reasoning())
 	require.Empty(t, content.Files())
 	require.Empty(t, content.Sources())
@@ -715,17 +724,18 @@ func TestResponseContent_Getters_MultipleItems(t *testing.T) {
 	// Test multiple reasoning
 	reasoning := content.Reasoning()
 	require.Len(t, reasoning, 2)
-	require.Equal(t, "First thought", reasoning[0].Text)
-	require.Equal(t, "Second thought", reasoning[1].Text)
+	assert.Empty(t, cmp.Diff("First thought", reasoning[0].Text))
+	assert.Empty(t, cmp.Diff("Second thought", reasoning[1].Text))
+	assert.
 
-	// Test concatenated reasoning text
-	require.Equal(t, "First thoughtSecond thought", content.ReasoningText())
+		// Test concatenated reasoning text
+		Empty(t, cmp.Diff("First thoughtSecond thought", content.ReasoningText()))
 
 	// Test multiple files
 	files := content.Files()
 	require.Len(t, files, 2)
-	require.Equal(t, "text/plain", files[0].MediaType)
-	require.Equal(t, "image/png", files[1].MediaType)
+	assert.Empty(t, cmp.Diff("text/plain", files[0].MediaType))
+	assert.Empty(t, cmp.Diff("image/png", files[1].MediaType))
 }
 
 func TestStopConditions(t *testing.T) {
@@ -910,8 +920,9 @@ func TestStopConditions_Integration(t *testing.T) {
 
 		require.NoError(t, err)
 		require.NotNil(t, result)
-		// Should stop on first condition met (finish reason stop)
-		require.Equal(t, FinishReasonStop, result.Response.FinishReason)
+		assert.
+			// Should stop on first condition met (finish reason stop)
+			Empty(t, cmp.Diff(FinishReasonStop, result.Response.FinishReason))
 	})
 }
 
@@ -959,7 +970,7 @@ func TestPrepareStep(t *testing.T) {
 
 		require.NoError(t, err)
 		require.NotNil(t, result)
-		require.Equal(t, "Modified system prompt for step 0", capturedSystemPrompt)
+		assert.Empty(t, cmp.Diff("Modified system prompt for step 0", capturedSystemPrompt))
 	})
 
 	t.Run("Tool choice modification", func(t *testing.T) {
@@ -997,7 +1008,7 @@ func TestPrepareStep(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, result)
 		require.NotNil(t, capturedToolChoice)
-		require.Equal(t, ToolChoiceNone, *capturedToolChoice)
+		assert.Empty(t, cmp.Diff(ToolChoiceNone, *capturedToolChoice))
 	})
 
 	t.Run("Active tools modification", func(t *testing.T) {
@@ -1042,7 +1053,7 @@ func TestPrepareStep(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, result)
 		require.Len(t, capturedToolNames, 1)
-		require.Equal(t, "tool2", capturedToolNames[0])
+		assert.Empty(t, cmp.Diff("tool2", capturedToolNames[0]))
 	})
 
 	t.Run("No tools when DisableAllTools is true", func(t *testing.T) {
@@ -1080,7 +1091,7 @@ func TestPrepareStep(t *testing.T) {
 
 		require.NoError(t, err)
 		require.NotNil(t, result)
-		require.Equal(t, 0, capturedToolCount) // No tools should be passed
+		assert.Empty(t, cmp.Diff(0, capturedToolCount)) // No tools should be passed
 	})
 
 	t.Run("All fields modified together", func(t *testing.T) {
@@ -1140,11 +1151,11 @@ func TestPrepareStep(t *testing.T) {
 
 		require.NoError(t, err)
 		require.NotNil(t, result)
-		require.Equal(t, "Step-specific system", capturedSystemPrompt)
+		assert.Empty(t, cmp.Diff("Step-specific system", capturedSystemPrompt))
 		require.NotNil(t, capturedToolChoice)
-		require.Equal(t, SpecificToolChoice("tool1"), *capturedToolChoice)
+		assert.Empty(t, cmp.Diff(SpecificToolChoice("tool1"), *capturedToolChoice))
 		require.Len(t, capturedToolNames, 1)
-		require.Equal(t, "tool1", capturedToolNames[0])
+		assert.Empty(t, cmp.Diff("tool1", capturedToolNames[0]))
 	})
 
 	t.Run("Nil fields use parent values", func(t *testing.T) {
@@ -1201,11 +1212,11 @@ func TestPrepareStep(t *testing.T) {
 
 		require.NoError(t, err)
 		require.NotNil(t, result)
-		require.Equal(t, "Parent system", capturedSystemPrompt)
+		assert.Empty(t, cmp.Diff("Parent system", capturedSystemPrompt))
 		require.NotNil(t, capturedToolChoice)
-		require.Equal(t, ToolChoiceAuto, *capturedToolChoice) // Default
+		assert.Empty(t, cmp.Diff(ToolChoiceAuto, *capturedToolChoice)) // Default
 		require.Len(t, capturedToolNames, 1)
-		require.Equal(t, "tool1", capturedToolNames[0])
+		assert.Empty(t, cmp.Diff("tool1", capturedToolNames[0]))
 	})
 
 	t.Run("Empty ActiveTools means all tools", func(t *testing.T) {
@@ -1399,8 +1410,9 @@ func TestToolCallRepair(t *testing.T) {
 		// Check that tool call was repaired and is now valid
 		toolCalls := result.Steps[0].Content.ToolCalls()
 		require.Len(t, toolCalls, 1)
-		require.False(t, toolCalls[0].Invalid)                        // Should be valid after repair
-		require.Equal(t, `{"value": "repaired"}`, toolCalls[0].Input) // Should have repaired input
+		require.False(t, toolCalls[0].Invalid)
+		assert.Empty( // Should be valid after repair
+			t, cmp.Diff(`{"value": "repaired"}`, toolCalls[0].Input)) // Should have repaired input
 	})
 
 	t.Run("Invalid tool call with failed repair", func(t *testing.T) {
@@ -1596,8 +1608,8 @@ func TestAgent_MediaToolResponses(t *testing.T) {
 
 		mediaResult, ok := toolResults[0].Result.(ToolResultOutputContentMedia)
 		require.True(t, ok, "Expected media result")
-		require.Equal(t, string(imageData), mediaResult.Data)
-		require.Equal(t, "image/png", mediaResult.MediaType)
+		assert.Empty(t, cmp.Diff(string(imageData), mediaResult.Data))
+		assert.Empty(t, cmp.Diff("image/png", mediaResult.MediaType))
 	})
 
 	t.Run("Media tool response (audio)", func(t *testing.T) {
@@ -1648,8 +1660,8 @@ func TestAgent_MediaToolResponses(t *testing.T) {
 
 		mediaResult, ok := toolResults[0].Result.(ToolResultOutputContentMedia)
 		require.True(t, ok, "Expected media result")
-		require.Equal(t, string(audioData), mediaResult.Data)
-		require.Equal(t, "audio/wav", mediaResult.MediaType)
+		assert.Empty(t, cmp.Diff(string(audioData), mediaResult.Data))
+		assert.Empty(t, cmp.Diff("audio/wav", mediaResult.MediaType))
 	})
 
 	t.Run("Media response with text", func(t *testing.T) {
@@ -1702,9 +1714,9 @@ func TestAgent_MediaToolResponses(t *testing.T) {
 
 		mediaResult, ok := toolResults[0].Result.(ToolResultOutputContentMedia)
 		require.True(t, ok, "Expected media result")
-		require.Equal(t, string(imageData), mediaResult.Data)
-		require.Equal(t, "image/png", mediaResult.MediaType)
-		require.Equal(t, "Screenshot captured successfully", mediaResult.Text)
+		assert.Empty(t, cmp.Diff(string(imageData), mediaResult.Data))
+		assert.Empty(t, cmp.Diff("image/png", mediaResult.MediaType))
+		assert.Empty(t, cmp.Diff("Screenshot captured successfully", mediaResult.Text))
 	})
 
 	t.Run("Media response preserves metadata", func(t *testing.T) {
@@ -1765,7 +1777,7 @@ func TestAgent_MediaToolResponses(t *testing.T) {
 		var metadata ImageMetadata
 		err = jsonv2.Unmarshal([]byte(toolResults[0].ClientMetadata), &metadata)
 		require.NoError(t, err)
-		require.Equal(t, 800, metadata.Width)
-		require.Equal(t, 600, metadata.Height)
+		assert.Empty(t, cmp.Diff(800, metadata.Width))
+		assert.Empty(t, cmp.Diff(600, metadata.Height))
 	})
 }

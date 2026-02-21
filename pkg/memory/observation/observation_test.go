@@ -53,17 +53,17 @@ func TestRelativeDate(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			got := relativeDate(tc.ref, now)
-			assert.Equal(t, tc.want, got)
+			assert.Empty(t, cmp.Diff(tc.want, got))
 		})
 	}
 }
 
 func TestPriorityEmoji(t *testing.T) {
 	t.Parallel()
-	assert.Equal(t, "🔴", PriorityCritical.Emoji())
-	assert.Equal(t, "🟡", PriorityNotable.Emoji())
-	assert.Equal(t, "🔵", PriorityInformational.Emoji())
-	assert.Equal(t, "🔵", Priority("unknown").Emoji())
+	assert.Empty(t, cmp.Diff("🔴", PriorityCritical.Emoji()))
+	assert.Empty(t, cmp.Diff("🟡", PriorityNotable.Emoji()))
+	assert.Empty(t, cmp.Diff("🔵", PriorityInformational.Emoji()))
+	assert.Empty(t, cmp.Diff("🔵", Priority("unknown").Emoji()))
 }
 
 func TestFormatBlock(t *testing.T) {
@@ -84,8 +84,8 @@ func TestFormatBlock(t *testing.T) {
 
 func TestFormatBlock_Empty(t *testing.T) {
 	t.Parallel()
-	assert.Equal(t, "", FormatBlock(nil))
-	assert.Equal(t, "", FormatBlock([]Observation{}))
+	assert.Empty(t, cmp.Diff("", FormatBlock(nil)))
+	assert.Empty(t, cmp.Diff("", FormatBlock([]Observation{})))
 }
 
 func TestMarshalUnmarshalRoundTrip(t *testing.T) {
@@ -185,7 +185,7 @@ func TestObserver_Observe(t *testing.T) {
 	obs, err := o.Observe(t.Context(), msgs, nil)
 	require.NoError(t, err)
 	assert.Len(t, obs, 2)
-	assert.Equal(t, PriorityCritical, obs[0].Priority)
+	assert.Empty(t, cmp.Diff(PriorityCritical, obs[0].Priority))
 }
 
 func TestReflector_ShouldReflect(t *testing.T) {
@@ -224,8 +224,8 @@ func TestReflector_Reflect(t *testing.T) {
 	kept, err := r.Reflect(t.Context(), obs)
 	require.NoError(t, err)
 	assert.Len(t, kept, 2)
-	assert.Equal(t, "Critical fact", kept[0].Content)
-	assert.Equal(t, "Notable thing", kept[1].Content)
+	assert.Empty(t, cmp.Diff("Critical fact", kept[0].Content))
+	assert.Empty(t, cmp.Diff("Notable thing", kept[1].Content))
 }
 
 func TestReflector_ReflectFallbackKeepsCritical(t *testing.T) {
@@ -245,16 +245,16 @@ func TestReflector_ReflectFallbackKeepsCritical(t *testing.T) {
 	kept, err := r.Reflect(t.Context(), obs)
 	require.NoError(t, err)
 	assert.Len(t, kept, 1)
-	assert.Equal(t, "Must keep", kept[0].Content)
+	assert.Empty(t, cmp.Diff("Must keep", kept[0].Content))
 }
 
 func TestParsePriority(t *testing.T) {
 	t.Parallel()
-	assert.Equal(t, PriorityCritical, parsePriority("critical"))
-	assert.Equal(t, PriorityCritical, parsePriority("CRITICAL"))
-	assert.Equal(t, PriorityNotable, parsePriority("notable"))
-	assert.Equal(t, PriorityInformational, parsePriority("informational"))
-	assert.Equal(t, PriorityInformational, parsePriority("unknown"))
+	assert.Empty(t, cmp.Diff(PriorityCritical, parsePriority("critical")))
+	assert.Empty(t, cmp.Diff(PriorityCritical, parsePriority("CRITICAL")))
+	assert.Empty(t, cmp.Diff(PriorityNotable, parsePriority("notable")))
+	assert.Empty(t, cmp.Diff(PriorityInformational, parsePriority("informational")))
+	assert.Empty(t, cmp.Diff(PriorityInformational, parsePriority("unknown")))
 }
 
 func TestParseKeptIndices(t *testing.T) {

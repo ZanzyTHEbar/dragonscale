@@ -6,6 +6,7 @@ import (
 	"time"
 
 	jsonv2 "github.com/go-json-experiment/json"
+	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -50,15 +51,15 @@ func TestBackfillMissingSessionDAGs_CreatesSnapshotsAndPersistsStatus(t *testing
 	status, err := dag.BackfillMissingSessionDAGs(ctx, d, d.Queries(), agentID, dag.DefaultBackfillOptions())
 	require.NoError(t, err)
 	require.NotNil(t, status)
-	assert.Equal(t, 1, status.SnapshotsCreated)
-	assert.Equal(t, 0, status.Failures)
+	assert.Empty(t, cmp.Diff(1, status.SnapshotsCreated))
+	assert.Empty(t, cmp.Diff(0, status.Failures))
 
 	row, err := d.Queries().GetLatestDAGSnapshotBySession(ctx, memsqlc.GetLatestDAGSnapshotBySessionParams{
 		AgentID:    agentID,
 		SessionKey: sessionKey,
 	})
 	require.NoError(t, err)
-	assert.Equal(t, int64(12), row.MsgCount)
+	assert.Empty(t, cmp.Diff(int64(12), row.MsgCount))
 
 	kv, err := d.ListKVByPrefix(ctx, agentID, "migration:dag_backfill", 10)
 	require.NoError(t, err)
@@ -69,7 +70,7 @@ func TestBackfillMissingSessionDAGs_CreatesSnapshotsAndPersistsStatus(t *testing
 		require.NoError(t, jsonv2.Unmarshal([]byte(raw), &stored))
 		break
 	}
-	assert.Equal(t, status.SnapshotsCreated, stored.SnapshotsCreated)
+	assert.Empty(t, cmp.Diff(status.SnapshotsCreated, stored.SnapshotsCreated))
 	assert.False(t, stored.CompletedAt.IsZero())
 
 	status2, err := dag.BackfillMissingSessionDAGs(ctx, d, d.Queries(), agentID, dag.DefaultBackfillOptions())

@@ -9,6 +9,8 @@ import (
 	"charm.land/fantasy/providers/anthropic"
 	"charm.land/fantasy/providers/vercel"
 	"charm.land/x/vcr"
+	"github.com/google/go-cmp/cmp"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -94,7 +96,7 @@ func testVercelThinkingWithSignature(t *testing.T, result *fantasy.AgentResult) 
 	}
 	require.Greater(t, reasoningContentCount, 0)
 	require.Greater(t, signaturesCount, 0)
-	require.Equal(t, reasoningContentCount, signaturesCount)
+	assert.Empty(t, cmp.Diff(reasoningContentCount, signaturesCount))
 	// we also add the anthropic metadata so test that
 	testAnthropicThinking(t, result)
 }

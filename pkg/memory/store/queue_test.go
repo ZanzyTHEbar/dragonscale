@@ -6,6 +6,7 @@ import (
 
 	"github.com/ZanzyTHEbar/dragonscale/pkg/memory"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/memory/delegate"
+	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -37,7 +38,7 @@ func TestQueueManager_NormalPressure(t *testing.T) {
 
 	decision, err := qm.Evaluate(ctx, "agent-1", "session-1")
 	require.NoError(t, err)
-	assert.Equal(t, QueueActionNone, decision.Action)
+	assert.Empty(t, cmp.Diff(QueueActionNone, decision.Action))
 	assert.Contains(t, decision.Message, "healthy")
 }
 
@@ -52,7 +53,7 @@ func TestQueueManager_WarnPressure(t *testing.T) {
 
 	decision, err := qm.Evaluate(ctx, "agent-1", "s1")
 	require.NoError(t, err)
-	assert.Equal(t, QueueActionWarn, decision.Action)
+	assert.Empty(t, cmp.Diff(QueueActionWarn, decision.Action))
 	assert.Contains(t, decision.Message, "selective")
 }
 
@@ -67,7 +68,7 @@ func TestQueueManager_OffloadPressure(t *testing.T) {
 
 	decision, err := qm.Evaluate(ctx, "agent-1", "s1")
 	require.NoError(t, err)
-	assert.Equal(t, QueueActionOffload, decision.Action)
+	assert.Empty(t, cmp.Diff(QueueActionOffload, decision.Action))
 	assert.Contains(t, decision.Message, "offloading")
 }
 
@@ -82,7 +83,7 @@ func TestQueueManager_FlushPressure(t *testing.T) {
 
 	decision, err := qm.Evaluate(ctx, "agent-1", "s1")
 	require.NoError(t, err)
-	assert.Equal(t, QueueActionFlush, decision.Action)
+	assert.Empty(t, cmp.Diff(QueueActionFlush, decision.Action))
 	assert.Contains(t, decision.Message, "flush")
 }
 
@@ -118,7 +119,7 @@ func TestQueueManager_EvictEmpty(t *testing.T) {
 
 	evicted, summary, err := qm.EvictOldest(ctx, "agent-1", "empty-session")
 	require.NoError(t, err)
-	assert.Equal(t, 0, evicted)
+	assert.Empty(t, cmp.Diff(0, evicted))
 	assert.Empty(t, summary)
 }
 
@@ -128,5 +129,5 @@ func TestDefaultQueueManagerConfig(t *testing.T) {
 	assert.InDelta(t, 0.70, cfg.WarnThreshold, 0.001)
 	assert.InDelta(t, 0.80, cfg.OffloadThreshold, 0.001)
 	assert.InDelta(t, 0.85, cfg.FlushThreshold, 0.001)
-	assert.Equal(t, 10, cfg.MaxEvictBatch)
+	assert.Empty(t, cmp.Diff(10, cfg.MaxEvictBatch))
 }

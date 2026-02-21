@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/ZanzyTHEbar/dragonscale/pkg/itr"
+	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -50,7 +51,7 @@ func TestSocketTransportRoundTrip(t *testing.T) {
 
 	resp, err := client.Send(t.Context(), req)
 	require.NoError(t, err)
-	assert.Equal(t, "req-001", resp.ID)
+	assert.Empty(t, cmp.Diff("req-001", resp.ID))
 	assert.Contains(t, resp.Result, "req-001")
 
 	server.Close()
@@ -86,7 +87,7 @@ func TestSocketTransportMultipleRequests(t *testing.T) {
 		)
 		resp, err := client.Send(t.Context(), req)
 		require.NoError(t, err)
-		assert.Equal(t, req.ID, resp.ID)
+		assert.Empty(t, cmp.Diff(req.ID, resp.ID))
 	}
 }
 

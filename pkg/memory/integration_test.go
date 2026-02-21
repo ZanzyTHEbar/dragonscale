@@ -9,6 +9,7 @@ import (
 	"github.com/ZanzyTHEbar/dragonscale/pkg/memory"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/memory/delegate"
 	memstore "github.com/ZanzyTHEbar/dragonscale/pkg/memory/store"
+	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -103,8 +104,8 @@ func TestIntegration_BlobPK_RoundTrip(t *testing.T) {
 	fetched, err := store.GetRecall(ctx, item.ID)
 	require.NoError(t, err)
 	require.NotNil(t, fetched)
-	assert.Equal(t, item.ID, fetched.ID, "BLOB PK round-trip must preserve ID")
-	assert.Equal(t, "BLOB PK integration test item", fetched.Content)
+	assert.Empty(t, cmp.Diff(item.ID, fetched.ID), "BLOB PK round-trip must preserve ID")
+	assert.Empty(t, cmp.Diff("BLOB PK integration test item", fetched.Content))
 }
 
 func TestIntegration_ArchivalChunking_EndToEnd(t *testing.T) {
@@ -129,7 +130,7 @@ func TestIntegration_ArchivalChunking_EndToEnd(t *testing.T) {
 
 	for _, chunk := range chunks {
 		assert.False(t, chunk.ID.IsZero(), "chunk ID should not be zero")
-		assert.Equal(t, recallID, chunk.RecallID, "chunk must reference parent recall item")
+		assert.Empty(t, cmp.Diff(recallID, chunk.RecallID), "chunk must reference parent recall item")
 	}
 }
 
@@ -226,12 +227,12 @@ func TestIntegration_WorkingContext_Persistence(t *testing.T) {
 	wc, err := del.GetWorkingContext(ctx, testAgent, testSession)
 	require.NoError(t, err)
 	require.NotNil(t, wc)
-	assert.Equal(t, "initial state", wc.Content)
+	assert.Empty(t, cmp.Diff("initial state", wc.Content))
 
 	require.NoError(t, del.UpsertWorkingContext(ctx, testAgent, testSession, "updated state"))
 	wc, err = del.GetWorkingContext(ctx, testAgent, testSession)
 	require.NoError(t, err)
-	assert.Equal(t, "updated state", wc.Content)
+	assert.Empty(t, cmp.Diff("updated state", wc.Content))
 }
 
 func TestIntegration_Summary_CRUD(t *testing.T) {
@@ -252,8 +253,8 @@ func TestIntegration_Summary_CRUD(t *testing.T) {
 	fetched, err := del.ListSummaries(ctx, testAgent, testSession, 1)
 	require.NoError(t, err)
 	require.Len(t, fetched, 1)
-	assert.Equal(t, summary.ID, fetched[0].ID)
-	assert.Equal(t, "Summarized conversation about testing", fetched[0].Content)
+	assert.Empty(t, cmp.Diff(summary.ID, fetched[0].ID))
+	assert.Empty(t, cmp.Diff("Summarized conversation about testing", fetched[0].Content))
 }
 
 func TestIntegration_IDUniqueness_AcrossEntities(t *testing.T) {
@@ -300,7 +301,7 @@ func TestIntegration_ContextPressure(t *testing.T) {
 	pressure, err := store.ContextUsage(ctx, testAgent, testSession)
 	require.NoError(t, err)
 	require.NotNil(t, pressure)
-	assert.Equal(t, 0, pressure.RecallItemCount)
+	assert.Empty(t, cmp.Diff(0, pressure.RecallItemCount))
 
 	for i := 0; i < 3; i++ {
 		item := &memory.RecallItem{
@@ -315,5 +316,5 @@ func TestIntegration_ContextPressure(t *testing.T) {
 
 	pressure, err = store.ContextUsage(ctx, testAgent, testSession)
 	require.NoError(t, err)
-	assert.Equal(t, 3, pressure.RecallItemCount)
+	assert.Empty(t, cmp.Diff(3, pressure.RecallItemCount))
 }

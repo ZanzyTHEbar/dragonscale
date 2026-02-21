@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -21,7 +22,7 @@ func TestMarkdownChunker_BasicSplit(t *testing.T) {
 	assert.Greater(t, len(chunks), 1, "long content should produce multiple chunks")
 
 	for i, c := range chunks {
-		assert.Equal(t, i, c.Index)
+		assert.Empty(t, cmp.Diff(i, c.Index))
 		assert.NotEmpty(t, c.Text)
 	}
 }
@@ -33,7 +34,7 @@ func TestMarkdownChunker_SmallContent(t *testing.T) {
 	chunks, err := chunker.Chunk("Short text.")
 	require.NoError(t, err)
 	assert.Len(t, chunks, 1)
-	assert.Equal(t, "Short text.", chunks[0].Text)
+	assert.Empty(t, cmp.Diff("Short text.", chunks[0].Text))
 }
 
 func TestMarkdownChunker_PreservesMarkdownStructure(t *testing.T) {
@@ -94,8 +95,8 @@ func TestMarkdownChunker_EmptyContent(t *testing.T) {
 func TestMarkdownChunker_DefaultConfig(t *testing.T) {
 	t.Parallel()
 	cfg := DefaultMarkdownChunkerConfig()
-	assert.Equal(t, 1600, cfg.ChunkSize)
-	assert.Equal(t, 320, cfg.ChunkOverlap)
+	assert.Empty(t, cmp.Diff(1600, cfg.ChunkSize))
+	assert.Empty(t, cmp.Diff(320, cfg.ChunkOverlap))
 	assert.True(t, cfg.CodeBlocks)
 	assert.True(t, cfg.Headings)
 }

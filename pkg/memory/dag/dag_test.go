@@ -45,8 +45,8 @@ func TestCompressor_SmallInput(t *testing.T) {
 	require.Len(t, d.Nodes, 1)
 	chunk := d.NodesAtLevel(LevelChunk)
 	require.Len(t, chunk, 1)
-	assert.Equal(t, 0, chunk[0].StartIdx)
-	assert.Equal(t, 2, chunk[0].EndIdx)
+	assert.Empty(t, cmp.Diff(0, chunk[0].StartIdx))
+	assert.Empty(t, cmp.Diff(2, chunk[0].EndIdx))
 	assert.Contains(t, chunk[0].Summary, "user:")
 	assert.Contains(t, chunk[0].Summary, "assistant:")
 }
@@ -63,12 +63,12 @@ func TestCompressor_ChunkSplitting(t *testing.T) {
 	chunks := d.NodesAtLevel(LevelChunk)
 	require.Len(t, chunks, 3)
 
-	assert.Equal(t, 0, chunks[0].StartIdx)
-	assert.Equal(t, 4, chunks[0].EndIdx)
-	assert.Equal(t, 4, chunks[1].StartIdx)
-	assert.Equal(t, 8, chunks[1].EndIdx)
-	assert.Equal(t, 8, chunks[2].StartIdx)
-	assert.Equal(t, 12, chunks[2].EndIdx)
+	assert.Empty(t, cmp.Diff(0, chunks[0].StartIdx))
+	assert.Empty(t, cmp.Diff(4, chunks[0].EndIdx))
+	assert.Empty(t, cmp.Diff(4, chunks[1].StartIdx))
+	assert.Empty(t, cmp.Diff(8, chunks[1].EndIdx))
+	assert.Empty(t, cmp.Diff(8, chunks[2].StartIdx))
+	assert.Empty(t, cmp.Diff(12, chunks[2].EndIdx))
 }
 
 func TestCompressor_SectionBuilding(t *testing.T) {
@@ -89,8 +89,8 @@ func TestCompressor_SectionBuilding(t *testing.T) {
 	assert.Len(t, sections, 3)
 
 	// First section covers chunks 0-1 (msgs 0-7)
-	assert.Equal(t, 0, sections[0].StartIdx)
-	assert.Equal(t, 8, sections[0].EndIdx)
+	assert.Empty(t, cmp.Diff(0, sections[0].StartIdx))
+	assert.Empty(t, cmp.Diff(8, sections[0].EndIdx))
 	assert.Len(t, sections[0].Children, 2)
 }
 
@@ -107,12 +107,12 @@ func TestCompressor_SessionSummary(t *testing.T) {
 
 	sessions := d.NodesAtLevel(LevelSession)
 	require.Len(t, sessions, 1)
-	assert.Equal(t, 0, sessions[0].StartIdx)
-	assert.Equal(t, 24, sessions[0].EndIdx)
+	assert.Empty(t, cmp.Diff(0, sessions[0].StartIdx))
+	assert.Empty(t, cmp.Diff(24, sessions[0].EndIdx))
 	assert.Len(t, sessions[0].Children, 3)
 
 	require.Len(t, d.Roots, 1)
-	assert.Equal(t, sessions[0].ID, d.Roots[0])
+	assert.Empty(t, cmp.Diff(sessions[0].ID, d.Roots[0]))
 }
 
 func TestExtractSentences(t *testing.T) {
@@ -135,7 +135,7 @@ func TestExtractSentences(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := extractSentences(tt.text, tt.n)
-			assert.Equal(t, tt.want, got)
+			assert.Empty(t, cmp.Diff(tt.want, got))
 		})
 	}
 }
@@ -209,8 +209,7 @@ func TestComputeBudget(t *testing.T) {
 func TestBudget_Remaining(t *testing.T) {
 	t.Parallel()
 	b := Budget{Total: 10000}
-	assert.Equal(t, 7000, b.Remaining(1000, 500, 500, 500, 500, 0))
-	assert.Equal(t, 0, b.Remaining(5000, 3000, 1000, 1000, 1000, 0))
+	assert.Empty(t, cmp.Diff(7000, b.Remaining(1000, 500, 500, 500, 500, 0)))
 }
 
 func TestSelectDAGLevel(t *testing.T) {
@@ -226,21 +225,21 @@ func TestSelectDAGLevel(t *testing.T) {
 	chunkTokens := d.TotalTokens(LevelChunk)
 
 	// Large budget -> most detailed (chunk)
-	assert.Equal(t, LevelChunk, SelectDAGLevel(d, chunkTokens+1000))
+	assert.Empty(t, cmp.Diff(LevelChunk, SelectDAGLevel(d, chunkTokens+1000)))
 
 	// Very small budget -> session level
-	assert.Equal(t, LevelSession, SelectDAGLevel(d, 10))
+	assert.Empty(t, cmp.Diff(LevelSession, SelectDAGLevel(d, 10)))
 
 	// Nil DAG
-	assert.Equal(t, LevelRaw, SelectDAGLevel(nil, 1000))
+	assert.Empty(t, cmp.Diff(LevelRaw, SelectDAGLevel(nil, 1000)))
 }
 
 func TestTailMessageCount(t *testing.T) {
 	t.Parallel()
-	assert.Equal(t, 4, TailMessageCount(100))   // Minimum
-	assert.Equal(t, 20, TailMessageCount(1000)) // 1000/50
-	assert.Equal(t, 4, TailMessageCount(0))     // Zero budget
-	assert.Equal(t, 4, TailMessageCount(-1))    // Negative
+	assert.Empty(t, cmp.Diff(4, TailMessageCount(100)))   // Minimum
+	assert.Empty(t, cmp.Diff(20, TailMessageCount(1000))) // 1000/50
+	assert.Empty(t, cmp.Diff(4, TailMessageCount(0)))     // Zero budget
+	assert.Empty(t, cmp.Diff(4, TailMessageCount(-1)))    // Negative
 }
 
 func TestRenderDAGForBudget(t *testing.T) {

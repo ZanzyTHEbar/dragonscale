@@ -13,6 +13,7 @@ import (
 	"github.com/ZanzyTHEbar/dragonscale/pkg/memory"
 	memdag "github.com/ZanzyTHEbar/dragonscale/pkg/memory/dag"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/memory/delegate"
+	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -111,7 +112,7 @@ func TestWorkingContext_SetAndGet(t *testing.T) {
 	// Get back
 	content, err = store.GetWorkingContext(ctx, "agent-1", "session-1")
 	require.NoError(t, err)
-	assert.Equal(t, "You are a helpful assistant.", content)
+	assert.Empty(t, cmp.Diff("You are a helpful assistant.", content))
 
 	// Update
 	err = store.SetWorkingContext(ctx, "agent-1", "session-1", "Updated context.")
@@ -119,7 +120,7 @@ func TestWorkingContext_SetAndGet(t *testing.T) {
 
 	content, err = store.GetWorkingContext(ctx, "agent-1", "session-1")
 	require.NoError(t, err)
-	assert.Equal(t, "Updated context.", content)
+	assert.Empty(t, cmp.Diff("Updated context.", content))
 }
 
 func TestWorkingContext_IsolatedBySessions(t *testing.T) {
@@ -134,11 +135,11 @@ func TestWorkingContext_IsolatedBySessions(t *testing.T) {
 
 	a, err := store.GetWorkingContext(ctx, "agent-1", "session-a")
 	require.NoError(t, err)
-	assert.Equal(t, "Context A", a)
+	assert.Empty(t, cmp.Diff("Context A", a))
 
 	b, err := store.GetWorkingContext(ctx, "agent-1", "session-b")
 	require.NoError(t, err)
-	assert.Equal(t, "Context B", b)
+	assert.Empty(t, cmp.Diff("Context B", b))
 }
 
 func TestRecall_CRUD(t *testing.T) {
@@ -165,8 +166,8 @@ func TestRecall_CRUD(t *testing.T) {
 	got, err := store.GetRecall(ctx, item.ID)
 	require.NoError(t, err)
 	require.NotNil(t, got)
-	assert.Equal(t, "The user asked about Go generics.", got.Content)
-	assert.Equal(t, memory.SectorEpisodic, got.Sector)
+	assert.Empty(t, cmp.Diff("The user asked about Go generics.", got.Content))
+	assert.Empty(t, cmp.Diff(memory.SectorEpisodic, got.Sector))
 	assert.InDelta(t, 0.8, got.Importance, 0.001)
 
 	// Update
@@ -178,7 +179,7 @@ func TestRecall_CRUD(t *testing.T) {
 	updated, err := store.GetRecall(ctx, item.ID)
 	require.NoError(t, err)
 	assert.InDelta(t, 0.95, updated.Importance, 0.001)
-	assert.Equal(t, "Updated: user asked about Go generics in depth.", updated.Content)
+	assert.Empty(t, cmp.Diff("Updated: user asked about Go generics in depth.", updated.Content))
 
 	// Delete
 	err = store.DeleteRecall(ctx, item.ID)
@@ -323,7 +324,7 @@ func TestSearch_ShadowModeUsesBaselineAndTracksParity(t *testing.T) {
 
 	var metrics retrievalShadowMetrics
 	require.NoError(t, json.Unmarshal([]byte(metricsRaw), &metrics))
-	assert.Equal(t, 1, metrics.TotalQueries)
+	assert.Empty(t, cmp.Diff(1, metrics.TotalQueries))
 }
 
 func TestSearch_DoesNotPromoteWithoutAugmentedSignals(t *testing.T) {
@@ -366,7 +367,7 @@ func TestSearch_DoesNotPromoteWithoutAugmentedSignals(t *testing.T) {
 	require.NoError(t, err)
 	var state retrievalPolicyState
 	require.NoError(t, json.Unmarshal([]byte(stateRaw), &state))
-	assert.Equal(t, retrievalModeShadow, state.Mode)
+	assert.Empty(t, cmp.Diff(retrievalModeShadow, state.Mode))
 }
 
 func TestSearch_PromoteOnlyOnGateWin(t *testing.T) {
@@ -412,7 +413,7 @@ func TestSearch_PromoteOnlyOnGateWin(t *testing.T) {
 
 	var state retrievalPolicyState
 	require.NoError(t, json.Unmarshal([]byte(stateRaw), &state))
-	assert.Equal(t, retrievalModePromoted, state.Mode)
+	assert.Empty(t, cmp.Diff(retrievalModePromoted, state.Mode))
 }
 
 func TestSearch_FastRollbackPreservesBaselinePath(t *testing.T) {
@@ -488,7 +489,7 @@ func TestSearch_FastRollbackPreservesBaselinePath(t *testing.T) {
 	require.NoError(t, err)
 	var state retrievalPolicyState
 	require.NoError(t, json.Unmarshal([]byte(stateRaw), &state))
-	assert.Equal(t, retrievalModeRollback, state.Mode)
+	assert.Empty(t, cmp.Diff(retrievalModeRollback, state.Mode))
 
 	// Subsequent calls should return baseline-only path again.
 	results, err := store.Search(ctx, "grocery", memory.SearchOptions{
@@ -538,7 +539,7 @@ func TestUpdateRetrievalPolicy_PersistFailuresDoNotBlockTransitions(t *testing.T
 	}
 
 	next := store.updateRetrievalPolicy(ctx, state, gates, metrics, parity, true, baseline)
-	assert.Equal(t, retrievalModePromoted, next.Mode)
+	assert.Empty(t, cmp.Diff(retrievalModePromoted, next.Mode))
 }
 
 func TestSearch_ConcurrentRetrievalPolicyUpdates(t *testing.T) {
@@ -596,9 +597,9 @@ func TestContextUsage(t *testing.T) {
 	// Empty system — should be normal pressure
 	pressure, err := store.ContextUsage(ctx, "agent-1", "session-1")
 	require.NoError(t, err)
-	assert.Equal(t, memory.PressureNormal, pressure.PressureLevel)
-	assert.Equal(t, 0, pressure.WorkingContextTokens)
-	assert.Equal(t, 0, pressure.RecallItemCount)
+	assert.Empty(t, cmp.Diff(memory.PressureNormal, pressure.PressureLevel))
+	assert.Empty(t, cmp.Diff(0, pressure.WorkingContextTokens))
+	assert.Empty(t, cmp.Diff(0, pressure.RecallItemCount))
 
 	// Add working context
 	err = store.SetWorkingContext(ctx, "agent-1", "session-1", strings.Repeat("x", 4000))
@@ -642,7 +643,7 @@ func TestContextUsage_RecallTokenEstimateUsesContent(t *testing.T) {
 
 	expectedRecallTokens := estimateTokens(contentA) + estimateTokens(contentB)
 	assert.GreaterOrEqual(t, pressure.EstimatedTotalTokens, expectedRecallTokens)
-	assert.Equal(t, 2, pressure.RecallItemCount)
+	assert.Empty(t, cmp.Diff(2, pressure.RecallItemCount))
 }
 
 func TestContextUsage_PressureLevels(t *testing.T) {
@@ -782,7 +783,7 @@ func TestRRF_MergesTwoSets(t *testing.T) {
 	merged := ReciprocalRankFusion([][]memory.SearchResult{set1, set2}, []float64{1.0, 1.0}, 60)
 	require.GreaterOrEqual(t, len(merged), 2)
 	// idB appears in both sets, should have highest fused score
-	assert.Equal(t, idB, merged[0].ID)
+	assert.Empty(t, cmp.Diff(idB, merged[0].ID))
 }
 
 func TestRecencyDecay(t *testing.T) {
@@ -819,5 +820,5 @@ func TestApplyRecencyDecay_ReordersByAge(t *testing.T) {
 	})
 
 	// idNew should now rank higher because idOld got heavily decayed
-	assert.Equal(t, idNew, results[0].ID)
+	assert.Empty(t, cmp.Diff(idNew, results[0].ID))
 }

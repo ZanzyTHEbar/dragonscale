@@ -3,6 +3,7 @@ package dag
 import (
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -16,5 +17,5 @@ func TestNeedsReplan(t *testing.T) {
 
 func TestReplanSentinelIsConsistent(t *testing.T) {
 	t.Parallel()
-	assert.Equal(t, "[NEEDS_MORE_STEPS]", replanSentinel)
+	assert.Empty(t, cmp.Diff("[NEEDS_MORE_STEPS]", replanSentinel))
 }

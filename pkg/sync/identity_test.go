@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/ZanzyTHEbar/dragonscale/pkg/memory"
+	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -101,7 +102,7 @@ func TestSyncAll_InsertsNewFiles(t *testing.T) {
 	for _, name := range IdentityFiles {
 		doc := store.getDoc("agent-1", name)
 		require.NotNil(t, doc, "expected document for %s", name)
-		assert.Equal(t, syncCategory, doc.Category)
+		assert.Empty(t, cmp.Diff(syncCategory, doc.Category))
 		assert.NotEmpty(t, doc.Content)
 
 		hash := store.getHash("agent-1", name)
@@ -125,7 +126,7 @@ func TestSyncAll_SkipsUnchangedFiles(t *testing.T) {
 
 	require.NoError(t, s.SyncAll(t.Context()))
 	secondDoc := store.getDoc("agent-1", "AGENT.md")
-	assert.Equal(t, firstID, secondDoc.ID, "unchanged file should not be re-upserted")
+	assert.Empty(t, cmp.Diff(firstID, secondDoc.ID), "unchanged file should not be re-upserted")
 }
 
 func TestSyncAll_UpsertsModifiedFiles(t *testing.T) {
@@ -235,7 +236,7 @@ func TestCheckAndSync_SkipsUntouchedFiles(t *testing.T) {
 	require.NoError(t, s.CheckAndSync(t.Context()))
 
 	hash2 := store.getHash("agent-1", "AGENT.md")
-	assert.Equal(t, hash1, hash2, "untouched file should not trigger re-sync")
+	assert.Empty(t, cmp.Diff(hash1, hash2), "untouched file should not trigger re-sync")
 }
 
 func TestWatch_DetectsFileChange(t *testing.T) {
@@ -285,7 +286,7 @@ func TestContentHash_Deterministic(t *testing.T) {
 	data := []byte("hello world")
 	h1 := contentHash(data)
 	h2 := contentHash(data)
-	assert.Equal(t, h1, h2)
+	assert.Empty(t, cmp.Diff(h1, h2))
 	assert.Len(t, h1, 64)
 }
 
@@ -313,7 +314,7 @@ func TestIsIdentityFile(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.want, isIdentityFile(tt.name))
+			assert.Empty(t, cmp.Diff(tt.want, isIdentityFile(tt.name)))
 		})
 	}
 }
@@ -322,7 +323,7 @@ func TestNew_SetsFields(t *testing.T) {
 	t.Parallel()
 	store := newMockStore()
 	s := New("/tmp/identity", "test-agent", store)
-	assert.Equal(t, "/tmp/identity", s.identityDir)
-	assert.Equal(t, "test-agent", s.agentID)
+	assert.Empty(t, cmp.Diff("/tmp/identity", s.identityDir))
+	assert.Empty(t, cmp.Diff("test-agent", s.agentID))
 	assert.NotNil(t, s.store)
 }

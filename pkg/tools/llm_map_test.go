@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	jsonv2 "github.com/go-json-experiment/json"
+	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -85,9 +86,9 @@ func TestLLMMapTool_Execute_Success(t *testing.T) {
 		Results []map[string]interface{} `json:"results"`
 	}
 	require.NoError(t, jsonv2.Unmarshal([]byte(result.ForLLM), &payload))
-	assert.Equal(t, 2, payload.Count)
+	assert.Empty(t, cmp.Diff(2, payload.Count))
 	require.Len(t, payload.Results, 2)
-	assert.Equal(t, "alpha", payload.Results[0]["label"])
+	assert.Empty(t, cmp.Diff("alpha", payload.Results[0]["label"]))
 }
 
 func TestLLMMapTool_Execute_SchemaValidationFailure(t *testing.T) {

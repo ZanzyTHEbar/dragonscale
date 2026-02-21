@@ -7,6 +7,7 @@ import (
 
 	"github.com/ZanzyTHEbar/dragonscale/pkg/ids"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/memory"
+	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -60,7 +61,7 @@ func TestLibSQLDelegate_InsertAuditEntry(t *testing.T) {
 
 			count, err := d.CountAuditEntries(ctx, tt.entry.AgentID)
 			require.NoError(t, err)
-			assert.Equal(t, 1, count)
+			assert.Empty(t, cmp.Diff(1, count))
 		})
 	}
 }
@@ -171,9 +172,15 @@ func TestLibSQLDelegate_ListAuditEntriesByAction(t *testing.T) {
 			require.NoError(t, err)
 			assert.Len(t, entries, tt.wantLen)
 			if tt.wantAction != "" {
-				for _, e := range entries {
-					assert.Equal(t, tt.wantAction, e.Action)
+				actions := make([]string, len(entries))
+				for i, entry := range entries {
+					actions[i] = entry.Action
 				}
+				wantActions := make([]string, len(entries))
+				for i := range wantActions {
+					wantActions[i] = tt.wantAction
+				}
+				assert.Empty(t, cmp.Diff(wantActions, actions))
 			}
 		})
 	}
@@ -234,14 +241,14 @@ func TestLibSQLDelegate_PruneOldAuditEntries(t *testing.T) {
 
 	count, err := d.CountAuditEntries(ctx, "a1")
 	require.NoError(t, err)
-	assert.Equal(t, 2, count)
+	assert.Empty(t, cmp.Diff(2, count))
 
 	// Prune entries created before "now + 1 minute" (should remove all)
 	require.NoError(t, d.PruneOldAuditEntries(ctx, "a1", time.Now().Add(time.Minute)))
 
 	count, err = d.CountAuditEntries(ctx, "a1")
 	require.NoError(t, err)
-	assert.Equal(t, 0, count)
+	assert.Empty(t, cmp.Diff(0, count))
 }
 
 func TestLibSQLDelegate_CountAuditEntriesByAction(t *testing.T) {
@@ -281,7 +288,7 @@ func TestLibSQLDelegate_CountAuditEntriesByAction(t *testing.T) {
 			}
 			count, err := d.CountAuditEntriesByAction(ctx, tt.agentID, tt.action)
 			require.NoError(t, err)
-			assert.Equal(t, tt.want, count)
+			assert.Empty(t, cmp.Diff(tt.want, count))
 		})
 	}
 }

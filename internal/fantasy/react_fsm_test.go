@@ -5,6 +5,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -56,9 +57,9 @@ func TestFSM_Start(t *testing.T) {
 
 	transitions := obs.Snapshot()
 	require.Len(t, transitions, 1)
-	assert.Equal(t, ReActStateInit, transitions[0].From)
-	assert.Equal(t, ReActStatePrepareStep, transitions[0].To)
-	assert.Equal(t, ReActTriggerStart, transitions[0].Trigger)
+	assert.Empty(t, cmp.Diff(ReActStateInit, transitions[0].From))
+	assert.Empty(t, cmp.Diff(ReActStatePrepareStep, transitions[0].To))
+	assert.Empty(t, cmp.Diff(ReActTriggerStart, transitions[0].Trigger))
 }
 
 // TestFSM_FullHappyPath drives one complete step through all states and
@@ -76,8 +77,8 @@ func TestFSM_FullHappyPath(t *testing.T) {
 	transitions := obs.Snapshot()
 	// Expected: Init->PrepareStep, PrepareStep->LLM, LLM->Validate, Validate->Execute, Execute->Append, Append->Stop, Stop->Done
 	require.Len(t, transitions, 7)
-	assert.Equal(t, ReActStateInit, transitions[0].From)
-	assert.Equal(t, ReActStateDone, transitions[6].To)
+	assert.Empty(t, cmp.Diff(ReActStateInit, transitions[0].From))
+	assert.Empty(t, cmp.Diff(ReActStateDone, transitions[6].To))
 }
 
 // TestFSM_Continue verifies that the loop can re-enter PrepareStep after a
@@ -96,10 +97,10 @@ func TestFSM_Continue(t *testing.T) {
 
 	transitions := obs.Snapshot()
 	// Two full loops: each has 5 states + Start + Continue + Finished = 13
-	assert.Equal(t, 13, len(transitions))
+	assert.Empty(t, cmp.Diff(13, len(transitions)))
 
 	// Second loop re-enters PrepareStep
-	assert.Equal(t, ReActStatePrepareStep, transitions[6].To)
+	assert.Empty(t, cmp.Diff(ReActStatePrepareStep, transitions[6].To))
 }
 
 // TestFSM_StopConditionMet verifies the alternative Done path.
@@ -114,7 +115,7 @@ func TestFSM_StopConditionMet(t *testing.T) {
 	f.Fire(ctx, ReActTriggerStopConditionMet)
 
 	last := obs.Snapshot()
-	assert.Equal(t, ReActStateDone, last[len(last)-1].To)
+	assert.Empty(t, cmp.Diff(ReActStateDone, last[len(last)-1].To))
 }
 
 // TestFSM_ErrorTransition verifies the error state is reachable from any state.
@@ -130,7 +131,7 @@ func TestFSM_ErrorTransition(t *testing.T) {
 
 	transitions := obs.Snapshot()
 	last := transitions[len(transitions)-1]
-	assert.Equal(t, ReActStateError, last.To)
+	assert.Empty(t, cmp.Diff(ReActStateError, last.To))
 }
 
 // TestFSM_RecoveredContinue verifies the error → PrepareStep recovery path.
@@ -146,7 +147,7 @@ func TestFSM_RecoveredContinue(t *testing.T) {
 
 	transitions := obs.Snapshot()
 	last := transitions[len(transitions)-1]
-	assert.Equal(t, ReActStatePrepareStep, last.To)
+	assert.Empty(t, cmp.Diff(ReActStatePrepareStep, last.To))
 }
 
 // TestFSM_UnhandledTriggerIsPermissive verifies that firing an invalid trigger
@@ -197,8 +198,8 @@ func TestFSM_StepIndex(t *testing.T) {
 
 	transitions := obs.Snapshot()
 	require.Len(t, transitions, 2)
-	assert.Equal(t, 0, transitions[0].StepIndex)
-	assert.Equal(t, 1, transitions[1].StepIndex)
+	assert.Empty(t, cmp.Diff(0, transitions[0].StepIndex))
+	assert.Empty(t, cmp.Diff(1, transitions[1].StepIndex))
 }
 
 // TestFSM_NilObserverSafe verifies no panic when no observer is attached.

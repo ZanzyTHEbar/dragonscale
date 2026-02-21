@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -49,16 +51,15 @@ func TestParallelToolRuntime_OrderAndCallbackDeterminism(t *testing.T) {
 	results, err := runtime.Execute(t.Context(), []AgentTool{tool}, toolCalls, cb)
 	require.NoError(t, err)
 	require.Len(t, results, 3)
-
-	require.Equal(t, "c1", results[0].ToolCallID)
-	require.Equal(t, "a", results[0].Result.(ToolResultOutputContentText).Text)
-	require.Equal(t, "c2", results[1].ToolCallID)
-	require.Equal(t, "b", results[1].Result.(ToolResultOutputContentText).Text)
-	require.Equal(t, "c3", results[2].ToolCallID)
-	require.Equal(t, "c", results[2].Result.(ToolResultOutputContentText).Text)
+	assert.Empty(t, cmp.Diff("c1", results[0].ToolCallID))
+	assert.Empty(t, cmp.Diff("a", results[0].Result.(ToolResultOutputContentText).Text))
+	assert.Empty(t, cmp.Diff("c2", results[1].ToolCallID))
+	assert.Empty(t, cmp.Diff("b", results[1].Result.(ToolResultOutputContentText).Text))
+	assert.Empty(t, cmp.Diff("c3", results[2].ToolCallID))
+	assert.Empty(t, cmp.Diff("c", results[2].Result.(ToolResultOutputContentText).Text))
 
 	cbMu.Lock()
-	require.Equal(t, []string{"c1", "c2", "c3"}, cbOrder)
+	assert.Empty(t, cmp.Diff([]string{"c1", "c2", "c3"}, cbOrder))
 	cbMu.Unlock()
 }
 
@@ -97,7 +98,7 @@ func TestParallelToolRuntime_BarrierForNonParallelTools(t *testing.T) {
 	require.Len(t, results, 4)
 
 	mu.Lock()
-	require.Equal(t, []string{"p1", "p2", "s1", "p3"}, order)
+	assert.Empty(t, cmp.Diff([]string{"p1", "p2", "s1", "p3"}, order))
 	mu.Unlock()
 }
 

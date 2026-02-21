@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -54,7 +55,7 @@ func TestInstallTemplate_BuildsValidGraph(t *testing.T) {
 
 	rm := g.GetNode("risk-management")
 	require.NotNil(t, rm)
-	assert.Equal(t, "finance", rm.Domain)
+	assert.Empty(t, cmp.Diff("finance", rm.Domain))
 	assert.Contains(t, rm.Tags, "trading")
 }
 

@@ -3,6 +3,7 @@ package dag
 import (
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -18,9 +19,9 @@ func TestTopologicalOrderLinear(t *testing.T) {
 	waves, err := topologicalOrder(states)
 	require.NoError(t, err)
 	require.Len(t, waves, 3)
-	assert.Equal(t, []string{"a"}, waves[0])
-	assert.Equal(t, []string{"b"}, waves[1])
-	assert.Equal(t, []string{"c"}, waves[2])
+	assert.Empty(t, cmp.Diff([]string{"a"}, waves[0]))
+	assert.Empty(t, cmp.Diff([]string{"b"}, waves[1]))
+	assert.Empty(t, cmp.Diff([]string{"c"}, waves[2]))
 }
 
 func TestTopologicalOrderParallel(t *testing.T) {
@@ -38,7 +39,7 @@ func TestTopologicalOrderParallel(t *testing.T) {
 	assert.Len(t, waves[0], 2)
 	assert.Contains(t, waves[0], "a")
 	assert.Contains(t, waves[0], "b")
-	assert.Equal(t, []string{"c"}, waves[1])
+	assert.Empty(t, cmp.Diff([]string{"c"}, waves[1]))
 }
 
 func TestTopologicalOrderCycleDetection(t *testing.T) {
@@ -63,7 +64,7 @@ func TestTopologicalOrderSingleNode(t *testing.T) {
 	waves, err := topologicalOrder(states)
 	require.NoError(t, err)
 	require.Len(t, waves, 1)
-	assert.Equal(t, []string{"only"}, waves[0])
+	assert.Empty(t, cmp.Diff([]string{"only"}, waves[0]))
 }
 
 func TestResolveRefs(t *testing.T) {
@@ -84,7 +85,7 @@ func TestResolveRefsNoMatch(t *testing.T) {
 	states := map[string]*nodeState{}
 	input := `{"path":"#nodemissing"}`
 	result := resolveRefs(input, states)
-	assert.Equal(t, input, result)
+	assert.Empty(t, cmp.Diff(input, result))
 }
 
 func TestResolveToolExecArgsNoRefs(t *testing.T) {
@@ -92,7 +93,7 @@ func TestResolveToolExecArgsNoRefs(t *testing.T) {
 	states := map[string]*nodeState{}
 	input := `{"path":"/tmp/plain.txt"}`
 	result := resolveToolExecArgs(input, states)
-	assert.Equal(t, input, result)
+	assert.Empty(t, cmp.Diff(input, result))
 }
 
 func TestEscapeForJSON(t *testing.T) {
@@ -108,7 +109,7 @@ func TestEscapeForJSON(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
-			assert.Equal(t, tt.expected, escapeForJSON(tt.input))
+			assert.Empty(t, cmp.Diff(tt.expected, escapeForJSON(tt.input)))
 		})
 	}
 }
@@ -125,5 +126,5 @@ func TestNodeStateSetAndGetResult(t *testing.T) {
 
 	result, err := ns.getResult()
 	assert.NoError(t, err)
-	assert.Equal(t, "result-data", result)
+	assert.Empty(t, cmp.Diff("result-data", result))
 }

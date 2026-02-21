@@ -3,6 +3,7 @@ package agent_test
 import (
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -24,7 +25,7 @@ func TestDelegateKV_PutAndGet(t *testing.T) {
 
 	got, err := kv.Get(ctx, "key1")
 	require.NoError(t, err)
-	assert.Equal(t, []byte("hello world"), got)
+	assert.Empty(t, cmp.Diff([]byte("hello world"), got))
 }
 
 func TestDelegateKV_GetMissingKey(t *testing.T) {
@@ -47,7 +48,7 @@ func TestDelegateKV_PutOverwrite(t *testing.T) {
 
 	got, err := kv.Get(ctx, "k")
 	require.NoError(t, err)
-	assert.Equal(t, []byte("v2"), got, "second put should overwrite the first")
+	assert.Empty(t, cmp.Diff([]byte("v2"), got), "second put should overwrite the first")
 }
 
 func TestDelegateKV_BinaryValues(t *testing.T) {
@@ -61,7 +62,7 @@ func TestDelegateKV_BinaryValues(t *testing.T) {
 
 	got, err := kv.Get(ctx, "binary-key")
 	require.NoError(t, err)
-	assert.Equal(t, data, got, "binary round-trip must be lossless")
+	assert.Empty(t, cmp.Diff(data, got), "binary round-trip must be lossless")
 }
 
 func TestDelegateKV_Scan(t *testing.T) {
@@ -101,7 +102,7 @@ func TestDelegateKV_ScanSorted(t *testing.T) {
 
 	got, err := kv.Scan(ctx, "z/")
 	require.NoError(t, err)
-	assert.Equal(t, []string{"z/a", "z/b", "z/c"}, got, "Scan must return keys sorted")
+	assert.Empty(t, cmp.Diff([]string{"z/a", "z/b", "z/c"}, got), "Scan must return keys sorted")
 }
 
 func TestDelegateKV_AgentIsolation(t *testing.T) {
@@ -116,11 +117,11 @@ func TestDelegateKV_AgentIsolation(t *testing.T) {
 
 	v1, err := kv1.Get(ctx, "shared-key")
 	require.NoError(t, err)
-	assert.Equal(t, []byte("from-A"), v1)
+	assert.Empty(t, cmp.Diff([]byte("from-A"), v1))
 
 	v2, err := kv2.Get(ctx, "shared-key")
 	require.NoError(t, err)
-	assert.Equal(t, []byte("from-B"), v2)
+	assert.Empty(t, cmp.Diff([]byte("from-B"), v2))
 }
 
 func TestDelegateKV_EmptyKey_PutErrors(t *testing.T) {

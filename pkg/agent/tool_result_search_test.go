@@ -7,6 +7,7 @@ import (
 	jsonv2 "github.com/go-json-experiment/json"
 
 	"charm.land/fantasy"
+	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -149,12 +150,12 @@ func TestToolResultSearch_QueryFilters(t *testing.T) {
 			out := invokeSearch(t, tool, input)
 
 			total, _ := out["total"].(float64)
-			assert.Equal(t, tt.wantTotal, total)
+			assert.Empty(t, cmp.Diff(tt.wantTotal, total))
 
 			if tt.wantTCID != "" {
 				items := out["items"].([]any)
 				item := items[0].(map[string]any)
-				assert.Equal(t, tt.wantTCID, item["tool_call_id"])
+				assert.Empty(t, cmp.Diff(tt.wantTCID, item["tool_call_id"]))
 			}
 		})
 	}
@@ -229,7 +230,7 @@ func TestToolResultSearch_LineView(t *testing.T) {
 
 	// The view_range reflects the actual clamped range (1 JSON line available).
 	viewRange := item["view_range"].(map[string]any)
-	assert.Equal(t, float64(1), viewRange["start_line"], "clamped to 1 since full.json is a single-line JSON blob")
+	assert.Empty(t, cmp.Diff(float64(1), viewRange["start_line"]), "clamped to 1 since full.json is a single-line JSON blob")
 }
 
 // TestToolResultSearch_ChunkView verifies chunk-range retrieval from KV.
@@ -282,5 +283,5 @@ func TestToolResultSearch_ChunkView(t *testing.T) {
 	view := item["view"].(string)
 
 	// First two chunks: "abcdefghijabcdefghij" + "abcdefghijabcdefghij" = 40 chars
-	assert.Equal(t, strings.Repeat("abcdefghij", 4), view, "chunk 0+1 should be first 40 chars")
+	assert.Empty(t, cmp.Diff(strings.Repeat("abcdefghij", 4), view), "chunk 0+1 should be first 40 chars")
 }

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	jsonv2 "github.com/go-json-experiment/json"
+	"github.com/google/go-cmp/cmp"
 
 	"github.com/ZanzyTHEbar/dragonscale/pkg"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/ids"
@@ -114,71 +115,156 @@ func writeSessionFile(t *testing.T, dir, name string, sess SessionFile) {
 	}
 }
 
-func TestMigrateFileSessions_Basic(t *testing.T) {
+func TestMigrateFileSessions(t *testing.T) {
 	t.Parallel()
-	sessDir := t.TempDir()
-	del := newMockDelegate()
 
-	writeSessionFile(t, sessDir, "sess1.json", SessionFile{
-		Key: "session-1",
-		Messages: []SessionMsg{
-			{Role: "user", Content: "Hello"},
-			{Role: "assistant", Content: "Hi there!"},
+	type tc struct {
+		name        string
+		setup       func(t *testing.T, dir string, del *mockDelegate)
+		sessionsDir string
+		want        *MigrateSessionsResult
+		extra       func(t *testing.T, dir string, result *MigrateSessionsResult, del *mockDelegate)
+	}
+
+	tests := []tc{
+		{
+			name: "basic",
+			setup: func(t *testing.T, dir string, _ *mockDelegate) {
+				writeSessionFile(t, dir, "sess1.json", SessionFile{
+					Key: "session-1",
+					Messages: []SessionMsg{
+						{Role: "user", Content: "Hello"},
+						{Role: "assistant", Content: "Hi there!"},
+					},
+					Created: time.Now().Add(-time.Hour),
+					Updated: time.Now(),
+				})
+				writeSessionFile(t, dir, "sess2.json", SessionFile{
+					Key:     "session-2",
+					Summary: "Talked about Go programming",
+					Messages: []SessionMsg{
+						{Role: "user", Content: "Tell me about Go"},
+					},
+				})
+			},
+			want: &MigrateSessionsResult{SessionsFound: 2, SessionsMigrated: 2, ItemsCreated: 3, Errors: 0},
+			extra: func(t *testing.T, _ string, _ *MigrateSessionsResult, del *mockDelegate) {
+				if len(del.recallItems) != 3 {
+					t.Fatalf("expected 3 recall items, got %d", len(del.recallItems))
+				}
+				first := del.recallItems[0]
+				if first.Role != "user" || first.Content != "Hello" || first.SessionKey != "session-1" || first.Tags != "migrated" {
+					t.Errorf("unexpected first recall item: %+v", first)
+				}
+
+				wc, err := del.GetWorkingContext(t.Context(), pkg.NAME, "session-2")
+				if err != nil {
+					t.Fatalf("GetWorkingContext: %v", err)
+				}
+				if wc == nil || wc.Content != "Talked about Go programming" {
+					t.Errorf("expected summary as working context, got %v", wc)
+				}
+			},
 		},
-		Created: time.Now().Add(-time.Hour),
-		Updated: time.Now(),
-	})
-
-	writeSessionFile(t, sessDir, "sess2.json", SessionFile{
-		Key:     "session-2",
-		Summary: "Talked about Go programming",
-		Messages: []SessionMsg{
-			{Role: "user", Content: "Tell me about Go"},
+		{
+			name:  "empty dir",
+			setup: func(_ *testing.T, _ string, _ *mockDelegate) {},
+			want: &MigrateSessionsResult{
+				SessionsFound:    0,
+				SessionsMigrated: 0,
+				ItemsCreated:     0,
+				Errors:           0,
+			},
 		},
-	})
-
-	result, err := MigrateFileSessions(t.Context(), del, pkg.NAME, sessDir)
-	if err != nil {
-		t.Fatalf("MigrateFileSessions: %v", err)
+		{
+			name: "skip empty messages",
+			setup: func(t *testing.T, dir string, _ *mockDelegate) {
+				writeSessionFile(t, dir, "sess.json", SessionFile{
+					Key: "s1",
+					Messages: []SessionMsg{
+						{Role: "user", Content: "real content"},
+						{Role: "assistant", Content: ""},
+						{Role: "user", Content: "   "},
+					},
+				})
+			},
+			want: &MigrateSessionsResult{SessionsFound: 1, SessionsMigrated: 1, ItemsCreated: 1, Errors: 0},
+		},
+		{
+			name: "fallback key from filename",
+			setup: func(t *testing.T, dir string, _ *mockDelegate) {
+				writeSessionFile(t, dir, "custom-key.json", SessionFile{
+					Key: "",
+					Messages: []SessionMsg{
+						{Role: "user", Content: "test"},
+					},
+				})
+			},
+			want: &MigrateSessionsResult{SessionsFound: 1, SessionsMigrated: 1, ItemsCreated: 1, Errors: 0},
+			extra: func(t *testing.T, _ string, result *MigrateSessionsResult, del *mockDelegate) {
+				if got := del.recallItems[0].SessionKey; got != "custom-key" {
+					t.Errorf("expected 'custom-key' from filename, got %q", got)
+				}
+				if result.ItemsCreated != 1 {
+					t.Fatalf("expected 1 item, got %d", result.ItemsCreated)
+				}
+			},
+		},
+		{
+			name: "malformed json",
+			setup: func(t *testing.T, dir string, _ *mockDelegate) {
+				if err := os.WriteFile(filepath.Join(dir, "bad.json"), []byte("{broken"), 0644); err != nil {
+					t.Fatalf("write malformed json: %v", err)
+				}
+				writeSessionFile(t, dir, "good.json", SessionFile{
+					Key: "g1",
+					Messages: []SessionMsg{
+						{Role: "user", Content: "ok"},
+					},
+				})
+			},
+			want: &MigrateSessionsResult{SessionsFound: 2, SessionsMigrated: 1, ItemsCreated: 1, Errors: 1},
+		},
+		{
+			name:        "nonexistent dir",
+			sessionsDir: "/nonexistent/path",
+			want:        nil,
+		},
 	}
 
-	if result.SessionsFound != 2 {
-		t.Errorf("expected 2 sessions found, got %d", result.SessionsFound)
-	}
-	if result.SessionsMigrated != 2 {
-		t.Errorf("expected 2 sessions migrated, got %d", result.SessionsMigrated)
-	}
-	if result.ItemsCreated != 3 {
-		t.Errorf("expected 3 items, got %d", result.ItemsCreated)
-	}
-	if result.Errors != 0 {
-		t.Errorf("expected 0 errors, got %d", result.Errors)
-	}
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			del := newMockDelegate()
+			sessDir := t.TempDir()
+			if tt.sessionsDir != "" {
+				sessDir = tt.sessionsDir
+			}
+			if tt.setup != nil {
+				tt.setup(t, sessDir, del)
+			}
 
-	// Check recall items were created with correct data
-	if len(del.recallItems) != 3 {
-		t.Fatalf("expected 3 recall items, got %d", len(del.recallItems))
-	}
-	if del.recallItems[0].Role != "user" {
-		t.Errorf("expected 'user' role, got %q", del.recallItems[0].Role)
-	}
-	if del.recallItems[0].Content != "Hello" {
-		t.Errorf("expected 'Hello', got %q", del.recallItems[0].Content)
-	}
-	if del.recallItems[0].SessionKey != "session-1" {
-		t.Errorf("expected 'session-1', got %q", del.recallItems[0].SessionKey)
-	}
-	if del.recallItems[0].Tags != "migrated" {
-		t.Errorf("expected 'migrated' tag, got %q", del.recallItems[0].Tags)
-	}
-
-	// Check summary was stored as working context
-	wc, err := del.GetWorkingContext(t.Context(), pkg.NAME, "session-2")
-	if err != nil {
-		t.Fatalf("GetWorkingContext: %v", err)
-	}
-	if wc == nil || wc.Content != "Talked about Go programming" {
-		t.Errorf("expected summary as working context, got %v", wc)
+			got, err := MigrateFileSessions(t.Context(), del, pkg.NAME, sessDir)
+			if err != nil {
+				t.Fatalf("MigrateFileSessions: %v", err)
+			}
+			if tt.want == nil {
+				if got != nil {
+					t.Errorf("expected nil result, got %#v", got)
+				}
+				return
+			}
+			if got == nil {
+				t.Fatal("expected migration result, got nil")
+			}
+			if diff := cmp.Diff(*tt.want, *got); diff != "" {
+				t.Errorf("migration result mismatch (-want +got):\n%s", diff)
+			}
+			if tt.extra != nil {
+				tt.extra(t, sessDir, got, del)
+			}
+		})
 	}
 }
 
@@ -194,7 +280,6 @@ func TestMigrateFileSessions_Idempotent(t *testing.T) {
 		},
 	})
 
-	// First run
 	result1, err := MigrateFileSessions(t.Context(), del, pkg.NAME, sessDir)
 	if err != nil {
 		t.Fatalf("first migration: %v", err)
@@ -203,7 +288,6 @@ func TestMigrateFileSessions_Idempotent(t *testing.T) {
 		t.Fatalf("expected 1, got %d", result1.SessionsMigrated)
 	}
 
-	// Second run should be a no-op (marker file exists)
 	result2, err := MigrateFileSessions(t.Context(), del, pkg.NAME, sessDir)
 	if err != nil {
 		t.Fatalf("second migration: %v", err)
@@ -212,114 +296,7 @@ func TestMigrateFileSessions_Idempotent(t *testing.T) {
 		t.Error("expected nil result for already-migrated directory")
 	}
 
-	// Still only 1 item
 	if len(del.recallItems) != 1 {
 		t.Errorf("expected 1 recall item (no duplicates), got %d", len(del.recallItems))
-	}
-}
-
-func TestMigrateFileSessions_EmptyDir(t *testing.T) {
-	t.Parallel()
-	sessDir := t.TempDir()
-	del := newMockDelegate()
-
-	result, err := MigrateFileSessions(t.Context(), del, pkg.NAME, sessDir)
-	if err != nil {
-		t.Fatalf("MigrateFileSessions: %v", err)
-	}
-	if result.SessionsFound != 0 {
-		t.Errorf("expected 0 sessions, got %d", result.SessionsFound)
-	}
-}
-
-func TestMigrateFileSessions_NonexistentDir(t *testing.T) {
-	t.Parallel()
-	del := newMockDelegate()
-
-	result, err := MigrateFileSessions(t.Context(), del, pkg.NAME, "/nonexistent/path")
-	if err != nil {
-		t.Fatalf("MigrateFileSessions: %v", err)
-	}
-	if result != nil {
-		t.Error("expected nil result for nonexistent dir")
-	}
-}
-
-func TestMigrateFileSessions_SkipsEmptyMessages(t *testing.T) {
-	t.Parallel()
-	sessDir := t.TempDir()
-	del := newMockDelegate()
-
-	writeSessionFile(t, sessDir, "sess.json", SessionFile{
-		Key: "s1",
-		Messages: []SessionMsg{
-			{Role: "user", Content: "real content"},
-			{Role: "assistant", Content: ""},
-			{Role: "user", Content: "   "},
-		},
-	})
-
-	result, err := MigrateFileSessions(t.Context(), del, pkg.NAME, sessDir)
-	if err != nil {
-		t.Fatalf("MigrateFileSessions: %v", err)
-	}
-	if result.ItemsCreated != 1 {
-		t.Errorf("expected 1 item (empty msgs skipped), got %d", result.ItemsCreated)
-	}
-}
-
-func TestMigrateFileSessions_FallbackKey(t *testing.T) {
-	t.Parallel()
-	sessDir := t.TempDir()
-	del := newMockDelegate()
-
-	// Session with empty key — should use filename
-	writeSessionFile(t, sessDir, "custom-key.json", SessionFile{
-		Key: "",
-		Messages: []SessionMsg{
-			{Role: "user", Content: "test"},
-		},
-	})
-
-	result, err := MigrateFileSessions(t.Context(), del, pkg.NAME, sessDir)
-	if err != nil {
-		t.Fatalf("MigrateFileSessions: %v", err)
-	}
-	if result.ItemsCreated != 1 {
-		t.Fatalf("expected 1 item, got %d", result.ItemsCreated)
-	}
-	if del.recallItems[0].SessionKey != "custom-key" {
-		t.Errorf("expected 'custom-key' from filename, got %q", del.recallItems[0].SessionKey)
-	}
-}
-
-func TestMigrateFileSessions_MalformedJSON(t *testing.T) {
-	t.Parallel()
-	sessDir := t.TempDir()
-	del := newMockDelegate()
-
-	// Write a malformed JSON file
-	os.WriteFile(filepath.Join(sessDir, "bad.json"), []byte("{broken"), 0644)
-
-	// Also a valid one
-	writeSessionFile(t, sessDir, "good.json", SessionFile{
-		Key: "g1",
-		Messages: []SessionMsg{
-			{Role: "user", Content: "ok"},
-		},
-	})
-
-	result, err := MigrateFileSessions(t.Context(), del, pkg.NAME, sessDir)
-	if err != nil {
-		t.Fatalf("MigrateFileSessions: %v", err)
-	}
-	if result.SessionsFound != 2 {
-		t.Errorf("expected 2 found, got %d", result.SessionsFound)
-	}
-	if result.SessionsMigrated != 1 {
-		t.Errorf("expected 1 migrated, got %d", result.SessionsMigrated)
-	}
-	if result.Errors != 1 {
-		t.Errorf("expected 1 error, got %d", result.Errors)
 	}
 }

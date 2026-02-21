@@ -324,7 +324,7 @@ func TestSessionManager_ProjectionPointerPersistedAndRestored(t *testing.T) {
 	assert.NotZero(t, ptr.LastMessageID)
 	assert.False(t, ptr.FirstCreatedAt.IsZero())
 	assert.False(t, ptr.LastCreatedAt.IsZero())
-	assert.Equal(t, 3, ptr.Count)
+	assert.Empty(t, cmp.Diff(3, ptr.Count))
 
 	// New manager restores; pointer is re-persisted (same values)
 	sm2 := NewSessionManager("", WithSessionDelegate(del, "test-agent"))
@@ -355,7 +355,7 @@ func TestSessionManager_ProjectionPointerUpdatedOnAppend(t *testing.T) {
 		require.NotEmpty(t, raw)
 		var ptr ProjectionPointer
 		require.NoError(t, jsonv2.Unmarshal([]byte(raw), &ptr))
-		assert.Equal(t, i+1, ptr.Count)
+		assert.Empty(t, cmp.Diff(i+1, ptr.Count))
 	}
 }
 
@@ -380,8 +380,8 @@ func TestSessionManager_IntegrityMismatchRestoreStillSucceeds(t *testing.T) {
 	sm2 := NewSessionManager("", WithSessionDelegate(del, "test-agent"))
 	history := sm2.GetHistory(sessionKey)
 	require.Len(t, history, 2)
-	assert.Equal(t, "a", history[0].Content)
-	assert.Equal(t, "b", history[1].Content)
+	assert.Empty(t, cmp.Diff("a", history[0].Content))
+	assert.Empty(t, cmp.Diff("b", history[1].Content))
 
 	// Pointer should now reflect restored state
 	raw, err := del.GetKV(t.Context(), "test-agent", projectionPointerKey(sessionKey))
@@ -389,7 +389,7 @@ func TestSessionManager_IntegrityMismatchRestoreStillSucceeds(t *testing.T) {
 	require.NotEmpty(t, raw)
 	var ptr ProjectionPointer
 	require.NoError(t, jsonv2.Unmarshal([]byte(raw), &ptr))
-	assert.Equal(t, 2, ptr.Count)
+	assert.Empty(t, cmp.Diff(2, ptr.Count))
 }
 
 func TestSessionManager_ProjectionBackfillStatusPersistedOnBootstrap(t *testing.T) {
@@ -412,7 +412,7 @@ func TestSessionManager_ProjectionBackfillStatusPersistedOnBootstrap(t *testing.
 
 	var status ProjectionBackfillStatus
 	require.NoError(t, jsonv2.Unmarshal([]byte(raw), &status))
-	assert.Equal(t, 1, status.Version)
+	assert.Empty(t, cmp.Diff(1, status.Version))
 	assert.GreaterOrEqual(t, status.SessionsScanned, 2)
 	assert.GreaterOrEqual(t, status.PointersUpdated, 0)
 	assert.WithinDuration(t, time.Now().UTC(), status.CompletedAt, 5*time.Second)

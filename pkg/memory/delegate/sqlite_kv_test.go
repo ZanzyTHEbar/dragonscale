@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -84,7 +85,7 @@ func TestLibSQLDelegate_GetKV(t *testing.T) {
 				return
 			}
 			require.NoError(t, err)
-			assert.Equal(t, tt.wantValue, got)
+			assert.Empty(t, cmp.Diff(tt.wantValue, got))
 		})
 	}
 }
@@ -155,7 +156,7 @@ func TestLibSQLDelegate_UpsertKV(t *testing.T) {
 			}
 			got, err := d.GetKV(ctx, tt.agentID, tt.key)
 			require.NoError(t, err)
-			assert.Equal(t, tt.want, got)
+			assert.Empty(t, cmp.Diff(tt.want, got))
 		})
 	}
 }
@@ -214,7 +215,7 @@ func TestLibSQLDelegate_DeleteKV(t *testing.T) {
 			if tt.name == "delete only affects target agent" {
 				other, err := d.GetKV(ctx, "a2", "shared")
 				require.NoError(t, err)
-				assert.Equal(t, "a2-val", other, "other agent's key must survive")
+				assert.Empty(t, cmp.Diff("a2-val", other), "other agent's key must survive")
 			}
 		})
 	}
@@ -306,7 +307,7 @@ func TestLibSQLDelegate_ListKVByPrefix(t *testing.T) {
 				return
 			}
 
-			assert.Equal(t, tt.want, got)
+			assert.Empty(t, cmp.Diff(tt.want, got))
 		})
 	}
 }

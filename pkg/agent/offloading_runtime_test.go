@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"charm.land/fantasy"
+	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -85,7 +86,7 @@ func TestOffloading_SmallResult_KeptInline(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, results, 1)
 
-	assert.Equal(t, "echo:call-a", results[0].Result.(fantasy.ToolResultOutputContentText).Text)
+	assert.Empty(t, cmp.Diff("echo:call-a", results[0].Result.(fantasy.ToolResultOutputContentText).Text))
 
 	// KV should still have the full result stored
 	keys, err := kv.Scan(ctx, "tool_results/")
@@ -146,7 +147,7 @@ func TestOffloading_LargeResult_Truncated(t *testing.T) {
 		require.NoError(t, err)
 		full.Write(part)
 	}
-	assert.Equal(t, longText, full.String(), "reassembled chunks must equal original text")
+	assert.Empty(t, cmp.Diff(longText, full.String()), "reassembled chunks must equal original text")
 }
 
 // TestOffloading_DBMetadata_Inserted verifies that the DB record is created.
@@ -290,7 +291,7 @@ func TestChunkString(t *testing.T) {
 			}
 
 			if tt.chunkSize > 0 && len(tt.input) > effectiveThreshold {
-				assert.Equal(t, tt.wantLen, chunkCount)
+				assert.Empty(t, cmp.Diff(tt.wantLen, chunkCount))
 			}
 		})
 	}

@@ -87,8 +87,8 @@ func TestToolExecPayloadPreservation(t *testing.T) {
 
 	payload, ok := decoded.Payload.(ToolExec)
 	require.True(t, ok, "payload should be ToolExec")
-	assert.Equal(t, "shell", payload.ToolName)
-	assert.Equal(t, `{"cmd":"ls -la"}`, payload.ArgsJSON)
+	assert.Empty(t, cmp.Diff("shell", payload.ToolName))
+	assert.Empty(t, cmp.Diff(`{"cmd":"ls -la"}`, payload.ArgsJSON))
 }
 
 func TestGrepPayloadPreservation(t *testing.T) {
@@ -102,8 +102,8 @@ func TestGrepPayloadPreservation(t *testing.T) {
 
 	payload, ok := decoded.Payload.(Grep)
 	require.True(t, ok)
-	assert.Equal(t, "error.*fatal", payload.Pattern)
-	assert.Equal(t, uint32(25), payload.MaxMatches)
+	assert.Empty(t, cmp.Diff("error.*fatal", payload.Pattern))
+	assert.Empty(t, cmp.Diff(uint32(25), payload.MaxMatches))
 	assert.True(t, payload.CaseInsensitive)
 }
 
@@ -127,20 +127,20 @@ func TestDAGPlanPayloadPreservation(t *testing.T) {
 	dagPlan, ok := decoded.Payload.(DAGPlan)
 	require.True(t, ok)
 	assert.Len(t, dagPlan.Nodes, 2)
-	assert.Equal(t, "a", dagPlan.Nodes[0].ID)
-	assert.Equal(t, CmdToolSearch, dagPlan.Nodes[0].Type)
-	assert.Equal(t, []string{"a"}, dagPlan.Nodes[1].DependsOn)
-	assert.Equal(t, uint8(2), dagPlan.MaxParallel)
-	assert.Equal(t, "combine results", dagPlan.JoinerQuery)
+	assert.Empty(t, cmp.Diff("a", dagPlan.Nodes[0].ID))
+	assert.Empty(t, cmp.Diff(CmdToolSearch, dagPlan.Nodes[0].Type))
+	assert.Empty(t, cmp.Diff([]string{"a"}, dagPlan.Nodes[1].DependsOn))
+	assert.Empty(t, cmp.Diff(uint8(2), dagPlan.MaxParallel))
+	assert.Empty(t, cmp.Diff("combine results", dagPlan.JoinerQuery))
 
 	ts, ok := dagPlan.Nodes[0].Payload.(ToolSearch)
 	require.True(t, ok, "ToolSearch payload should be retyped after unmarshal")
-	assert.Equal(t, "files", ts.Query)
-	assert.Equal(t, uint8(5), ts.MaxResults)
+	assert.Empty(t, cmp.Diff("files", ts.Query))
+	assert.Empty(t, cmp.Diff(uint8(5), ts.MaxResults))
 
 	te, ok := dagPlan.Nodes[1].Payload.(ToolExec)
 	require.True(t, ok, "ToolExec payload should be retyped after unmarshal")
-	assert.Equal(t, "read", te.ToolName)
+	assert.Empty(t, cmp.Diff("read", te.ToolName))
 	assert.Contains(t, te.ArgsJSON, "#nodea")
 }
 
@@ -214,9 +214,9 @@ func TestRequestJSON_Roundtrip(t *testing.T) {
 
 	decoded, err := UnmarshalRequestJSON(data)
 	require.NoError(t, err)
-	assert.Equal(t, orig.ID, decoded.ID)
+	assert.Empty(t, cmp.Diff(orig.ID, decoded.ID))
 	p := decoded.Payload.(ToolExec)
-	assert.Equal(t, "shell", p.ToolName)
+	assert.Empty(t, cmp.Diff("shell", p.ToolName))
 }
 
 func TestResponseJSON_Roundtrip(t *testing.T) {
@@ -227,6 +227,6 @@ func TestResponseJSON_Roundtrip(t *testing.T) {
 
 	decoded, err := UnmarshalResponseJSON(data)
 	require.NoError(t, err)
-	assert.Equal(t, orig.ID, decoded.ID)
-	assert.Equal(t, "ok", decoded.Result)
+	assert.Empty(t, cmp.Diff(orig.ID, decoded.ID))
+	assert.Empty(t, cmp.Diff("ok", decoded.Result))
 }

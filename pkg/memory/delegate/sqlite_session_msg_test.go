@@ -7,6 +7,7 @@ import (
 
 	"github.com/ZanzyTHEbar/dragonscale/pkg/ids"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/memory"
+	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -77,9 +78,14 @@ func TestLibSQLDelegate_InsertSessionMessage(t *testing.T) {
 
 			count, err := d.CountSessionMessages(ctx, tt.agentID, tt.sessionKey)
 			require.NoError(t, err)
-			assert.Equal(t, int64(1), count)
+			assert.Empty(t, cmp.Diff(int64(1), count))
 		})
 	}
+}
+
+type recallItemRoleContent struct {
+	Role    string
+	Content string
 }
 
 func TestLibSQLDelegate_ListSessionMessages(t *testing.T) {
@@ -92,7 +98,8 @@ func TestLibSQLDelegate_ListSessionMessages(t *testing.T) {
 		role       string
 		limit      int
 		wantLen    int
-		wantRole   string
+		wantRoles  []string
+		wantMsgs   []recallItemRoleContent
 	}{
 		{
 			name:       "empty session returns empty",
@@ -114,6 +121,11 @@ func TestLibSQLDelegate_ListSessionMessages(t *testing.T) {
 			role:       "",
 			limit:      50,
 			wantLen:    3,
+			wantMsgs: []recallItemRoleContent{
+				{Role: "user", Content: "msg1"},
+				{Role: "assistant", Content: "msg2"},
+				{Role: "tool", Content: "msg3"},
+			},
 		},
 		{
 			name: "filter by role=user",
@@ -127,7 +139,11 @@ func TestLibSQLDelegate_ListSessionMessages(t *testing.T) {
 			role:       "user",
 			limit:      50,
 			wantLen:    2,
-			wantRole:   "user",
+			wantRoles:  []string{"user", "user"},
+			wantMsgs: []recallItemRoleContent{
+				{Role: "user", Content: "u1"},
+				{Role: "user", Content: "u2"},
+			},
 		},
 		{
 			name: "session isolation",
@@ -140,6 +156,9 @@ func TestLibSQLDelegate_ListSessionMessages(t *testing.T) {
 			role:       "",
 			limit:      50,
 			wantLen:    1,
+			wantMsgs: []recallItemRoleContent{
+				{Role: "user", Content: "msgA"},
+			},
 		},
 		{
 			name: "agent isolation",
@@ -152,6 +171,9 @@ func TestLibSQLDelegate_ListSessionMessages(t *testing.T) {
 			role:       "",
 			limit:      50,
 			wantLen:    1,
+			wantMsgs: []recallItemRoleContent{
+				{Role: "user", Content: "from-a1"},
+			},
 		},
 		{
 			name: "respects limit",
@@ -178,6 +200,12 @@ func TestLibSQLDelegate_ListSessionMessages(t *testing.T) {
 			role:       "",
 			limit:      50,
 			wantLen:    3,
+			wantRoles:  []string{"user", "assistant", "user"},
+			wantMsgs: []recallItemRoleContent{
+				{Role: "user", Content: "first"},
+				{Role: "assistant", Content: "second"},
+				{Role: "user", Content: "third"},
+			},
 		},
 	}
 
@@ -192,16 +220,22 @@ func TestLibSQLDelegate_ListSessionMessages(t *testing.T) {
 			require.NoError(t, err)
 			assert.Len(t, msgs, tt.wantLen)
 
-			if tt.wantRole != "" {
-				for _, m := range msgs {
-					assert.Equal(t, tt.wantRole, m.Role)
+			if tt.wantRoles != nil {
+				gotRoles := make([]string, len(msgs))
+				for i, got := range msgs {
+					gotRoles[i] = got.Role
 				}
+				assert.Empty(t, cmp.Diff(tt.wantRoles, gotRoles))
 			}
-
-			if tt.name == "ordered by created_at ASC" && len(msgs) == 3 {
-				assert.Equal(t, "first", msgs[0].Content)
-				assert.Equal(t, "second", msgs[1].Content)
-				assert.Equal(t, "third", msgs[2].Content)
+			if tt.wantMsgs != nil {
+				gotMsgs := make([]recallItemRoleContent, len(msgs))
+				for i, got := range msgs {
+					gotMsgs[i] = recallItemRoleContent{
+						Role:    got.Role,
+						Content: got.Content,
+					}
+				}
+				assert.Empty(t, cmp.Diff(tt.wantMsgs, gotMsgs))
 			}
 		})
 	}
@@ -266,7 +300,7 @@ func TestLibSQLDelegate_CountSessionMessages(t *testing.T) {
 			}
 			count, err := d.CountSessionMessages(ctx, tt.agentID, tt.sessionKey)
 			require.NoError(t, err)
-			assert.Equal(t, tt.want, count)
+			assert.Empty(t, cmp.Diff(tt.want, count))
 		})
 	}
 }

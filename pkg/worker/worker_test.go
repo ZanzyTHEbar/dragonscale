@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -67,7 +68,7 @@ func TestWorker_RunOnce_HandlerCalled(t *testing.T) {
 
 	err := worker.RunOnce(ctx, q, opts)
 	require.NoError(t, err)
-	assert.Equal(t, int32(1), called.Load(), "handler must be called once")
+	assert.Empty(t, cmp.Diff(int32(1), called.Load()), "handler must be called once")
 }
 
 func TestWorker_RunOnce_JobMarkedSucceeded(t *testing.T) {
@@ -90,7 +91,7 @@ func TestWorker_RunOnce_JobMarkedSucceeded(t *testing.T) {
 
 	done, err := q.GetJob(ctx, sqlc.GetJobParams{ID: job.ID})
 	require.NoError(t, err)
-	assert.Equal(t, "succeeded", done.Status)
+	assert.Empty(t, cmp.Diff("succeeded", done.Status))
 }
 
 func TestWorker_RunOnce_HandlerError_Requeued(t *testing.T) {
@@ -114,8 +115,8 @@ func TestWorker_RunOnce_HandlerError_Requeued(t *testing.T) {
 
 	requeued, err := q.GetJob(ctx, sqlc.GetJobParams{ID: job.ID})
 	require.NoError(t, err)
-	assert.Equal(t, "queued", requeued.Status, "job should be requeued after transient failure")
-	assert.Equal(t, int64(1), requeued.Attempts, "attempt count must increment")
+	assert.Empty(t, cmp.Diff("queued", requeued.Status), "job should be requeued after transient failure")
+	assert.Empty(t, cmp.Diff(int64(1), requeued.Attempts), "attempt count must increment")
 	assert.NotNil(t, requeued.LastError)
 }
 
@@ -146,7 +147,7 @@ func TestWorker_RunOnce_MaxAttemptsExhausted_MarkedFailed(t *testing.T) {
 			failed++
 		}
 	}
-	assert.Equal(t, 1, failed, "job should be permanently failed after exhausting max attempts")
+	assert.Empty(t, cmp.Diff(1, failed), "job should be permanently failed after exhausting max attempts")
 }
 
 func TestWorker_RunOnce_UnknownKind_MarkedFailed(t *testing.T) {
@@ -171,7 +172,7 @@ func TestWorker_RunOnce_UnknownKind_MarkedFailed(t *testing.T) {
 			failed++
 		}
 	}
-	assert.Equal(t, 1, failed, "unknown kind should permanently fail the job")
+	assert.Empty(t, cmp.Diff(1, failed), "unknown kind should permanently fail the job")
 }
 
 func TestWorker_RunOnce_NilQueries(t *testing.T) {
@@ -224,5 +225,5 @@ func TestWorker_RunLoop_ProcessesJobs(t *testing.T) {
 	}
 
 	_ = worker.RunLoop(ctx, q, opts)
-	assert.Equal(t, int32(total), processed.Load(), "all jobs must be processed")
+	assert.Empty(t, cmp.Diff(int32(total), processed.Load()), "all jobs must be processed")
 }

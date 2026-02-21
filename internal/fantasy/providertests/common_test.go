@@ -9,7 +9,9 @@ import (
 
 	"charm.land/fantasy"
 	"charm.land/x/vcr"
+	"github.com/google/go-cmp/cmp"
 	"github.com/joho/godotenv"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -118,7 +120,7 @@ func testTool(t *testing.T, pair builderPair) {
 			require.False(t, tc.Invalid)
 		}
 		require.Len(t, toolCalls, 1)
-		require.Equal(t, toolCalls[0].ToolName, "weather")
+		assert.Empty(t, cmp.Diff(toolCalls[0].ToolName, "weather"))
 
 		want1 := "Florence"
 		want2 := "40"

@@ -9,6 +9,8 @@ import (
 	"charm.land/fantasy"
 	"charm.land/fantasy/providers/anthropic"
 	"charm.land/x/vcr"
+	"github.com/google/go-cmp/cmp"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -145,7 +147,7 @@ func testAnthropicThinking(t *testing.T, result *fantasy.AgentResult) {
 	}
 	require.Greater(t, reasoningContentCount, 0)
 	require.Greater(t, signaturesCount, 0)
-	require.Equal(t, reasoningContentCount, signaturesCount)
+	assert.Empty(t, cmp.Diff(reasoningContentCount, signaturesCount))
 }
 
 func anthropicBuilder(model string) builderFunc {

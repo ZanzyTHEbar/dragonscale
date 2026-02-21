@@ -3,6 +3,7 @@ package tools
 import (
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -10,7 +11,7 @@ import (
 func TestKeywordSearchTool_Metadata(t *testing.T) {
 	t.Parallel()
 	tool := &KeywordSearchTool{agentID: "test"}
-	assert.Equal(t, "keyword_search", tool.Name())
+	assert.Empty(t, cmp.Diff("keyword_search", tool.Name()))
 	assert.Contains(t, tool.Description(), "FTS5")
 	params := tool.Parameters()
 	require.NotNil(t, params)
@@ -30,7 +31,7 @@ func TestKeywordSearchTool_MissingQuery(t *testing.T) {
 func TestSemanticSearchTool_Metadata(t *testing.T) {
 	t.Parallel()
 	tool := &SemanticSearchTool{agentID: "test"}
-	assert.Equal(t, "semantic_search", tool.Name())
+	assert.Empty(t, cmp.Diff("semantic_search", tool.Name()))
 	assert.Contains(t, tool.Description(), "semantic similarity")
 	params := tool.Parameters()
 	require.NotNil(t, params)
@@ -46,7 +47,7 @@ func TestSemanticSearchTool_MissingQuery(t *testing.T) {
 func TestChunkReadTool_Metadata(t *testing.T) {
 	t.Parallel()
 	tool := &ChunkReadTool{agentID: "test"}
-	assert.Equal(t, "chunk_read", tool.Name())
+	assert.Empty(t, cmp.Diff("chunk_read", tool.Name()))
 	assert.Contains(t, tool.Description(), "full content")
 	params := tool.Parameters()
 	require.NotNil(t, params)

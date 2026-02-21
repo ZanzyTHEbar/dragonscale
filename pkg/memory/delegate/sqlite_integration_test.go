@@ -8,9 +8,20 @@ import (
 	"github.com/ZanzyTHEbar/dragonscale/pkg"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/ids"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/memory"
+	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+type integrationRecallItemRoleContent struct {
+	Role    string
+	Content string
+}
+
+type auditEntryActionTarget struct {
+	Action string
+	Target string
+}
 
 func TestCronKVBackend_Roundtrip(t *testing.T) {
 	t.Parallel()
@@ -52,12 +63,18 @@ func TestCronKVBackend_Roundtrip(t *testing.T) {
 	var loaded cronStore
 	require.NoError(t, jsonv2.Unmarshal([]byte(raw), &loaded))
 
-	assert.Equal(t, 1, loaded.Version)
-	assert.Len(t, loaded.Jobs, 2)
-	assert.Equal(t, "daily report", loaded.Jobs[0].Name)
-	assert.True(t, loaded.Jobs[0].Enabled)
-	assert.Equal(t, "weekly backup", loaded.Jobs[1].Name)
-	assert.False(t, loaded.Jobs[1].Enabled)
+	wantStore := cronStore{
+		Version: 1,
+		Jobs: []struct {
+			ID      string `json:"id"`
+			Name    string `json:"name"`
+			Enabled bool   `json:"enabled"`
+		}{
+			{ID: "job-1", Name: "daily report", Enabled: true},
+			{ID: "job-2", Name: "weekly backup", Enabled: false},
+		},
+	}
+	assert.Empty(t, cmp.Diff(wantStore, loaded))
 }
 
 func TestCronKVBackend_UpdatePreservesShape(t *testing.T) {
@@ -75,7 +92,7 @@ func TestCronKVBackend_UpdatePreservesShape(t *testing.T) {
 
 	raw, err := d.GetKV(ctx, agentID, kvKey)
 	require.NoError(t, err)
-	assert.Equal(t, v2, raw)
+	assert.Empty(t, cmp.Diff(v2, raw))
 }
 
 func TestCronKVBackend_PrefixScan(t *testing.T) {
@@ -111,15 +128,26 @@ func TestEndToEnd_SessionAndAuditFlow(t *testing.T) {
 	// 2. Verify session message count
 	count, err := d.CountSessionMessages(ctx, agentID, sessionKey)
 	require.NoError(t, err)
-	assert.Equal(t, int64(4), count)
+	assert.Empty(t, cmp.Diff(int64(4), count))
 
 	// 3. Verify message ordering (ASC)
 	msgs, err := d.ListSessionMessages(ctx, agentID, sessionKey, "", 50)
 	require.NoError(t, err)
 	require.Len(t, msgs, 4)
-	assert.Equal(t, "user", msgs[0].Role)
-	assert.Equal(t, "What is the weather?", msgs[0].Content)
-	assert.Equal(t, "assistant", msgs[3].Role)
+	wantMsgs := []integrationRecallItemRoleContent{
+		{Role: "user", Content: "What is the weather?"},
+		{Role: "assistant", Content: "Let me check..."},
+		{Role: "tool", Content: `{"temp":72,"unit":"F"}`},
+		{Role: "assistant", Content: "It's 72F."},
+	}
+	gotMsgs := make([]integrationRecallItemRoleContent, len(msgs))
+	for i, msg := range msgs {
+		gotMsgs[i] = integrationRecallItemRoleContent{
+			Role:    msg.Role,
+			Content: msg.Content,
+		}
+	}
+	assert.Empty(t, cmp.Diff(wantMsgs, gotMsgs))
 
 	// 4. Insert audit entries for the tool call
 	auditEntry := &memory.AuditEntry{
@@ -138,8 +166,11 @@ func TestEndToEnd_SessionAndAuditFlow(t *testing.T) {
 	auditEntries, err := d.ListAuditEntriesBySession(ctx, agentID, sessionKey, 10)
 	require.NoError(t, err)
 	require.Len(t, auditEntries, 1)
-	assert.Equal(t, "tool_call", auditEntries[0].Action)
-	assert.Equal(t, "weather_api", auditEntries[0].Target)
+	gotAuditEntry := auditEntryActionTarget{
+		Action: auditEntries[0].Action,
+		Target: auditEntries[0].Target,
+	}
+	assert.Empty(t, cmp.Diff(auditEntryActionTarget{Action: "tool_call", Target: "weather_api"}, gotAuditEntry))
 
 	// 6. Store KV state (e.g. focus checkpoint)
 	require.NoError(t, d.UpsertKV(ctx, agentID, "focus:"+sessionKey, `{"topic":"weather query","checkpoint_index":2}`))
@@ -161,7 +192,7 @@ func TestEndToEnd_SessionAndAuditFlow(t *testing.T) {
 	loadedDoc, err := d.GetDocument(ctx, agentID, "AGENT.md")
 	require.NoError(t, err)
 	require.NotNil(t, loadedDoc)
-	assert.Equal(t, "# Agent Identity\nI am dragonscale.", loadedDoc.Content)
+	assert.Empty(t, cmp.Diff("# Agent Identity\nI am dragonscale.", loadedDoc.Content))
 
 	// 8. Verify cross-table isolation: different session sees nothing
 	otherMsgs, err := d.ListSessionMessages(ctx, agentID, "sess-other", "", 50)
@@ -186,7 +217,7 @@ func TestEndToEnd_WorkingContextAndRecallRoundtrip(t *testing.T) {
 	wc, err := d.GetWorkingContext(ctx, agentID, sessionKey)
 	require.NoError(t, err)
 	require.NotNil(t, wc)
-	assert.Equal(t, "Initial system prompt state", wc.Content)
+	assert.Empty(t, cmp.Diff("Initial system prompt state", wc.Content))
 
 	// 2. Insert recall items
 	item := &memory.RecallItem{
@@ -206,14 +237,14 @@ func TestEndToEnd_WorkingContextAndRecallRoundtrip(t *testing.T) {
 	// 3. Count recall items
 	recallCount, err := d.CountRecallItems(ctx, agentID, sessionKey)
 	require.NoError(t, err)
-	assert.Equal(t, 1, recallCount)
+	assert.Empty(t, cmp.Diff(1, recallCount))
 
 	// 4. Update working context
 	require.NoError(t, d.UpsertWorkingContext(ctx, agentID, sessionKey, "Updated with preference awareness"))
 
 	wc, err = d.GetWorkingContext(ctx, agentID, sessionKey)
 	require.NoError(t, err)
-	assert.Equal(t, "Updated with preference awareness", wc.Content)
+	assert.Empty(t, cmp.Diff("Updated with preference awareness", wc.Content))
 
 	// 5. Insert a summary
 	summary := &memory.MemorySummary{
@@ -229,5 +260,5 @@ func TestEndToEnd_WorkingContextAndRecallRoundtrip(t *testing.T) {
 	summaries, err := d.ListSummaries(ctx, agentID, sessionKey, 10)
 	require.NoError(t, err)
 	require.Len(t, summaries, 1)
-	assert.Equal(t, "User discussed preferences. Key info captured.", summaries[0].Content)
+	assert.Empty(t, cmp.Diff("User discussed preferences. Key info captured.", summaries[0].Content))
 }

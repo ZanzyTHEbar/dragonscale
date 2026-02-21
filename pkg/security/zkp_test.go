@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -95,7 +96,7 @@ func TestZKPSessionManagerIssueAndValidate(t *testing.T) {
 	st, err := sm.VerifyAndIssue(commit.RX, commit.RY, challenge, response)
 	require.NoError(t, err)
 	assert.True(t, st.IsValid())
-	assert.Equal(t, 1, sm.ActiveSessions())
+	assert.Empty(t, cmp.Diff(1, sm.ActiveSessions()))
 
 	assert.True(t, sm.ValidateToken(st.Token))
 }
@@ -111,7 +112,7 @@ func TestZKPSessionManagerRejectsInvalidProof(t *testing.T) {
 
 	_, err := sm.VerifyAndIssue(make([]byte, 32), make([]byte, 32), make([]byte, 32), make([]byte, 32))
 	assert.Error(t, err)
-	assert.Equal(t, 0, sm.ActiveSessions())
+	assert.Empty(t, cmp.Diff(0, sm.ActiveSessions()))
 }
 
 func TestZKPSessionManagerExpiry(t *testing.T) {
@@ -152,7 +153,7 @@ func TestZKPSessionManagerRevoke(t *testing.T) {
 
 	sm.RevokeToken(st.Token)
 	assert.False(t, sm.ValidateToken(st.Token))
-	assert.Equal(t, 0, sm.ActiveSessions())
+	assert.Empty(t, cmp.Diff(0, sm.ActiveSessions()))
 }
 
 func TestHandshakePayloadBinaryRoundTrip(t *testing.T) {
@@ -166,11 +167,11 @@ func TestHandshakePayloadBinaryRoundTrip(t *testing.T) {
 	}
 
 	data := hp.MarshalBinary()
-	assert.Equal(t, 129, len(data))
+	assert.Empty(t, cmp.Diff(129, len(data)))
 
 	decoded, err := UnmarshalBinaryHandshake(data)
 	require.NoError(t, err)
-	assert.Equal(t, hp, decoded)
+	assert.Empty(t, cmp.Diff(hp, decoded))
 }
 
 func TestHandshakeResultBinaryRoundTrip(t *testing.T) {
@@ -181,11 +182,11 @@ func TestHandshakeResultBinaryRoundTrip(t *testing.T) {
 	}
 
 	data := hr.MarshalBinary()
-	assert.Equal(t, 40, len(data))
+	assert.Empty(t, cmp.Diff(40, len(data)))
 
 	decoded, err := UnmarshalBinaryResult(data)
 	require.NoError(t, err)
-	assert.Equal(t, hr, decoded)
+	assert.Empty(t, cmp.Diff(hr, decoded))
 }
 
 func TestZKPSessionManagerCleanup(t *testing.T) {
@@ -203,10 +204,10 @@ func TestZKPSessionManagerCleanup(t *testing.T) {
 		response, _ := ProverRespond(commit, challenge, x)
 		_, _ = sm.VerifyAndIssue(commit.RX, commit.RY, challenge, response)
 	}
-	assert.Equal(t, 5, sm.ActiveSessions())
+	assert.Empty(t, cmp.Diff(5, sm.ActiveSessions()))
 
 	time.Sleep(5 * time.Millisecond)
 	cleaned := sm.Cleanup()
-	assert.Equal(t, 5, cleaned)
-	assert.Equal(t, 0, sm.ActiveSessions())
+	assert.Empty(t, cmp.Diff(5, cleaned))
+	assert.Empty(t, cmp.Diff(0, sm.ActiveSessions()))
 }

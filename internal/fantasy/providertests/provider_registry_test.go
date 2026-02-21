@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	jsonv2 "github.com/go-json-experiment/json"
+	"github.com/google/go-cmp/cmp"
 
 	"charm.land/fantasy"
 	"charm.land/fantasy/providers/anthropic"
@@ -11,6 +12,7 @@ import (
 	"charm.land/fantasy/providers/openai"
 	"charm.land/fantasy/providers/openaicompat"
 	"charm.land/fantasy/providers/openrouter"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -36,11 +38,11 @@ func TestProviderRegistry_Serialization_OpenAIOptions(t *testing.T) {
 
 	po, ok := raw.ProviderOptions[openai.Name]
 	require.True(t, ok)
-	require.Equal(t, openai.TypeProviderOptions, po["type"]) // no magic strings
+	assert.Empty(t, cmp.Diff(openai.TypeProviderOptions, po["type"])) // no magic strings
 	// ensure inner data has the field we set
 	inner, ok := po["data"].(map[string]any)
 	require.True(t, ok)
-	require.Equal(t, "tester", inner["user"])
+	assert.Empty(t, cmp.Diff("tester", inner["user"]))
 
 	var decoded fantasy.Message
 	require.NoError(t, jsonv2.Unmarshal(data, &decoded))
@@ -50,7 +52,7 @@ func TestProviderRegistry_Serialization_OpenAIOptions(t *testing.T) {
 	opt, ok := got.(*openai.ProviderOptions)
 	require.True(t, ok)
 	require.NotNil(t, opt.User)
-	require.Equal(t, "tester", *opt.User)
+	assert.Empty(t, cmp.Diff("tester", *opt.User))
 }
 
 func TestProviderRegistry_Serialization_OpenAIResponses(t *testing.T) {
@@ -81,11 +83,11 @@ func TestProviderRegistry_Serialization_OpenAIResponses(t *testing.T) {
 	require.NoError(t, jsonv2.Unmarshal(data, &raw))
 
 	po := raw.ProviderOptions[openai.Name]
-	require.Equal(t, openai.TypeResponsesProviderOptions, po["type"]) // no magic strings
+	assert.Empty(t, cmp.Diff(openai.TypeResponsesProviderOptions, po["type"])) // no magic strings
 	inner, ok := po["data"].(map[string]any)
 	require.True(t, ok)
-	require.Equal(t, "cache-key-1", inner["prompt_cache_key"])
-	require.Equal(t, true, inner["parallel_tool_calls"])
+	assert.Empty(t, cmp.Diff("cache-key-1", inner["prompt_cache_key"]))
+	assert.Empty(t, cmp.Diff(true, inner["parallel_tool_calls"]))
 
 	// Unmarshal back and assert concrete type
 	var decoded fantasy.Message
@@ -94,9 +96,9 @@ func TestProviderRegistry_Serialization_OpenAIResponses(t *testing.T) {
 	reqOpts, ok := got.(*openai.ResponsesProviderOptions)
 	require.True(t, ok)
 	require.NotNil(t, reqOpts.PromptCacheKey)
-	require.Equal(t, "cache-key-1", *reqOpts.PromptCacheKey)
+	assert.Empty(t, cmp.Diff("cache-key-1", *reqOpts.PromptCacheKey))
 	require.NotNil(t, reqOpts.ParallelToolCalls)
-	require.Equal(t, true, *reqOpts.ParallelToolCalls)
+	assert.Empty(t, cmp.Diff(true, *reqOpts.ParallelToolCalls))
 }
 
 func TestProviderRegistry_Serialization_OpenAIResponsesReasoningMetadata(t *testing.T) {
@@ -132,10 +134,10 @@ func TestProviderRegistry_Serialization_OpenAIResponsesReasoningMetadata(t *test
 	require.True(t, ok)
 	om, ok := pm[openai.Name].(map[string]any)
 	require.True(t, ok)
-	require.Equal(t, openai.TypeResponsesReasoningMetadata, om["type"]) // no magic strings
+	assert.Empty(t, cmp.Diff(openai.TypeResponsesReasoningMetadata, om["type"])) // no magic strings
 	inner, ok := om["data"].(map[string]any)
 	require.True(t, ok)
-	require.Equal(t, "item-123", inner["item_id"])
+	assert.Empty(t, cmp.Diff("item-123", inner["item_id"]))
 
 	// Unmarshal back
 	var decoded fantasy.Response
@@ -145,8 +147,8 @@ func TestProviderRegistry_Serialization_OpenAIResponsesReasoningMetadata(t *test
 	require.True(t, ok)
 	meta, ok := val.(*openai.ResponsesReasoningMetadata)
 	require.True(t, ok)
-	require.Equal(t, "item-123", meta.ItemID)
-	require.Equal(t, []string{"part1", "part2"}, meta.Summary)
+	assert.Empty(t, cmp.Diff("item-123", meta.ItemID))
+	assert.Empty(t, cmp.Diff([]string{"part1", "part2"}, meta.Summary))
 }
 
 func TestProviderRegistry_Serialization_AnthropicOptions(t *testing.T) {
@@ -175,7 +177,7 @@ func TestProviderRegistry_Serialization_AnthropicOptions(t *testing.T) {
 	opt, ok := got.(*anthropic.ProviderOptions)
 	require.True(t, ok)
 	require.NotNil(t, opt.SendReasoning)
-	require.Equal(t, true, *opt.SendReasoning)
+	assert.Empty(t, cmp.Diff(true, *opt.SendReasoning))
 }
 
 func TestProviderRegistry_Serialization_GoogleOptions(t *testing.T) {
@@ -203,8 +205,8 @@ func TestProviderRegistry_Serialization_GoogleOptions(t *testing.T) {
 	require.True(t, ok)
 	opt, ok := got.(*google.ProviderOptions)
 	require.True(t, ok)
-	require.Equal(t, "cached-123", opt.CachedContent)
-	require.Equal(t, "BLOCK_ONLY_HIGH", opt.Threshold)
+	assert.Empty(t, cmp.Diff("cached-123", opt.CachedContent))
+	assert.Empty(t, cmp.Diff("BLOCK_ONLY_HIGH", opt.Threshold))
 }
 
 func TestProviderRegistry_Serialization_OpenRouterOptions(t *testing.T) {
@@ -234,9 +236,9 @@ func TestProviderRegistry_Serialization_OpenRouterOptions(t *testing.T) {
 	opt, ok := got.(*openrouter.ProviderOptions)
 	require.True(t, ok)
 	require.NotNil(t, opt.IncludeUsage)
-	require.Equal(t, true, *opt.IncludeUsage)
+	assert.Empty(t, cmp.Diff(true, *opt.IncludeUsage))
 	require.NotNil(t, opt.User)
-	require.Equal(t, "test-user", *opt.User)
+	assert.Empty(t, cmp.Diff("test-user", *opt.User))
 }
 
 func TestProviderRegistry_Serialization_OpenAICompatOptions(t *testing.T) {
@@ -266,9 +268,9 @@ func TestProviderRegistry_Serialization_OpenAICompatOptions(t *testing.T) {
 	opt, ok := got.(*openaicompat.ProviderOptions)
 	require.True(t, ok)
 	require.NotNil(t, opt.User)
-	require.Equal(t, "test-user", *opt.User)
+	assert.Empty(t, cmp.Diff("test-user", *opt.User))
 	require.NotNil(t, opt.ReasoningEffort)
-	require.Equal(t, openai.ReasoningEffortHigh, *opt.ReasoningEffort)
+	assert.Empty(t, cmp.Diff(openai.ReasoningEffortHigh, *opt.ReasoningEffort))
 }
 
 func TestProviderRegistry_MultiProvider(t *testing.T) {
@@ -301,14 +303,14 @@ func TestProviderRegistry_MultiProvider(t *testing.T) {
 	require.True(t, ok)
 	openaiData, ok := openaiOpt.(*openai.ProviderOptions)
 	require.True(t, ok)
-	require.Equal(t, "user1", *openaiData.User)
+	assert.Empty(t, cmp.Diff("user1", *openaiData.User))
 
 	// Check Anthropic options
 	anthropicOpt, ok := decoded.ProviderOptions[anthropic.Name]
 	require.True(t, ok)
 	anthropicData, ok := anthropicOpt.(*anthropic.ProviderOptions)
 	require.True(t, ok)
-	require.Equal(t, true, *anthropicData.SendReasoning)
+	assert.Empty(t, cmp.Diff(true, *anthropicData.SendReasoning))
 }
 
 func TestProviderRegistry_ErrorHandling(t *testing.T) {

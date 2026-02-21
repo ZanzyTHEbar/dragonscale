@@ -10,7 +10,9 @@ import (
 
 	"charm.land/fantasy"
 	jsonv2 "github.com/go-json-experiment/json"
+	"github.com/google/go-cmp/cmp"
 	"github.com/openai/openai-go/v2/packages/param"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -36,7 +38,7 @@ func TestToOpenAiPrompt_SystemMessages(t *testing.T) {
 
 		systemMsg := messages[0].OfSystem
 		require.NotNil(t, systemMsg)
-		require.Equal(t, "You are a helpful assistant.", systemMsg.Content.OfString.Value)
+		assert.Empty(t, cmp.Diff("You are a helpful assistant.", systemMsg.Content.OfString.Value))
 	})
 
 	t.Run("should handle empty system messages", func(t *testing.T) {
@@ -76,7 +78,7 @@ func TestToOpenAiPrompt_SystemMessages(t *testing.T) {
 
 		systemMsg := messages[0].OfSystem
 		require.NotNil(t, systemMsg)
-		require.Equal(t, "You are a helpful assistant.\nBe concise.", systemMsg.Content.OfString.Value)
+		assert.Empty(t, cmp.Diff("You are a helpful assistant.\nBe concise.", systemMsg.Content.OfString.Value))
 	})
 }
 
@@ -102,7 +104,7 @@ func TestToOpenAiPrompt_UserMessages(t *testing.T) {
 
 		userMsg := messages[0].OfUser
 		require.NotNil(t, userMsg)
-		require.Equal(t, "Hello", userMsg.Content.OfString.Value)
+		assert.Empty(t, cmp.Diff("Hello", userMsg.Content.OfString.Value))
 	})
 
 	t.Run("should convert messages with image parts", func(t *testing.T) {
@@ -136,13 +138,13 @@ func TestToOpenAiPrompt_UserMessages(t *testing.T) {
 		// Check text part
 		textPart := content[0].OfText
 		require.NotNil(t, textPart)
-		require.Equal(t, "Hello", textPart.Text)
+		assert.Empty(t, cmp.Diff("Hello", textPart.Text))
 
 		// Check image part
 		imagePart := content[1].OfImageURL
 		require.NotNil(t, imagePart)
 		expectedURL := "data:image/png;base64," + base64.StdEncoding.EncodeToString(imageData)
-		require.Equal(t, expectedURL, imagePart.ImageURL.URL)
+		assert.Empty(t, cmp.Diff(expectedURL, imagePart.ImageURL.URL))
 	})
 
 	t.Run("should add image detail when specified through provider options", func(t *testing.T) {
@@ -177,7 +179,7 @@ func TestToOpenAiPrompt_UserMessages(t *testing.T) {
 
 		imagePart := content[0].OfImageURL
 		require.NotNil(t, imagePart)
-		require.Equal(t, "low", imagePart.ImageURL.Detail)
+		assert.Empty(t, cmp.Diff("low", imagePart.ImageURL.Detail))
 	})
 }
 
@@ -236,8 +238,8 @@ func TestToOpenAiPrompt_FileParts(t *testing.T) {
 
 		audioPart := content[0].OfInputAudio
 		require.NotNil(t, audioPart)
-		require.Equal(t, base64.StdEncoding.EncodeToString(audioData), audioPart.InputAudio.Data)
-		require.Equal(t, "wav", audioPart.InputAudio.Format)
+		assert.Empty(t, cmp.Diff(base64.StdEncoding.EncodeToString(audioData), audioPart.InputAudio.Data))
+		assert.Empty(t, cmp.Diff("wav", audioPart.InputAudio.Format))
 	})
 
 	t.Run("should add audio content for audio/mpeg file parts", func(t *testing.T) {
@@ -265,7 +267,7 @@ func TestToOpenAiPrompt_FileParts(t *testing.T) {
 		content := userMsg.Content.OfArrayOfContentParts
 		audioPart := content[0].OfInputAudio
 		require.NotNil(t, audioPart)
-		require.Equal(t, "mp3", audioPart.InputAudio.Format)
+		assert.Empty(t, cmp.Diff("mp3", audioPart.InputAudio.Format))
 	})
 
 	t.Run("should add audio content for audio/mp3 file parts", func(t *testing.T) {
@@ -293,7 +295,7 @@ func TestToOpenAiPrompt_FileParts(t *testing.T) {
 		content := userMsg.Content.OfArrayOfContentParts
 		audioPart := content[0].OfInputAudio
 		require.NotNil(t, audioPart)
-		require.Equal(t, "mp3", audioPart.InputAudio.Format)
+		assert.Empty(t, cmp.Diff("mp3", audioPart.InputAudio.Format))
 	})
 
 	t.Run("should convert messages with PDF file parts", func(t *testing.T) {
@@ -324,10 +326,10 @@ func TestToOpenAiPrompt_FileParts(t *testing.T) {
 
 		filePart := content[0].OfFile
 		require.NotNil(t, filePart)
-		require.Equal(t, "document.pdf", filePart.File.Filename.Value)
+		assert.Empty(t, cmp.Diff("document.pdf", filePart.File.Filename.Value))
 
 		expectedData := "data:application/pdf;base64," + base64.StdEncoding.EncodeToString(pdfData)
-		require.Equal(t, expectedData, filePart.File.FileData.Value)
+		assert.Empty(t, cmp.Diff(expectedData, filePart.File.FileData.Value))
 	})
 
 	t.Run("should convert messages with binary PDF file parts", func(t *testing.T) {
@@ -358,7 +360,7 @@ func TestToOpenAiPrompt_FileParts(t *testing.T) {
 		require.NotNil(t, filePart)
 
 		expectedData := "data:application/pdf;base64," + base64.StdEncoding.EncodeToString(pdfData)
-		require.Equal(t, expectedData, filePart.File.FileData.Value)
+		assert.Empty(t, cmp.Diff(expectedData, filePart.File.FileData.Value))
 	})
 
 	t.Run("should convert messages with PDF file parts using file_id", func(t *testing.T) {
@@ -385,7 +387,7 @@ func TestToOpenAiPrompt_FileParts(t *testing.T) {
 		content := userMsg.Content.OfArrayOfContentParts
 		filePart := content[0].OfFile
 		require.NotNil(t, filePart)
-		require.Equal(t, "file-pdf-12345", filePart.File.FileID.Value)
+		assert.Empty(t, cmp.Diff("file-pdf-12345", filePart.File.FileID.Value))
 		require.True(t, param.IsOmitted(filePart.File.FileData))
 		require.True(t, param.IsOmitted(filePart.File.Filename))
 	})
@@ -415,7 +417,7 @@ func TestToOpenAiPrompt_FileParts(t *testing.T) {
 		content := userMsg.Content.OfArrayOfContentParts
 		filePart := content[0].OfFile
 		require.NotNil(t, filePart)
-		require.Equal(t, "part-0.pdf", filePart.File.Filename.Value)
+		assert.Empty(t, cmp.Diff("part-0.pdf", filePart.File.Filename.Value))
 	})
 }
 
@@ -463,20 +465,20 @@ func TestToOpenAiPrompt_ToolCalls(t *testing.T) {
 		// Check assistant message with tool call
 		assistantMsg := messages[0].OfAssistant
 		require.NotNil(t, assistantMsg)
-		require.Equal(t, "", assistantMsg.Content.OfString.Value)
+		assert.Empty(t, cmp.Diff("", assistantMsg.Content.OfString.Value))
 		require.Len(t, assistantMsg.ToolCalls, 1)
 
 		toolCall := assistantMsg.ToolCalls[0].OfFunction
 		require.NotNil(t, toolCall)
-		require.Equal(t, "quux", toolCall.ID)
-		require.Equal(t, "thwomp", toolCall.Function.Name)
-		require.Equal(t, string(inputJSON), toolCall.Function.Arguments)
+		assert.Empty(t, cmp.Diff("quux", toolCall.ID))
+		assert.Empty(t, cmp.Diff("thwomp", toolCall.Function.Name))
+		assert.Empty(t, cmp.Diff(string(inputJSON), toolCall.Function.Arguments))
 
 		// Check tool message
 		toolMsg := messages[1].OfTool
 		require.NotNil(t, toolMsg)
-		require.Equal(t, string(outputJSON), toolMsg.Content.OfString.Value)
-		require.Equal(t, "quux", toolMsg.ToolCallID)
+		assert.Empty(t, cmp.Diff(string(outputJSON), toolMsg.Content.OfString.Value))
+		assert.Empty(t, cmp.Diff("quux", toolMsg.ToolCallID))
 	})
 
 	t.Run("should handle different tool output types", func(t *testing.T) {
@@ -510,14 +512,14 @@ func TestToOpenAiPrompt_ToolCalls(t *testing.T) {
 		// Check first tool message (text)
 		textToolMsg := messages[0].OfTool
 		require.NotNil(t, textToolMsg)
-		require.Equal(t, "Hello world", textToolMsg.Content.OfString.Value)
-		require.Equal(t, "text-tool", textToolMsg.ToolCallID)
+		assert.Empty(t, cmp.Diff("Hello world", textToolMsg.Content.OfString.Value))
+		assert.Empty(t, cmp.Diff("text-tool", textToolMsg.ToolCallID))
 
 		// Check second tool message (error)
 		errorToolMsg := messages[1].OfTool
 		require.NotNil(t, errorToolMsg)
-		require.Equal(t, "Something went wrong", errorToolMsg.Content.OfString.Value)
-		require.Equal(t, "error-tool", errorToolMsg.ToolCallID)
+		assert.Empty(t, cmp.Diff("Something went wrong", errorToolMsg.Content.OfString.Value))
+		assert.Empty(t, cmp.Diff("error-tool", errorToolMsg.ToolCallID))
 	})
 }
 
@@ -543,7 +545,7 @@ func TestToOpenAiPrompt_AssistantMessages(t *testing.T) {
 
 		assistantMsg := messages[0].OfAssistant
 		require.NotNil(t, assistantMsg)
-		require.Equal(t, "Hello, how can I help you?", assistantMsg.Content.OfString.Value)
+		assert.Empty(t, cmp.Diff("Hello, how can I help you?", assistantMsg.Content.OfString.Value))
 	})
 
 	t.Run("should handle assistant messages with mixed content", func(t *testing.T) {
@@ -573,13 +575,13 @@ func TestToOpenAiPrompt_AssistantMessages(t *testing.T) {
 
 		assistantMsg := messages[0].OfAssistant
 		require.NotNil(t, assistantMsg)
-		require.Equal(t, "Let me search for that.", assistantMsg.Content.OfString.Value)
+		assert.Empty(t, cmp.Diff("Let me search for that.", assistantMsg.Content.OfString.Value))
 		require.Len(t, assistantMsg.ToolCalls, 1)
 
 		toolCall := assistantMsg.ToolCalls[0].OfFunction
-		require.Equal(t, "call-123", toolCall.ID)
-		require.Equal(t, "search", toolCall.Function.Name)
-		require.Equal(t, string(inputJSON), toolCall.Function.Arguments)
+		assert.Empty(t, cmp.Diff("call-123", toolCall.ID))
+		assert.Empty(t, cmp.Diff("search", toolCall.Function.Name))
+		assert.Empty(t, cmp.Diff(string(inputJSON), toolCall.Function.Arguments))
 	})
 }
 
@@ -825,7 +827,7 @@ func TestDoGenerate(t *testing.T) {
 
 		textContent, ok := result.Content[0].(fantasy.TextContent)
 		require.True(t, ok)
-		require.Equal(t, "Hello, World!", textContent.Text)
+		assert.Empty(t, cmp.Diff("Hello, World!", textContent.Text))
 	})
 
 	t.Run("should extract usage", func(t *testing.T) {
@@ -854,9 +856,9 @@ func TestDoGenerate(t *testing.T) {
 		})
 
 		require.NoError(t, err)
-		require.Equal(t, int64(20), result.Usage.InputTokens)
-		require.Equal(t, int64(5), result.Usage.OutputTokens)
-		require.Equal(t, int64(25), result.Usage.TotalTokens)
+		assert.Empty(t, cmp.Diff(int64(20), result.Usage.InputTokens))
+		assert.Empty(t, cmp.Diff(int64(5), result.Usage.OutputTokens))
+		assert.Empty(t, cmp.Diff(int64(25), result.Usage.TotalTokens))
 	})
 
 	t.Run("should send request body", func(t *testing.T) {
@@ -882,17 +884,17 @@ func TestDoGenerate(t *testing.T) {
 		require.Len(t, server.calls, 1)
 
 		call := server.calls[0]
-		require.Equal(t, "POST", call.method)
-		require.Equal(t, "/chat/completions", call.path)
-		require.Equal(t, "gpt-3.5-turbo", call.body["model"])
+		assert.Empty(t, cmp.Diff("POST", call.method))
+		assert.Empty(t, cmp.Diff("/chat/completions", call.path))
+		assert.Empty(t, cmp.Diff("gpt-3.5-turbo", call.body["model"]))
 
 		messages, ok := call.body["messages"].([]any)
 		require.True(t, ok)
 		require.Len(t, messages, 1)
 
 		message := messages[0].(map[string]any)
-		require.Equal(t, "user", message["role"])
-		require.Equal(t, "Hello", message["content"])
+		assert.Empty(t, cmp.Diff("user", message["role"]))
+		assert.Empty(t, cmp.Diff("Hello", message["content"]))
 	})
 
 	t.Run("should support partial usage", func(t *testing.T) {
@@ -920,9 +922,9 @@ func TestDoGenerate(t *testing.T) {
 		})
 
 		require.NoError(t, err)
-		require.Equal(t, int64(20), result.Usage.InputTokens)
-		require.Equal(t, int64(0), result.Usage.OutputTokens)
-		require.Equal(t, int64(20), result.Usage.TotalTokens)
+		assert.Empty(t, cmp.Diff(int64(20), result.Usage.InputTokens))
+		assert.Empty(t, cmp.Diff(int64(0), result.Usage.OutputTokens))
+		assert.Empty(t, cmp.Diff(int64(20), result.Usage.TotalTokens))
 	})
 
 	t.Run("should extract logprobs", func(t *testing.T) {
@@ -982,7 +984,7 @@ func TestDoGenerate(t *testing.T) {
 		})
 
 		require.NoError(t, err)
-		require.Equal(t, fantasy.FinishReasonStop, result.FinishReason)
+		assert.Empty(t, cmp.Diff(fantasy.FinishReasonStop, result.FinishReason))
 	})
 
 	t.Run("should support unknown finish reason", func(t *testing.T) {
@@ -1007,7 +1009,7 @@ func TestDoGenerate(t *testing.T) {
 		})
 
 		require.NoError(t, err)
-		require.Equal(t, fantasy.FinishReasonUnknown, result.FinishReason)
+		assert.Empty(t, cmp.Diff(fantasy.FinishReasonUnknown, result.FinishReason))
 	})
 
 	t.Run("should pass the model and the messages", func(t *testing.T) {
@@ -1035,14 +1037,14 @@ func TestDoGenerate(t *testing.T) {
 		require.Len(t, server.calls, 1)
 
 		call := server.calls[0]
-		require.Equal(t, "gpt-3.5-turbo", call.body["model"])
+		assert.Empty(t, cmp.Diff("gpt-3.5-turbo", call.body["model"]))
 
 		messages := call.body["messages"].([]any)
 		require.Len(t, messages, 1)
 
 		message := messages[0].(map[string]any)
-		require.Equal(t, "user", message["role"])
-		require.Equal(t, "Hello", message["content"])
+		assert.Empty(t, cmp.Diff("user", message["role"]))
+		assert.Empty(t, cmp.Diff("Hello", message["content"]))
 	})
 
 	t.Run("should pass settings", func(t *testing.T) {
@@ -1075,15 +1077,15 @@ func TestDoGenerate(t *testing.T) {
 		require.Len(t, server.calls, 1)
 
 		call := server.calls[0]
-		require.Equal(t, "gpt-3.5-turbo", call.body["model"])
+		assert.Empty(t, cmp.Diff("gpt-3.5-turbo", call.body["model"]))
 
 		messages := call.body["messages"].([]any)
 		require.Len(t, messages, 1)
 
 		logitBias := call.body["logit_bias"].(map[string]any)
-		require.Equal(t, float64(-100), logitBias["50256"])
-		require.Equal(t, false, call.body["parallel_tool_calls"])
-		require.Equal(t, "test-user-id", call.body["user"])
+		assert.Empty(t, cmp.Diff(float64(-100), logitBias["50256"]))
+		assert.Empty(t, cmp.Diff(false, call.body["parallel_tool_calls"]))
+		assert.Empty(t, cmp.Diff("test-user-id", call.body["user"]))
 	})
 
 	t.Run("should pass reasoningEffort setting", func(t *testing.T) {
@@ -1116,15 +1118,15 @@ func TestDoGenerate(t *testing.T) {
 		require.Len(t, server.calls, 1)
 
 		call := server.calls[0]
-		require.Equal(t, "o1-mini", call.body["model"])
-		require.Equal(t, "low", call.body["reasoning_effort"])
+		assert.Empty(t, cmp.Diff("o1-mini", call.body["model"]))
+		assert.Empty(t, cmp.Diff("low", call.body["reasoning_effort"]))
 
 		messages := call.body["messages"].([]any)
 		require.Len(t, messages, 1)
 
 		message := messages[0].(map[string]any)
-		require.Equal(t, "user", message["role"])
-		require.Equal(t, "Hello", message["content"])
+		assert.Empty(t, cmp.Diff("user", message["role"]))
+		assert.Empty(t, cmp.Diff("Hello", message["content"]))
 	})
 
 	t.Run("should pass textVerbosity setting", func(t *testing.T) {
@@ -1155,15 +1157,15 @@ func TestDoGenerate(t *testing.T) {
 		require.Len(t, server.calls, 1)
 
 		call := server.calls[0]
-		require.Equal(t, "gpt-4o", call.body["model"])
-		require.Equal(t, "low", call.body["verbosity"])
+		assert.Empty(t, cmp.Diff("gpt-4o", call.body["model"]))
+		assert.Empty(t, cmp.Diff("low", call.body["verbosity"]))
 
 		messages := call.body["messages"].([]any)
 		require.Len(t, messages, 1)
 
 		message := messages[0].(map[string]any)
-		require.Equal(t, "user", message["role"])
-		require.Equal(t, "Hello", message["content"])
+		assert.Empty(t, cmp.Diff("user", message["role"]))
+		assert.Empty(t, cmp.Diff("Hello", message["content"]))
 	})
 
 	t.Run("should pass tools and toolChoice", func(t *testing.T) {
@@ -1208,7 +1210,7 @@ func TestDoGenerate(t *testing.T) {
 		require.Len(t, server.calls, 1)
 
 		call := server.calls[0]
-		require.Equal(t, "gpt-3.5-turbo", call.body["model"])
+		assert.Empty(t, cmp.Diff("gpt-3.5-turbo", call.body["model"]))
 
 		messages := call.body["messages"].([]any)
 		require.Len(t, messages, 1)
@@ -1217,17 +1219,17 @@ func TestDoGenerate(t *testing.T) {
 		require.Len(t, tools, 1)
 
 		tool := tools[0].(map[string]any)
-		require.Equal(t, "function", tool["type"])
+		assert.Empty(t, cmp.Diff("function", tool["type"]))
 
 		function := tool["function"].(map[string]any)
-		require.Equal(t, "test-tool", function["name"])
-		require.Equal(t, false, function["strict"])
+		assert.Empty(t, cmp.Diff("test-tool", function["name"]))
+		assert.Empty(t, cmp.Diff(false, function["strict"]))
 
 		toolChoice := call.body["tool_choice"].(map[string]any)
-		require.Equal(t, "function", toolChoice["type"])
+		assert.Empty(t, cmp.Diff("function", toolChoice["type"]))
 
 		toolChoiceFunction := toolChoice["function"].(map[string]any)
-		require.Equal(t, "test-tool", toolChoiceFunction["name"])
+		assert.Empty(t, cmp.Diff("test-tool", toolChoiceFunction["name"]))
 	})
 
 	t.Run("should parse tool results", func(t *testing.T) {
@@ -1282,9 +1284,9 @@ func TestDoGenerate(t *testing.T) {
 
 		toolCall, ok := result.Content[0].(fantasy.ToolCallContent)
 		require.True(t, ok)
-		require.Equal(t, "call_O17Uplv4lJvD6DVdIvFFeRMw", toolCall.ToolCallID)
-		require.Equal(t, "test-tool", toolCall.ToolName)
-		require.Equal(t, `{"value":"Spark"}`, toolCall.Input)
+		assert.Empty(t, cmp.Diff("call_O17Uplv4lJvD6DVdIvFFeRMw", toolCall.ToolCallID))
+		assert.Empty(t, cmp.Diff("test-tool", toolCall.ToolName))
+		assert.Empty(t, cmp.Diff(`{"value":"Spark"}`, toolCall.Input))
 	})
 
 	t.Run("should handle ToolChoiceRequired", func(t *testing.T) {
@@ -1329,21 +1331,21 @@ func TestDoGenerate(t *testing.T) {
 		require.Len(t, server.calls, 1)
 
 		call := server.calls[0]
-		require.Equal(t, "gpt-3.5-turbo", call.body["model"])
+		assert.Empty(t, cmp.Diff("gpt-3.5-turbo", call.body["model"]))
 
 		// Verify tool is present
 		tools := call.body["tools"].([]any)
 		require.Len(t, tools, 1)
 
 		tool := tools[0].(map[string]any)
-		require.Equal(t, "function", tool["type"])
+		assert.Empty(t, cmp.Diff("function", tool["type"]))
 
 		function := tool["function"].(map[string]any)
-		require.Equal(t, "test-tool", function["name"])
+		assert.Empty(t, cmp.Diff("test-tool", function["name"]))
 
 		// Verify tool_choice is set to "required" (not a function name)
 		toolChoice := call.body["tool_choice"]
-		require.Equal(t, "required", toolChoice)
+		assert.Empty(t, cmp.Diff("required", toolChoice))
 	})
 
 	t.Run("should parse annotations/citations", func(t *testing.T) {
@@ -1383,13 +1385,13 @@ func TestDoGenerate(t *testing.T) {
 
 		textContent, ok := result.Content[0].(fantasy.TextContent)
 		require.True(t, ok)
-		require.Equal(t, "Based on the search results [doc1], I found information.", textContent.Text)
+		assert.Empty(t, cmp.Diff("Based on the search results [doc1], I found information.", textContent.Text))
 
 		sourceContent, ok := result.Content[1].(fantasy.SourceContent)
 		require.True(t, ok)
-		require.Equal(t, fantasy.SourceTypeURL, sourceContent.SourceType)
-		require.Equal(t, "https://example.com/doc1.pdf", sourceContent.URL)
-		require.Equal(t, "Document 1", sourceContent.Title)
+		assert.Empty(t, cmp.Diff(fantasy.SourceTypeURL, sourceContent.SourceType))
+		assert.Empty(t, cmp.Diff("https://example.com/doc1.pdf", sourceContent.URL))
+		assert.Empty(t, cmp.Diff("Document 1", sourceContent.Title))
 		require.NotEmpty(t, sourceContent.ID)
 	})
 
@@ -1422,10 +1424,10 @@ func TestDoGenerate(t *testing.T) {
 		})
 
 		require.NoError(t, err)
-		require.Equal(t, int64(1152), result.Usage.CacheReadTokens)
-		require.Equal(t, int64(15), result.Usage.InputTokens)
-		require.Equal(t, int64(20), result.Usage.OutputTokens)
-		require.Equal(t, int64(35), result.Usage.TotalTokens)
+		assert.Empty(t, cmp.Diff(int64(1152), result.Usage.CacheReadTokens))
+		assert.Empty(t, cmp.Diff(int64(15), result.Usage.InputTokens))
+		assert.Empty(t, cmp.Diff(int64(20), result.Usage.OutputTokens))
+		assert.Empty(t, cmp.Diff(int64(35), result.Usage.TotalTokens))
 	})
 
 	t.Run("should return accepted_prediction_tokens and rejected_prediction_tokens", func(t *testing.T) {
@@ -1463,8 +1465,8 @@ func TestDoGenerate(t *testing.T) {
 		openaiMeta, ok := result.ProviderMetadata["openai"].(*ProviderMetadata)
 
 		require.True(t, ok)
-		require.Equal(t, int64(123), openaiMeta.AcceptedPredictionTokens)
-		require.Equal(t, int64(456), openaiMeta.RejectedPredictionTokens)
+		assert.Empty(t, cmp.Diff(int64(123), openaiMeta.AcceptedPredictionTokens))
+		assert.Empty(t, cmp.Diff(int64(456), openaiMeta.RejectedPredictionTokens))
 	})
 
 	t.Run("should clear out temperature, top_p, frequency_penalty, presence_penalty for reasoning models", func(t *testing.T) {
@@ -1494,14 +1496,14 @@ func TestDoGenerate(t *testing.T) {
 		require.Len(t, server.calls, 1)
 
 		call := server.calls[0]
-		require.Equal(t, "o1-preview", call.body["model"])
+		assert.Empty(t, cmp.Diff("o1-preview", call.body["model"]))
 
 		messages := call.body["messages"].([]any)
 		require.Len(t, messages, 1)
 
 		message := messages[0].(map[string]any)
-		require.Equal(t, "user", message["role"])
-		require.Equal(t, "Hello", message["content"])
+		assert.Empty(t, cmp.Diff("user", message["role"]))
+		assert.Empty(t, cmp.Diff("Hello", message["content"]))
 
 		// These should not be present
 		require.Nil(t, call.body["temperature"])
@@ -1511,8 +1513,8 @@ func TestDoGenerate(t *testing.T) {
 
 		// Should have warnings
 		require.Len(t, result.Warnings, 4)
-		require.Equal(t, fantasy.CallWarningTypeUnsupportedSetting, result.Warnings[0].Type)
-		require.Equal(t, "temperature", result.Warnings[0].Setting)
+		assert.Empty(t, cmp.Diff(fantasy.CallWarningTypeUnsupportedSetting, result.Warnings[0].Type))
+		assert.Empty(t, cmp.Diff("temperature", result.Warnings[0].Setting))
 		require.Contains(t, result.Warnings[0].Details, "temperature is not supported for reasoning models")
 	})
 
@@ -1540,16 +1542,16 @@ func TestDoGenerate(t *testing.T) {
 		require.Len(t, server.calls, 1)
 
 		call := server.calls[0]
-		require.Equal(t, "o1-preview", call.body["model"])
-		require.Equal(t, float64(1000), call.body["max_completion_tokens"])
+		assert.Empty(t, cmp.Diff("o1-preview", call.body["model"]))
+		assert.Empty(t, cmp.Diff(float64(1000), call.body["max_completion_tokens"]))
 		require.Nil(t, call.body["max_tokens"])
 
 		messages := call.body["messages"].([]any)
 		require.Len(t, messages, 1)
 
 		message := messages[0].(map[string]any)
-		require.Equal(t, "user", message["role"])
-		require.Equal(t, "Hello", message["content"])
+		assert.Empty(t, cmp.Diff("user", message["role"]))
+		assert.Empty(t, cmp.Diff("Hello", message["content"]))
 	})
 
 	t.Run("should return reasoning tokens", func(t *testing.T) {
@@ -1581,10 +1583,10 @@ func TestDoGenerate(t *testing.T) {
 		})
 
 		require.NoError(t, err)
-		require.Equal(t, int64(15), result.Usage.InputTokens)
-		require.Equal(t, int64(20), result.Usage.OutputTokens)
-		require.Equal(t, int64(35), result.Usage.TotalTokens)
-		require.Equal(t, int64(10), result.Usage.ReasoningTokens)
+		assert.Empty(t, cmp.Diff(int64(15), result.Usage.InputTokens))
+		assert.Empty(t, cmp.Diff(int64(20), result.Usage.OutputTokens))
+		assert.Empty(t, cmp.Diff(int64(35), result.Usage.TotalTokens))
+		assert.Empty(t, cmp.Diff(int64(10), result.Usage.ReasoningTokens))
 	})
 
 	t.Run("should send max_completion_tokens extension setting", func(t *testing.T) {
@@ -1615,15 +1617,15 @@ func TestDoGenerate(t *testing.T) {
 		require.Len(t, server.calls, 1)
 
 		call := server.calls[0]
-		require.Equal(t, "o1-preview", call.body["model"])
-		require.Equal(t, float64(255), call.body["max_completion_tokens"])
+		assert.Empty(t, cmp.Diff("o1-preview", call.body["model"]))
+		assert.Empty(t, cmp.Diff(float64(255), call.body["max_completion_tokens"]))
 
 		messages := call.body["messages"].([]any)
 		require.Len(t, messages, 1)
 
 		message := messages[0].(map[string]any)
-		require.Equal(t, "user", message["role"])
-		require.Equal(t, "Hello", message["content"])
+		assert.Empty(t, cmp.Diff("user", message["role"]))
+		assert.Empty(t, cmp.Diff("Hello", message["content"]))
 	})
 
 	t.Run("should send prediction extension setting", func(t *testing.T) {
@@ -1657,18 +1659,18 @@ func TestDoGenerate(t *testing.T) {
 		require.Len(t, server.calls, 1)
 
 		call := server.calls[0]
-		require.Equal(t, "gpt-3.5-turbo", call.body["model"])
+		assert.Empty(t, cmp.Diff("gpt-3.5-turbo", call.body["model"]))
 
 		prediction := call.body["prediction"].(map[string]any)
-		require.Equal(t, "content", prediction["type"])
-		require.Equal(t, "Hello, World!", prediction["content"])
+		assert.Empty(t, cmp.Diff("content", prediction["type"]))
+		assert.Empty(t, cmp.Diff("Hello, World!", prediction["content"]))
 
 		messages := call.body["messages"].([]any)
 		require.Len(t, messages, 1)
 
 		message := messages[0].(map[string]any)
-		require.Equal(t, "user", message["role"])
-		require.Equal(t, "Hello", message["content"])
+		assert.Empty(t, cmp.Diff("user", message["role"]))
+		assert.Empty(t, cmp.Diff("Hello", message["content"]))
 	})
 
 	t.Run("should send store extension setting", func(t *testing.T) {
@@ -1699,15 +1701,15 @@ func TestDoGenerate(t *testing.T) {
 		require.Len(t, server.calls, 1)
 
 		call := server.calls[0]
-		require.Equal(t, "gpt-3.5-turbo", call.body["model"])
-		require.Equal(t, true, call.body["store"])
+		assert.Empty(t, cmp.Diff("gpt-3.5-turbo", call.body["model"]))
+		assert.Empty(t, cmp.Diff(true, call.body["store"]))
 
 		messages := call.body["messages"].([]any)
 		require.Len(t, messages, 1)
 
 		message := messages[0].(map[string]any)
-		require.Equal(t, "user", message["role"])
-		require.Equal(t, "Hello", message["content"])
+		assert.Empty(t, cmp.Diff("user", message["role"]))
+		assert.Empty(t, cmp.Diff("Hello", message["content"]))
 	})
 
 	t.Run("should send metadata extension values", func(t *testing.T) {
@@ -1740,17 +1742,17 @@ func TestDoGenerate(t *testing.T) {
 		require.Len(t, server.calls, 1)
 
 		call := server.calls[0]
-		require.Equal(t, "gpt-3.5-turbo", call.body["model"])
+		assert.Empty(t, cmp.Diff("gpt-3.5-turbo", call.body["model"]))
 
 		metadata := call.body["metadata"].(map[string]any)
-		require.Equal(t, "value", metadata["custom"])
+		assert.Empty(t, cmp.Diff("value", metadata["custom"]))
 
 		messages := call.body["messages"].([]any)
 		require.Len(t, messages, 1)
 
 		message := messages[0].(map[string]any)
-		require.Equal(t, "user", message["role"])
-		require.Equal(t, "Hello", message["content"])
+		assert.Empty(t, cmp.Diff("user", message["role"]))
+		assert.Empty(t, cmp.Diff("Hello", message["content"]))
 	})
 
 	t.Run("should send promptCacheKey extension value", func(t *testing.T) {
@@ -1781,15 +1783,15 @@ func TestDoGenerate(t *testing.T) {
 		require.Len(t, server.calls, 1)
 
 		call := server.calls[0]
-		require.Equal(t, "gpt-3.5-turbo", call.body["model"])
-		require.Equal(t, "test-cache-key-123", call.body["prompt_cache_key"])
+		assert.Empty(t, cmp.Diff("gpt-3.5-turbo", call.body["model"]))
+		assert.Empty(t, cmp.Diff("test-cache-key-123", call.body["prompt_cache_key"]))
 
 		messages := call.body["messages"].([]any)
 		require.Len(t, messages, 1)
 
 		message := messages[0].(map[string]any)
-		require.Equal(t, "user", message["role"])
-		require.Equal(t, "Hello", message["content"])
+		assert.Empty(t, cmp.Diff("user", message["role"]))
+		assert.Empty(t, cmp.Diff("Hello", message["content"]))
 	})
 
 	t.Run("should send safety_identifier extension value", func(t *testing.T) {
@@ -1820,15 +1822,15 @@ func TestDoGenerate(t *testing.T) {
 		require.Len(t, server.calls, 1)
 
 		call := server.calls[0]
-		require.Equal(t, "gpt-3.5-turbo", call.body["model"])
-		require.Equal(t, "test-safety-identifier-123", call.body["safety_identifier"])
+		assert.Empty(t, cmp.Diff("gpt-3.5-turbo", call.body["model"]))
+		assert.Empty(t, cmp.Diff("test-safety-identifier-123", call.body["safety_identifier"]))
 
 		messages := call.body["messages"].([]any)
 		require.Len(t, messages, 1)
 
 		message := messages[0].(map[string]any)
-		require.Equal(t, "user", message["role"])
-		require.Equal(t, "Hello", message["content"])
+		assert.Empty(t, cmp.Diff("user", message["role"]))
+		assert.Empty(t, cmp.Diff("Hello", message["content"]))
 	})
 
 	t.Run("should remove temperature setting for search preview models", func(t *testing.T) {
@@ -1855,12 +1857,12 @@ func TestDoGenerate(t *testing.T) {
 		require.Len(t, server.calls, 1)
 
 		call := server.calls[0]
-		require.Equal(t, "gpt-4o-search-preview", call.body["model"])
+		assert.Empty(t, cmp.Diff("gpt-4o-search-preview", call.body["model"]))
 		require.Nil(t, call.body["temperature"])
 
 		require.Len(t, result.Warnings, 1)
-		require.Equal(t, fantasy.CallWarningTypeUnsupportedSetting, result.Warnings[0].Type)
-		require.Equal(t, "temperature", result.Warnings[0].Setting)
+		assert.Empty(t, cmp.Diff(fantasy.CallWarningTypeUnsupportedSetting, result.Warnings[0].Type))
+		assert.Empty(t, cmp.Diff("temperature", result.Warnings[0].Setting))
 		require.Contains(t, result.Warnings[0].Details, "search preview models")
 	})
 
@@ -1892,15 +1894,15 @@ func TestDoGenerate(t *testing.T) {
 		require.Len(t, server.calls, 1)
 
 		call := server.calls[0]
-		require.Equal(t, "o3-mini", call.body["model"])
-		require.Equal(t, "flex", call.body["service_tier"])
+		assert.Empty(t, cmp.Diff("o3-mini", call.body["model"]))
+		assert.Empty(t, cmp.Diff("flex", call.body["service_tier"]))
 
 		messages := call.body["messages"].([]any)
 		require.Len(t, messages, 1)
 
 		message := messages[0].(map[string]any)
-		require.Equal(t, "user", message["role"])
-		require.Equal(t, "Hello", message["content"])
+		assert.Empty(t, cmp.Diff("user", message["role"]))
+		assert.Empty(t, cmp.Diff("Hello", message["content"]))
 	})
 
 	t.Run("should show warning when using flex processing with unsupported model", func(t *testing.T) {
@@ -1932,8 +1934,8 @@ func TestDoGenerate(t *testing.T) {
 		require.Nil(t, call.body["service_tier"])
 
 		require.Len(t, result.Warnings, 1)
-		require.Equal(t, fantasy.CallWarningTypeUnsupportedSetting, result.Warnings[0].Type)
-		require.Equal(t, "ServiceTier", result.Warnings[0].Setting)
+		assert.Empty(t, cmp.Diff(fantasy.CallWarningTypeUnsupportedSetting, result.Warnings[0].Type))
+		assert.Empty(t, cmp.Diff("ServiceTier", result.Warnings[0].Setting))
 		require.Contains(t, result.Warnings[0].Details, "flex processing is only available")
 	})
 
@@ -1963,15 +1965,15 @@ func TestDoGenerate(t *testing.T) {
 		require.Len(t, server.calls, 1)
 
 		call := server.calls[0]
-		require.Equal(t, "gpt-4o-mini", call.body["model"])
-		require.Equal(t, "priority", call.body["service_tier"])
+		assert.Empty(t, cmp.Diff("gpt-4o-mini", call.body["model"]))
+		assert.Empty(t, cmp.Diff("priority", call.body["service_tier"]))
 
 		messages := call.body["messages"].([]any)
 		require.Len(t, messages, 1)
 
 		message := messages[0].(map[string]any)
-		require.Equal(t, "user", message["role"])
-		require.Equal(t, "Hello", message["content"])
+		assert.Empty(t, cmp.Diff("user", message["role"]))
+		assert.Empty(t, cmp.Diff("Hello", message["content"]))
 	})
 
 	t.Run("should show warning when using priority processing with unsupported model", func(t *testing.T) {
@@ -2003,8 +2005,8 @@ func TestDoGenerate(t *testing.T) {
 		require.Nil(t, call.body["service_tier"])
 
 		require.Len(t, result.Warnings, 1)
-		require.Equal(t, fantasy.CallWarningTypeUnsupportedSetting, result.Warnings[0].Type)
-		require.Equal(t, "ServiceTier", result.Warnings[0].Setting)
+		assert.Empty(t, cmp.Diff(fantasy.CallWarningTypeUnsupportedSetting, result.Warnings[0].Type))
+		assert.Empty(t, cmp.Diff("ServiceTier", result.Warnings[0].Setting))
 		require.Contains(t, result.Warnings[0].Details, "priority processing is only available")
 	})
 }
@@ -2329,14 +2331,14 @@ func TestDoStream(t *testing.T) {
 		require.NotEqual(t, -1, textStart)
 		require.NotEqual(t, -1, textEnd)
 		require.NotEqual(t, -1, finish)
-		require.Equal(t, []string{"Hello", ", ", "World!"}, deltas)
+		assert.Empty(t, cmp.Diff([]string{"Hello", ", ", "World!"}, deltas))
 
 		// Check finish part
 		finishPart := parts[finish]
-		require.Equal(t, fantasy.FinishReasonStop, finishPart.FinishReason)
-		require.Equal(t, int64(17), finishPart.Usage.InputTokens)
-		require.Equal(t, int64(227), finishPart.Usage.OutputTokens)
-		require.Equal(t, int64(244), finishPart.Usage.TotalTokens)
+		assert.Empty(t, cmp.Diff(fantasy.FinishReasonStop, finishPart.FinishReason))
+		assert.Empty(t, cmp.Diff(int64(17), finishPart.Usage.InputTokens))
+		assert.Empty(t, cmp.Diff(int64(227), finishPart.Usage.OutputTokens))
+		assert.Empty(t, cmp.Diff(int64(244), finishPart.Usage.TotalTokens))
 	})
 
 	t.Run("should stream tool deltas", func(t *testing.T) {
@@ -2387,17 +2389,17 @@ func TestDoStream(t *testing.T) {
 			switch part.Type {
 			case fantasy.StreamPartTypeToolInputStart:
 				toolInputStart = i
-				require.Equal(t, "call_O17Uplv4lJvD6DVdIvFFeRMw", part.ID)
-				require.Equal(t, "test-tool", part.ToolCallName)
+				assert.Empty(t, cmp.Diff("call_O17Uplv4lJvD6DVdIvFFeRMw", part.ID))
+				assert.Empty(t, cmp.Diff("test-tool", part.ToolCallName))
 			case fantasy.StreamPartTypeToolInputDelta:
 				toolDeltas = append(toolDeltas, part.Delta)
 			case fantasy.StreamPartTypeToolInputEnd:
 				toolInputEnd = i
 			case fantasy.StreamPartTypeToolCall:
 				toolCall = i
-				require.Equal(t, "call_O17Uplv4lJvD6DVdIvFFeRMw", part.ID)
-				require.Equal(t, "test-tool", part.ToolCallName)
-				require.Equal(t, `{"value":"Sparkle Day"}`, part.ToolCallInput)
+				assert.Empty(t, cmp.Diff("call_O17Uplv4lJvD6DVdIvFFeRMw", part.ID))
+				assert.Empty(t, cmp.Diff("test-tool", part.ToolCallName))
+				assert.Empty(t, cmp.Diff(`{"value":"Sparkle Day"}`, part.ToolCallInput))
 			}
 		}
 
@@ -2410,7 +2412,7 @@ func TestDoStream(t *testing.T) {
 		for _, delta := range toolDeltas {
 			fullInput.WriteString(delta)
 		}
-		require.Equal(t, `{"value":"Sparkle Day"}`, fullInput.String())
+		assert.Empty(t, cmp.Diff(`{"value":"Sparkle Day"}`, fullInput.String()))
 	})
 
 	t.Run("should stream annotations/citations", func(t *testing.T) {
@@ -2460,9 +2462,9 @@ func TestDoStream(t *testing.T) {
 		}
 
 		require.NotNil(t, sourcePart)
-		require.Equal(t, fantasy.SourceTypeURL, sourcePart.SourceType)
-		require.Equal(t, "https://example.com/doc1.pdf", sourcePart.URL)
-		require.Equal(t, "Document 1", sourcePart.Title)
+		assert.Empty(t, cmp.Diff(fantasy.SourceTypeURL, sourcePart.SourceType))
+		assert.Empty(t, cmp.Diff("https://example.com/doc1.pdf", sourcePart.URL))
+		assert.Empty(t, cmp.Diff("Document 1", sourcePart.Title))
 		require.NotEmpty(t, sourcePart.ID)
 	})
 
@@ -2531,20 +2533,20 @@ func TestDoStream(t *testing.T) {
 		require.Len(t, server.calls, 1)
 
 		call := server.calls[0]
-		require.Equal(t, "POST", call.method)
-		require.Equal(t, "/chat/completions", call.path)
-		require.Equal(t, "gpt-3.5-turbo", call.body["model"])
-		require.Equal(t, true, call.body["stream"])
+		assert.Empty(t, cmp.Diff("POST", call.method))
+		assert.Empty(t, cmp.Diff("/chat/completions", call.path))
+		assert.Empty(t, cmp.Diff("gpt-3.5-turbo", call.body["model"]))
+		assert.Empty(t, cmp.Diff(true, call.body["stream"]))
 
 		streamOptions := call.body["stream_options"].(map[string]any)
-		require.Equal(t, true, streamOptions["include_usage"])
+		assert.Empty(t, cmp.Diff(true, streamOptions["include_usage"]))
 
 		messages := call.body["messages"].([]any)
 		require.Len(t, messages, 1)
 
 		message := messages[0].(map[string]any)
-		require.Equal(t, "user", message["role"])
-		require.Equal(t, "Hello", message["content"])
+		assert.Empty(t, cmp.Diff("user", message["role"]))
+		assert.Empty(t, cmp.Diff("Hello", message["content"]))
 	})
 
 	t.Run("should return cached tokens in providerMetadata", func(t *testing.T) {
@@ -2591,10 +2593,10 @@ func TestDoStream(t *testing.T) {
 		}
 
 		require.NotNil(t, finishPart)
-		require.Equal(t, int64(1152), finishPart.Usage.CacheReadTokens)
-		require.Equal(t, int64(15), finishPart.Usage.InputTokens)
-		require.Equal(t, int64(20), finishPart.Usage.OutputTokens)
-		require.Equal(t, int64(35), finishPart.Usage.TotalTokens)
+		assert.Empty(t, cmp.Diff(int64(1152), finishPart.Usage.CacheReadTokens))
+		assert.Empty(t, cmp.Diff(int64(15), finishPart.Usage.InputTokens))
+		assert.Empty(t, cmp.Diff(int64(20), finishPart.Usage.OutputTokens))
+		assert.Empty(t, cmp.Diff(int64(35), finishPart.Usage.TotalTokens))
 	})
 
 	t.Run("should return accepted_prediction_tokens and rejected_prediction_tokens", func(t *testing.T) {
@@ -2646,8 +2648,8 @@ func TestDoStream(t *testing.T) {
 
 		openaiMeta, ok := finishPart.ProviderMetadata["openai"].(*ProviderMetadata)
 		require.True(t, ok)
-		require.Equal(t, int64(123), openaiMeta.AcceptedPredictionTokens)
-		require.Equal(t, int64(456), openaiMeta.RejectedPredictionTokens)
+		assert.Empty(t, cmp.Diff(int64(123), openaiMeta.AcceptedPredictionTokens))
+		assert.Empty(t, cmp.Diff(int64(456), openaiMeta.RejectedPredictionTokens))
 	})
 
 	t.Run("should send store extension setting", func(t *testing.T) {
@@ -2678,19 +2680,19 @@ func TestDoStream(t *testing.T) {
 		require.Len(t, server.calls, 1)
 
 		call := server.calls[0]
-		require.Equal(t, "gpt-3.5-turbo", call.body["model"])
-		require.Equal(t, true, call.body["stream"])
-		require.Equal(t, true, call.body["store"])
+		assert.Empty(t, cmp.Diff("gpt-3.5-turbo", call.body["model"]))
+		assert.Empty(t, cmp.Diff(true, call.body["stream"]))
+		assert.Empty(t, cmp.Diff(true, call.body["store"]))
 
 		streamOptions := call.body["stream_options"].(map[string]any)
-		require.Equal(t, true, streamOptions["include_usage"])
+		assert.Empty(t, cmp.Diff(true, streamOptions["include_usage"]))
 
 		messages := call.body["messages"].([]any)
 		require.Len(t, messages, 1)
 
 		message := messages[0].(map[string]any)
-		require.Equal(t, "user", message["role"])
-		require.Equal(t, "Hello", message["content"])
+		assert.Empty(t, cmp.Diff("user", message["role"]))
+		assert.Empty(t, cmp.Diff("Hello", message["content"]))
 	})
 
 	t.Run("should send metadata extension values", func(t *testing.T) {
@@ -2723,21 +2725,21 @@ func TestDoStream(t *testing.T) {
 		require.Len(t, server.calls, 1)
 
 		call := server.calls[0]
-		require.Equal(t, "gpt-3.5-turbo", call.body["model"])
-		require.Equal(t, true, call.body["stream"])
+		assert.Empty(t, cmp.Diff("gpt-3.5-turbo", call.body["model"]))
+		assert.Empty(t, cmp.Diff(true, call.body["stream"]))
 
 		metadata := call.body["metadata"].(map[string]any)
-		require.Equal(t, "value", metadata["custom"])
+		assert.Empty(t, cmp.Diff("value", metadata["custom"]))
 
 		streamOptions := call.body["stream_options"].(map[string]any)
-		require.Equal(t, true, streamOptions["include_usage"])
+		assert.Empty(t, cmp.Diff(true, streamOptions["include_usage"]))
 
 		messages := call.body["messages"].([]any)
 		require.Len(t, messages, 1)
 
 		message := messages[0].(map[string]any)
-		require.Equal(t, "user", message["role"])
-		require.Equal(t, "Hello", message["content"])
+		assert.Empty(t, cmp.Diff("user", message["role"]))
+		assert.Empty(t, cmp.Diff("Hello", message["content"]))
 	})
 
 	t.Run("should send serviceTier flex processing setting in streaming", func(t *testing.T) {
@@ -2768,19 +2770,19 @@ func TestDoStream(t *testing.T) {
 		require.Len(t, server.calls, 1)
 
 		call := server.calls[0]
-		require.Equal(t, "o3-mini", call.body["model"])
-		require.Equal(t, "flex", call.body["service_tier"])
-		require.Equal(t, true, call.body["stream"])
+		assert.Empty(t, cmp.Diff("o3-mini", call.body["model"]))
+		assert.Empty(t, cmp.Diff("flex", call.body["service_tier"]))
+		assert.Empty(t, cmp.Diff(true, call.body["stream"]))
 
 		streamOptions := call.body["stream_options"].(map[string]any)
-		require.Equal(t, true, streamOptions["include_usage"])
+		assert.Empty(t, cmp.Diff(true, streamOptions["include_usage"]))
 
 		messages := call.body["messages"].([]any)
 		require.Len(t, messages, 1)
 
 		message := messages[0].(map[string]any)
-		require.Equal(t, "user", message["role"])
-		require.Equal(t, "Hello", message["content"])
+		assert.Empty(t, cmp.Diff("user", message["role"]))
+		assert.Empty(t, cmp.Diff("Hello", message["content"]))
 	})
 
 	t.Run("should send serviceTier priority processing setting in streaming", func(t *testing.T) {
@@ -2811,19 +2813,19 @@ func TestDoStream(t *testing.T) {
 		require.Len(t, server.calls, 1)
 
 		call := server.calls[0]
-		require.Equal(t, "gpt-4o-mini", call.body["model"])
-		require.Equal(t, "priority", call.body["service_tier"])
-		require.Equal(t, true, call.body["stream"])
+		assert.Empty(t, cmp.Diff("gpt-4o-mini", call.body["model"]))
+		assert.Empty(t, cmp.Diff("priority", call.body["service_tier"]))
+		assert.Empty(t, cmp.Diff(true, call.body["stream"]))
 
 		streamOptions := call.body["stream_options"].(map[string]any)
-		require.Equal(t, true, streamOptions["include_usage"])
+		assert.Empty(t, cmp.Diff(true, streamOptions["include_usage"]))
 
 		messages := call.body["messages"].([]any)
 		require.Len(t, messages, 1)
 
 		message := messages[0].(map[string]any)
-		require.Equal(t, "user", message["role"])
-		require.Equal(t, "Hello", message["content"])
+		assert.Empty(t, cmp.Diff("user", message["role"]))
+		assert.Empty(t, cmp.Diff("Hello", message["content"]))
 	})
 
 	t.Run("should stream text delta for reasoning models", func(t *testing.T) {
@@ -2860,9 +2862,10 @@ func TestDoStream(t *testing.T) {
 				textDeltas = append(textDeltas, part.Delta)
 			}
 		}
+		assert.
 
-		// Should contain the text content (without empty delta)
-		require.Equal(t, []string{"Hello, World!"}, textDeltas)
+			// Should contain the text content (without empty delta)
+			Empty(t, cmp.Diff([]string{"Hello, World!"}, textDeltas))
 	})
 
 	t.Run("should send reasoning tokens", func(t *testing.T) {
@@ -2910,10 +2913,10 @@ func TestDoStream(t *testing.T) {
 		}
 
 		require.NotNil(t, finishPart)
-		require.Equal(t, int64(15), finishPart.Usage.InputTokens)
-		require.Equal(t, int64(20), finishPart.Usage.OutputTokens)
-		require.Equal(t, int64(35), finishPart.Usage.TotalTokens)
-		require.Equal(t, int64(10), finishPart.Usage.ReasoningTokens)
+		assert.Empty(t, cmp.Diff(int64(15), finishPart.Usage.InputTokens))
+		assert.Empty(t, cmp.Diff(int64(20), finishPart.Usage.OutputTokens))
+		assert.Empty(t, cmp.Diff(int64(35), finishPart.Usage.TotalTokens))
+		assert.Empty(t, cmp.Diff(int64(10), finishPart.Usage.ReasoningTokens))
 	})
 }
 
@@ -2940,7 +2943,7 @@ func TestDefaultToPrompt_DropsEmptyMessages(t *testing.T) {
 
 		require.Len(t, messages, 1, "should only have user message")
 		require.Len(t, warnings, 1)
-		require.Equal(t, fantasy.CallWarningTypeOther, warnings[0].Type)
+		assert.Empty(t, cmp.Diff(fantasy.CallWarningTypeOther, warnings[0].Type))
 		require.Contains(t, warnings[0].Message, "dropping empty assistant message")
 	})
 
@@ -3105,7 +3108,7 @@ func TestResponsesToPrompt_DropsEmptyMessages(t *testing.T) {
 
 		require.Len(t, input, 1, "should only have user message")
 		require.Len(t, warnings, 1)
-		require.Equal(t, fantasy.CallWarningTypeOther, warnings[0].Type)
+		assert.Empty(t, cmp.Diff(fantasy.CallWarningTypeOther, warnings[0].Type))
 		require.Contains(t, warnings[0].Message, "dropping empty assistant message")
 	})
 

@@ -5,6 +5,7 @@ import (
 
 	jsonv2 "github.com/go-json-experiment/json"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -119,8 +120,8 @@ func TestMemoryTool_Status(t *testing.T) {
 	resp := executeAndParse(t, tool, `{"action":"status"}`)
 	assert.True(t, resp.Success)
 	require.NotNil(t, resp.Status)
-	assert.Equal(t, "normal", resp.Status.PressureLevel)
-	assert.Equal(t, 0, resp.Status.RecallItemCount)
+	assert.Empty(t, cmp.Diff("normal", resp.Status.PressureLevel))
+	assert.Empty(t, cmp.Diff(0, resp.Status.RecallItemCount))
 }
 
 func TestMemoryTool_InvalidAction(t *testing.T) {
