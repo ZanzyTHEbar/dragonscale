@@ -541,3 +541,75 @@ func TestToolResult_UserFacingToolDoesSendMessage(t *testing.T) {
 		t.Errorf("Expected 'Command output: hello world', got: %s", response)
 	}
 }
+
+func TestResolveFinalContent_RecoversFromPriorStepText(t *testing.T) {
+	al := &AgentLoop{}
+	steps := []fantasy.StepResult{
+		{
+			Response: fantasy.Response{
+				Content: fantasy.ResponseContent{
+					fantasy.TextContent{Text: "Recovered final response"},
+				},
+			},
+		},
+		{
+			Response: fantasy.Response{
+				Content: fantasy.ResponseContent{
+					fantasy.ToolCallContent{ToolName: "read_file"},
+				},
+			},
+		},
+	}
+
+	got, err := al.resolveFinalContent("", steps)
+	if err != nil {
+		t.Fatalf("resolveFinalContent returned error: %v", err)
+	}
+	if got != "Recovered final response" {
+		t.Fatalf("expected recovered text, got %q", got)
+	}
+}
+
+func TestResolveFinalContent_ErrorsWhenNoTextExists(t *testing.T) {
+	al := &AgentLoop{}
+	steps := []fantasy.StepResult{
+		{
+			Response: fantasy.Response{
+				Content: fantasy.ResponseContent{
+					fantasy.ToolCallContent{ToolName: "write_file"},
+				},
+			},
+		},
+	}
+
+	_, err := al.resolveFinalContent("", steps)
+	if err == nil {
+		t.Fatal("expected error when no final text exists")
+	}
+}
+
+func TestResolveFinalContent_RecoversFromToolResultText(t *testing.T) {
+	al := &AgentLoop{}
+	steps := []fantasy.StepResult{
+		{
+			Response: fantasy.Response{
+				Content: fantasy.ResponseContent{
+					fantasy.ToolResultContent{
+						ToolName: "exec",
+						Result: fantasy.ToolResultOutputContentText{
+							Text: "progressive-test-marker",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	got, err := al.resolveFinalContent("", steps)
+	if err != nil {
+		t.Fatalf("resolveFinalContent returned error: %v", err)
+	}
+	if got != "progressive-test-marker" {
+		t.Fatalf("expected tool result text, got %q", got)
+	}
+}
