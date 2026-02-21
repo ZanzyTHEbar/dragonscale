@@ -19,7 +19,6 @@ type ToolRegistry struct {
 	// in the current session. PrepareStep drains this set to dynamically
 	// promote discovered tools to native callables.
 	discoveredTools map[string]bool
-	discoveredMu    sync.Mutex
 }
 
 func NewToolRegistry() *ToolRegistry {
@@ -207,8 +206,8 @@ func (r *ToolRegistry) GetSummaries() []string {
 // MarkDiscovered records that a tool was returned by tool_search.
 // Thread-safe; called from tool_search's Execute path.
 func (r *ToolRegistry) MarkDiscovered(names ...string) {
-	r.discoveredMu.Lock()
-	defer r.discoveredMu.Unlock()
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	for _, name := range names {
 		if name == "tool_search" || name == "tool_call" {
 			continue
@@ -224,16 +223,14 @@ func (r *ToolRegistry) MarkDiscovered(names ...string) {
 // since the last drain. PrepareStep calls this to promote discovered tools
 // to native callables for the next inference step.
 func (r *ToolRegistry) DrainDiscovered() []Tool {
-	r.discoveredMu.Lock()
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
 	names := make([]string, 0, len(r.discoveredTools))
 	for name := range r.discoveredTools {
 		names = append(names, name)
 	}
 	r.discoveredTools = make(map[string]bool)
-	r.discoveredMu.Unlock()
-
-	r.mu.RLock()
-	defer r.mu.RUnlock()
 	promoted := make([]Tool, 0, len(names))
 	for _, name := range names {
 		if tool, ok := r.tools[name]; ok {
