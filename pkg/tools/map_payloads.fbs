@@ -1,0 +1,33 @@
+// FlatBuffers contract for map operator persistence payloads.
+// Boundary JSON/JSONL is converted to these binary records before DB persistence.
+namespace mapopsfb;
+
+table MapRunSpec {
+  version: uint16 = 1;
+  operator_kind: string (required); // llm_map | agentic_map
+  instruction: string;
+  task_template: string;
+  output_schema_json: string;
+  max_retries: uint16 = 1;
+  delegated_scope: string;
+  kept_work: string;
+  origin_channel: string;
+  origin_chat_id: string;
+}
+
+table MapItemInput {
+  version: uint16 = 1;
+  item_index: uint32;
+  item_json: string (required); // canonical boundary JSON object
+  input_hash: string;
+}
+
+table MapItemOutput {
+  version: uint16 = 1;
+  item_index: uint32;
+  success: bool = false;
+  attempts: uint16 = 0;
+  output_json: string;
+  error_text: string;
+  output_hash: string;
+}
