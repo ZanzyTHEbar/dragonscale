@@ -11,6 +11,8 @@ providers:
     label: "picoclaw"
     config:
       timeout: 180000
+    env:
+      PICOCLAW_EVAL_CONFIG: "./configs/default.json"
 
 # Default assertions applied to every test case
 defaultTest:

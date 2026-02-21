@@ -225,7 +225,7 @@ eval-build: generate
 ## eval: Run the eval suite against the current build
 eval: eval-build eval-fixtures
 	@echo "Running eval suite..."
-	@cd eval && npx promptfoo eval --config promptfooconfig.yaml --no-cache --no-progress-bar
+	@cd eval && PICOCLAW_EVAL_CONFIG="./configs/default.json" npx promptfoo eval --config promptfooconfig.yaml --no-cache --no-progress-bar
 	@echo "Results: eval/results/latest.json"
 	@echo "View: cd eval && npx promptfoo view"
 

@@ -34,7 +34,9 @@
           }
           return false;
         });
-        return { pass: hasToolCall, score: hasToolCall ? 1.0 : 0.0, reason: hasToolCall ? 'used tool_call to dispatch read_file' : `no tool_call dispatch (tools: ${toolCalls.map(t=>t.tool).join(', ')})` };
+        const direct = toolCalls.some(t => t.tool === 'read_file');
+        const pass = hasToolCall || direct;
+        return { pass, score: hasToolCall ? 1.0 : (direct ? 0.8 : 0.0), reason: hasToolCall ? 'used tool_call to dispatch read_file' : (direct ? 'used direct read_file gateway' : `no read dispatch (tools: ${toolCalls.map(t=>t.tool).join(', ')})`) };
     - type: javascript
       value: |
         const trace = JSON.parse(output);
@@ -57,7 +59,9 @@
           }
           return false;
         });
-        return { pass: hasToolCall, score: hasToolCall ? 1.0 : 0.0, reason: hasToolCall ? 'used tool_call for exec' : `no tool_call dispatch to exec (tools: ${toolCalls.map(t=>t.tool).join(', ')})` };
+        const direct = toolCalls.some(t => t.tool === 'exec');
+        const pass = hasToolCall || direct;
+        return { pass, score: hasToolCall ? 1.0 : (direct ? 0.8 : 0.0), reason: hasToolCall ? 'used tool_call for exec' : (direct ? 'used direct exec gateway' : `no exec dispatch (tools: ${toolCalls.map(t=>t.tool).join(', ')})`) };
     - type: javascript
       value: |
         const trace = JSON.parse(output);

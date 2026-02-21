@@ -29,7 +29,6 @@ import (
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/cron"
 	"github.com/sipeed/picoclaw/pkg/devices"
-	picofantasy "github.com/sipeed/picoclaw/pkg/fantasy"
 	"github.com/sipeed/picoclaw/pkg/health"
 	"github.com/sipeed/picoclaw/pkg/heartbeat"
 	"github.com/sipeed/picoclaw/pkg/itr"
@@ -37,6 +36,7 @@ import (
 	picomemory "github.com/sipeed/picoclaw/pkg/memory"
 	"github.com/sipeed/picoclaw/pkg/memory/delegate"
 	"github.com/sipeed/picoclaw/pkg/migrate"
+	picoruntime "github.com/sipeed/picoclaw/pkg/runtime"
 	"github.com/sipeed/picoclaw/pkg/security"
 	"github.com/sipeed/picoclaw/pkg/security/securebus"
 	"github.com/sipeed/picoclaw/pkg/skills"
@@ -439,27 +439,16 @@ func agentCmd() {
 		os.Exit(1)
 	}
 
-	fantasyProvider, err := picofantasy.CreateProvider(cfg)
-	if err != nil {
-		fmt.Printf("Error creating provider: %v\n", err)
-		os.Exit(1)
-	}
-
 	appCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
-	languageModel, err := fantasyProvider.LanguageModel(appCtx, picofantasy.ModelID(cfg))
-	if err != nil {
-		fmt.Printf("Error creating language model: %v\n", err)
-		os.Exit(1)
-	}
-
-	msgBus := bus.NewMessageBus()
-	agentLoop, err := agent.NewAgentLoop(appCtx, cfg, msgBus, languageModel)
+	rt, err := bootstrapAgentRuntime(appCtx, cfg)
 	if err != nil {
 		fmt.Printf("Error initializing agent: %v\n", err)
 		os.Exit(1)
 	}
+	defer rt.Close()
+	agentLoop := rt.AgentLoop()
 
 	closeBus := setupSecureBus(agentLoop)
 	defer closeBus()
@@ -586,27 +575,17 @@ func gatewayCmd() {
 		os.Exit(1)
 	}
 
-	fantasyProvider, err := picofantasy.CreateProvider(cfg)
-	if err != nil {
-		fmt.Printf("Error creating provider: %v\n", err)
-		os.Exit(1)
-	}
-
 	appCtx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	languageModel, err := fantasyProvider.LanguageModel(appCtx, picofantasy.ModelID(cfg))
-	if err != nil {
-		fmt.Printf("Error creating language model: %v\n", err)
-		os.Exit(1)
-	}
-
-	msgBus := bus.NewMessageBus()
-	agentLoop, err := agent.NewAgentLoop(appCtx, cfg, msgBus, languageModel)
+	rt, err := bootstrapAgentRuntime(appCtx, cfg)
 	if err != nil {
 		fmt.Printf("Error initializing agent: %v\n", err)
 		os.Exit(1)
 	}
+	defer rt.Close()
+	agentLoop := rt.AgentLoop()
+	msgBus := rt.MessageBus()
 
 	closeBus := setupSecureBus(agentLoop)
 	defer closeBus()
@@ -1555,7 +1534,15 @@ func setupCronTool(appCtx context.Context, agentLoop *agent.AgentLoop, msgBus *b
 }
 
 func loadConfig() (*config.Config, error) {
-	return config.LoadConfig(getConfigPath())
+	return picoruntime.LoadResolvedConfig(picoruntime.LoadConfigOptions{
+		BaseConfigPath: getConfigPath(),
+	})
+}
+
+func bootstrapAgentRuntime(appCtx context.Context, cfg *config.Config) (*picoruntime.RuntimeHandle, error) {
+	return picoruntime.Bootstrap(appCtx, cfg, picoruntime.BootstrapOptions{
+		OutboundMode: picoruntime.OutboundModeNone,
+	})
 }
 
 // setupSecureBus wires the Isolated Tool Runtime into an AgentLoop.

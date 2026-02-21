@@ -114,4 +114,5 @@ Create a new YAML file in `eval/cases/` following this pattern:
 
 ## Environment Variables
 
-- `PICOCLAW_EVAL_CONFIG` - Path to picoclaw config.json for eval (defaults to `~/.picoclaw/config.json`)
+- `PICOCLAW_EVAL_CONFIG` - Optional overlay config path applied on top of user base config.
+- Base config discovery uses XDG first (`~/.config/picoclaw/config.json`), then legacy (`~/.picoclaw/config.json`), then XDG fallback if neither exists.

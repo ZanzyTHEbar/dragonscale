@@ -6,15 +6,14 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
 	fantasy "charm.land/fantasy"
-	"github.com/sipeed/picoclaw/pkg/agent"
-	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/config"
-	picofantasy "github.com/sipeed/picoclaw/pkg/fantasy"
 	"github.com/sipeed/picoclaw/pkg/logger"
+	picoruntime "github.com/sipeed/picoclaw/pkg/runtime"
 )
 
 // Trace is the structured output emitted by the eval runner.
@@ -50,33 +49,45 @@ type Metrics struct {
 func main() {
 	logger.SetLevel(logger.ERROR)
 
-	prompt, err := readPrompt()
+	prompt, err := resolvePrompt()
 	if err != nil {
 		emitError(fmt.Sprintf("failed to read prompt: %v", err))
 		return
 	}
 
-	if strings.TrimSpace(prompt) == "" {
-		trace := Trace{
-			Output: "No prompt provided. Please provide a message.",
-			Metrics: Metrics{
-				TotalDurationMs: 0,
-			},
-		}
-		out, _ := json.Marshal(trace)
-		fmt.Println(string(out))
+	if empty := emptyPromptTrace(prompt); empty != nil {
+		emitTrace(*empty)
 		return
 	}
 
-	cfg, err := loadEvalConfig()
+	cfg, err := resolveEvalConfig()
 	if err != nil {
 		emitError(fmt.Sprintf("config error: %v", err))
 		return
 	}
 
 	trace := runEval(cfg, prompt)
-	out, _ := json.Marshal(trace)
-	fmt.Println(string(out))
+	emitTrace(trace)
+}
+
+func resolvePrompt() (string, error) {
+	return readPrompt()
+}
+
+func emptyPromptTrace(prompt string) *Trace {
+	if strings.TrimSpace(prompt) != "" {
+		return nil
+	}
+	return &Trace{
+		Output: "No prompt provided. Please provide a message.",
+		Metrics: Metrics{
+			TotalDurationMs: 0,
+		},
+	}
+}
+
+func resolveEvalConfig() (*config.Config, error) {
+	return picoruntime.LoadEvalConfig(evalRunnerTimeout())
 }
 
 func readPrompt() (string, error) {
@@ -87,11 +98,8 @@ func readPrompt() (string, error) {
 	// promptfoo exec: provider passes the prompt as the first positional argument
 	if len(os.Args) > 1 && !strings.HasPrefix(os.Args[1], "-") {
 		raw := os.Args[1]
-		var promptData struct {
-			Prompt string `json:"prompt"`
-		}
-		if json.Unmarshal([]byte(raw), &promptData) == nil && promptData.Prompt != "" {
-			return promptData.Prompt, nil
+		if prompt, ok := parsePromptPayload([]byte(raw)); ok {
+			return prompt, nil
 		}
 		return strings.TrimSpace(raw), nil
 	}
@@ -103,11 +111,8 @@ func readPrompt() (string, error) {
 		if err != nil {
 			return "", err
 		}
-		var promptData struct {
-			Prompt string `json:"prompt"`
-		}
-		if json.Unmarshal(data, &promptData) == nil && promptData.Prompt != "" {
-			return promptData.Prompt, nil
+		if prompt, ok := parsePromptPayload(data); ok {
+			return prompt, nil
 		}
 		return strings.TrimSpace(string(data)), nil
 	}
@@ -115,127 +120,94 @@ func readPrompt() (string, error) {
 	return "", fmt.Errorf("no prompt provided (use positional arg, --prompt, or pipe to stdin)")
 }
 
-// resolveBaseConfigPath returns the path to the user's config file, checking
-// candidate paths in order and returning the first one that exists. Falls back
-// to the XDG-standard path even if the file is absent, matching the main
-// picoclaw binary's behaviour.
-func resolveBaseConfigPath() string {
-	// Prefer XDG standard path (~/.config/picoclaw/config.json).
-	if xdgPath, err := config.DefaultConfigPath(); err == nil {
-		if _, statErr := os.Stat(xdgPath); statErr == nil {
-			return xdgPath
-		}
+func parsePromptPayload(raw []byte) (string, bool) {
+	var payload struct {
+		Prompt string `json:"prompt"`
 	}
-	// Legacy path used before XDG migration.
-	home, _ := os.UserHomeDir()
-	legacy := home + "/.picoclaw/config.json"
-	if _, err := os.Stat(legacy); err == nil {
-		return legacy
+	if err := json.Unmarshal(raw, &payload); err != nil || payload.Prompt == "" {
+		return "", false
 	}
-	// Neither exists; return the XDG path so LoadConfig returns defaults.
-	if xdgPath, err := config.DefaultConfigPath(); err == nil {
-		return xdgPath
-	}
-	return home + "/.picoclaw/config.json"
-}
-
-func loadEvalConfig() (*config.Config, error) {
-	// Always load the user's base config first so provider API keys,
-	// model selection, and other credentials are preserved.
-	cfg, err := config.LoadConfig(resolveBaseConfigPath())
-	if err != nil {
-		return nil, fmt.Errorf("load base config: %w", err)
-	}
-
-	// If an eval-specific override file is set, merge it on top of the base
-	// config. Only fields present in the overlay are changed; API keys etc.
-	// from the base config are preserved.
-	if overlayPath := os.Getenv("PICOCLAW_EVAL_CONFIG"); overlayPath != "" {
-		if err := config.OverlayConfigFile(cfg, overlayPath); err != nil {
-			return nil, fmt.Errorf("load eval overlay: %w", err)
-		}
-	}
-
-	return cfg, nil
+	return payload.Prompt, true
 }
 
 func runEval(cfg *config.Config, prompt string) Trace {
 	start := time.Now()
 
-	sessionKey := fmt.Sprintf("eval:%d", start.UnixNano())
-
-	fantasyProvider, err := picofantasy.CreateProvider(cfg)
-	if err != nil {
-		return Trace{Error: fmt.Sprintf("provider error: %v", err)}
+	sessionKey := picoruntime.NewSessionKey("eval", start)
+	runtime, initErr := newEvalRuntime(cfg)
+	if initErr != nil {
+		return Trace{Error: initErr.Error()}
 	}
+	defer runtime.close()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
-	defer cancel()
+	result := picoruntime.RunPrompt(runtime.handle.Context(), runtime.handle, prompt, sessionKey)
 
-	languageModel, err := fantasyProvider.LanguageModel(ctx, picofantasy.ModelID(cfg))
-	if err != nil {
-		return Trace{Error: fmt.Sprintf("model error: %v", err)}
+	duration := result.Duration
+	if duration <= 0 {
+		duration = time.Since(start)
 	}
-
-	instrumentedModel := &instrumentedLanguageModel{
-		inner: languageModel,
-	}
-
-	msgBus := bus.NewMessageBus()
-
-	// Drain outbound messages to prevent blocking
-	outDone := make(chan struct{})
-	go func() {
-		defer close(outDone)
-		for {
-			_, ok := msgBus.SubscribeOutbound(ctx)
-			if !ok {
-				return
-			}
-		}
-	}()
-
-	agentLoop, err := agent.NewAgentLoop(ctx, cfg, msgBus, instrumentedModel)
-	if err != nil {
-		cancel()
-		<-outDone
-		return Trace{Error: fmt.Sprintf("agent loop init error: %v", err)}
-	}
-	defer agentLoop.Stop()
-
-	response, err := agentLoop.ProcessDirect(ctx, prompt, sessionKey)
-
-	cancel() // Signals context done, which stops outbound drain
-	<-outDone
-
-	duration := time.Since(start)
 
 	trace := Trace{
-		Output:     response,
+		Output:     result.Output,
 		SessionKey: sessionKey,
-		Steps:      buildSteps(instrumentedModel),
+		Steps:      buildSteps(runtime.instrumentedModel),
 		Metrics: Metrics{
 			TotalDurationMs: duration.Milliseconds(),
-			StepCount:       len(instrumentedModel.calls),
-			InputTokens:     instrumentedModel.totalUsage.InputTokens,
-			OutputTokens:    instrumentedModel.totalUsage.OutputTokens,
-			TotalTokens:     instrumentedModel.totalUsage.TotalTokens,
-			ReasoningTokens: instrumentedModel.totalUsage.ReasoningTokens,
-			CacheReadTokens: instrumentedModel.totalUsage.CacheReadTokens,
+			StepCount:       len(runtime.instrumentedModel.calls),
+			InputTokens:     runtime.instrumentedModel.totalUsage.InputTokens,
+			OutputTokens:    runtime.instrumentedModel.totalUsage.OutputTokens,
+			TotalTokens:     runtime.instrumentedModel.totalUsage.TotalTokens,
+			ReasoningTokens: runtime.instrumentedModel.totalUsage.ReasoningTokens,
+			CacheReadTokens: runtime.instrumentedModel.totalUsage.CacheReadTokens,
 		},
 	}
 
-	if err != nil {
-		trace.Error = err.Error()
+	if result.Error != "" {
+		trace.Error = result.Error
 	}
 
-	for _, call := range instrumentedModel.calls {
+	for _, call := range runtime.instrumentedModel.calls {
 		for range call.toolCalls {
 			trace.Metrics.ToolCallCount++
 		}
 	}
 
 	return trace
+}
+
+type evalRuntime struct {
+	handle            *picoruntime.RuntimeHandle
+	instrumentedModel *instrumentedLanguageModel
+}
+
+func newEvalRuntime(cfg *config.Config) (*evalRuntime, error) {
+	var instrumentedModel *instrumentedLanguageModel
+	handle, err := picoruntime.Bootstrap(context.Background(), cfg, picoruntime.BootstrapOptions{
+		Timeout:      evalRunnerTimeout(),
+		OutboundMode: picoruntime.OutboundModeDrop,
+		WrapModel: func(inner fantasy.LanguageModel) fantasy.LanguageModel {
+			instrumentedModel = &instrumentedLanguageModel{inner: inner}
+			return instrumentedModel
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+	if instrumentedModel == nil {
+		handle.Close()
+		return nil, fmt.Errorf("instrumented model wrapper not initialized")
+	}
+
+	return &evalRuntime{
+		handle:            handle,
+		instrumentedModel: instrumentedModel,
+	}, nil
+}
+
+func (r *evalRuntime) close() {
+	if r.handle != nil {
+		r.handle.Close()
+	}
 }
 
 func buildSteps(model *instrumentedLanguageModel) []TraceStep {
@@ -273,8 +245,24 @@ func truncate(s string, maxLen int) string {
 	return s[:maxLen] + "...[truncated]"
 }
 
+func evalRunnerTimeout() time.Duration {
+	const defaultTimeout = 180 * time.Second
+	raw := strings.TrimSpace(os.Getenv("PICOCLAW_EVAL_TIMEOUT_MS"))
+	if raw == "" {
+		return defaultTimeout
+	}
+	ms, err := strconv.Atoi(raw)
+	if err != nil || ms <= 0 {
+		return defaultTimeout
+	}
+	return time.Duration(ms) * time.Millisecond
+}
+
 func emitError(msg string) {
-	trace := Trace{Error: msg}
+	emitTrace(Trace{Error: msg})
+}
+
+func emitTrace(trace Trace) {
 	out, _ := json.Marshal(trace)
 	fmt.Println(string(out))
 }
