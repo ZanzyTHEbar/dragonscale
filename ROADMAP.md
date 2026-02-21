@@ -247,6 +247,12 @@ flowchart LR
 
 ## Ideas and improvements
 
+- [ ] Outbox Pattern
+  - [ ] The outbox pattern is a way to ensure that messages are delivered to the user in the correct order
+    - [ ] consistency, order, etc.
+    - [ ] With this we can push all completed agent work to a "review" queue for human review and approval before being sent off
+      - [ ] Example: 
+        - [ ] emails, sms, any work where we want to ensure consistency, order, etc.
 - [ ] Add performance metrics to the eval harness
   - [ ] Raw metrics of tool calls, LLM calls, token counts, duration, etc
   - [ ] Per-test scores
