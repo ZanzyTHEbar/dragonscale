@@ -1,0 +1,681 @@
+package sdk
+
+import (
+	"context"
+	"fmt"
+	"io"
+	"io/fs"
+	"os"
+	"os/signal"
+	"path/filepath"
+	"sort"
+	"strconv"
+	"strings"
+	"syscall"
+	"time"
+
+	"github.com/ZanzyTHEbar/dragonscale/pkg"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/config"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/itr"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/logger"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/memory"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/memory/delegate"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/security"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/security/securebus"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/skills"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/tools"
+)
+
+func (s *Service) SkillsList(ctx context.Context, out io.Writer) error {
+	_ = ctx
+
+	cfgDir, err := config.ConfigDir()
+	if err != nil {
+		return err
+	}
+
+	skillsPath, err := config.SkillsDir()
+	if err != nil {
+		return err
+	}
+
+	registry := skills.NewSkillsLoader(skillsPath, filepath.Join(cfgDir, "skills"), filepath.Join(cfgDir, "skills"))
+
+	skillInfos := registry.ListSkills()
+	if len(skillInfos) == 0 {
+		fmt.Fprintln(out, "No skills installed.")
+		return nil
+	}
+	sort.Slice(skillInfos, func(i, j int) bool {
+		return skillInfos[i].Name < skillInfos[j].Name
+	})
+
+	for _, info := range skillInfos {
+		content, ok := registry.LoadSkill(info.Name)
+		if !ok {
+			fmt.Fprintf(out, `%s: unable to load (not found)\n`, info.Name)
+			continue
+		}
+
+		description := strings.TrimSpace(skillDescriptionFromMarkdownData([]byte(content)))
+		if description == "" {
+			description = "(no description)"
+		}
+		fmt.Fprintf(out, `%s\n  %s\n`, info.Name, description)
+	}
+
+	return nil
+}
+
+func (s *Service) SkillsListBuiltin(ctx context.Context, out io.Writer) error {
+	_ = ctx
+
+	if s.EmbeddedFS != nil {
+		entries, err := fs.ReadDir(s.EmbeddedFS, "workspace/skills")
+		if err == nil {
+			if len(entries) == 0 {
+				fmt.Fprintln(out, "No builtin skills found.")
+				return nil
+			}
+
+			for _, entry := range entries {
+				if !entry.IsDir() {
+					continue
+				}
+
+				docPath := filepath.Join("workspace/skills", entry.Name(), "SKILL.md")
+				description := skillDescriptionFromMarkdownFS(s.EmbeddedFS, docPath)
+				fmt.Fprintf(out, `%s\n  %s\n`, entry.Name(), description)
+			}
+			return nil
+		}
+	}
+
+	builtinDir := filepath.Join(s.getConfigPath(), "skills")
+	if err := s.printBuiltinFromPath(out, builtinDir); err == nil {
+		return nil
+	}
+
+	legacyBuiltin := filepath.Join(filepath.Dir(s.getConfigPath()), "skills")
+	if err := s.printBuiltinFromPath(out, legacyBuiltin); err == nil {
+		return nil
+	}
+
+	return fmt.Errorf(`no builtin skills source available`)
+}
+
+func (s *Service) printBuiltinFromPath(out io.Writer, dir string) error {
+	info, err := os.Stat(dir)
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("builtin skills path is not a directory: %s", dir)
+	}
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return err
+	}
+	if len(entries) == 0 {
+		fmt.Fprintln(out, "No builtin skills found.")
+		return nil
+	}
+
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+
+		skillPath := filepath.Join(dir, entry.Name())
+		docPath := filepath.Join(skillPath, "SKILL.md")
+		description := skillDescriptionFromMarkdown(docPath)
+		fmt.Fprintf(out, `%s\n  %s\n`, entry.Name(), description)
+	}
+
+	return nil
+}
+
+func (s *Service) SkillsInstall(ctx context.Context, out io.Writer, repo string) error {
+	if strings.TrimSpace(repo) == "" {
+		return fmt.Errorf(`repository path required`)
+	}
+
+	skillsPath, err := config.SkillsDir()
+	if err != nil {
+		return err
+	}
+
+	installer := skills.NewSkillInstaller(skillsPath)
+
+	ctx2, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	if err := installer.InstallFromGitHub(ctx2, repo); err != nil {
+		return err
+	}
+
+	fmt.Fprintf(out, `Installed skill %s\n`, repo)
+	return nil
+}
+
+func (s *Service) SkillsInstallBuiltin(ctx context.Context, out io.Writer, workspace string) error {
+	_ = ctx
+
+	if strings.TrimSpace(workspace) == "" {
+		cfg, err := s.LoadConfig()
+		if err != nil {
+			return err
+		}
+		workspace = cfg.WorkspacePath()
+	}
+
+	target := filepath.Join(workspace, "skills")
+	if err := os.MkdirAll(target, 0o700); err != nil {
+		return fmt.Errorf(`create workspace skills directory: %w`, err)
+	}
+
+	if s.EmbeddedFS != nil {
+		if err := s.seedEmbeddedSkills(target); err != nil {
+			return err
+		}
+		fmt.Fprintln(out, `Installed builtin skills into workspace skills directory.`)
+		return nil
+	}
+
+	source := filepath.Join(filepath.Dir(s.getConfigPath()), "skills")
+	if _, err := os.Stat(source); err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf(`embedded builtin skills are unavailable`)
+		}
+		return err
+	}
+
+	if err := s.CopyDirectory(source, target); err != nil {
+		return err
+	}
+
+	fmt.Fprintln(out, `Installed builtin skills into workspace skills directory.`)
+	return nil
+}
+
+func (s *Service) SkillsRemove(ctx context.Context, out io.Writer, name string) error {
+	_ = ctx
+
+	if strings.TrimSpace(name) == "" {
+		return fmt.Errorf(`skill name required`)
+	}
+
+	skillsDir, err := config.SkillsDir()
+	if err != nil {
+		return err
+	}
+
+	installer := skills.NewSkillInstaller(skillsDir)
+
+	if err := installer.Uninstall(name); err != nil {
+		return err
+	}
+
+	fmt.Fprintf(out, `Removed skill %s\n`, name)
+	return nil
+}
+
+func (s *Service) SkillsSearch(ctx context.Context, out io.Writer) error {
+	installer := skills.NewSkillInstaller("")
+
+	ctx2, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	skillsInfo, err := installer.ListAvailableSkills(ctx2)
+	if err != nil {
+		return err
+	}
+
+	if len(skillsInfo) == 0 {
+		fmt.Fprintln(out, "No skills available.")
+		return nil
+	}
+
+	for _, skill := range skillsInfo {
+		name := "unknown"
+		if skill.Name != "" {
+			name = skill.Name
+		}
+		description := ""
+		if skill.Description != "" {
+			description = skill.Description
+		}
+		fmt.Fprintf(out, `%s\n`, name)
+		if description != "" {
+			fmt.Fprintf(out, `  %s\n`, description)
+		}
+	}
+
+	return nil
+}
+
+func (s *Service) SkillsShow(ctx context.Context, out io.Writer, name string) error {
+	_ = ctx
+
+	if strings.TrimSpace(name) == "" {
+		return fmt.Errorf(`skill name required`)
+	}
+
+	skillDir, err := config.SkillsDir()
+	if err != nil {
+		return err
+	}
+	loader := skills.NewSkillsLoader(skillDir, "", "")
+
+	content, ok := loader.LoadSkill(name)
+	if !ok {
+		return fmt.Errorf(`skill not found`)
+	}
+
+	fmt.Fprintf(out, `Name:   %s\n`, name)
+	if content != "" {
+		description := strings.TrimSpace(skillDescriptionFromMarkdownData([]byte(content)))
+		if description != "" {
+			fmt.Fprintf(out, `Desc:   %s\n`, description)
+		}
+	}
+	fmt.Fprintf(out, `Content: %s\n`, content)
+
+	return nil
+}
+
+func (s *Service) SecretInit(ctx context.Context, out io.Writer) error {
+	_ = ctx
+
+	key, err := security.GenerateKey()
+	if err != nil {
+		return err
+	}
+	encoded := fmt.Sprintf(`%x`, key)
+
+	fmt.Fprintln(out, `Generated master key (keep this safe!):`)
+	fmt.Fprintln(out, ``)
+	fmt.Fprintln(out, `  `+encoded)
+	fmt.Fprintln(out, ``)
+	fmt.Fprintln(out, `Set it as an environment variable:`)
+	fmt.Fprintln(out, `  export `+security.MasterKeyEnvVar+`=`+encoded)
+	fmt.Fprintln(out, ``)
+	fmt.Fprintln(out, `Or add to your shell profile (~/.bashrc, ~/.zshrc).`)
+	return nil
+}
+
+func (s *Service) SecretAdd(ctx context.Context, in io.Reader, out io.Writer, name string) error {
+	_ = ctx
+
+	if strings.TrimSpace(name) == "" {
+		return fmt.Errorf(`secret name required`)
+	}
+
+	store, err := s.secretStore()
+	if err != nil {
+		return fmt.Errorf(`error opening secret store: %w`, err)
+	}
+
+	fmt.Fprintf(out, `Secret value: `)
+	raw, err := io.ReadAll(in)
+	if err != nil {
+		return err
+	}
+
+	value := strings.TrimSpace(string(raw))
+	if value == "" {
+		return fmt.Errorf(`secret value cannot be empty`)
+	}
+
+	if err := store.Set(name, []byte(value)); err != nil {
+		return err
+	}
+
+	fmt.Fprintf(out, `Secret %s saved.\n`, name)
+	return nil
+}
+
+func (s *Service) SecretList(ctx context.Context, out io.Writer) error {
+	_ = ctx
+
+	store, err := s.secretStore()
+	if err != nil {
+		return err
+	}
+
+	names := store.List()
+	if len(names) == 0 {
+		fmt.Fprintln(out, "No secrets found.")
+		return nil
+	}
+
+	for _, name := range names {
+		fmt.Fprintln(out, name)
+	}
+
+	return nil
+}
+
+func (s *Service) SecretDelete(ctx context.Context, out io.Writer, name string) error {
+	_ = ctx
+
+	if strings.TrimSpace(name) == "" {
+		return fmt.Errorf(`secret name required`)
+	}
+
+	store, err := s.secretStore()
+	if err != nil {
+		return err
+	}
+
+	if err := store.Delete(name); err != nil {
+		return err
+	}
+
+	fmt.Fprintf(out, `Deleted secret %s\n`, name)
+	return nil
+}
+
+func (s *Service) DaemonStart(ctx context.Context, out io.Writer) error {
+	cfgDir, err := config.ConfigDir()
+	if err != nil {
+		return err
+	}
+
+	if err := os.MkdirAll(cfgDir, 0o700); err != nil {
+		return err
+	}
+
+	socketPath := s.DaemonSocketPath()
+	pidPath := s.DaemonPIDPath()
+
+	if pidData, err := os.ReadFile(pidPath); err == nil {
+		pidText := strings.TrimSpace(string(pidData))
+		if pidText != "" {
+			fmt.Fprintf(out, `Daemon already running (pid %s).\n`, pidText)
+		}
+		return nil
+	}
+
+	cfg, err := s.LoadConfig()
+	if err != nil {
+		return err
+	}
+
+	svr, err := securebus.NewSocketTransportServer(socketPath)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_ = svr.Close()
+	}()
+
+	busStore, err := s.secretStore()
+	if err != nil {
+		fmt.Fprintf(out, `Warning: secret store unavailable: %v\n`, err)
+		busStore = nil
+	}
+
+	toolRegistry := tools.NewToolRegistry()
+	registerDefaultTools(s, toolRegistry, cfg)
+
+	baseCtx := ctx
+	if baseCtx == nil {
+		baseCtx = context.Background()
+	}
+	daemonCtx, cancel := signal.NotifyContext(baseCtx, os.Interrupt)
+	ctx = daemonCtx
+	defer cancel()
+
+	capabilityLookup := func(toolName string) (tools.ToolCapabilities, bool) {
+		tool, ok := toolRegistry.Get(toolName)
+		if !ok {
+			return tools.ZeroCapabilities(), false
+		}
+		return tools.ExtractCapabilities(tool), true
+	}
+	executeTool := func(execCtx context.Context, name string, args map[string]interface{}) *tools.ToolResult {
+		return toolRegistry.Execute(execCtx, name, args)
+	}
+
+	bus := securebus.New(securebus.DefaultBusConfig(), busStore, capabilityLookup, executeTool)
+	defer bus.Close()
+
+	srvErr := make(chan error, 1)
+	go func() {
+		srvErr <- svr.Serve(func(reqCtx context.Context, req itr.ToolRequest) itr.ToolResponse {
+			return bus.Execute(reqCtx, req)
+		})
+	}()
+
+	if err := os.WriteFile(pidPath, []byte(strconv.Itoa(os.Getpid())), 0o600); err != nil {
+		return err
+	}
+	defer os.Remove(pidPath)
+
+	logger.InfoF(`daemon started on socket`, map[string]interface{}{
+		`socket_path`: socketPath,
+	})
+	fmt.Fprintln(out, `Daemon started.`)
+	fmt.Fprintf(out, `  sandbox: %s\n`, cfg.SandboxPath())
+	fmt.Fprintf(out, `  tools: %d registered\n`, len(toolRegistry.List()))
+
+	select {
+	case <-ctx.Done():
+		logger.Info(`Daemon shutdown requested`)
+	case err := <-srvErr:
+		if err != nil {
+			return fmt.Errorf(`daemon stopped with error: %w`, err)
+		}
+	}
+
+	return nil
+}
+
+func (s *Service) DaemonStop(ctx context.Context, out io.Writer) error {
+	_ = ctx
+
+	pidPath := s.DaemonPIDPath()
+	data, err := os.ReadFile(pidPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			fmt.Fprintln(out, `Daemon is not running.`)
+			return nil
+		}
+		return err
+	}
+
+	pidText := strings.TrimSpace(string(data))
+	pid, err := strconv.Atoi(pidText)
+	if err != nil {
+		return fmt.Errorf(`invalid pid file content`)
+	}
+
+	p, err := os.FindProcess(pid)
+	if err != nil {
+		return err
+	}
+
+	if err := p.Signal(syscall.SIGTERM); err != nil {
+		return fmt.Errorf(`failed to stop daemon: %w`, err)
+	}
+
+	if err := os.Remove(pidPath); err != nil {
+		fmt.Fprintf(out, `Could not remove pid file: %v\n`, err)
+	}
+	fmt.Fprintf(out, `Daemon stopped (pid %d)\n`, pid)
+	return nil
+}
+
+func (s *Service) DaemonStatus(ctx context.Context, out io.Writer) error {
+	_ = ctx
+
+	pidPath := s.DaemonPIDPath()
+	data, err := os.ReadFile(pidPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			fmt.Fprintln(out, `Daemon is not running.`)
+			return nil
+		}
+		return err
+	}
+
+	pidText := strings.TrimSpace(string(data))
+	if pidText == "" {
+		fmt.Fprintln(out, `Daemon is not running.`)
+		return nil
+	}
+	pid, err := strconv.Atoi(pidText)
+	if err != nil {
+		return fmt.Errorf(`invalid pid file content`)
+	}
+
+	p, err := os.FindProcess(pid)
+	if err != nil {
+		fmt.Fprintf(out, `Daemon is not running (stale pid %d).\n`, pid)
+		return os.WriteFile(pidPath, nil, 0o600)
+	}
+
+	if err := p.Signal(syscall.Signal(0)); err != nil {
+		fmt.Fprintf(out, `Daemon is not running (stale pid %d).\n`, pid)
+		_ = os.Remove(pidPath)
+		return nil
+	}
+
+	fmt.Fprintf(out, `Daemon running with PID %d\n`, pid)
+	return nil
+}
+
+func (s *Service) MemoryMigrateSessions(ctx context.Context, out io.Writer) error {
+	cfg, err := s.LoadConfig()
+	if err != nil {
+		return err
+	}
+
+	dbPath := cfg.Memory.DBPath
+	if dbPath == "" {
+		dbPath, err = config.DefaultDBPath()
+		if err != nil {
+			return err
+		}
+	}
+
+	delegate, err := delegate.NewLibSQLDelegate(dbPath)
+	if err != nil {
+		return fmt.Errorf(`memory delegate: %w`, err)
+	}
+	defer delegate.Close()
+
+	if err := delegate.Init(context.Background()); err != nil {
+		return fmt.Errorf(`initialize memory delegate: %w`, err)
+	}
+
+	result, err := memory.MigrateFileSessions(ctx, delegate, pkg.NAME, filepath.Join(cfg.WorkspacePath(), ".sessions"))
+	if err != nil {
+		return err
+	}
+	if result == nil {
+		fmt.Fprintln(out, `No sessions to migrate.`)
+		return nil
+	}
+
+	fmt.Fprintf(out, `sessions_found=%d\n`, result.SessionsFound)
+	fmt.Fprintf(out, `sessions_migrated=%d\n`, result.SessionsMigrated)
+	fmt.Fprintf(out, `items_created=%d\n`, result.ItemsCreated)
+	fmt.Fprintf(out, `errors=%d\n`, result.Errors)
+	return nil
+}
+
+func (s *Service) MemoryDBStatus(ctx context.Context, out io.Writer) error {
+	_ = ctx
+
+	cfg, err := s.LoadConfig()
+	if err != nil {
+		return err
+	}
+
+	dbPath := cfg.Memory.DBPath
+	if dbPath == "" {
+		dbPath, err = config.DefaultDBPath()
+		if err != nil {
+			return err
+		}
+	}
+
+	if stat, err := os.Stat(dbPath); err == nil {
+		fmt.Fprintf(out, `SQLite DB exists at %s\n`, dbPath)
+		fmt.Fprintf(out, `Size: %d bytes\n`, stat.Size())
+		return nil
+	} else if os.IsNotExist(err) {
+		fmt.Fprintf(out, `SQLite DB missing at %s\n`, dbPath)
+		return nil
+	}
+
+	return err
+}
+
+func (s *Service) secretStore() (*security.SecretStore, error) {
+	secretPath := filepath.Join(filepath.Dir(s.getConfigPath()), `secrets.json`)
+	var keyring security.KeyringProvider
+
+	if secretKey := os.Getenv(security.MasterKeyEnvVar); secretKey != "" {
+		keyring = security.NewEnvKeyring(security.MasterKeyEnvVar)
+	} else {
+		keyring = security.NewNoopKeyring(nil)
+	}
+
+	store, err := security.NewSecretStore(secretPath, keyring)
+	if err != nil {
+		return nil, err
+	}
+
+	return store, nil
+}
+
+func skillDescriptionFromMarkdownFS(fsys fs.FS, path string) string {
+	data, err := fs.ReadFile(fsys, path)
+	if err != nil {
+		return `No description`
+	}
+	return skillDescriptionFromMarkdownData(data)
+}
+
+func skillDescriptionFromMarkdown(path string) string {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return `No description`
+	}
+	return skillDescriptionFromMarkdownData(data)
+}
+
+func skillDescriptionFromMarkdownData(data []byte) string {
+	for _, line := range strings.Split(string(data), `\n`) {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+		if strings.HasPrefix(trimmed, `description:`) {
+			return strings.TrimSpace(strings.TrimPrefix(trimmed, `description:`))
+		}
+		if strings.HasPrefix(trimmed, "#") {
+			return strings.TrimSpace(strings.TrimPrefix(trimmed, "#"))
+		}
+	}
+	return `No description`
+}
+
+func registerDefaultTools(service *Service, registry *tools.ToolRegistry, cfg *config.Config) {
+	_ = service
+	sandbox := cfg.SandboxPath()
+	restrictToSandbox := cfg.RestrictToSandbox()
+	registerTool(registry, tools.NewExecTool(sandbox, restrictToSandbox))
+	registerTool(registry, tools.NewReadFileTool(sandbox, restrictToSandbox))
+	registerTool(registry, tools.NewWriteFileTool(sandbox, restrictToSandbox))
+	registerTool(registry, tools.NewListDirTool(sandbox, restrictToSandbox))
+	registerTool(registry, tools.NewEditFileTool(sandbox, restrictToSandbox))
+}
+
+func registerTool(registry *tools.ToolRegistry, tool tools.Tool) {
+	registry.Register(tool)
+}
