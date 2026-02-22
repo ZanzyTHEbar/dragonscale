@@ -12,7 +12,7 @@ import (
 
 	fantasy "charm.land/fantasy"
 	"github.com/ZanzyTHEbar/dragonscale/pkg"
-	picofantasy "github.com/ZanzyTHEbar/dragonscale/pkg/fantasy"
+	dragonfantasy "github.com/ZanzyTHEbar/dragonscale/pkg/fantasy"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/logger"
 	memstore "github.com/ZanzyTHEbar/dragonscale/pkg/memory/store"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/tools"
@@ -90,12 +90,12 @@ func runToolLoopWithRuntime(
 		return nil, fmt.Errorf("tool runtime is required")
 	}
 
-	adaptCfg := picofantasy.AdaptedToolsConfig{
+	adaptCfg := dragonfantasy.AdaptedToolsConfig{
 		MemStore:   ms,
 		AgentID:    pkg.NAME,
 		SessionKey: sessionKey,
 	}
-	adaptedTools := picofantasy.BuildAdaptedTools(config.Tools, config.Bus, channel, chatID, adaptCfg)
+	adaptedTools := dragonfantasy.BuildAdaptedTools(config.Tools, config.Bus, channel, chatID, adaptCfg)
 	if len(extraTools) > 0 {
 		adaptedTools = append(adaptedTools, extraTools...)
 	}
@@ -126,7 +126,7 @@ func runToolLoopWithRuntime(
 			if len(newTools) == 0 {
 				return ctx, fantasy.PrepareStepResult{}, nil
 			}
-			newAdapted := picofantasy.AdaptTools(newTools, config.Bus, channel, chatID, adaptCfg)
+			newAdapted := dragonfantasy.AdaptTools(newTools, config.Bus, channel, chatID, adaptCfg)
 			adaptedTools = append(adaptedTools, newAdapted...)
 			return ctx, fantasy.PrepareStepResult{Tools: adaptedTools}, nil
 		}

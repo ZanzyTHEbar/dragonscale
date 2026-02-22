@@ -1,5 +1,5 @@
 // DragonScale - Ultra-lightweight personal AI agent
-// Inspired by and based on nanobot: https://github.com/HKUDS/nanobot
+// Inspired by and based on picoclaw: https://github.com/sipeed/picoclaw
 // License: MIT
 //
 // Copyright (c) 2026 DragonScale contributors

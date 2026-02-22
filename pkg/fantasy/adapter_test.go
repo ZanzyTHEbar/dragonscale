@@ -100,11 +100,11 @@ func (t *mockNilResultTool) Execute(_ context.Context, _ map[string]interface{})
 	return nil
 }
 
-// --- PicoToolAdapter.Info() Tests ---
+// --- DragonToolAdapter.Info() Tests ---
 
 func TestAdapter_Info(t *testing.T) {
 	t.Parallel()
-	adapter := &PicoToolAdapter{inner: &mockDualChannelTool{}}
+	adapter := &DragonToolAdapter{inner: &mockDualChannelTool{}}
 	info := adapter.Info()
 
 	if info.Name != "dual_tool" {
@@ -130,7 +130,7 @@ func TestAdapter_Info(t *testing.T) {
 func TestAdapter_Info_UnwrapsSchemaWithRequired(t *testing.T) {
 	t.Parallel()
 	mock := &mockToolWithRequired{}
-	adapter := &PicoToolAdapter{inner: mock}
+	adapter := &DragonToolAdapter{inner: mock}
 	info := adapter.Info()
 
 	if _, ok := info.Parameters["path"]; !ok {
@@ -158,12 +158,12 @@ func (t *mockToolWithRequired) Execute(_ context.Context, _ map[string]interface
 	return &tools.ToolResult{ForLLM: "ok"}
 }
 
-// --- PicoToolAdapter.Run() Tests ---
+// --- DragonToolAdapter.Run() Tests ---
 
 func TestAdapter_Run_SilentTool_NoPublish(t *testing.T) {
 	t.Parallel()
 	msgBus := bus.NewMessageBus()
-	adapter := &PicoToolAdapter{
+	adapter := &DragonToolAdapter{
 		inner:   &mockSilentTool{},
 		bus:     msgBus,
 		channel: "test",
@@ -192,7 +192,7 @@ func TestAdapter_Run_SilentTool_NoPublish(t *testing.T) {
 func TestAdapter_Run_DualChannel_PublishesForUser(t *testing.T) {
 	t.Parallel()
 	msgBus := bus.NewMessageBus()
-	adapter := &PicoToolAdapter{
+	adapter := &DragonToolAdapter{
 		inner:   &mockDualChannelTool{},
 		bus:     msgBus,
 		channel: "telegram",
@@ -221,7 +221,7 @@ func TestAdapter_Run_DualChannel_PublishesForUser(t *testing.T) {
 
 func TestAdapter_Run_ErrorTool_ReturnsErrorResponse(t *testing.T) {
 	t.Parallel()
-	adapter := &PicoToolAdapter{
+	adapter := &DragonToolAdapter{
 		inner: &mockErrorTool{},
 	}
 
@@ -246,7 +246,7 @@ func TestAdapter_Run_ErrorTool_ReturnsErrorResponse(t *testing.T) {
 
 func TestAdapter_Run_NilResult_ReturnsError(t *testing.T) {
 	t.Parallel()
-	adapter := &PicoToolAdapter{
+	adapter := &DragonToolAdapter{
 		inner: &mockNilResultTool{},
 	}
 
@@ -272,7 +272,7 @@ func TestAdapter_Run_NilResult_ReturnsError(t *testing.T) {
 func TestAdapter_Run_ContextualTool_SetsContext(t *testing.T) {
 	t.Parallel()
 	ctxTool := &mockContextualTool{}
-	adapter := &PicoToolAdapter{
+	adapter := &DragonToolAdapter{
 		inner:   ctxTool,
 		channel: "discord",
 		chatID:  "guild-1",
@@ -297,7 +297,7 @@ func TestAdapter_Run_ContextualTool_SetsContext(t *testing.T) {
 
 func TestAdapter_Run_InvalidJSON_ReturnsError(t *testing.T) {
 	t.Parallel()
-	adapter := &PicoToolAdapter{
+	adapter := &DragonToolAdapter{
 		inner: &mockSilentTool{},
 	}
 

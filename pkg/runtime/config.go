@@ -6,10 +6,15 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/ZanzyTHEbar/dragonscale/pkg"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/config"
 )
 
-const EvalConfigEnvVar = "DRAGONSCALE_EVAL_CONFIG"
+const (
+	EvalConfigEnvVar     = "DRAGONSCALE_EVAL_CONFIG"
+	EvalBaseConfigEnvVar = "DRAGONSCALE_EVAL_BASE_CONFIG"
+	EvalHostHomeEnvVar   = "DRAGONSCALE_EVAL_HOST_HOME"
+)
 
 type LoadConfigOptions struct {
 	BaseConfigPath     string
@@ -18,24 +23,51 @@ type LoadConfigOptions struct {
 }
 
 func ResolveBaseConfigPath() string {
+	if explicit := os.Getenv(EvalBaseConfigEnvVar); explicit != "" {
+		if _, err := os.Stat(explicit); err == nil {
+			return explicit
+		}
+	}
+
+	checkHostConfig := func(hostHome string) string {
+		if hostHome == "" {
+			return ""
+		}
+		// XDG standard path.
+		hostXDG := filepath.Join(hostHome, ".config", pkg.NAME, "config.json")
+		if _, err := os.Stat(hostXDG); err == nil {
+			return hostXDG
+		}
+
+		return ""
+	}
+
+	// Prefer host-mounted config when running in containerized eval.
+	if hostHome := os.Getenv(EvalHostHomeEnvVar); hostHome != "" {
+		if path := checkHostConfig(hostHome); path != "" {
+			return path
+		}
+	}
+
+	// Fall back to the default devcontainer host mount location.
+	if path := checkHostConfig("/host_home"); path != "" {
+		return path
+	}
+
 	// Prefer XDG standard path (~/.config/dragonscale/config.json) when present.
-	if xdgPath, err := config.DefaultConfigPath(); err == nil {
+	xdgPath, err := config.DefaultConfigPath()
+	if err == nil {
 		if _, statErr := os.Stat(xdgPath); statErr == nil {
 			return xdgPath
 		}
 	}
 
-	home, _ := os.UserHomeDir()
-	legacy := filepath.Join(home, ".dragonscale", "config.json")
-	if _, err := os.Stat(legacy); err == nil {
-		return legacy
-	}
-
 	// Neither exists; return XDG path if resolvable so defaults still load.
-	if xdgPath, err := config.DefaultConfigPath(); err == nil {
+	if err == nil {
 		return xdgPath
 	}
-	return legacy
+
+	return ""
 }
 
 func LoadResolvedConfig(opts LoadConfigOptions) (*config.Config, error) {

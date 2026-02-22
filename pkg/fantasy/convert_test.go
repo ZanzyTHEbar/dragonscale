@@ -428,7 +428,7 @@ func TestAgentResultToMessages_MultipleSteps(t *testing.T) {
 
 // --- Round-trip fidelity test ---
 
-func TestRoundTrip_PicoClawToFantasyAndBack(t *testing.T) {
+func TestRoundTrip_DragonScaleToFantasyAndBack(t *testing.T) {
 	t.Parallel(
 	// Start with DragonScale messages representing a typical conversation
 	)

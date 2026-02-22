@@ -13,7 +13,7 @@ import (
 	"github.com/ZanzyTHEbar/dragonscale/pkg"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/bus"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/constants"
-	picofantasy "github.com/ZanzyTHEbar/dragonscale/pkg/fantasy"
+	dragonfantasy "github.com/ZanzyTHEbar/dragonscale/pkg/fantasy"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/ids"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/logger"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/memory"
@@ -93,7 +93,7 @@ func (al *AgentLoop) assembleContext(ctx context.Context, opts processOptions) (
 			"history": formatMessagesForLog(historyMsgs),
 		})
 
-	fantasyHistory := picofantasy.MessagesToFantasy(historyMsgs)
+	fantasyHistory := dragonfantasy.MessagesToFantasy(historyMsgs)
 	adaptedTools, prepareStep := al.prepareToolset(ctx, opts)
 	agent, err := al.createFantasyAgent(ctx, opts, systemPrompt, adaptedTools, prepareStep)
 	if err != nil {
@@ -177,13 +177,13 @@ func (al *AgentLoop) splitMessages(opts processOptions, builtMsgs []messages.Mes
 }
 
 func (al *AgentLoop) prepareToolset(ctx context.Context, opts processOptions) ([]fantasy.AgentTool, func(context.Context, fantasy.PrepareStepFunctionOptions) (context.Context, fantasy.PrepareStepResult, error)) {
-	adaptCfg := picofantasy.AdaptedToolsConfig{
+	adaptCfg := dragonfantasy.AdaptedToolsConfig{
 		MemStore:   al.memoryStore,
 		AgentID:    pkg.NAME,
 		SessionKey: opts.SessionKey,
 	}
 
-	adaptedTools := picofantasy.BuildAdaptedTools(al.tools, al.bus, opts.Channel, opts.ChatID, adaptCfg)
+	adaptedTools := dragonfantasy.BuildAdaptedTools(al.tools, al.bus, opts.Channel, opts.ChatID, adaptCfg)
 	if al.toolResultSearch != nil {
 		adaptedTools = append(adaptedTools, al.toolResultSearch)
 	}
@@ -217,7 +217,7 @@ func (al *AgentLoop) prepareToolset(ctx context.Context, opts processOptions) ([
 			return ctx, fantasy.PrepareStepResult{}, nil
 		}
 
-		newAdapted := picofantasy.AdaptTools(newTools, msgBus, channel, chatID, adaptCfg)
+		newAdapted := dragonfantasy.AdaptTools(newTools, msgBus, channel, chatID, adaptCfg)
 		expanded := append(adaptedTools, newAdapted...)
 		adaptedTools = expanded
 
@@ -419,7 +419,7 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, opts processOptions) (str
 	}
 
 	for _, step := range result.Steps {
-		stepMsgs := picofantasy.StepToMessages(step)
+		stepMsgs := dragonfantasy.StepToMessages(step)
 		for _, m := range stepMsgs {
 			al.sessions.AddFullMessage(opts.SessionKey, m)
 		}
@@ -458,7 +458,7 @@ func (al *AgentLoop) runStreaming(ctx context.Context, opts processOptions, ac a
 		},
 
 		OnStepFinish: func(step fantasy.StepResult) error {
-			stepMsgs := picofantasy.StepToMessages(step)
+			stepMsgs := dragonfantasy.StepToMessages(step)
 			for _, m := range stepMsgs {
 				al.sessions.AddFullMessage(opts.SessionKey, m)
 			}

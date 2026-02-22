@@ -9,7 +9,7 @@ import (
 	"github.com/ZanzyTHEbar/dragonscale/pkg/agent"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/bus"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/config"
-	picofantasy "github.com/ZanzyTHEbar/dragonscale/pkg/fantasy"
+	dragonfantasy "github.com/ZanzyTHEbar/dragonscale/pkg/fantasy"
 )
 
 type OutboundMode string
@@ -72,13 +72,13 @@ func Bootstrap(parent context.Context, cfg *config.Config, opts BootstrapOptions
 
 	ctx, cancel := withExecutionContext(parent, opts.Timeout)
 
-	provider, err := picofantasy.CreateProvider(cfg)
+	provider, err := dragonfantasy.CreateProvider(cfg)
 	if err != nil {
 		cancel()
 		return nil, fmt.Errorf("provider error: %w", err)
 	}
 
-	model, err := provider.LanguageModel(ctx, picofantasy.ModelID(cfg))
+	model, err := provider.LanguageModel(ctx, dragonfantasy.ModelID(cfg))
 	if err != nil {
 		cancel()
 		return nil, fmt.Errorf("model error: %w", err)

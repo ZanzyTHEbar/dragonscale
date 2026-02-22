@@ -1,5 +1,5 @@
 // DragonScale - Ultra-lightweight personal AI agent
-// Inspired by and based on nanobot: https://github.com/HKUDS/nanobot
+// Inspired by and based on picoclaw: https://github.com/sipeed/picoclaw
 // License: MIT
 //
 // Copyright (c) 2026 DragonScale contributors
@@ -32,7 +32,7 @@ import (
 	"github.com/ZanzyTHEbar/dragonscale/pkg/security/securebus"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/session"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/state"
-	picosync "github.com/ZanzyTHEbar/dragonscale/pkg/sync"
+	dragonsync "github.com/ZanzyTHEbar/dragonscale/pkg/sync"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/tools"
 )
 
@@ -47,21 +47,21 @@ type AgentLoop struct {
 	state             *state.Manager
 	contextBuilder    *ContextBuilder
 	tools             *tools.ToolRegistry
-	memoryStore       *memstore.MemoryStore  // 3-tier MemGPT memory (always initialized)
-	memDelegate       memory.MemoryDelegate  // DB delegate (always initialized)
-	obsManager        *observation.Manager   // Observational memory (always initialized)
-	secureBus         *securebus.Bus         // ITR SecureBus (always initialized)
-	queries           *memsqlc.Queries       // SQL query surface for runtime persistence
-	kvDelegate        KVDelegate             // KV adapter for offloaded tool results
-	stateStore        *StateStore            // Agent run state persistence
-	conversationIDs   sync.Map               // Owner: agent_run.go — wrote by prepareRuntimeState, read in prepareRuntimeState/load path
-	conversationMu    sync.Mutex             // serializes conversation creation path
-	identitySync      *picosync.IdentitySync // File→DB sync for identity docs (nil if memory disabled)
-	activeSessionKey  atomic.Value           // Owner: agent_run.go — written in runAgentLoop, read by router/toolloop for context routing
-	running           atomic.Bool            // Owner: loop.go — lifecycle gate controlled by Run/Stop only
-	summarizing       sync.Map               // Owner: summarizer.go — intended for async summarization lockout, currently gated by TODO path
-	summarizeFailures sync.Map               // Owner: summarizer.go — write/read in forceCompression + summarizeSession error paths
-	cfg               *config.Config         // Stored for subagent factory access
+	memoryStore       *memstore.MemoryStore    // 3-tier MemGPT memory (always initialized)
+	memDelegate       memory.MemoryDelegate    // DB delegate (always initialized)
+	obsManager        *observation.Manager     // Observational memory (always initialized)
+	secureBus         *securebus.Bus           // ITR SecureBus (always initialized)
+	queries           *memsqlc.Queries         // SQL query surface for runtime persistence
+	kvDelegate        KVDelegate               // KV adapter for offloaded tool results
+	stateStore        *StateStore              // Agent run state persistence
+	conversationIDs   sync.Map                 // Owner: agent_run.go — wrote by prepareRuntimeState, read in prepareRuntimeState/load path
+	conversationMu    sync.Mutex               // serializes conversation creation path
+	identitySync      *dragonsync.IdentitySync // File→DB sync for identity docs (nil if memory disabled)
+	activeSessionKey  atomic.Value             // Owner: agent_run.go — written in runAgentLoop, read by router/toolloop for context routing
+	running           atomic.Bool              // Owner: loop.go — lifecycle gate controlled by Run/Stop only
+	summarizing       sync.Map                 // Owner: summarizer.go — intended for async summarization lockout, currently gated by TODO path
+	summarizeFailures sync.Map                 // Owner: summarizer.go — write/read in forceCompression + summarizeSession error paths
+	cfg               *config.Config           // Stored for subagent factory access
 	channelManager    *channels.Manager
 	commandRegistry   []SlashCommand
 	outputOverride    atomic.Value // Owner: command_handler.go — CLI output redirection target for internal messages
@@ -217,13 +217,13 @@ func NewAgentLoop(ctx context.Context, cfg *config.Config, msgBus *bus.MessageBu
 	}
 
 	// Identity file sync (disk → DB)
-	var idSync *picosync.IdentitySync
+	var idSync *dragonsync.IdentitySync
 	identityDir, idErr := config.IdentityDir()
 	if idErr != nil {
 		logger.WarnCF("agent", "Could not resolve identity dir, identity sync disabled",
 			map[string]interface{}{"error": idErr.Error()})
 	} else {
-		idSync = picosync.New(identityDir, pkg.NAME, memDelegate)
+		idSync = dragonsync.New(identityDir, pkg.NAME, memDelegate)
 		if syncErr := idSync.SyncAll(ctx); syncErr != nil {
 			logger.WarnCF("agent", "Initial identity sync failed (non-fatal)",
 				map[string]interface{}{"error": syncErr.Error()})

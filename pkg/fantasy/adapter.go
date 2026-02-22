@@ -18,11 +18,11 @@ import (
 	"github.com/ZanzyTHEbar/dragonscale/pkg/tools"
 )
 
-// PicoToolAdapter wraps a DragonScale tool as a Fantasy AgentTool.
+// DragonToolAdapter wraps a DragonScale tool as a Fantasy AgentTool.
 // It bridges DragonScale's dual-channel ToolResult semantics with Fantasy's
 // simple ToolResponse by publishing ForUser content to the bus as a side effect
 // and returning only ForLLM content to Fantasy.
-type PicoToolAdapter struct {
+type DragonToolAdapter struct {
 	inner      tools.Tool
 	bus        *bus.MessageBus
 	channel    string
@@ -32,8 +32,8 @@ type PicoToolAdapter struct {
 	sessionKey string
 }
 
-// Compile-time check that PicoToolAdapter implements fantasy.AgentTool.
-var _ fantasy.AgentTool = (*PicoToolAdapter)(nil)
+// Compile-time check that DragonToolAdapter implements fantasy.AgentTool.
+var _ fantasy.AgentTool = (*DragonToolAdapter)(nil)
 
 // Info returns Fantasy-compatible tool metadata from the DragonScale tool.
 // Fantasy's ToolInfo expects Parameters to be just the properties map and
@@ -41,7 +41,7 @@ var _ fantasy.AgentTool = (*PicoToolAdapter)(nil)
 // Schema object from Parameters() (with "type", "properties", "required"
 // keys), so we must unwrap it here to avoid double-wrapping in
 // agent.prepareTools() and agent.validateToolCall().
-func (a *PicoToolAdapter) Info() fantasy.ToolInfo {
+func (a *DragonToolAdapter) Info() fantasy.ToolInfo {
 	params := a.inner.Parameters()
 	properties, required := unwrapSchema(params)
 	return fantasy.ToolInfo{
@@ -83,7 +83,7 @@ func unwrapSchema(params map[string]interface{}) (map[string]interface{}, []stri
 //   - If the tool result has ForUser content and is not Silent, publishes to the bus.
 //   - If the tool is a ContextualTool, sets channel/chatID context before execution.
 //   - If the tool is an AsyncTool, wires a callback that publishes results to the bus.
-func (a *PicoToolAdapter) Run(ctx context.Context, call fantasy.ToolCall) (fantasy.ToolResponse, error) {
+func (a *DragonToolAdapter) Run(ctx context.Context, call fantasy.ToolCall) (fantasy.ToolResponse, error) {
 	// 1. Deserialize Fantasy's JSON string input into DragonScale's map format.
 	args, err := parseToolArgs(call.Input)
 	if err != nil {
@@ -147,12 +147,12 @@ func (a *PicoToolAdapter) Run(ctx context.Context, call fantasy.ToolCall) (fanta
 }
 
 // ProviderOptions returns nil — DragonScale tools have no provider-specific options.
-func (a *PicoToolAdapter) ProviderOptions() fantasy.ProviderOptions {
+func (a *DragonToolAdapter) ProviderOptions() fantasy.ProviderOptions {
 	return fantasy.ProviderOptions{}
 }
 
 // SetProviderOptions is a no-op for DragonScale tools.
-func (a *PicoToolAdapter) SetProviderOptions(_ fantasy.ProviderOptions) {}
+func (a *DragonToolAdapter) SetProviderOptions(_ fantasy.ProviderOptions) {}
 
 // AdaptedToolsConfig configures how tools are adapted for the Fantasy agent.
 type AdaptedToolsConfig struct {
@@ -182,7 +182,7 @@ func BuildAdaptedTools(registry *tools.ToolRegistry, msgBus *bus.MessageBus, cha
 		if !ok {
 			continue
 		}
-		adapted = append(adapted, &PicoToolAdapter{
+		adapted = append(adapted, &DragonToolAdapter{
 			inner:      tool,
 			bus:        msgBus,
 			channel:    channel,
@@ -198,10 +198,10 @@ func BuildAdaptedTools(registry *tools.ToolRegistry, msgBus *bus.MessageBus, cha
 
 // AdaptTools wraps specific Tool instances as Fantasy AgentTools.
 // Used by PrepareStep to promote discovered tools to native callables.
-func AdaptTools(picoTools []tools.Tool, msgBus *bus.MessageBus, channel, chatID string, cfg AdaptedToolsConfig) []fantasy.AgentTool {
-	adapted := make([]fantasy.AgentTool, 0, len(picoTools))
-	for _, tool := range picoTools {
-		adapted = append(adapted, &PicoToolAdapter{
+func AdaptTools(dragonTools []tools.Tool, msgBus *bus.MessageBus, channel, chatID string, cfg AdaptedToolsConfig) []fantasy.AgentTool {
+	adapted := make([]fantasy.AgentTool, 0, len(dragonTools))
+	for _, tool := range dragonTools {
+		adapted = append(adapted, &DragonToolAdapter{
 			inner:      tool,
 			bus:        msgBus,
 			channel:    channel,

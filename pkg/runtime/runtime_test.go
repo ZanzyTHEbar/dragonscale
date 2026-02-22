@@ -44,18 +44,139 @@ func TestResolveBaseConfigPath_PrefersXDGOverLegacy(t *testing.T) {
 	assert.Empty(t, cmp.Diff(xdgPath, got))
 }
 
-func TestResolveBaseConfigPath_FallsBackToLegacyWhenXDGMissing(t *testing.T) {
+func TestResolveBaseConfigPath_FallsBackToXDGWhenLegacyOnlyExists(t *testing.T) {
 	home := t.TempDir()
 	xdg := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("XDG_CONFIG_HOME", xdg)
 
+	xdgPath := filepath.Join(xdg, pkg.NAME, "config.json")
 	legacyPath := filepath.Join(home, ".dragonscale", "config.json")
+	require.NoError(t, os.MkdirAll(filepath.Dir(xdgPath), 0o755))
 	require.NoError(t, os.MkdirAll(filepath.Dir(legacyPath), 0o755))
+	require.NoError(t, os.WriteFile(xdgPath, []byte(`{}`), 0o644))
 	require.NoError(t, os.WriteFile(legacyPath, []byte(`{}`), 0o644))
 
 	got := ResolveBaseConfigPath()
-	assert.Empty(t, cmp.Diff(legacyPath, got))
+	assert.Empty(t, cmp.Diff(xdgPath, got))
+	assert.NotEmpty(t, legacyPath)
+}
+
+func TestResolveBaseConfigPath_UsesEvalHostHomeWhenContainerConfigMissing(t *testing.T) {
+	home := t.TempDir()
+	xdg := t.TempDir()
+	hostHome := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", xdg)
+	t.Setenv(EvalHostHomeEnvVar, hostHome)
+
+	hostXDGConfig := filepath.Join(hostHome, ".config", pkg.NAME, "config.json")
+	require.NoError(t, os.MkdirAll(filepath.Dir(hostXDGConfig), 0o755))
+	require.NoError(t, os.WriteFile(hostXDGConfig, []byte(`{}`), 0o644))
+
+	got := ResolveBaseConfigPath()
+	assert.Empty(t, cmp.Diff(hostXDGConfig, got))
+}
+
+func TestResolveBaseConfigPath_PrefersEvalHostHomeOverContainerConfig(t *testing.T) {
+	home := t.TempDir()
+	xdg := t.TempDir()
+	hostHome := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", xdg)
+	t.Setenv(EvalHostHomeEnvVar, hostHome)
+
+	containerXDG := filepath.Join(xdg, pkg.NAME, "config.json")
+	hostXDG := filepath.Join(hostHome, ".config", pkg.NAME, "config.json")
+	require.NoError(t, os.MkdirAll(filepath.Dir(containerXDG), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Dir(hostXDG), 0o755))
+	require.NoError(t, os.WriteFile(containerXDG, []byte(`{}`), 0o644))
+	require.NoError(t, os.WriteFile(hostXDG, []byte(`{}`), 0o644))
+
+	got := ResolveBaseConfigPath()
+	assert.Empty(t, cmp.Diff(hostXDG, got))
+}
+
+func TestResolveBaseConfigPath_DoesNotUseLegacyHostPathForHostHome(t *testing.T) {
+	home := t.TempDir()
+	xdg := t.TempDir()
+	hostHome := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", xdg)
+	t.Setenv(EvalHostHomeEnvVar, hostHome)
+
+	containerXDG := filepath.Join(xdg, pkg.NAME, "config.json")
+	hostLegacy := filepath.Join(hostHome, ".dragonscale", "config.json")
+	require.NoError(t, os.MkdirAll(filepath.Dir(containerXDG), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Dir(hostLegacy), 0o755))
+	require.NoError(t, os.WriteFile(containerXDG, []byte(`{}`), 0o644))
+	require.NoError(t, os.WriteFile(hostLegacy, []byte(`{}`), 0o644))
+
+	got := ResolveBaseConfigPath()
+	assert.Empty(t, cmp.Diff(containerXDG, got))
+}
+
+func TestResolveBaseConfigPath_UsesEvalBaseConfigOverride(t *testing.T) {
+	override := filepath.Join(t.TempDir(), "explicit-config.json")
+	require.NoError(t, os.WriteFile(override, []byte(`{}`), 0o644))
+	t.Setenv(EvalBaseConfigEnvVar, override)
+
+	got := ResolveBaseConfigPath()
+	assert.Empty(t, cmp.Diff(override, got))
+}
+
+func TestResolveBaseConfigPath_UsesEvalBaseConfigUnsetAsFallback(t *testing.T) {
+	home := t.TempDir()
+	xdg := t.TempDir()
+	hostHome := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", xdg)
+	t.Setenv(EvalHostHomeEnvVar, hostHome)
+
+	hostXDG := filepath.Join(hostHome, ".config", pkg.NAME, "config.json")
+	require.NoError(t, os.MkdirAll(filepath.Dir(hostXDG), 0o755))
+	require.NoError(t, os.WriteFile(hostXDG, []byte(`{}`), 0o644))
+
+	t.Setenv(EvalBaseConfigEnvVar, "")
+	got := ResolveBaseConfigPath()
+	assert.Empty(t, cmp.Diff(hostXDG, got))
+}
+
+func TestResolveBaseConfigPath_InvalidEvalBaseConfigFallsBackToHostConfig(t *testing.T) {
+	home := t.TempDir()
+	xdg := t.TempDir()
+	hostHome := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", xdg)
+	t.Setenv(EvalHostHomeEnvVar, hostHome)
+
+	hostXDG := filepath.Join(hostHome, ".config", pkg.NAME, "config.json")
+	require.NoError(t, os.MkdirAll(filepath.Dir(hostXDG), 0o755))
+	require.NoError(t, os.WriteFile(hostXDG, []byte(`{}`), 0o644))
+
+	t.Setenv(EvalBaseConfigEnvVar, filepath.Join(t.TempDir(), "no-such-file.json"))
+	got := ResolveBaseConfigPath()
+	assert.Empty(t, cmp.Diff(hostXDG, got))
+}
+
+func TestLoadResolvedConfig_FallsBackWhenExplicitBaseConfigInvalid(t *testing.T) {
+	workDir := t.TempDir()
+	hostDir := t.TempDir()
+	home := t.TempDir()
+	xdg := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", xdg)
+	t.Setenv(EvalHostHomeEnvVar, hostDir)
+
+	basePath := filepath.Join(hostDir, ".config", pkg.NAME, "config.json")
+	require.NoError(t, os.MkdirAll(filepath.Dir(basePath), 0o755))
+	require.NoError(t, os.WriteFile(basePath, []byte(`{"agents":{"defaults":{"restrict_to_sandbox":true,"max_tool_iterations":20}}}`), 0o644))
+
+	t.Setenv(EvalBaseConfigEnvVar, filepath.Join(workDir, "does-not-exist.json"))
+
+	cfg, err := LoadResolvedConfig(LoadConfigOptions{MinProviderTimeout: 2 * time.Second})
+	require.NoError(t, err)
+	assert.Empty(t, cmp.Diff(true, cfg.Agents.Defaults.RestrictToSandbox))
 }
 
 func TestLoadResolvedConfig_AppliesOverlayAndKeepsBaseValues(t *testing.T) {

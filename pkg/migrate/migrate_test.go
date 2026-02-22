@@ -579,7 +579,7 @@ func TestRewriteWorkspacePath(t *testing.T) {
 func TestRunDryRun(t *testing.T) {
 	t.Parallel()
 	openclawHome := t.TempDir()
-	picoClawHome := t.TempDir()
+	dragonscaleHome := t.TempDir()
 
 	wsDir := filepath.Join(openclawHome, "workspace")
 	os.MkdirAll(wsDir, 0755)
@@ -597,9 +597,9 @@ func TestRunDryRun(t *testing.T) {
 	os.WriteFile(filepath.Join(openclawHome, "openclaw.json"), data, 0644)
 
 	opts := Options{
-		DryRun:       true,
-		OpenClawHome: openclawHome,
-		PicoClawHome: picoClawHome,
+		DryRun:          true,
+		OpenClawHome:    openclawHome,
+		DragonScaleHome: dragonscaleHome,
 	}
 
 	result, err := Run(opts)
@@ -607,11 +607,11 @@ func TestRunDryRun(t *testing.T) {
 		t.Fatalf("Run: %v", err)
 	}
 
-	picoWs := filepath.Join(picoClawHome, "workspace")
-	if _, err := os.Stat(filepath.Join(picoWs, "SOUL.md")); !os.IsNotExist(err) {
+	dragonWs := filepath.Join(dragonscaleHome, "workspace")
+	if _, err := os.Stat(filepath.Join(dragonWs, "SOUL.md")); !os.IsNotExist(err) {
 		t.Error("dry run should not create files")
 	}
-	if _, err := os.Stat(filepath.Join(picoClawHome, "config.json")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(dragonscaleHome, "config.json")); !os.IsNotExist(err) {
 		t.Error("dry run should not create config")
 	}
 
@@ -621,7 +621,7 @@ func TestRunDryRun(t *testing.T) {
 func TestRunFullMigration(t *testing.T) {
 	t.Parallel()
 	openclawHome := t.TempDir()
-	picoClawHome := t.TempDir()
+	dragonscaleHome := t.TempDir()
 
 	wsDir := filepath.Join(openclawHome, "workspace")
 	os.MkdirAll(wsDir, 0755)
@@ -653,9 +653,9 @@ func TestRunFullMigration(t *testing.T) {
 	os.WriteFile(filepath.Join(openclawHome, "openclaw.json"), data, 0644)
 
 	opts := Options{
-		Force:        true,
-		OpenClawHome: openclawHome,
-		PicoClawHome: picoClawHome,
+		Force:           true,
+		OpenClawHome:    openclawHome,
+		DragonScaleHome: dragonscaleHome,
 	}
 
 	result, err := Run(opts)
@@ -663,9 +663,9 @@ func TestRunFullMigration(t *testing.T) {
 		t.Fatalf("Run: %v", err)
 	}
 
-	picoWs := filepath.Join(picoClawHome, "workspace")
+	dragonWs := filepath.Join(dragonscaleHome, "workspace")
 
-	soulData, err := os.ReadFile(filepath.Join(picoWs, "SOUL.md"))
+	soulData, err := os.ReadFile(filepath.Join(dragonWs, "SOUL.md"))
 	if err != nil {
 		t.Fatalf("reading SOUL.md: %v", err)
 	}
@@ -673,7 +673,7 @@ func TestRunFullMigration(t *testing.T) {
 		t.Errorf("SOUL.md content = %q, want %q", string(soulData), "# Soul from OpenClaw")
 	}
 
-	agentsData, err := os.ReadFile(filepath.Join(picoWs, "AGENTS.md"))
+	agentsData, err := os.ReadFile(filepath.Join(dragonWs, "AGENTS.md"))
 	if err != nil {
 		t.Fatalf("reading AGENTS.md: %v", err)
 	}
@@ -681,7 +681,7 @@ func TestRunFullMigration(t *testing.T) {
 		t.Errorf("AGENTS.md content = %q", string(agentsData))
 	}
 
-	memData, err := os.ReadFile(filepath.Join(picoWs, "memory", "MEMORY.md"))
+	memData, err := os.ReadFile(filepath.Join(dragonWs, "memory", "MEMORY.md"))
 	if err != nil {
 		t.Fatalf("reading memory/MEMORY.md: %v", err)
 	}
@@ -689,21 +689,21 @@ func TestRunFullMigration(t *testing.T) {
 		t.Errorf("MEMORY.md content = %q", string(memData))
 	}
 
-	picoConfig, err := config.LoadConfig(filepath.Join(picoClawHome, "config.json"))
+	dragonConfig, err := config.LoadConfig(filepath.Join(dragonscaleHome, "config.json"))
 	if err != nil {
 		t.Fatalf("loading DragonScale config: %v", err)
 	}
-	if picoConfig.Providers.Anthropic.APIKey != "sk-ant-migrate-test" {
-		t.Errorf("Anthropic.APIKey = %q, want %q", picoConfig.Providers.Anthropic.APIKey, "sk-ant-migrate-test")
+	if dragonConfig.Providers.Anthropic.APIKey != "sk-ant-migrate-test" {
+		t.Errorf("Anthropic.APIKey = %q, want %q", dragonConfig.Providers.Anthropic.APIKey, "sk-ant-migrate-test")
 	}
-	if picoConfig.Providers.OpenRouter.APIKey != "sk-or-migrate-test" {
-		t.Errorf("OpenRouter.APIKey = %q, want %q", picoConfig.Providers.OpenRouter.APIKey, "sk-or-migrate-test")
+	if dragonConfig.Providers.OpenRouter.APIKey != "sk-or-migrate-test" {
+		t.Errorf("OpenRouter.APIKey = %q, want %q", dragonConfig.Providers.OpenRouter.APIKey, "sk-or-migrate-test")
 	}
-	if !picoConfig.Channels.Telegram.Enabled {
+	if !dragonConfig.Channels.Telegram.Enabled {
 		t.Error("Telegram should be enabled")
 	}
-	if picoConfig.Channels.Telegram.Token != "tg-migrate-test" {
-		t.Errorf("Telegram.Token = %q, want %q", picoConfig.Channels.Telegram.Token, "tg-migrate-test")
+	if dragonConfig.Channels.Telegram.Token != "tg-migrate-test" {
+		t.Errorf("Telegram.Token = %q, want %q", dragonConfig.Channels.Telegram.Token, "tg-migrate-test")
 	}
 
 	if result.FilesCopied < 3 {
@@ -720,8 +720,8 @@ func TestRunFullMigration(t *testing.T) {
 func TestRunOpenClawNotFound(t *testing.T) {
 	t.Parallel()
 	opts := Options{
-		OpenClawHome: "/nonexistent/path/to/openclaw",
-		PicoClawHome: t.TempDir(),
+		OpenClawHome:    "/nonexistent/path/to/openclaw",
+		DragonScaleHome: t.TempDir(),
 	}
 
 	_, err := Run(opts)
@@ -787,7 +787,7 @@ func TestCopyFile(t *testing.T) {
 func TestRunConfigOnly(t *testing.T) {
 	t.Parallel()
 	openclawHome := t.TempDir()
-	picoClawHome := t.TempDir()
+	dragonscaleHome := t.TempDir()
 
 	wsDir := filepath.Join(openclawHome, "workspace")
 	os.MkdirAll(wsDir, 0755)
@@ -804,10 +804,10 @@ func TestRunConfigOnly(t *testing.T) {
 	os.WriteFile(filepath.Join(openclawHome, "openclaw.json"), data, 0644)
 
 	opts := Options{
-		Force:        true,
-		ConfigOnly:   true,
-		OpenClawHome: openclawHome,
-		PicoClawHome: picoClawHome,
+		Force:           true,
+		ConfigOnly:      true,
+		OpenClawHome:    openclawHome,
+		DragonScaleHome: dragonscaleHome,
 	}
 
 	result, err := Run(opts)
@@ -819,8 +819,8 @@ func TestRunConfigOnly(t *testing.T) {
 		t.Error("config should have been migrated")
 	}
 
-	picoWs := filepath.Join(picoClawHome, "workspace")
-	if _, err := os.Stat(filepath.Join(picoWs, "SOUL.md")); !os.IsNotExist(err) {
+	dragonWs := filepath.Join(dragonscaleHome, "workspace")
+	if _, err := os.Stat(filepath.Join(dragonWs, "SOUL.md")); !os.IsNotExist(err) {
 		t.Error("config-only should not copy workspace files")
 	}
 }
@@ -828,7 +828,7 @@ func TestRunConfigOnly(t *testing.T) {
 func TestRunWorkspaceOnly(t *testing.T) {
 	t.Parallel()
 	openclawHome := t.TempDir()
-	picoClawHome := t.TempDir()
+	dragonscaleHome := t.TempDir()
 
 	wsDir := filepath.Join(openclawHome, "workspace")
 	os.MkdirAll(wsDir, 0755)
@@ -845,10 +845,10 @@ func TestRunWorkspaceOnly(t *testing.T) {
 	os.WriteFile(filepath.Join(openclawHome, "openclaw.json"), data, 0644)
 
 	opts := Options{
-		Force:         true,
-		WorkspaceOnly: true,
-		OpenClawHome:  openclawHome,
-		PicoClawHome:  picoClawHome,
+		Force:           true,
+		WorkspaceOnly:   true,
+		OpenClawHome:    openclawHome,
+		DragonScaleHome: dragonscaleHome,
 	}
 
 	result, err := Run(opts)
@@ -860,8 +860,8 @@ func TestRunWorkspaceOnly(t *testing.T) {
 		t.Error("workspace-only should not migrate config")
 	}
 
-	picoWs := filepath.Join(picoClawHome, "workspace")
-	soulData, err := os.ReadFile(filepath.Join(picoWs, "SOUL.md"))
+	dragonWs := filepath.Join(dragonscaleHome, "workspace")
+	soulData, err := os.ReadFile(filepath.Join(dragonWs, "SOUL.md"))
 	if err != nil {
 		t.Fatalf("reading SOUL.md: %v", err)
 	}

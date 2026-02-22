@@ -91,7 +91,7 @@ func TestSyncAll_InsertsNewFiles(t *testing.T) {
 		"AGENT.md":    "# Agent\nYou are helpful.",
 		"SOUL.md":     "# Soul\nCurious and kind.",
 		"USER.md":     "# User\nName: Alice",
-		"IDENTITY.md": "# Identity\nPicoClaw v1",
+		"IDENTITY.md": "# Identity\nDragonScale v1",
 	})
 
 	store := newMockStore()
