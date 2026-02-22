@@ -13,6 +13,7 @@ providers:
       timeout: 180000
     env:
       DRAGONSCALE_EVAL_CONFIG: "./configs/default.json"
+      DRAGONSCALE_EVAL_HOST_HOME: "/host_home"
 
 # Default assertions applied to every test case
 defaultTest:

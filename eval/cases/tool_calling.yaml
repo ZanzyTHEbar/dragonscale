@@ -104,8 +104,8 @@
       value: |
         const trace = JSON.parse(output);
         const out = (trace.output || '').toLowerCase();
-        const hasPicoclaw = out.includes('dragonscale');
-        return { pass: hasPicoclaw, score: hasPicoclaw ? 1.0 : 0.0, reason: hasPicoclaw ? 'confirmed edit result' : 'did not confirm dragonscale in output' };
+        const hasDragonScale = out.includes('dragonscale');
+        return { pass: hasDragonScale, score: hasDragonScale ? 1.0 : 0.0, reason: hasDragonScale ? 'confirmed edit result' : 'did not confirm dragonscale in output' };
 
 - description: "append file: agent appends to an existing file"
   vars:

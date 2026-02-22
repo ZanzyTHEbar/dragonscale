@@ -12,39 +12,10 @@ import (
 
 	fantasy "charm.land/fantasy"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/config"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/eval/instrumentation"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/logger"
-	picoruntime "github.com/ZanzyTHEbar/dragonscale/pkg/runtime"
+	dragonruntime "github.com/ZanzyTHEbar/dragonscale/pkg/runtime"
 )
-
-// Trace is the structured output emitted by the eval runner.
-// Promptfoo parses this JSON to evaluate assertions.
-type Trace struct {
-	Output     string      `json:"output"`
-	Steps      []TraceStep `json:"steps"`
-	Metrics    Metrics     `json:"metrics"`
-	Error      string      `json:"error,omitempty"`
-	SessionKey string      `json:"session_key"`
-}
-
-type TraceStep struct {
-	Index    int             `json:"index"`
-	Type     string          `json:"type"`
-	Tool     string          `json:"tool,omitempty"`
-	Args     json.RawMessage `json:"args,omitempty"`
-	Result   string          `json:"result,omitempty"`
-	Duration int64           `json:"duration_ms,omitempty"`
-}
-
-type Metrics struct {
-	TotalDurationMs int64 `json:"total_duration_ms"`
-	StepCount       int   `json:"step_count"`
-	ToolCallCount   int   `json:"tool_call_count"`
-	InputTokens     int64 `json:"input_tokens"`
-	OutputTokens    int64 `json:"output_tokens"`
-	TotalTokens     int64 `json:"total_tokens"`
-	ReasoningTokens int64 `json:"reasoning_tokens"`
-	CacheReadTokens int64 `json:"cache_read_tokens"`
-}
 
 func main() {
 	logger.SetLevel(logger.ERROR)
@@ -74,20 +45,20 @@ func resolvePrompt() (string, error) {
 	return readPrompt()
 }
 
-func emptyPromptTrace(prompt string) *Trace {
+func emptyPromptTrace(prompt string) *instrumentation.Trace {
 	if strings.TrimSpace(prompt) != "" {
 		return nil
 	}
-	return &Trace{
+	return &instrumentation.Trace{
 		Output: "No prompt provided. Please provide a message.",
-		Metrics: Metrics{
+		Metrics: instrumentation.Metrics{
 			TotalDurationMs: 0,
 		},
 	}
 }
 
 func resolveEvalConfig() (*config.Config, error) {
-	return picoruntime.LoadEvalConfig(evalRunnerTimeout())
+	return dragonruntime.LoadEvalConfig(evalRunnerTimeout())
 }
 
 func readPrompt() (string, error) {
@@ -130,63 +101,55 @@ func parsePromptPayload(raw []byte) (string, bool) {
 	return payload.Prompt, true
 }
 
-func runEval(cfg *config.Config, prompt string) Trace {
+func runEval(cfg *config.Config, prompt string) instrumentation.Trace {
 	start := time.Now()
+	timeout := evalRunnerTimeout()
 
-	sessionKey := picoruntime.NewSessionKey("eval", start)
-	runtime, initErr := newEvalRuntime(cfg)
+	sessionKey := dragonruntime.NewSessionKey("eval", start)
+	runtime, initErr := newEvalRuntime(cfg, timeout)
 	if initErr != nil {
-		return Trace{Error: initErr.Error()}
+		return instrumentation.Trace{Error: initErr.Error()}
 	}
 	defer runtime.close()
 
-	result := picoruntime.RunPrompt(runtime.handle.Context(), runtime.handle, prompt, sessionKey)
+	result, duration := runEvalPrompt(runtime.handle, sessionKey, prompt, start)
+	return buildTrace(runtime.instrumentedModel, sessionKey, result, duration)
+}
 
+func runEvalPrompt(handle *dragonruntime.RuntimeHandle, sessionKey, prompt string, start time.Time) (dragonruntime.RunResult, time.Duration) {
+	result := dragonruntime.RunPrompt(handle.Context(), handle, prompt, sessionKey)
 	duration := result.Duration
 	if duration <= 0 {
 		duration = time.Since(start)
 	}
+	return result, duration
+}
 
-	trace := Trace{
+func buildTrace(model *instrumentation.InstrumentedLanguageModel, sessionKey string, result dragonruntime.RunResult, duration time.Duration) instrumentation.Trace {
+	trace := instrumentation.Trace{
 		Output:     result.Output,
 		SessionKey: sessionKey,
-		Steps:      buildSteps(runtime.instrumentedModel),
-		Metrics: Metrics{
-			TotalDurationMs: duration.Milliseconds(),
-			StepCount:       len(runtime.instrumentedModel.calls),
-			InputTokens:     runtime.instrumentedModel.totalUsage.InputTokens,
-			OutputTokens:    runtime.instrumentedModel.totalUsage.OutputTokens,
-			TotalTokens:     runtime.instrumentedModel.totalUsage.TotalTokens,
-			ReasoningTokens: runtime.instrumentedModel.totalUsage.ReasoningTokens,
-			CacheReadTokens: runtime.instrumentedModel.totalUsage.CacheReadTokens,
-		},
+		Steps:      instrumentation.BuildSteps(model),
+		Metrics:    instrumentation.BuildMetrics(model, duration),
 	}
-
 	if result.Error != "" {
 		trace.Error = result.Error
 	}
-
-	for _, call := range runtime.instrumentedModel.calls {
-		for range call.toolCalls {
-			trace.Metrics.ToolCallCount++
-		}
-	}
-
 	return trace
 }
 
 type evalRuntime struct {
-	handle            *picoruntime.RuntimeHandle
-	instrumentedModel *instrumentedLanguageModel
+	handle            *dragonruntime.RuntimeHandle
+	instrumentedModel *instrumentation.InstrumentedLanguageModel
 }
 
-func newEvalRuntime(cfg *config.Config) (*evalRuntime, error) {
-	var instrumentedModel *instrumentedLanguageModel
-	handle, err := picoruntime.Bootstrap(context.Background(), cfg, picoruntime.BootstrapOptions{
-		Timeout:      evalRunnerTimeout(),
-		OutboundMode: picoruntime.OutboundModeDrop,
+func newEvalRuntime(cfg *config.Config, timeout time.Duration) (*evalRuntime, error) {
+	var instrumentedModel *instrumentation.InstrumentedLanguageModel
+	handle, err := dragonruntime.Bootstrap(context.Background(), cfg, dragonruntime.BootstrapOptions{
+		Timeout:      timeout,
+		OutboundMode: dragonruntime.OutboundModeDrop,
 		WrapModel: func(inner fantasy.LanguageModel) fantasy.LanguageModel {
-			instrumentedModel = &instrumentedLanguageModel{inner: inner}
+			instrumentedModel = instrumentation.Wrap(inner)
 			return instrumentedModel
 		},
 	})
@@ -210,41 +173,6 @@ func (r *evalRuntime) close() {
 	}
 }
 
-func buildSteps(model *instrumentedLanguageModel) []TraceStep {
-	var steps []TraceStep
-	idx := 0
-
-	for _, call := range model.calls {
-		steps = append(steps, TraceStep{
-			Index:    idx,
-			Type:     "llm_call",
-			Duration: call.duration.Milliseconds(),
-		})
-		idx++
-
-		for _, tc := range call.toolCalls {
-			argsRaw, _ := json.Marshal(tc.args)
-			steps = append(steps, TraceStep{
-				Index:  idx,
-				Type:   "tool_call",
-				Tool:   tc.name,
-				Args:   argsRaw,
-				Result: truncate(tc.result, 500),
-			})
-			idx++
-		}
-	}
-
-	return steps
-}
-
-func truncate(s string, maxLen int) string {
-	if len(s) <= maxLen {
-		return s
-	}
-	return s[:maxLen] + "...[truncated]"
-}
-
 func evalRunnerTimeout() time.Duration {
 	const defaultTimeout = 180 * time.Second
 	raw := strings.TrimSpace(os.Getenv("DRAGONSCALE_EVAL_TIMEOUT_MS"))
@@ -259,107 +187,10 @@ func evalRunnerTimeout() time.Duration {
 }
 
 func emitError(msg string) {
-	emitTrace(Trace{Error: msg})
+	emitTrace(instrumentation.Trace{Error: msg})
 }
 
-func emitTrace(trace Trace) {
+func emitTrace(trace instrumentation.Trace) {
 	out, _ := json.Marshal(trace)
 	fmt.Println(string(out))
-}
-
-type instrumentedCall struct {
-	duration  time.Duration
-	toolCalls []instrumentedToolCall
-	usage     fantasy.Usage
-}
-
-type instrumentedToolCall struct {
-	name   string
-	args   map[string]interface{}
-	result string
-}
-
-type instrumentedLanguageModel struct {
-	inner      fantasy.LanguageModel
-	calls      []instrumentedCall
-	totalUsage fantasy.Usage
-}
-
-var _ fantasy.LanguageModel = (*instrumentedLanguageModel)(nil)
-
-func (m *instrumentedLanguageModel) Provider() string { return m.inner.Provider() }
-func (m *instrumentedLanguageModel) Model() string    { return m.inner.Model() }
-
-func (m *instrumentedLanguageModel) GenerateObject(ctx context.Context, call fantasy.ObjectCall) (*fantasy.ObjectResponse, error) {
-	return m.inner.GenerateObject(ctx, call)
-}
-
-func (m *instrumentedLanguageModel) StreamObject(ctx context.Context, call fantasy.ObjectCall) (fantasy.ObjectStreamResponse, error) {
-	return m.inner.StreamObject(ctx, call)
-}
-
-func (m *instrumentedLanguageModel) Generate(ctx context.Context, call fantasy.Call) (*fantasy.Response, error) {
-	start := time.Now()
-	resp, err := m.inner.Generate(ctx, call)
-	dur := time.Since(start)
-
-	ic := instrumentedCall{duration: dur}
-
-	if err == nil && resp != nil {
-		ic.usage = resp.Usage
-		m.totalUsage.InputTokens += resp.Usage.InputTokens
-		m.totalUsage.OutputTokens += resp.Usage.OutputTokens
-		m.totalUsage.TotalTokens += resp.Usage.TotalTokens
-		m.totalUsage.ReasoningTokens += resp.Usage.ReasoningTokens
-		m.totalUsage.CacheReadTokens += resp.Usage.CacheReadTokens
-
-		for _, tc := range resp.Content.ToolCalls() {
-			var args map[string]interface{}
-			_ = json.Unmarshal([]byte(tc.Input), &args)
-			ic.toolCalls = append(ic.toolCalls, instrumentedToolCall{
-				name: tc.ToolName,
-				args: args,
-			})
-		}
-	}
-
-	m.calls = append(m.calls, ic)
-	return resp, err
-}
-
-func (m *instrumentedLanguageModel) Stream(ctx context.Context, call fantasy.Call) (fantasy.StreamResponse, error) {
-	start := time.Now()
-	stream, err := m.inner.Stream(ctx, call)
-	if err != nil {
-		m.calls = append(m.calls, instrumentedCall{duration: time.Since(start)})
-		return nil, err
-	}
-
-	ic := instrumentedCall{}
-
-	wrappedStream := func(yield func(fantasy.StreamPart) bool) {
-		stream(func(part fantasy.StreamPart) bool {
-			switch part.Type {
-			case fantasy.StreamPartTypeFinish:
-				ic.usage = part.Usage
-				m.totalUsage.InputTokens += part.Usage.InputTokens
-				m.totalUsage.OutputTokens += part.Usage.OutputTokens
-				m.totalUsage.TotalTokens += part.Usage.TotalTokens
-				m.totalUsage.ReasoningTokens += part.Usage.ReasoningTokens
-				m.totalUsage.CacheReadTokens += part.Usage.CacheReadTokens
-			case fantasy.StreamPartTypeToolCall:
-				var args map[string]interface{}
-				_ = json.Unmarshal([]byte(part.ToolCallInput), &args)
-				ic.toolCalls = append(ic.toolCalls, instrumentedToolCall{
-					name: part.ToolCallName,
-					args: args,
-				})
-			}
-			return yield(part)
-		})
-		ic.duration = time.Since(start)
-		m.calls = append(m.calls, ic)
-	}
-
-	return wrappedStream, nil
 }

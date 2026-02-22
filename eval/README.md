@@ -130,4 +130,6 @@ python eval/scripts/generate_long_context_cases.py --count 12 --seed 20260221
 ## Environment Variables
 
 - `DRAGONSCALE_EVAL_CONFIG` - Optional overlay config path applied on top of user base config.
-- Base config discovery uses XDG first (`~/.config/dragonscale/config.json`), then legacy (`~/.dragonscale/config.json`), then XDG fallback if neither exists.
+- `DRAGONSCALE_EVAL_BASE_CONFIG` - Optional explicit base config path for eval runs.
+- `DRAGONSCALE_EVAL_HOST_HOME` - Path to a host-style home used as a fallback when container home paths are empty (used for host-mounted config discovery, typically `/host_home` in devcontainer).
+- Base config discovery uses XDG first (`~/.config/dragonscale/config.json`) with `DRAGONSCALE_EVAL_HOST_HOME`/`/host_home/.config/dragonscale/config.json` as a host-mount fallback.
