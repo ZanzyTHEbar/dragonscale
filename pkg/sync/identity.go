@@ -49,6 +49,10 @@ type IdentitySync struct {
 	agentID     string
 	store       DocumentStore
 
+	// OnChange is called after CheckAndSync detects and persists file changes.
+	// Use it to invalidate downstream caches (e.g., bootstrap prompt cache).
+	OnChange func()
+
 	watcher  *fsnotify.Watcher
 	cancel   context.CancelFunc
 	wg       sync.WaitGroup
@@ -128,6 +132,9 @@ func (s *IdentitySync) CheckAndSync(ctx context.Context) error {
 		now := time.Now()
 		s.lastSync.Store(now.UnixNano())
 		_ = s.store.UpsertKV(ctx, s.agentID, kvLastSyncKey, now.Format(time.RFC3339Nano))
+		if s.OnChange != nil {
+			s.OnChange()
+		}
 	}
 	return nil
 }

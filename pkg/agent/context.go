@@ -404,6 +404,14 @@ func (cb *ContextBuilder) cachedBootstrapFiles() string {
 	return cb.bootstrapCache
 }
 
+// InvalidateBootstrapCache forces the next BuildSystemPrompt to reload
+// bootstrap files from the delegate. Called by IdentitySync when files change.
+func (cb *ContextBuilder) InvalidateBootstrapCache() {
+	cb.cacheMu.Lock()
+	cb.bootstrapCache = ""
+	cb.cacheMu.Unlock()
+}
+
 func (cb *ContextBuilder) LoadBootstrapFiles() string {
 	if cb.delegate == nil {
 		return ""
