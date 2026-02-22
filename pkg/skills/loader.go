@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 
 	jsonv2 "github.com/go-json-experiment/json"
 )
@@ -74,6 +75,25 @@ func NewSkillsLoader(primarySkillsDir string, globalSkills string, builtinSkills
 		globalSkills:  globalSkills,
 		builtinSkills: builtinSkills,
 	}
+}
+
+// DirsMtime returns the latest modification time across all skill directories.
+// Used for cache invalidation — if no directories exist, returns zero time.
+func (sl *SkillsLoader) DirsMtime() time.Time {
+	var latest time.Time
+	for _, dir := range []string{sl.primarySkills, sl.globalSkills, sl.builtinSkills} {
+		if dir == "" {
+			continue
+		}
+		info, err := os.Stat(dir)
+		if err != nil {
+			continue
+		}
+		if mt := info.ModTime(); mt.After(latest) {
+			latest = mt
+		}
+	}
+	return latest
 }
 
 func (sl *SkillsLoader) ListSkills() []SkillInfo {

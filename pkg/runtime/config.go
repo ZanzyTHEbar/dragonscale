@@ -49,11 +49,6 @@ func ResolveBaseConfigPath() string {
 		}
 	}
 
-	// Fall back to the default devcontainer host mount location.
-	if path := checkHostConfig("/host_home"); path != "" {
-		return path
-	}
-
 	// Prefer XDG standard path (~/.config/dragonscale/config.json) when present.
 	xdgPath, err := config.DefaultConfigPath()
 	if err == nil {

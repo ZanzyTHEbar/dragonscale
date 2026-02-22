@@ -91,6 +91,15 @@ func NewManager(workspace string, opts ...Option) *Manager {
 func (sm *Manager) loadFromDelegate() {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
+
+	// Prefer single-key format (state:json)
+	if v, err := sm.delegate.GetKV(ctx, kvAgentID, "state:json"); err == nil && v != "" {
+		if err := jsonv2.Unmarshal([]byte(v), sm.state); err == nil {
+			return
+		}
+	}
+
+	// Fallback: legacy 3-key format
 	if v, err := sm.delegate.GetKV(ctx, kvAgentID, "state:last_channel"); err == nil && v != "" {
 		sm.state.LastChannel = v
 	}
@@ -126,6 +135,18 @@ func (sm *Manager) SetLastChatID(ctx context.Context, chatID string) error {
 	return sm.persist(ctx)
 }
 
+// SetChannelAndChatID atomically updates both channel and chat ID in a single persist.
+func (sm *Manager) SetChannelAndChatID(ctx context.Context, channel, chatID string) error {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+
+	sm.state.LastChannel = channel
+	sm.state.LastChatID = chatID
+	sm.state.Timestamp = time.Now()
+
+	return sm.persist(ctx)
+}
+
 // persist writes the current state to the delegate (KV) or file.
 // Must be called with the lock held.
 func (sm *Manager) persist(ctx context.Context) error {
@@ -136,16 +157,12 @@ func (sm *Manager) persist(ctx context.Context) error {
 }
 
 func (sm *Manager) persistToDelegate(ctx context.Context) error {
-	ts := sm.state.Timestamp.Format(time.RFC3339Nano)
-
-	if err := sm.delegate.UpsertKV(ctx, kvAgentID, "state:last_channel", sm.state.LastChannel); err != nil {
-		return fmt.Errorf("upsert last_channel: %w", err)
+	blob, err := jsonv2.Marshal(sm.state, jsontext.WithIndent(""))
+	if err != nil {
+		return fmt.Errorf("marshal state: %w", err)
 	}
-	if err := sm.delegate.UpsertKV(ctx, kvAgentID, "state:last_chat_id", sm.state.LastChatID); err != nil {
-		return fmt.Errorf("upsert last_chat_id: %w", err)
-	}
-	if err := sm.delegate.UpsertKV(ctx, kvAgentID, "state:timestamp", ts); err != nil {
-		return fmt.Errorf("upsert timestamp: %w", err)
+	if err := sm.delegate.UpsertKV(ctx, kvAgentID, "state:json", string(blob)); err != nil {
+		return fmt.Errorf("upsert state: %w", err)
 	}
 	return nil
 }

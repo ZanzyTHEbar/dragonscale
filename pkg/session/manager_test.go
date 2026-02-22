@@ -224,6 +224,8 @@ func TestSessionManager_DelegatePersistence(t *testing.T) {
 		t.Fatalf("expected 2 messages in-memory, got %d", len(history))
 	}
 
+	sm.Flush()
+
 	items, err := del.ListRecallItems(t.Context(), "test-agent", key, 100, 0)
 	if err != nil {
 		t.Fatalf("ListRecallItems: %v", err)
@@ -285,6 +287,7 @@ func TestSessionManager_DelegateBootstrapPaginationAndOrder(t *testing.T) {
 	for i := 0; i < totalMsgs; i++ {
 		writer.AddMessage(sessionKey, "user", fmt.Sprintf("m-%04d", i))
 	}
+	writer.Flush()
 
 	// New manager instance exercises delegate bootstrap restore path.
 	reader := NewSessionManager("", WithSessionDelegate(del, "test-agent"))
@@ -313,6 +316,7 @@ func TestSessionManager_ProjectionPointerPersistedAndRestored(t *testing.T) {
 	sm.AddMessage(sessionKey, "user", "first")
 	sm.AddMessage(sessionKey, "assistant", "second")
 	sm.AddMessage(sessionKey, "user", "third")
+	sm.Flush()
 
 	// Read persisted pointer from KV
 	raw, err := del.GetKV(t.Context(), "test-agent", projectionPointerKey(sessionKey))
@@ -350,6 +354,7 @@ func TestSessionManager_ProjectionPointerUpdatedOnAppend(t *testing.T) {
 
 	for i := 0; i < 4; i++ {
 		sm.AddMessage(sessionKey, "user", fmt.Sprintf("msg-%d", i))
+		sm.Flush()
 		raw, err := del.GetKV(t.Context(), "test-agent", projectionPointerKey(sessionKey))
 		require.NoError(t, err)
 		require.NotEmpty(t, raw)
@@ -370,6 +375,7 @@ func TestSessionManager_IntegrityMismatchRestoreStillSucceeds(t *testing.T) {
 	sm := NewSessionManager("", WithSessionDelegate(del, "test-agent"))
 	sm.AddMessage(sessionKey, "user", "a")
 	sm.AddMessage(sessionKey, "assistant", "b")
+	sm.Flush()
 
 	// Corrupt the stored pointer to simulate prior state mismatch
 	corrupt := ProjectionPointer{Count: 0}
@@ -403,6 +409,7 @@ func TestSessionManager_ProjectionBackfillStatusPersistedOnBootstrap(t *testing.
 	writer.AddMessage("session-a", "user", "hello")
 	writer.AddMessage("session-a", "assistant", "hi")
 	writer.AddMessage("session-b", "user", "task")
+	writer.Flush()
 
 	_ = NewSessionManager("", WithSessionDelegate(del, "test-agent"))
 

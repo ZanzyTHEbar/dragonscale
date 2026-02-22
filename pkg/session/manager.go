@@ -50,6 +50,12 @@ func WithSessionDelegate(del memory.MemoryDelegate, agentID string) SessionOptio
 	}
 }
 
+type msgPersistItem struct {
+	sessionKey string
+	msg        messages.Message
+	barrier    chan struct{} // non-nil for flush barriers; worker closes it after draining prior items
+}
+
 type SessionManager struct {
 	sessions map[string]*Session      // primary store (always authoritative)
 	lru      *cache.LRU[string, bool] // tracks access order; value is just a presence flag
@@ -58,6 +64,8 @@ type SessionManager struct {
 	cfg      SessionManagerConfig
 	delegate memory.MemoryDelegate
 	agentID  string
+	msgChan  chan msgPersistItem // async message persistence; nil when delegate is nil
+	msgDone  chan struct{}       // closed when the persist worker exits
 }
 
 func NewSessionManager(storage string, opts ...SessionOption) *SessionManager {
@@ -88,6 +96,9 @@ func NewSessionManagerWithConfig(storage string, cfg SessionManagerConfig, opts 
 
 	if sm.delegate != nil {
 		sm.loadSessionsFromDelegate()
+		sm.msgChan = make(chan msgPersistItem, 256)
+		sm.msgDone = make(chan struct{})
+		go sm.msgPersistWorker()
 	} else if storage != "" {
 		os.MkdirAll(storage, 0755)
 		sm.loadSessions()
@@ -349,10 +360,22 @@ func (sm *SessionManager) AddFullMessage(sessionKey string, msg messages.Message
 	session.Updated = time.Now()
 	sm.touchLRU(sessionKey)
 
-	if sm.delegate != nil {
-		sm.persistMessageToDelegate(sessionKey, msg)
+	if sm.msgChan != nil {
+		sm.msgChan <- msgPersistItem{sessionKey: sessionKey, msg: msg}
 	}
 
+}
+
+// msgPersistWorker drains msgChan and writes messages to the delegate in the background.
+func (sm *SessionManager) msgPersistWorker() {
+	defer close(sm.msgDone)
+	for item := range sm.msgChan {
+		if item.barrier != nil {
+			close(item.barrier)
+			continue
+		}
+		sm.persistMessageToDelegate(item.sessionKey, item.msg)
+	}
 }
 
 func (sm *SessionManager) persistMessageToDelegate(sessionKey string, msg messages.Message) {
@@ -530,6 +553,25 @@ func (sm *SessionManager) CleanupStale(maxAge time.Duration) int {
 func sanitizeFilename(key string) string {
 	return strings.ReplaceAll(key, ":", "_")
 }
+
+// Flush blocks until all pending async message persists complete.
+func (sm *SessionManager) Flush() {
+	if sm.msgChan == nil {
+		return
+	}
+	barrier := make(chan struct{})
+	sm.msgChan <- msgPersistItem{barrier: barrier}
+	<-barrier
+}
+
+// Close drains the async message persistence channel and waits for completion.
+func (sm *SessionManager) Close() {
+	if sm.msgChan != nil {
+		close(sm.msgChan)
+		<-sm.msgDone
+	}
+}
+
 func (sm *SessionManager) Save(key string) error {
 	if sm.delegate != nil {
 		return nil
