@@ -433,6 +433,53 @@ func TestToolContext_Updates(t *testing.T) {
 	var _ tools.ContextualTool = ctxTool
 }
 
+func TestStartupInfo_IncludesFocusTools(t *testing.T) {
+	t.Parallel()
+	tmpDir, err := os.MkdirTemp("", "agent-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				Model:             "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	model := newMockLanguageModel("")
+	al := mustNewAgentLoop(t, cfg, msgBus, model)
+
+	info := al.GetStartupInfo()
+	toolsInfo := info["tools"].(map[string]interface{})
+	toolsList := toolsInfo["names"].([]string)
+
+	requiredTools := map[string]bool{
+		"start_focus":    false,
+		"complete_focus": false,
+		"focus_history":  false,
+		"tool_search":    false,
+		"tool_call":      false,
+	}
+	for _, name := range toolsList {
+		if _, ok := requiredTools[name]; ok {
+			requiredTools[name] = true
+		}
+	}
+
+	for name, ok := range requiredTools {
+		if !ok {
+			t.Errorf("expected startup tool list to include %q", name)
+		}
+	}
+}
+
 // TestToolRegistry_GetDefinitions verifies tool definitions can be retrieved
 func TestToolRegistry_GetDefinitions(t *testing.T) {
 	t.Parallel()
@@ -952,5 +999,79 @@ func TestPersistOversizedRecoveryRefs_CreatesRecoverableReferences(t *testing.T)
 	}
 	if !strings.Contains(res.ForLLM, "omitted oversized content for recovery") {
 		t.Fatalf("expected recovered content in output, got: %s", res.ForLLM)
+	}
+}
+
+func TestRefreshContextBlocks_LoadsActiveFocusStateForPrompt(t *testing.T) {
+	t.Parallel()
+	tmpDir, err := os.MkdirTemp("", "agent-focus-context-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				Model:             "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+	msgBus := bus.NewMessageBus()
+	model := newMockLanguageModel("ok")
+	al := mustNewAgentLoop(t, cfg, msgBus, model)
+
+	sessionKey := "refresh-focus-session"
+	startTool := tools.NewStartFocusTool(al.memDelegate, al.sessions, func() string { return sessionKey })
+	result := startTool.Execute(context.Background(), map[string]interface{}{
+		"topic": "investigate timeout issue",
+		"goal":  "reduce API latency",
+		"steps": []interface{}{"collect traces", "analyze retries"},
+	})
+	if result.IsError {
+		t.Fatalf("expected focus start to succeed, got: %s", result.ForLLM)
+	}
+
+	al.refreshContextBlocks(context.Background(), processOptions{SessionKey: sessionKey})
+
+	prompt := al.contextBuilder.BuildSystemPrompt()
+	if !strings.Contains(prompt, "# Focus") {
+		t.Fatalf("expected focus section in prompt, got: %s", prompt)
+	}
+	if !strings.Contains(prompt, "## reduce API latency") {
+		t.Fatalf("expected focus goal in prompt, got: %s", prompt)
+	}
+}
+
+func TestRefreshContextBlocks_ClearsFocusBlockWhenStateMissing(t *testing.T) {
+	t.Parallel()
+	tmpDir, err := os.MkdirTemp("", "agent-focus-context-miss-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				Model:             "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+	msgBus := bus.NewMessageBus()
+	model := newMockLanguageModel("ok")
+	al := mustNewAgentLoop(t, cfg, msgBus, model)
+
+	sessionKey := "missing-focus-session"
+	al.refreshContextBlocks(context.Background(), processOptions{SessionKey: sessionKey})
+	prompt := al.contextBuilder.BuildSystemPrompt()
+	if strings.Contains(prompt, "# Focus") {
+		t.Fatalf("did not expect focus section when focus state is missing, got: %s", prompt)
 	}
 }

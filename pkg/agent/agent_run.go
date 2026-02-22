@@ -21,6 +21,7 @@ import (
 	"github.com/ZanzyTHEbar/dragonscale/pkg/messages"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/tools"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/utils"
+	"golang.org/x/sync/errgroup"
 )
 
 type assembledContext struct {
@@ -41,12 +42,12 @@ func (al *AgentLoop) prepareRuntimeState(ctx context.Context, sessionKey string)
 
 	var conversationID ids.UUID
 	if cached, ok := al.conversationIDs.Load(sessionKey); ok {
-		conversationID = cached.(ids.UUID)
+		conversationID = cached
 	} else {
 		al.conversationMu.Lock()
 		defer al.conversationMu.Unlock()
 		if cached, ok := al.conversationIDs.Load(sessionKey); ok {
-			conversationID = cached.(ids.UUID)
+			conversationID = cached
 		} else {
 			conversationID = ids.New()
 			title := sessionKey
@@ -130,18 +131,87 @@ func (al *AgentLoop) recordChannelState(ctx context.Context, opts processOptions
 	return al.RecordLastChannel(ctx, channelKey)
 }
 
+type ctxBlockCacheEntry struct {
+	focusBlock string
+	knowledge  string
+	cachedAt   time.Time
+}
+
+const ctxBlockCacheTTL = 2 * time.Minute
+
 func (al *AgentLoop) refreshContextBlocks(ctx context.Context, opts processOptions) {
 	al.updateToolContexts(opts.Channel, opts.ChatID)
 
-	block := al.obsManager.LoadBlock(ctx, opts.SessionKey)
-	al.contextBuilder.SetObservationBlock(block)
+	var (
+		obsBlock   string
+		kb         string
+		focusBlock string
+	)
 
-	kb := tools.LoadKnowledgeBlock(ctx, al.memDelegate, opts.SessionKey)
-	al.contextBuilder.SetKnowledgeBlock(kb)
+	// Check if focus/knowledge can be served from cache.
+	// Invalidated by: (a) start_focus / complete_focus OnChange callbacks,
+	// (b) TTL expiry — catches external KV modifications outside focus tools.
+	_, dirty := al.focusDirty.LoadAndDelete(opts.SessionKey)
 
-	if al.identitySync != nil {
-		_ = al.identitySync.CheckAndSync(ctx)
+	useCached := false
+	if !dirty {
+		if cached, ok := al.ctxBlockCache.Load(opts.SessionKey); ok {
+			entry := cached.(ctxBlockCacheEntry)
+			if time.Since(entry.cachedAt) < ctxBlockCacheTTL {
+				useCached = true
+				kb = entry.knowledge
+				focusBlock = entry.focusBlock
+			}
+		}
 	}
+
+	g, gCtx := errgroup.WithContext(ctx)
+
+	g.Go(func() error {
+		obsBlock = al.obsManager.LoadBlock(gCtx, opts.SessionKey)
+		return nil
+	})
+	if !useCached {
+		g.Go(func() error {
+			kb = tools.LoadKnowledgeBlock(gCtx, al.memDelegate, opts.SessionKey)
+			return nil
+		})
+		g.Go(func() error {
+			if fs, ok := tools.LoadFocusState(gCtx, al.memDelegate, opts.SessionKey); ok {
+				focusBlock = fs.FormatBlock()
+			}
+			return nil
+		})
+	}
+	g.Go(func() error {
+		if al.identitySync != nil {
+			_ = al.identitySync.CheckAndSync(gCtx)
+		}
+		return nil
+	})
+
+	_ = g.Wait()
+
+	al.ctxBlockCache.Store(opts.SessionKey, ctxBlockCacheEntry{
+		focusBlock: focusBlock,
+		knowledge:  kb,
+		cachedAt:   time.Now(),
+	})
+
+	// Prune stale entries from other sessions to prevent unbounded growth.
+	al.ctxBlockCache.Range(func(key, value any) bool {
+		if entry, ok := value.(ctxBlockCacheEntry); ok {
+			if time.Since(entry.cachedAt) > 2*ctxBlockCacheTTL {
+				al.ctxBlockCache.Delete(key)
+				al.focusDirty.Delete(key) // clean up orphaned dirty flags
+			}
+		}
+		return true
+	})
+
+	al.contextBuilder.SetObservationBlock(obsBlock)
+	al.contextBuilder.SetKnowledgeBlock(kb)
+	al.contextBuilder.SetFocusBlock(focusBlock)
 }
 
 func (al *AgentLoop) loadSessionState(ctx context.Context, opts processOptions) ([]messages.Message, string) {
@@ -248,6 +318,7 @@ func (al *AgentLoop) createFantasyAgent(ctx context.Context, opts processOptions
 		Queries:        al.queries,
 		ConversationID: conversationID,
 		RunID:          runID,
+		ThresholdChars: al.offloadThresholdChars,
 	}
 	toolRuntime := SecureBusToolRuntime{
 		Base:       baseRuntime,
@@ -273,13 +344,18 @@ func (al *AgentLoop) createFantasyAgent(ctx context.Context, opts processOptions
 // postProcess handles the common finalization after Generate or Stream:
 // extract final text, save session, summarize, observe, optionally send response.
 func (al *AgentLoop) postProcess(ctx context.Context, opts processOptions, finalContent string, stepCount int) string {
-	al.sessions.Save(opts.SessionKey)
+	// Snapshot BEFORE summarization can truncate history, preventing
+	// observation manager from seeing an incomplete view.
+	tail := al.sessionsToMessagePairs(opts.SessionKey)
+
+	// Defer disk/DB persistence off the response path; in-memory state
+	// is already consistent for observation/summarization reads.
+	go al.sessions.Save(opts.SessionKey)
 
 	if opts.EnableSummary {
-		al.maybeSummarize(ctx, opts.SessionKey, opts.Channel, opts.ChatID)
+		go al.maybeSummarize(context.WithoutCancel(ctx), opts.SessionKey, opts.Channel, opts.ChatID)
 	}
 
-	tail := al.sessionsToMessagePairs(opts.SessionKey)
 	al.obsManager.MaybeObserveAsync(ctx, opts.SessionKey, tail)
 
 	if opts.SendResponse {
@@ -498,7 +574,7 @@ func (al *AgentLoop) runStreaming(ctx context.Context, opts processOptions, ac a
 // runLLMIteration — DELETED. Replaced by Fantasy's internal agent loop.
 
 // auditStep logs tool calls from a Fantasy step result to the audit log.
-func (al *AgentLoop) auditStep(ctx context.Context, step fantasy.StepResult, sessionKey string) {
+func (al *AgentLoop) auditStep(_ context.Context, step fantasy.StepResult, sessionKey string) {
 	toolCalls := step.Content.ToolCalls()
 	if len(toolCalls) == 0 {
 		return
@@ -513,12 +589,12 @@ func (al *AgentLoop) auditStep(ctx context.Context, step fantasy.StepResult, ses
 			Target:     tc.ToolName,
 			Input:      tc.Input,
 		}
-		aCtx, cancel := context.WithTimeout(ctx, time.Second)
-		if err := al.memDelegate.InsertAuditEntry(aCtx, entry); err != nil {
-			logger.WarnCF("agent", "Failed to log audit entry",
-				map[string]interface{}{"tool": tc.ToolName, "error": err.Error()})
+		select {
+		case al.auditChan <- entry:
+		default:
+			logger.WarnCF("agent", "Audit channel full, dropping entry",
+				map[string]interface{}{"tool": tc.ToolName})
 		}
-		cancel()
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	fantasy "charm.land/fantasy"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/ids"
@@ -55,27 +56,35 @@ func (r SecureBusToolRuntime) Execute(
 
 	results := make([]fantasy.ToolResultContent, 0, len(toolCalls))
 
+	type deferredState struct {
+		step     int
+		state    string
+		snapshot map[string]any
+	}
+	var pendingStates []deferredState
+
 	for i, tc := range toolCalls {
 		step := r.StepIndex + i
-		r.recordRunState(ctx, step, "tool_call", map[string]any{
+		pendingStates = append(pendingStates, deferredState{step, "tool_call", map[string]any{
 			"tool_name": tc.ToolName,
-		})
+		}})
 
 		reqID := ids.New().String()
 		req := itr.NewToolExecRequest(reqID, r.SessionKey, tc.ToolCallID, tc.ToolName, tc.Input)
 		busResp := r.Bus.Execute(ctx, req)
 
 		if busResp.IsError {
-			// Policy violation or secret resolution failure.
+			sanitized := sanitizePolicyError(busResp.Result)
 			tr := fantasy.ToolResultContent{
 				ToolCallID: tc.ToolCallID,
 				ToolName:   tc.ToolName,
-				Result:     fantasy.ToolResultOutputContentError{Error: errors.New(busResp.Result)},
+				Result:     fantasy.ToolResultOutputContentError{Error: errors.New(sanitized)},
 			}
-			r.recordRunState(ctx, step, "tool_call_error", map[string]any{
-				"tool_name": tc.ToolName,
-				"error":     busResp.Result,
-			})
+			pendingStates = append(pendingStates, deferredState{step, "tool_call_error", map[string]any{
+				"tool_name":  tc.ToolName,
+				"error":      busResp.Result,
+				"error_safe": sanitized,
+			}})
 			results = append(results, tr)
 			if onResult != nil {
 				if err := onResult(tr); err != nil {
@@ -96,15 +105,20 @@ func (r SecureBusToolRuntime) Execute(
 				br = overrideResultText(br, busResp.Result)
 			}
 			results = append(results, br)
-			r.recordRunState(ctx, step, "tool_result", map[string]any{
+			pendingStates = append(pendingStates, deferredState{step, "tool_result", map[string]any{
 				"tool_name": tc.ToolName,
-			})
+			}})
 			if onResult != nil {
 				if err := onResult(br); err != nil {
 					return results, err
 				}
 			}
 		}
+	}
+
+	// Flush all buffered state writes in one pass
+	for _, ps := range pendingStates {
+		r.recordRunState(ctx, ps.step, ps.state, ps.snapshot)
 	}
 
 	return results, nil
@@ -115,6 +129,27 @@ func (r SecureBusToolRuntime) recordRunState(ctx context.Context, stepIndex int,
 		return
 	}
 	_, _ = r.StateStore.AddRunState(ctx, r.RunID, stepIndex, fantasy.ReActState(state), snapshot)
+}
+
+// sanitizePolicyError strips internal details from policy/bus errors before
+// they reach the LLM. The full error is preserved in audit state only.
+func sanitizePolicyError(raw string) string {
+	switch {
+	case strings.Contains(raw, "recursion depth"):
+		return "policy violation: recursion limit exceeded"
+	case strings.Contains(raw, "network access denied"):
+		return "policy violation: network access denied"
+	case strings.Contains(raw, "filesystem access denied"):
+		return "policy violation: filesystem access denied"
+	case strings.Contains(raw, "secret injection failed"):
+		return "policy violation: unable to resolve required secrets"
+	case strings.Contains(raw, "invalid args JSON"):
+		return "policy violation: invalid tool arguments"
+	case strings.Contains(raw, "policy violation"):
+		return "policy violation: access denied"
+	default:
+		return "tool execution denied"
+	}
 }
 
 // overrideResultText replaces the text output of a ToolResultContent with

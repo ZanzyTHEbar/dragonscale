@@ -322,7 +322,13 @@ func (al *AgentLoop) summarizeSession(parentCtx context.Context, sessionKey stri
 	if omitted && finalSummary != "" {
 		recoveryRefs, err := al.persistOversizedRecoveryRefs(ctx, sessionKey, omittedMessages)
 		if err != nil {
-			logger.WarnCF("agent", "Failed to persist DAG recovery references for oversized messages",
+			// Retry once with a fresh timeout
+			retryCtx, retryCancel := context.WithTimeout(ctx, 5*time.Second)
+			recoveryRefs, err = al.persistOversizedRecoveryRefs(retryCtx, sessionKey, omittedMessages)
+			retryCancel()
+		}
+		if err != nil {
+			logger.ErrorCF("agent", "Failed to persist DAG recovery references after retry",
 				map[string]interface{}{
 					"session_key": sessionKey,
 					"error":       err.Error(),
@@ -335,6 +341,12 @@ func (al *AgentLoop) summarizeSession(parentCtx context.Context, sessionKey stri
 		} else {
 			finalSummary += "\n[Note: Some oversized messages were omitted from this summary for efficiency.]"
 		}
+	}
+
+	// Quality gate: reject summaries that are too short to be useful.
+	// A valid summary of even a short conversation should be 20+ chars.
+	if len(strings.TrimSpace(finalSummary)) < 20 {
+		finalSummary = ""
 	}
 
 	if finalSummary != "" {
@@ -411,10 +423,24 @@ func (al *AgentLoop) sessionsToMessagePairs(sessionKey string) []observation.Mes
 	return pairs
 }
 
+// dagCacheEntry holds the cached DAG compression output for a session,
+// enabling skip of recompression and repersistence when the compressible
+// portion hasn't grown since the last call.
+type dagCacheEntry struct {
+	msgCount      int
+	rendered      string
+	dag           *dag.DAG
+	persistFailed bool
+}
+
 // applyDAGCompression compresses old history into a DAG summary block and
 // returns only the tail messages that should be passed as raw conversation.
 // The compressed portion is injected into the system prompt via contextBuilder.
 // When memDelegate implements dag.DAGPersister, the DAG is persisted for dag_expand/describe/grep.
+//
+// Incremental optimization: if the compressible message count matches the
+// cached count, the previous DAG and rendered block are reused without
+// recompression or repersistence.
 func (al *AgentLoop) applyDAGCompression(ctx context.Context, sessionKey string, history []messages.Message) []messages.Message {
 	const minHistoryForDAG = 16
 
@@ -445,6 +471,19 @@ func (al *AgentLoop) applyDAGCompression(ctx context.Context, sessionKey string,
 		return history
 	}
 
+	// Check DAG cache: skip recompression if compressible count hasn't changed
+	if cached, ok := al.dagCache.Load(sessionKey); ok {
+		entry := cached.(dagCacheEntry)
+		if entry.msgCount == len(compressible) {
+			al.contextBuilder.SetDAGBlock(entry.rendered)
+			// Retry failed persistence from previous turn
+			if entry.persistFailed {
+				al.retryDAGPersist(ctx, sessionKey, entry)
+			}
+			return tail
+		}
+	}
+
 	dagMsgs := make([]dag.Message, len(compressible))
 	for i, m := range compressible {
 		dagMsgs[i] = dag.Message{Role: m.Role, Content: m.Content}
@@ -456,17 +495,23 @@ func (al *AgentLoop) applyDAGCompression(ctx context.Context, sessionKey string,
 	rendered := dag.RenderDAGForBudget(d, budget.DAGSummaries)
 	al.contextBuilder.SetDAGBlock(rendered)
 
+	// Cache the result
+	al.dagCache.Store(sessionKey, dagCacheEntry{
+		msgCount: len(compressible),
+		rendered: rendered,
+		dag:      d,
+	})
+
 	// Persist DAG for dag_expand, dag_describe, dag_grep (additive; in-memory behavior unchanged)
-	if dp, ok := al.memDelegate.(dag.DAGPersister); ok {
-		if err := dp.PersistDAG(ctx, pkg.NAME, sessionKey, &dag.PersistSnapshot{
-			FromMsgIdx: 0,
-			ToMsgIdx:   len(compressible),
-			MsgCount:   len(compressible),
-			DAG:        d,
-		}); err != nil {
-			logger.WarnCF("agent", "DAG persist failed (non-fatal)",
-				map[string]interface{}{"error": err.Error(), "session_key": sessionKey})
-		}
+	persistOK := al.tryDAGPersist(ctx, sessionKey, d, len(compressible))
+	if !persistOK {
+		// Mark for retry on next cache hit
+		al.dagCache.Store(sessionKey, dagCacheEntry{
+			msgCount:      len(compressible),
+			rendered:      rendered,
+			dag:           d,
+			persistFailed: true,
+		})
 	}
 
 	logger.DebugCF("agent", "DAG compression applied",
@@ -475,9 +520,39 @@ func (al *AgentLoop) applyDAGCompression(ctx context.Context, sessionKey string,
 			"compressed_msgs": len(compressible),
 			"tail_msgs":       len(tail),
 			"dag_nodes":       len(d.Nodes),
+			"cache_hit":       false,
 		})
 
 	return tail
+}
+
+func (al *AgentLoop) tryDAGPersist(ctx context.Context, sessionKey string, d *dag.DAG, msgCount int) bool {
+	dp, ok := al.memDelegate.(dag.DAGPersister)
+	if !ok {
+		return true
+	}
+	if err := dp.PersistDAG(ctx, pkg.NAME, sessionKey, &dag.PersistSnapshot{
+		FromMsgIdx: 0,
+		ToMsgIdx:   msgCount,
+		MsgCount:   msgCount,
+		DAG:        d,
+	}); err != nil {
+		logger.WarnCF("agent", "DAG persist failed (will retry next turn)",
+			map[string]interface{}{"error": err.Error(), "session_key": sessionKey})
+		return false
+	}
+	return true
+}
+
+func (al *AgentLoop) retryDAGPersist(ctx context.Context, sessionKey string, entry dagCacheEntry) {
+	if al.tryDAGPersist(ctx, sessionKey, entry.dag, entry.msgCount) {
+		al.dagCache.Store(sessionKey, dagCacheEntry{
+			msgCount:      entry.msgCount,
+			rendered:      entry.rendered,
+			dag:           entry.dag,
+			persistFailed: false,
+		})
+	}
 }
 
 func (al *AgentLoop) estimateTokens(msgs []messages.Message) int {

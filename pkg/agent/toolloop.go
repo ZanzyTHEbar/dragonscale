@@ -13,6 +13,7 @@ import (
 	fantasy "charm.land/fantasy"
 	"github.com/ZanzyTHEbar/dragonscale/pkg"
 	dragonfantasy "github.com/ZanzyTHEbar/dragonscale/pkg/fantasy"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/ids"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/logger"
 	memstore "github.com/ZanzyTHEbar/dragonscale/pkg/memory/store"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/tools"
@@ -38,7 +39,7 @@ func MakeUnifiedRunLoopFunc(al *AgentLoop) tools.RunLoopFunc {
 		if strings.TrimSpace(baseSession) == "" {
 			baseSession = "subagent:default"
 		}
-		sessionKey := baseSession + "::subagent"
+		sessionKey := fmt.Sprintf("%s::subagent::%s", baseSession, ids.New().String()[:8])
 
 		conversationID, runID, err := al.prepareRuntimeState(ctx, sessionKey)
 		if err != nil {
@@ -51,6 +52,7 @@ func MakeUnifiedRunLoopFunc(al *AgentLoop) tools.RunLoopFunc {
 			Queries:        al.queries,
 			ConversationID: conversationID,
 			RunID:          runID,
+			ThresholdChars: al.offloadThresholdChars,
 		}
 		toolRuntime := SecureBusToolRuntime{
 			Base:       baseRuntime,

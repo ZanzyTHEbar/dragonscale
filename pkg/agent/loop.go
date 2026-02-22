@@ -21,6 +21,7 @@ import (
 	"github.com/ZanzyTHEbar/dragonscale/pkg/channels"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/config"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/constants"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/ids"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/logger"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/memory"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/memory/dag"
@@ -37,35 +38,41 @@ import (
 )
 
 type AgentLoop struct {
-	bus               *bus.MessageBus
-	languageModel     fantasy.LanguageModel
-	workspace         string
-	model             string
-	contextWindow     int // Maximum context window size in tokens
-	maxIterations     int
-	sessions          *session.SessionManager
-	state             *state.Manager
-	contextBuilder    *ContextBuilder
-	tools             *tools.ToolRegistry
-	memoryStore       *memstore.MemoryStore    // 3-tier MemGPT memory (always initialized)
-	memDelegate       memory.MemoryDelegate    // DB delegate (always initialized)
-	obsManager        *observation.Manager     // Observational memory (always initialized)
-	secureBus         *securebus.Bus           // ITR SecureBus (always initialized)
-	queries           *memsqlc.Queries         // SQL query surface for runtime persistence
-	kvDelegate        KVDelegate               // KV adapter for offloaded tool results
-	stateStore        *StateStore              // Agent run state persistence
-	conversationIDs   sync.Map                 // Owner: agent_run.go — wrote by prepareRuntimeState, read in prepareRuntimeState/load path
-	conversationMu    sync.Mutex               // serializes conversation creation path
-	identitySync      *dragonsync.IdentitySync // File→DB sync for identity docs (nil if memory disabled)
-	activeSessionKey  atomic.Value             // Owner: agent_run.go — written in runAgentLoop, read by router/toolloop for context routing
-	running           atomic.Bool              // Owner: loop.go — lifecycle gate controlled by Run/Stop only
-	summarizing       sync.Map                 // Owner: summarizer.go — intended for async summarization lockout, currently gated by TODO path
-	summarizeFailures sync.Map                 // Owner: summarizer.go — write/read in forceCompression + summarizeSession error paths
-	cfg               *config.Config           // Stored for subagent factory access
-	channelManager    *channels.Manager
-	commandRegistry   []SlashCommand
-	outputOverride    atomic.Value // Owner: command_handler.go — CLI output redirection target for internal messages
-	toolResultSearch  fantasy.AgentTool
+	bus                   *bus.MessageBus
+	languageModel         fantasy.LanguageModel
+	workspace             string
+	model                 string
+	contextWindow         int // Maximum context window size in tokens
+	maxIterations         int
+	sessions              *session.SessionManager
+	state                 *state.Manager
+	contextBuilder        *ContextBuilder
+	tools                 *tools.ToolRegistry
+	memoryStore           *memstore.MemoryStore           // 3-tier MemGPT memory (always initialized)
+	memDelegate           memory.MemoryDelegate           // DB delegate (always initialized)
+	obsManager            *observation.Manager            // Observational memory (always initialized)
+	secureBus             *securebus.Bus                  // ITR SecureBus (always initialized)
+	queries               *memsqlc.Queries                // SQL query surface for runtime persistence
+	kvDelegate            KVDelegate                      // KV adapter for offloaded tool results
+	stateStore            *StateStore                     // Agent run state persistence
+	offloadThresholdChars int                             // Char threshold for tool result offloading (derived from token config)
+	conversationIDs       *boundedCache[string, ids.UUID] // Owner: agent_run.go — wrote by prepareRuntimeState, read in prepareRuntimeState/load path
+	conversationMu        sync.Mutex                      // serializes conversation creation path
+	identitySync          *dragonsync.IdentitySync        // File→DB sync for identity docs (nil if memory disabled)
+	activeSessionKey      atomic.Value                    // Owner: agent_run.go — written in runAgentLoop, read by router/toolloop for context routing
+	running               atomic.Bool                     // Owner: loop.go — lifecycle gate controlled by Run/Stop only
+	summarizing           sync.Map                        // Owner: summarizer.go — intended for async summarization lockout, currently gated by TODO path
+	summarizeFailures     sync.Map                        // Owner: summarizer.go — write/read in forceCompression + summarizeSession error paths
+	dagCache              sync.Map                        // Owner: summarizer.go — sessionKey → dagCacheEntry, skips recompression when compressible count unchanged
+	auditChan             chan *memory.AuditEntry         // Buffered channel for async audit logging; drained by background worker
+	auditDone             chan struct{}                   // Closed when audit worker exits
+	focusDirty            sync.Map                        // sessionKey → struct{}: set by focus tool callbacks, cleared after context reload
+	ctxBlockCache         sync.Map                        // sessionKey → ctxBlockCacheEntry: cached focus + knowledge blocks
+	cfg                   *config.Config                  // Stored for subagent factory access
+	channelManager        *channels.Manager
+	commandRegistry       []SlashCommand
+	outputOverride        atomic.Value // Owner: command_handler.go — CLI output redirection target for internal messages
+	toolResultSearch      fantasy.AgentTool
 }
 
 type outputTarget struct {
@@ -143,7 +150,7 @@ func NewAgentLoop(ctx context.Context, cfg *config.Config, msgBus *bus.MessageBu
 		del.Close()
 		return nil, fmt.Errorf("memory delegate queries are not initialized")
 	}
-	kv := NewDelegateKV(memDelegate, pkg.NAME)
+	kv := NewResilientKV(NewDelegateKV(memDelegate, pkg.NAME))
 	stateStore := NewStateStore(queries)
 
 	offloadThreshold := cfg.Memory.OffloadThresholdTokens
@@ -277,13 +284,6 @@ func NewAgentLoop(ctx context.Context, cfg *config.Config, msgBus *bus.MessageBu
 		toolsRegistry.MarkGateway(name)
 	}
 
-	// Wire skills loader into tool_search for unified discovery
-	if ts, ok := toolsRegistry.Get("tool_search"); ok {
-		if tst, ok := ts.(*tools.ToolSearchTool); ok {
-			tst.SetSkillsLoader(contextBuilder.SkillsLoader())
-		}
-	}
-
 	// Observation manager
 	callModelFn := func(ctx context.Context, prompt string) (string, error) {
 		temp := 0.3
@@ -302,29 +302,38 @@ func NewAgentLoop(ctx context.Context, cfg *config.Config, msgBus *bus.MessageBu
 	}
 	obsManager := observation.NewManager(memDelegate, pkg.NAME, callModelFn, observation.DefaultManagerConfig())
 
+	auditCh := make(chan *memory.AuditEntry, 256)
+	auditDone := make(chan struct{})
+
 	al := &AgentLoop{
-		bus:              msgBus,
-		languageModel:    model,
-		workspace:        workspace,
-		model:            cfg.Agents.Defaults.Model,
-		contextWindow:    cfg.Agents.Defaults.MaxTokens,
-		maxIterations:    cfg.Agents.Defaults.MaxToolIterations,
-		sessions:         sessionsManager,
-		state:            stateManager,
-		contextBuilder:   contextBuilder,
-		tools:            toolsRegistry,
-		memoryStore:      ms,
-		memDelegate:      memDelegate,
-		obsManager:       obsManager,
-		queries:          queries,
-		kvDelegate:       kv,
-		stateStore:       stateStore,
-		toolResultSearch: NewToolResultSearchTool(queries, kv),
-		identitySync:     idSync,
-		summarizing:      sync.Map{},
-		commandRegistry:  defaultSlashCommands(),
-		cfg:              cfg,
+		bus:                   msgBus,
+		languageModel:         model,
+		workspace:             workspace,
+		model:                 cfg.Agents.Defaults.Model,
+		contextWindow:         cfg.Agents.Defaults.MaxTokens,
+		maxIterations:         cfg.Agents.Defaults.MaxToolIterations,
+		sessions:              sessionsManager,
+		state:                 stateManager,
+		contextBuilder:        contextBuilder,
+		tools:                 toolsRegistry,
+		memoryStore:           ms,
+		memDelegate:           memDelegate,
+		obsManager:            obsManager,
+		queries:               queries,
+		kvDelegate:            kv,
+		stateStore:            stateStore,
+		offloadThresholdChars: offloadThreshold * 4,
+		toolResultSearch:      NewToolResultSearchTool(queries, kv),
+		conversationIDs:       newBoundedCache[string, ids.UUID](1024),
+		identitySync:          idSync,
+		summarizing:           sync.Map{},
+		auditChan:             auditCh,
+		auditDone:             auditDone,
+		commandRegistry:       defaultSlashCommands(),
+		cfg:                   cfg,
 	}
+
+	go al.auditWorker(ctx, auditCh, auditDone)
 
 	for _, apply := range opts {
 		if apply != nil {
@@ -339,8 +348,25 @@ func NewAgentLoop(ctx context.Context, cfg *config.Config, msgBus *bus.MessageBu
 		}
 		return ""
 	}
-	toolsRegistry.Register(tools.NewStartFocusTool(memDelegate, sessionsManager, sessionKeyFn))
-	toolsRegistry.Register(tools.NewCompleteFocusTool(memDelegate, sessionsManager, sessionKeyFn))
+	focusInvalidate := func() {
+		if sk := sessionKeyFn(); sk != "" {
+			al.focusDirty.Store(sk, struct{}{})
+		}
+	}
+	startFocus := tools.NewStartFocusTool(memDelegate, sessionsManager, sessionKeyFn)
+	startFocus.OnChange = focusInvalidate
+	toolsRegistry.Register(startFocus)
+	completeFocus := tools.NewCompleteFocusTool(memDelegate, sessionsManager, sessionKeyFn)
+	completeFocus.OnChange = focusInvalidate
+	toolsRegistry.Register(completeFocus)
+	toolsRegistry.Register(tools.NewFocusHistoryTool(memDelegate, sessionKeyFn))
+	// Wire context into tool_search for focus-aware bias and unified discovery.
+	if ts, ok := toolsRegistry.Get("tool_search"); ok {
+		if tst, ok := ts.(*tools.ToolSearchTool); ok {
+			tst.SetSkillsLoader(contextBuilder.SkillsLoader())
+			tst.SetFocusContext(memDelegate, sessionKeyFn)
+		}
+	}
 
 	// DAG tools: dag_expand, dag_describe, dag_grep (require delegate-backed session)
 	dagDeps := tools.DAGToolDeps{
@@ -418,6 +444,9 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 
 func (al *AgentLoop) Stop() {
 	al.running.Store(false)
+	close(al.auditChan)
+	<-al.auditDone // wait for audit worker to drain
+	al.sessions.Close()
 	if al.identitySync != nil {
 		al.identitySync.Close()
 	}
@@ -427,6 +456,50 @@ func (al *AgentLoop) Stop() {
 				map[string]interface{}{"error": err.Error()})
 		}
 		al.memoryStore.Close()
+	}
+}
+
+// auditWorker drains the audit channel, accumulating entries and flushing
+// either when the batch reaches 32 entries or after 100ms of inactivity.
+func (al *AgentLoop) auditWorker(_ context.Context, ch <-chan *memory.AuditEntry, done chan<- struct{}) {
+	defer close(done)
+
+	const maxBatch = 32
+	const flushInterval = 100 * time.Millisecond
+
+	buf := make([]*memory.AuditEntry, 0, maxBatch)
+	ticker := time.NewTicker(flushInterval)
+	defer ticker.Stop()
+
+	// Use context.Background so flushes succeed even during shutdown
+	// when the parent context may already be cancelled.
+	flush := func() {
+		if len(buf) == 0 {
+			return
+		}
+		fCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		if err := al.memDelegate.InsertAuditEntryBatch(fCtx, buf); err != nil {
+			logger.WarnCF("agent", "Async audit batch insert failed",
+				map[string]interface{}{"count": len(buf), "error": err.Error()})
+		}
+		cancel()
+		buf = buf[:0]
+	}
+
+	for {
+		select {
+		case entry, ok := <-ch:
+			if !ok {
+				flush()
+				return
+			}
+			buf = append(buf, entry)
+			if len(buf) >= maxBatch {
+				flush()
+			}
+		case <-ticker.C:
+			flush()
+		}
 	}
 }
 

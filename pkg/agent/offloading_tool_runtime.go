@@ -3,9 +3,10 @@ package agent
 import (
 	"context"
 	"fmt"
-	jsonv2 "github.com/go-json-experiment/json"
 	"strconv"
 	"strings"
+
+	jsonv2 "github.com/go-json-experiment/json"
 
 	"charm.land/fantasy"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/dserrors"

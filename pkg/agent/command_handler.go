@@ -157,8 +157,7 @@ func (al *AgentLoop) handleSwitchChannel(ctx context.Context, target string) str
 	if channel == "cli" {
 		al.outputOverride.Store(outputTarget{})
 		if al.state != nil {
-			_ = al.state.SetLastChannel(ctx, "cli")
-			_ = al.state.SetLastChatID(ctx, "")
+			_ = al.state.SetChannelAndChatID(ctx, "cli", "")
 		}
 		return "Cleared output channel override to CLI defaults"
 	}
@@ -185,11 +184,8 @@ func (al *AgentLoop) handleSwitchChannel(ctx context.Context, target string) str
 		ChatID:  chatID,
 	})
 	if al.state != nil {
-		if err := al.state.SetLastChannel(ctx, channel); err != nil {
-			return fmt.Sprintf("Output redirection set to %s:%s, but failed to persist channel: %v", channel, chatID, err)
-		}
-		if err := al.state.SetLastChatID(ctx, chatID); err != nil {
-			return fmt.Sprintf("Output redirection set to %s:%s, but failed to persist chat id: %v", channel, chatID, err)
+		if err := al.state.SetChannelAndChatID(ctx, channel, chatID); err != nil {
+			return fmt.Sprintf("Output redirection set to %s:%s, but failed to persist state: %v", channel, chatID, err)
 		}
 	}
 

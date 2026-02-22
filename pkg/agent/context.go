@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/ZanzyTHEbar/dragonscale/pkg"
@@ -26,10 +27,20 @@ type ContextBuilder struct {
 	delegate         memory.MemoryDelegate // Direct delegate for document loading (may be nil)
 	tools            *tools.ToolRegistry   // Direct reference to tool registry
 	observationBlock string                // Pre-rendered observation block for prompt injection
+	focusBlock       string                // Pre-rendered active focus block
 	knowledgeBlock   string                // Pre-rendered knowledge block from Focus completions
 	dagBlock         string                // Pre-rendered DAG compressed history
 	contextWindow    int                   // Max tokens for context window (0 = no limit)
+
+	cacheMu         sync.Mutex
+	skillsCache     string
+	skillsCacheAt   time.Time
+	skillsDirsMtime time.Time // last known mtime of skills directories
+	bootstrapCache  string
+	bootstrapAt     time.Time
 }
+
+const promptCacheTTL = 30 * time.Second
 
 func NewContextBuilder(workspace string) *ContextBuilder {
 	// Primary skills dir: XDG data dir (installed skills).
@@ -76,6 +87,11 @@ func (cb *ContextBuilder) SkillsLoader() *skills.SkillsLoader {
 
 func (cb *ContextBuilder) SetObservationBlock(block string) {
 	cb.observationBlock = block
+}
+
+// SetFocusBlock sets the pre-rendered active focus block for prompt injection.
+func (cb *ContextBuilder) SetFocusBlock(block string) {
+	cb.focusBlock = block
 }
 
 // SetKnowledgeBlock sets the pre-rendered knowledge block from completed Focus sessions.
@@ -155,27 +171,28 @@ func (cb *ContextBuilder) buildToolsSection() string {
 	return sb.String()
 }
 
+type contextSection struct {
+	name     string
+	content  string
+	priority int // lower = higher priority (kept first when trimming)
+}
+
 func (cb *ContextBuilder) BuildSystemPrompt() string {
-	type section struct {
-		name     string
-		content  string
-		priority int // lower = higher priority (kept first when trimming)
-	}
 
 	// Collect sections in priority order
-	sections := []section{}
+	sections := []contextSection{}
 
 	// P0: Core identity (always included)
-	sections = append(sections, section{"identity", cb.getIdentity(), 0})
+	sections = append(sections, contextSection{"identity", cb.getIdentity(), 0})
 
-	// P1: Bootstrap files (user identity)
-	if bc := cb.LoadBootstrapFiles(); bc != "" {
-		sections = append(sections, section{"bootstrap", bc, 1})
+	// P1: Bootstrap files (user identity) — cached with TTL
+	if bc := cb.cachedBootstrapFiles(); bc != "" {
+		sections = append(sections, contextSection{"bootstrap", bc, 1})
 	}
 
-	// P2: Skills index (lightweight Level 1 metadata)
-	if summary := cb.skillsLoader.BuildSkillsSummary(); summary != "" {
-		sections = append(sections, section{"skills", fmt.Sprintf(`# Skills
+	// P2: Skills index (lightweight Level 1 metadata) — cached with TTL
+	if summary := cb.cachedSkillsSummary(); summary != "" {
+		sections = append(sections, contextSection{"skills", fmt.Sprintf(`# Skills
 
 The following skills extend your capabilities. To use a skill:
 1. Use **skill_search** to find relevant skills by keyword
@@ -190,27 +207,34 @@ Do NOT assume skill content — always load before applying.
 	// P3: Working context (hot tier — highly dynamic, high value)
 	if cb.memoryStore != nil {
 		if wc := cb.buildWorkingContextSection(); wc != "" {
-			sections = append(sections, section{"working_context", wc, 3})
+			sections = append(sections, contextSection{"working_context", wc, 3})
 		}
 	}
 
 	// P4: Observation block
 	if cb.observationBlock != "" {
-		sections = append(sections, section{"observations", "# Observations\n\n" + cb.observationBlock, 4})
+		sections = append(sections, contextSection{"observations", "# Observations\n\n" + cb.observationBlock, 4})
 	}
 
-	// P5: Knowledge block
+	// P5: Active focus block (current investigation context)
+	if cb.focusBlock != "" {
+		sections = append(sections, contextSection{"focus", cb.focusBlock, 5})
+	}
+
+	// P6: Knowledge block (historical completions)
 	if cb.knowledgeBlock != "" {
-		sections = append(sections, section{"knowledge", cb.knowledgeBlock, 5})
+		sections = append(sections, contextSection{"knowledge", cb.knowledgeBlock, 6})
 	}
 
-	// P6: DAG compressed history (lowest priority — can be reconstructed)
+	// P7: DAG compressed history (lowest priority — can be reconstructed)
 	if cb.dagBlock != "" {
-		sections = append(sections, section{"dag", "# Conversation History (Compressed)\n\n" + cb.dagBlock, 6})
+		sections = append(sections, contextSection{"dag", "# Conversation History (Compressed)\n\n" + cb.dagBlock, 7})
 	}
 
-	// Token budget enforcement: if we exceed ~40% of context window for the
-	// system prompt, trim lowest-priority sections first.
+	// Proportional budget enforcement: each section gets a share of the
+	// token budget proportional to its priority weight. Surplus from small
+	// sections redistributes to higher-priority ones. Sections that still
+	// exceed their allocation are truncated rather than dropped entirely.
 	budgetTokens := cb.tokenBudgetTokens()
 	totalTokens := 0
 	sectionTokens := make([]int, len(sections))
@@ -220,19 +244,7 @@ Do NOT assume skill content — always load before applying.
 	}
 
 	if budgetTokens > 0 && totalTokens > budgetTokens {
-		logger.WarnCF("context", "System prompt exceeds token budget, trimming low-priority sections",
-			map[string]interface{}{
-				"total_tokens":  totalTokens,
-				"budget_tokens": budgetTokens,
-				"sections":      len(sections),
-			})
-		// Trim from lowest priority (highest number) first
-		for i := len(sections) - 1; i >= 0 && totalTokens > budgetTokens; i-- {
-			if sections[i].priority >= 5 { // only trim P5+ (knowledge, dag)
-				totalTokens -= sectionTokens[i]
-				sections[i].content = ""
-			}
-		}
+		sections, sectionTokens = cb.applyProportionalBudget(sections, sectionTokens, budgetTokens)
 	}
 
 	parts := make([]string, 0, len(sections))
@@ -262,8 +274,134 @@ func (cb *ContextBuilder) tokenBudgetTokens() int {
 	if cb.contextWindow <= 0 {
 		return 0
 	}
-	// Reserve ~40% of context window for system prompt
 	return int(float64(cb.contextWindow) * 0.4)
+}
+
+// priorityWeight maps section priority to a relative budget weight.
+// Higher priority (lower number) gets more weight.
+var priorityWeight = [8]float64{
+	0: 0.25, // identity
+	1: 0.18, // bootstrap
+	2: 0.12, // skills
+	3: 0.15, // working context
+	4: 0.10, // observations
+	5: 0.08, // focus
+	6: 0.06, // knowledge
+	7: 0.06, // DAG
+}
+
+// applyProportionalBudget distributes tokens among sections using priority
+// weights. Sections that fit within their share keep full content. Surplus
+// redistributes to higher-priority sections. Oversized sections are truncated
+// to their share rather than dropped.
+func (cb *ContextBuilder) applyProportionalBudget(sections []contextSection, sectionTokens []int, budget int) ([]contextSection, []int) {
+	n := len(sections)
+	allocations := make([]int, n)
+	totalWeight := 0.0
+	for _, s := range sections {
+		p := s.priority
+		if p >= len(priorityWeight) {
+			p = len(priorityWeight) - 1
+		}
+		totalWeight += priorityWeight[p]
+	}
+
+	// First pass: proportional allocation
+	for i, s := range sections {
+		p := s.priority
+		if p >= len(priorityWeight) {
+			p = len(priorityWeight) - 1
+		}
+		allocations[i] = int(float64(budget) * priorityWeight[p] / totalWeight)
+	}
+
+	// Second pass: redistribute surplus from sections that fit within allocation
+	surplus := 0
+	deficitIndices := []int{}
+	for i := range sections {
+		if sectionTokens[i] <= allocations[i] {
+			surplus += allocations[i] - sectionTokens[i]
+			allocations[i] = sectionTokens[i]
+		} else {
+			deficitIndices = append(deficitIndices, i)
+		}
+	}
+	if surplus > 0 && len(deficitIndices) > 0 {
+		share := surplus / len(deficitIndices)
+		for _, idx := range deficitIndices {
+			allocations[idx] += share
+		}
+	}
+
+	// Third pass: truncate oversized sections
+	for i := range sections {
+		if sectionTokens[i] > allocations[i] && allocations[i] > 0 {
+			sections[i].content = truncateToTokenBudget(sections[i].content, allocations[i])
+			sectionTokens[i] = allocations[i]
+		}
+	}
+
+	logger.WarnCF("context", "Proportional budget applied",
+		map[string]interface{}{
+			"budget":   budget,
+			"sections": n,
+			"surplus":  surplus,
+			"deficits": len(deficitIndices),
+		})
+
+	return sections, sectionTokens
+}
+
+// truncateToTokenBudget trims content to fit within a token budget,
+// cutting at paragraph boundaries when possible.
+func truncateToTokenBudget(content string, budget int) string {
+	if observation.EstimateTokens(content) <= budget {
+		return content
+	}
+
+	// Rough char estimate: 1 token ~= 4 chars
+	maxChars := budget * 4
+	if maxChars >= len(content) {
+		return content
+	}
+
+	truncated := content[:maxChars]
+	// Try to cut at the last paragraph boundary
+	if idx := strings.LastIndex(truncated, "\n\n"); idx > maxChars/2 {
+		truncated = truncated[:idx]
+	}
+	return truncated + "\n\n[...section truncated to fit context budget]"
+}
+
+func (cb *ContextBuilder) cachedSkillsSummary() string {
+	cb.cacheMu.Lock()
+	defer cb.cacheMu.Unlock()
+
+	if cb.skillsCache != "" {
+		currentMtime := cb.skillsLoader.DirsMtime()
+		if currentMtime.Equal(cb.skillsDirsMtime) && time.Since(cb.skillsCacheAt) < promptCacheTTL {
+			return cb.skillsCache
+		}
+		cb.skillsDirsMtime = currentMtime
+	}
+
+	cb.skillsCache = cb.skillsLoader.BuildSkillsSummary()
+	cb.skillsCacheAt = time.Now()
+	if cb.skillsDirsMtime.IsZero() {
+		cb.skillsDirsMtime = cb.skillsLoader.DirsMtime()
+	}
+	return cb.skillsCache
+}
+
+func (cb *ContextBuilder) cachedBootstrapFiles() string {
+	cb.cacheMu.Lock()
+	defer cb.cacheMu.Unlock()
+	if cb.bootstrapCache != "" && time.Since(cb.bootstrapAt) < promptCacheTTL {
+		return cb.bootstrapCache
+	}
+	cb.bootstrapCache = cb.LoadBootstrapFiles()
+	cb.bootstrapAt = time.Now()
+	return cb.bootstrapCache
 }
 
 func (cb *ContextBuilder) LoadBootstrapFiles() string {
