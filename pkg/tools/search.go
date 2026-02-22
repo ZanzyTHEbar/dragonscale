@@ -16,6 +16,8 @@ import (
 type ToolSearchTool struct {
 	registry     *ToolRegistry
 	skillsLoader *skills.SkillsLoader
+	focusStore   KVStore
+	sessionKeyFn func() string
 }
 
 // NewToolSearchTool creates a tool that searches the registry.
@@ -26,6 +28,11 @@ func NewToolSearchTool(registry *ToolRegistry) *ToolSearchTool {
 // SetSkillsLoader enables unified search across tools and skills.
 func (t *ToolSearchTool) SetSkillsLoader(sl *skills.SkillsLoader) {
 	t.skillsLoader = sl
+}
+
+func (t *ToolSearchTool) SetFocusContext(delegate KVStore, sessionKeyFn func() string) {
+	t.focusStore = delegate
+	t.sessionKeyFn = sessionKeyFn
 }
 
 func (t *ToolSearchTool) Name() string { return "tool_search" }
@@ -58,7 +65,7 @@ type toolSearchResult struct {
 	Required    []string               `json:"required,omitempty"`
 }
 
-func (t *ToolSearchTool) Execute(_ context.Context, args map[string]interface{}) *ToolResult {
+func (t *ToolSearchTool) Execute(ctx context.Context, args map[string]interface{}) *ToolResult {
 	query, _ := args["query"].(string)
 	if query == "" {
 		return t.listAll()
@@ -66,6 +73,7 @@ func (t *ToolSearchTool) Execute(_ context.Context, args map[string]interface{})
 
 	queryLower := strings.ToLower(query)
 	queryTerms := strings.Fields(queryLower)
+	focusTerms := t.focusTerms(ctx)
 
 	var results []toolSearchResult
 
@@ -76,6 +84,7 @@ func (t *ToolSearchTool) Execute(_ context.Context, args map[string]interface{})
 			continue
 		}
 		score := fuzzyScore(tool.Name(), tool.Description(), queryTerms)
+		score += focusBiasScore(tool.Name(), tool.Description(), focusTerms)
 		if score > 0 {
 			params, required := extractSchemaFields(tool.Parameters())
 			results = append(results, toolSearchResult{
@@ -133,6 +142,66 @@ func (t *ToolSearchTool) Execute(_ context.Context, args map[string]interface{})
 
 	b, _ := jsonv2.Marshal(results)
 	return &ToolResult{ForLLM: string(b)}
+}
+
+func (t *ToolSearchTool) focusTerms(ctx context.Context) []string {
+	if t.focusStore == nil || t.sessionKeyFn == nil {
+		return nil
+	}
+
+	sessionKey := t.sessionKeyFn()
+	if strings.TrimSpace(sessionKey) == "" {
+		return nil
+	}
+
+	state, ok := LoadFocusState(ctx, t.focusStore, sessionKey)
+	if !ok {
+		return nil
+	}
+
+	return extractFocusTerms(state)
+}
+
+func extractFocusTerms(state FocusState) []string {
+	rawTerms := []string{
+		state.FocusText(),
+		state.Deadline,
+		strings.Join(state.Steps, " "),
+		state.Status,
+		state.Outcome,
+	}
+
+	stopWords := map[string]struct{}{
+		"and": {}, "the": {}, "to": {}, "for": {}, "a": {}, "an": {}, "on": {}, "in": {}, "of": {}, "is": {}, "it": {},
+	}
+
+	combined := strings.Join(rawTerms, " ")
+	normalized := strings.Fields(strings.ToLower(strings.NewReplacer(";", " ", ",", " ", ".", " ", "(", " ", ")", " ", "-", " ", "_", " ", "/", " ", "\\", " ").Replace(combined)))
+	terms := make([]string, 0, len(normalized))
+	seen := make(map[string]struct{}, len(normalized))
+	for _, term := range normalized {
+		term = strings.TrimSpace(term)
+		if len(term) < 2 {
+			continue
+		}
+		if _, stop := stopWords[term]; stop {
+			continue
+		}
+		if _, exists := seen[term]; exists {
+			continue
+		}
+		seen[term] = struct{}{}
+		terms = append(terms, term)
+	}
+
+	return terms
+}
+
+func focusBiasScore(name, description string, focusTerms []string) int {
+	if len(focusTerms) == 0 {
+		return 0
+	}
+	return fuzzyScore(name, description, focusTerms)
 }
 
 // extractSchemaFields pulls the properties map and required list from a

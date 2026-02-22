@@ -4,9 +4,11 @@ import (
 	"context"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/ZanzyTHEbar/dragonscale/pkg/skills"
 	jsonv2 "github.com/go-json-experiment/json"
+	"github.com/stretchr/testify/require"
 )
 
 func TestToolSearchTool_Name(t *testing.T) {
@@ -190,6 +192,39 @@ func TestToolSearchTool_NoMatch(t *testing.T) {
 	}
 	if result.ForLLM == "" {
 		t.Error("expected a response message")
+	}
+}
+
+func TestToolSearchTool_FocusAwareBias(t *testing.T) {
+	t.Parallel()
+	r := NewToolRegistry()
+	r.Register(&stubTool{name: "auth_reliability_probe", desc: "Collect auth traces and track reliability signals"})
+	r.Register(&stubTool{name: "auth_reader", desc: "Read authentication logs"})
+	delegate := newMockFocusDelegate()
+	ctx := t.Context()
+
+	focusState := FocusState{
+		Topic:     "investigate service reliability",
+		Goal:      "improve auth reliability",
+		Steps:     []string{"check reliability", "validate auth metrics"},
+		StartedAt: time.Now(),
+	}
+	raw, err := jsonv2.Marshal(focusState)
+	require.NoError(t, err)
+	err = delegate.UpsertKV(ctx, focusAgentID, focusKVPrefix+"agent-1", string(raw))
+	require.NoError(t, err)
+
+	s := NewToolSearchTool(r)
+	s.SetFocusContext(delegate, func() string { return "agent-1" })
+	result := s.Execute(ctx, map[string]interface{}{"query": "auth"})
+
+	var results []toolSearchResult
+	require.NoError(t, jsonv2.Unmarshal([]byte(result.ForLLM), &results))
+	if len(results) < 2 {
+		t.Fatalf("expected at least 2 results, got %d", len(results))
+	}
+	if results[0].Name != "auth_reliability_probe" {
+		t.Fatalf("expected focused tool first, got %s", results[0].Name)
 	}
 }
 

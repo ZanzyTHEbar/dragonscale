@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"testing"
+	"time"
 
 	jsonv2 "github.com/go-json-experiment/json"
 	"github.com/google/go-cmp/cmp"
@@ -67,7 +68,10 @@ func TestStartFocus(t *testing.T) {
 
 	ctx := t.Context()
 	result := tool.Execute(ctx, map[string]interface{}{
-		"topic": "investigate auth bug",
+		"topic":    "investigate auth bug",
+		"goal":     "Resolve login failures",
+		"steps":    []interface{}{"collect logs", "reproduce issue", "", "run tests"},
+		"deadline": "2026-02-21T17:00:00Z",
 	})
 
 	require.NotNil(t, result)
@@ -80,7 +84,26 @@ func TestStartFocus(t *testing.T) {
 	var state FocusState
 	require.NoError(t, jsonv2.Unmarshal([]byte(raw), &state))
 	assert.Empty(t, cmp.Diff("investigate auth bug", state.Topic))
+	assert.Empty(t, cmp.Diff("Resolve login failures", state.Goal))
+	assert.Empty(t, cmp.Diff([]string{"collect logs", "reproduce issue", "run tests"}, state.Steps))
+	assert.Empty(t, cmp.Diff("2026-02-21T17:00:00Z", state.Deadline))
 	assert.Empty(t, cmp.Diff(2, state.CheckpointIndex))
+}
+
+func TestStartFocus_InvalidStepsPayload(t *testing.T) {
+	t.Parallel()
+	sm := session.NewSessionManager("")
+	sk := "test-session"
+	sm.GetOrCreate(sk)
+	delegate := newMockFocusDelegate()
+	tool := NewStartFocusTool(delegate, sm, func() string { return sk })
+
+	ctx := t.Context()
+	result := tool.Execute(ctx, map[string]interface{}{
+		"topic": "investigate auth bug",
+		"steps": "bad-input",
+	})
+	assert.Contains(t, result.ForLLM, "steps must be an array of strings")
 }
 
 func TestStartFocus_MissingTopic(t *testing.T) {
@@ -121,6 +144,9 @@ func TestCompleteFocus(t *testing.T) {
 	completeTool := NewCompleteFocusTool(delegate, sm, func() string { return sk })
 	result := completeTool.Execute(ctx, map[string]interface{}{
 		"summary": "Found auth bug in token validation. Fixed by adding expiry check.",
+		"outcome": "Token validation now enforces expiry",
+		"status":  "completed",
+		"steps":   []interface{}{"collect logs", "inspect token", "add expiry check"},
 	})
 
 	require.NotNil(t, result)
@@ -142,7 +168,10 @@ func TestCompleteFocus(t *testing.T) {
 	require.NoError(t, jsonv2.Unmarshal([]byte(knowledgeRaw), &kb))
 	require.Len(t, kb.Entries, 1)
 	assert.Empty(t, cmp.Diff("debug auth", kb.Entries[0].Topic))
+	assert.Empty(t, cmp.Diff("Token validation now enforces expiry", kb.Entries[0].Outcome))
+	assert.Empty(t, cmp.Diff([]string{"collect logs", "inspect token", "add expiry check"}, kb.Entries[0].Steps))
 	assert.Contains(t, kb.Entries[0].Summary, "token validation")
+	assert.False(t, kb.Entries[0].CompletedAt.IsZero())
 
 	// Focus state should be cleaned up
 	focusRaw, _ := delegate.GetKV(ctx, focusAgentID, focusKVPrefix+sk)
@@ -162,6 +191,25 @@ func TestCompleteFocus_NoActiveFocus(t *testing.T) {
 		"summary": "some summary",
 	})
 	assert.Contains(t, result.ForLLM, "no active focus session")
+}
+
+func TestCompleteFocus_InvalidStepsPayload(t *testing.T) {
+	t.Parallel()
+	sm := session.NewSessionManager("")
+	sk := "test-session"
+	sm.GetOrCreate(sk)
+	sm.AddMessage(sk, "user", "hello")
+
+	delegate := newMockFocusDelegate()
+	startTool := NewStartFocusTool(delegate, sm, func() string { return sk })
+	completeTool := NewCompleteFocusTool(delegate, sm, func() string { return sk })
+
+	startTool.Execute(t.Context(), map[string]interface{}{"topic": "debug"})
+	result := completeTool.Execute(t.Context(), map[string]interface{}{
+		"summary": "done",
+		"steps":   "bad-step-list",
+	})
+	assert.Contains(t, result.ForLLM, "steps must be an array of strings")
 }
 
 func TestCompleteFocus_MultipleKnowledgeEntries(t *testing.T) {
@@ -304,4 +352,64 @@ func TestLoadKnowledgeBlock(t *testing.T) {
 	assert.Contains(t, block, "# Knowledge")
 	assert.Contains(t, block, "## Test")
 	assert.Contains(t, block, "Test summary")
+}
+
+func TestLoadFocusState(t *testing.T) {
+	t.Parallel()
+	delegate := newMockFocusDelegate()
+	ctx := t.Context()
+	sk := "focus-session"
+
+	raw := `{"topic":"legacy topic","checkpoint_index":2,"started_at":"2026-01-01T00:00:00Z"}`
+	_ = delegate.UpsertKV(ctx, focusAgentID, focusKVPrefix+sk, raw)
+
+	state, ok := LoadFocusState(ctx, delegate, sk)
+	require.True(t, ok)
+	assert.Empty(t, cmp.Diff("legacy topic", state.FocusText()))
+	assert.Empty(t, cmp.Diff(2, state.CheckpointIndex))
+}
+
+func TestLoadFocusStateInvalidJSON(t *testing.T) {
+	t.Parallel()
+	delegate := newMockFocusDelegate()
+	ctx := t.Context()
+	sk := "bad-focus-session"
+
+	_ = delegate.UpsertKV(ctx, focusAgentID, focusKVPrefix+sk, "{bad-json")
+	_, ok := LoadFocusState(ctx, delegate, sk)
+	assert.False(t, ok)
+}
+
+func TestFocusStateFormatBlock(t *testing.T) {
+	t.Parallel()
+	fs := &FocusState{
+		Goal:     "Investigate auth flow",
+		Steps:    []string{"collect logs", "trace middleware"},
+		Deadline: "2026-02-21T17:00:00Z",
+		Status:   "active",
+	}
+
+	block := fs.FormatBlock()
+	assert.Contains(t, block, "# Focus")
+	assert.Contains(t, block, "## Investigate auth flow")
+	assert.Contains(t, block, "Planned Steps")
+	assert.Contains(t, block, "- collect logs")
+	assert.Contains(t, block, "- trace middleware")
+	assert.Contains(t, block, "Deadline: 2026-02-21T17:00:00Z")
+}
+
+func TestKnowledgeBlockFormat_UsesGoalAndOutcome(t *testing.T) {
+	t.Parallel()
+	kb := &KnowledgeBlock{
+		Entries: []KnowledgeEntry{
+			{Goal: "Debug auth", Outcome: "Found token expiry bug", Deadline: "2026-02-25T10:00:00Z", CompletedAt: time.Date(2026, 2, 20, 15, 0, 0, 0, time.UTC)},
+		},
+	}
+
+	formatted := kb.FormatBlock()
+	assert.Contains(t, formatted, "# Knowledge")
+	assert.Contains(t, formatted, "## Debug auth")
+	assert.Contains(t, formatted, "Found token expiry bug")
+	assert.Contains(t, formatted, "Deadline: 2026-02-25T10:00:00Z")
+	assert.Contains(t, formatted, "Completed at:")
 }
