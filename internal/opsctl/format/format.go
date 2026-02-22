@@ -61,9 +61,6 @@ func Render(w io.Writer, mode OutputMode, res TaskResult, quiet bool) error {
 	}
 	switch mode {
 	case OutputJSON:
-		if quiet {
-			return nil
-		}
 		enc := json.NewEncoder(w)
 		enc.SetIndent("", "  ")
 		return enc.Encode(res)

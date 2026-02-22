@@ -116,6 +116,8 @@ func TestBuildAllTaskPreservesGoEnvironmentForwarding(t *testing.T) {
 	require.NotContains(t, script, "if [ \"$GOOS\" != \"linux\" ]; then")
 	require.Contains(t, script, "CGO_ENABLED=1")
 	require.NotContains(t, script, "CGO_BUILD=1")
+	require.Contains(t, script, "ln -sf dragonscale-linux-sparc64 bin/dragonscale")
+	require.NotContains(t, script, "ln -sf ./bin/dragonscale-linux-sparc64 bin/dragonscale")
 
 	joinedEnv := strings.Join(fake.Calls[0].Env, " ")
 	require.Contains(t, joinedEnv, "GOOS=linux")

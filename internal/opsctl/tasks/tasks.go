@@ -486,7 +486,7 @@ func buildAllScript(c *app.Context) string {
 	fmt.Fprintf(&script, "OUTPUT_NAME=%s/%s-%s-%s\n", buildDir, binaryName, targetGOOS, targetGOARCH)
 	script.WriteString("export CGO_ENABLED=1\n")
 	fmt.Fprintf(&script, "GOOS=$GOOS GOARCH=$GOARCH CGO_ENABLED=$CGO_ENABLED $GO build $GOFLAGS %s -o ${OUTPUT_NAME} ./%s\n", ldFlags, cmdDir)
-	fmt.Fprintf(&script, "ln -sf ./%s %s/%s\n", "${OUTPUT_NAME}", buildDir, binaryName)
+	fmt.Fprintf(&script, "ln -sf %s-%s-%s %s/%s\n", binaryName, targetGOOS, targetGOARCH, buildDir, binaryName)
 	return script.String()
 }
 

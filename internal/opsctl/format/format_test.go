@@ -110,3 +110,23 @@ func TestRenderTextHonorsQuietOnlyForSuccess(t *testing.T) {
 	require.Contains(t, buf.String(), "exit=1")
 	require.Contains(t, buf.String(), "error: boom")
 }
+
+func TestRenderJSONHonorsQuietOnlyForSuccess(t *testing.T) {
+	buf := &bytes.Buffer{}
+	successResult := TaskResult{Task: "run", ExitCode: 0, DurationMS: 1, Success: true, Error: "ok"}
+	require.NoError(t, Render(buf, OutputJSON, successResult, true))
+	require.Equal(t, "", buf.String())
+
+	buf.Reset()
+	failureResult := TaskResult{Task: "run", ExitCode: 1, DurationMS: 1, Success: false, Error: "boom", Stderr: "bad"}
+	require.NoError(t, Render(buf, OutputJSON, failureResult, true))
+	require.NotEqual(t, "", buf.String())
+
+	decoded := TaskResult{}
+	require.NoError(t, json.NewDecoder(buf).Decode(&decoded))
+	require.Equal(t, "run", decoded.Task)
+	require.Equal(t, "boom", decoded.Error)
+	require.Equal(t, "bad", decoded.Stderr)
+	require.Equal(t, 1, decoded.ExitCode)
+	require.False(t, decoded.Success)
+}
