@@ -231,6 +231,7 @@ func NewAgentLoop(ctx context.Context, cfg *config.Config, msgBus *bus.MessageBu
 			map[string]interface{}{"error": idErr.Error()})
 	} else {
 		idSync = dragonsync.New(identityDir, pkg.NAME, memDelegate)
+		idSync.OnChange = func() { contextBuilder.InvalidateBootstrapCache() }
 		if syncErr := idSync.SyncAll(ctx); syncErr != nil {
 			logger.WarnCF("agent", "Initial identity sync failed (non-fatal)",
 				map[string]interface{}{"error": syncErr.Error()})
