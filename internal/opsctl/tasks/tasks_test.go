@@ -81,12 +81,14 @@ func TestQuoteArgs(t *testing.T) {
 }
 
 func TestBuildAllTaskPreservesGoEnvironmentForwarding(t *testing.T) {
-	t.Parallel()
+	origCheck := detectGlibc
+	detectGlibc = func() error { return nil }
+	t.Cleanup(func() { detectGlibc = origCheck })
 
 	ctx := &app.Context{
 		Root: t.TempDir(),
 		ExtraEnv: map[string]string{
-			"GOOS":              "freebsd",
+			"GOOS":              "linux",
 			"GOARCH":            "sparc64",
 			"GOFLAGS":           "-mod=mod",
 			"DEVCONTAINER_EXEC": "echo devcontainer exec",
@@ -110,31 +112,100 @@ func TestBuildAllTaskPreservesGoEnvironmentForwarding(t *testing.T) {
 	require.Len(t, fake.Calls, 1)
 
 	script := strings.Join(fake.Calls[0].Args, " ")
-	require.Contains(t, script, "GOOS=linux GOARCH=amd64 $GO build")
-	require.Contains(t, script, "GOOS=darwin GOARCH=arm64 $GO build")
-	require.Contains(t, script, "GOOS=windows GOARCH=amd64 $GO build")
-	require.Contains(t, script, "GOOS=linux GOARCH=arm64 $GO build")
+	require.Contains(t, script, "GOOS=$GOOS")
+	require.NotContains(t, script, "if [ \"$GOOS\" != \"linux\" ]; then")
+	require.Contains(t, script, "CGO_ENABLED=1")
+	require.NotContains(t, script, "CGO_BUILD=1")
 
 	joinedEnv := strings.Join(fake.Calls[0].Env, " ")
-	require.Contains(t, joinedEnv, "GOOS=freebsd")
+	require.Contains(t, joinedEnv, "GOOS=linux")
 	require.Contains(t, joinedEnv, "GOARCH=sparc64")
 	require.Contains(t, joinedEnv, "GOFLAGS=-mod=mod")
 	require.Contains(t, joinedEnv, "DEVCONTAINER_EXEC=echo devcontainer exec")
 }
 
-func TestEvalRunScriptPreservesEvalConfig(t *testing.T) {
+func TestBuildAllTaskDefaultsToHostTarget(t *testing.T) {
+	origCheck := detectGlibc
+	detectGlibc = func() error { return nil }
+	t.Cleanup(func() { detectGlibc = origCheck })
+
+	ctx := &app.Context{
+		Root: t.TempDir(),
+		ExtraEnv: map[string]string{
+			"GOFLAGS":           "-mod=mod",
+			"DEVCONTAINER_EXEC": "echo devcontainer exec",
+		},
+	}
+	fake := &runner.FakeRunner{
+		Result: runner.CommandResult{ExitCode: 0},
+	}
+
+	var buildAll app.Task
+	for _, task := range NewRegistry(ctx.Root) {
+		if task.Name() == "build-all" {
+			buildAll = task
+			break
+		}
+	}
+	require.NotNil(t, buildAll)
+
+	_, err := buildAll.Run(context.Background(), fake, ctx)
+	require.NoError(t, err)
+	require.Len(t, fake.Calls, 1)
+
+	script := strings.Join(fake.Calls[0].Args, " ")
+	require.Contains(t, script, "build-all: target=linux/")
+	require.NotContains(t, script, "GOOS=$($GO env GOOS)")
+	require.Contains(t, script, "CGO_ENABLED=1")
+	require.NotContains(t, script, "CGO_BUILD=1")
+}
+
+func TestBuildAllTaskRejectsNonLinuxTarget(t *testing.T) {
+	origCheck := detectGlibc
+	detectGlibc = func() error { return nil }
+	t.Cleanup(func() { detectGlibc = origCheck })
+
+	ctx := &app.Context{
+		Root: t.TempDir(),
+		ExtraEnv: map[string]string{
+			"GOOS": "freebsd",
+		},
+	}
+	fake := &runner.FakeRunner{
+		Result: runner.CommandResult{ExitCode: 0},
+	}
+
+	var buildAll app.Task
+	for _, task := range NewRegistry(ctx.Root) {
+		if task.Name() == "build-all" {
+			buildAll = task
+			break
+		}
+	}
+	require.NotNil(t, buildAll)
+
+	_, err := buildAll.Run(context.Background(), fake, ctx)
+	require.Error(t, err)
+	require.Len(t, fake.Calls, 0)
+}
+
+func TestEvalRunSpecsPreservesEvalConfig(t *testing.T) {
 	t.Parallel()
 
-	script := evalRunScript(&app.Context{
+	specs := evalRunSpecs(&app.Context{
 		ExtraEnv: map[string]string{
 			"DRAGONSCALE_EVAL_DEBUG":  "1",
 			"DRAGONSCALE_EVAL_CONFIG": "./configs/override.json",
 		},
 	})
 
-	require.Contains(t, script, "DRAGONSCALE_EVAL_CONFIG=\"${DRAGONSCALE_EVAL_CONFIG:-./configs/default.json}\"")
-	require.Contains(t, script, "npx --yes promptfoo eval --config promptfooconfig.yaml")
-	require.NotContains(t, script, "DRAGONSCALE_EVAL_CONFIG=\"./configs/default.json\"")
+	require.Len(t, specs, 2)
+	require.Equal(t, "echo", specs[0].Name)
+	require.Equal(t, []string{"DRAGONSCALE_EVAL_CONFIG=./configs/override.json"}, specs[0].Args)
+	require.Equal(t, "npx", specs[1].Name)
+	require.Contains(t, strings.Join(specs[1].Env, " "), "DRAGONSCALE_EVAL_CONFIG=./configs/override.json")
+	require.NotContains(t, strings.Join(specs[1].Env, " "), "DRAGONSCALE_EVAL_CONFIG=./configs/default.json")
+	require.Contains(t, strings.Join(specs[1].Args, " "), "--yes promptfoo eval --config promptfooconfig.yaml --no-cache --no-progress-bar")
 
 	compareScript, err := os.ReadFile(filepath.Clean(filepath.Join("..", "..", "..", "eval", "scripts", "compare.sh")))
 	require.NoError(t, err)
@@ -142,18 +213,27 @@ func TestEvalRunScriptPreservesEvalConfig(t *testing.T) {
 	require.Contains(t, content, "EVAL_CONFIG=\"${DRAGONSCALE_EVAL_CONFIG:-./configs/default.json}\"")
 	require.Contains(t, content, "trap cleanup_compare_config EXIT INT TERM")
 	require.Contains(t, content, "DRAGONSCALE_EVAL_CONFIG: \"${EVAL_CONFIG}\"")
+	require.NotContains(t, content, "DRAGONSCALE_EVAL_HOST_HOME: \"/host_home\"")
 	require.Contains(t, content, "TEMP_CONFIG")
 }
 
-func TestEvalRunScriptUsesBaseConfigWhenSet(t *testing.T) {
+func TestEvalRunSpecsUsesBaseConfigWhenSetAndDebugEnabled(t *testing.T) {
 	t.Parallel()
 
-	script := evalRunScript(&app.Context{
+	specs := evalRunSpecs(&app.Context{
 		ExtraEnv: map[string]string{
 			"DRAGONSCALE_EVAL_BASE_CONFIG": "/tmp/base.json",
+			"DRAGONSCALE_EVAL_DEBUG":       "1",
 		},
 	})
-	require.Contains(t, script, `if [ -n "${DRAGONSCALE_EVAL_BASE_CONFIG:-}" ] && [ -n "${DRAGONSCALE_EVAL_DEBUG:-}" ]; then`)
+
+	require.Len(t, specs, 3)
+	require.Equal(t, "echo", specs[0].Name)
+	require.Equal(t, []string{"DRAGONSCALE_EVAL_BASE_CONFIG=/tmp/base.json"}, specs[0].Args)
+	require.Equal(t, "echo", specs[1].Name)
+	require.Equal(t, []string{"DRAGONSCALE_EVAL_CONFIG=./configs/default.json"}, specs[1].Args)
+	require.Equal(t, "npx", specs[2].Name)
+	require.Equal(t, []string{"--yes", "promptfoo", "eval", "--config", "promptfooconfig.yaml", "--no-cache", "--no-progress-bar"}, specs[2].Args)
 }
 
 func TestEvalCompareTaskDisablesNestedDevcontainerExecution(t *testing.T) {
@@ -246,6 +326,135 @@ func TestEvalCompareTaskPassesBaseConfigEnvToRunner(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestLintTaskUsesCommandSpecs(t *testing.T) {
+	ctx := &app.Context{
+		Root: t.TempDir(),
+	}
+	fake := &runner.FakeRunner{
+		Result: runner.CommandResult{ExitCode: 0},
+	}
+
+	task := findTaskByName(t, NewRegistry(ctx.Root), "lint")
+	_, err := task.Run(context.Background(), fake, ctx)
+	require.NoError(t, err)
+	require.Len(t, fake.Calls, 3)
+	require.Equal(t, "go", fake.Calls[0].Name)
+	require.Equal(t, []string{"fmt", "./..."}, fake.Calls[0].Args)
+	require.Equal(t, "go", fake.Calls[1].Name)
+	require.Equal(t, []string{"vet", "./..."}, fake.Calls[1].Args)
+	require.Equal(t, "go", fake.Calls[2].Name)
+	require.Equal(t, []string{"build", "./..."}, fake.Calls[2].Args)
+	require.NotContains(t, strings.Join(fake.Calls[0].Env, " "), "set -euo pipefail")
+}
+
+func TestCheckTaskUsesCommandSpecs(t *testing.T) {
+	ctx := &app.Context{
+		Root: t.TempDir(),
+		ExtraEnv: map[string]string{
+			"GO": "go",
+		},
+	}
+	fake := &runner.FakeRunner{
+		Result: runner.CommandResult{ExitCode: 0},
+	}
+
+	task := findTaskByName(t, NewRegistry(ctx.Root), "check")
+	_, err := task.Run(context.Background(), fake, ctx)
+	require.NoError(t, err)
+	require.Len(t, fake.Calls, 5)
+	require.Equal(t, []string{"mod", "download"}, fake.Calls[0].Args)
+	require.Equal(t, []string{"mod", "verify"}, fake.Calls[1].Args)
+	require.Equal(t, []string{"fmt", "./..."}, fake.Calls[2].Args)
+	require.Equal(t, []string{"vet", "./..."}, fake.Calls[3].Args)
+	require.Equal(t, []string{"test", "./..."}, fake.Calls[4].Args)
+}
+
+func TestDevcontainerGenerateTaskUsesNpxExecCommand(t *testing.T) {
+	ctx := &app.Context{
+		Root: t.TempDir(),
+	}
+	fake := &runner.FakeRunner{
+		Result: runner.CommandResult{ExitCode: 0},
+	}
+
+	task := findTaskByName(t, NewRegistry(ctx.Root), "devcontainer-generate")
+	_, err := task.Run(context.Background(), fake, ctx)
+	require.NoError(t, err)
+	require.Len(t, fake.Calls, 1)
+	require.Equal(t, "npx", fake.Calls[0].Name)
+	require.Contains(t, fake.Calls[0].Args, "@devcontainers/cli")
+	require.Contains(t, fake.Calls[0].Args, "exec")
+	require.Contains(t, fake.Calls[0].Args, "bash")
+	require.Contains(t, strings.Join(fake.Calls[0].Args, " "), "go generate ./pkg/itr ./pkg/tools")
+}
+
+func TestEvalTaskBuildsPromptfooCommandWithDefaultConfig(t *testing.T) {
+	ctx := &app.Context{
+		Root: t.TempDir(),
+		ExtraEnv: map[string]string{
+			"DRAGONSCALE_EVAL_DEBUG": "1",
+		},
+	}
+	fake := &runner.FakeRunner{
+		Result: runner.CommandResult{ExitCode: 0},
+	}
+
+	task := findTaskByName(t, NewRegistry(ctx.Root), "eval")
+	_, err := task.Run(context.Background(), fake, ctx)
+	require.NoError(t, err)
+	require.Len(t, fake.Calls, 2)
+	require.Equal(t, "echo", fake.Calls[0].Name)
+	require.Equal(t, "npx", fake.Calls[1].Name)
+	require.Equal(t, filepath.Join(ctx.Root, "eval"), fake.Calls[1].Dir)
+	joinedEnv := strings.Join(fake.Calls[1].Env, " ")
+	require.Contains(t, joinedEnv, "DRAGONSCALE_EVAL_CONFIG=./configs/default.json")
+	require.Contains(t, strings.Join(fake.Calls[1].Args, " "), "--no-progress-bar")
+}
+
+func TestEvalViewTaskRunsInEvalDirectory(t *testing.T) {
+	ctx := &app.Context{
+		Root: t.TempDir(),
+	}
+	fake := &runner.FakeRunner{
+		Result: runner.CommandResult{ExitCode: 0},
+	}
+	task := findTaskByName(t, NewRegistry(ctx.Root), "eval-view")
+	_, err := task.Run(context.Background(), fake, ctx)
+	require.NoError(t, err)
+	require.Len(t, fake.Calls, 1)
+	require.Equal(t, filepath.Join(ctx.Root, "eval"), fake.Calls[0].Dir)
+	require.Equal(t, "npx", fake.Calls[0].Name)
+	require.Equal(t, []string{"--yes", "promptfoo", "view"}, fake.Calls[0].Args)
+}
+
+func TestEvalFixturesTaskCreatesFixtureCommands(t *testing.T) {
+	ctx := &app.Context{
+		Root: t.TempDir(),
+	}
+	fake := &runner.FakeRunner{
+		Result: runner.CommandResult{ExitCode: 0},
+	}
+	task := findTaskByName(t, NewRegistry(ctx.Root), "eval-fixtures")
+	_, err := task.Run(context.Background(), fake, ctx)
+	require.NoError(t, err)
+	require.GreaterOrEqual(t, len(fake.Calls), 5)
+	require.Equal(t, "mkdir", fake.Calls[0].Name)
+	require.Equal(t, "rm", fake.Calls[1].Name)
+	require.Equal(t, "bash", fake.Calls[4].Name)
+	require.Equal(t, "cp", fake.Calls[5].Name)
+}
+
+func findTaskByName(t *testing.T, tasks []app.Task, name string) app.Task {
+	t.Helper()
+	for _, task := range tasks {
+		if task.Name() == name {
+			return task
+		}
+	}
+	t.Fatalf("task %q missing from registry", name)
+	return nil
 }
 
 func ptrString(value string) *string {

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -70,10 +71,43 @@ func parseOutputMode(raw, json bool, mode string) (format.OutputMode, error) {
 	}
 }
 
+func resolveRootPath(root string) (string, error) {
+	resolved := app.EnsureRoot(root)
+	if strings.TrimSpace(resolved) == "" {
+		return "", fmt.Errorf("invalid --root: resolved empty repository path")
+	}
+
+	info, err := os.Stat(resolved)
+	if err != nil {
+		return "", fmt.Errorf("invalid --root %q: %w", resolved, err)
+	}
+	if !info.IsDir() {
+		return "", fmt.Errorf("invalid --root %q: not a directory", resolved)
+	}
+	return resolved, nil
+}
+
+func resolveWorkingDirectory(root, cwd string) (string, error) {
+	clean := strings.TrimSpace(cwd)
+	if clean == "" {
+		return "", nil
+	}
+	if !filepath.IsAbs(clean) {
+		clean = filepath.Join(root, clean)
+	}
+	info, err := os.Stat(clean)
+	if err != nil {
+		return "", fmt.Errorf("invalid --cwd %q: %w", clean, err)
+	}
+	if !info.IsDir() {
+		return "", fmt.Errorf("invalid --cwd %q: not a directory", clean)
+	}
+	return clean, nil
+}
+
 func newOpsApp(root string) *app.App {
-	rootPath := app.EnsureRoot(root)
-	ops := app.New(runner.OSRunner{}, rootPath)
-	for _, t := range tasks.NewRegistry(rootPath) {
+	ops := app.New(runner.OSRunner{}, root)
+	for _, t := range tasks.NewRegistry(root) {
 		ops.Register(t)
 	}
 	ops.Register(tasks.NewHelpTask(ops))
@@ -126,7 +160,10 @@ func buildOpsctlCommand(stdout, stderr io.Writer, args []string) *cobra.Command 
 				return &exitCodeError{code: 2, err: err}
 			}
 
-			resolvedRoot := app.EnsureRoot(rootFlag)
+			resolvedRoot, err := resolveRootPath(rootFlag)
+			if err != nil {
+				return &exitCodeError{code: 2, err: err}
+			}
 			ops := newOpsApp(resolvedRoot)
 
 			if len(cmdArgs) == 0 || cmdArgs[0] == "help" || cmdArgs[0] == "--help" || cmdArgs[0] == "-h" {
@@ -145,9 +182,14 @@ func buildOpsctlCommand(stdout, stderr io.Writer, args []string) *cobra.Command 
 				return &exitCodeError{code: 2, err: fmt.Errorf("unknown command: %s", taskName)}
 			}
 
+			resolvedCwd, err := resolveWorkingDirectory(resolvedRoot, cwd)
+			if err != nil {
+				return &exitCodeError{code: 2, err: err}
+			}
+
 			ctx := &app.Context{
 				Root:     resolvedRoot,
-				Cwd:      cwd,
+				Cwd:      resolvedCwd,
 				Format:   mode,
 				Quiet:    quiet,
 				NoColor:  noColor,
@@ -177,7 +219,7 @@ func buildOpsctlCommand(stdout, stderr io.Writer, args []string) *cobra.Command 
 	root.PersistentFlags().StringVar(&formatValue, "format", string(format.OutputText), "output mode: text, json, raw")
 	root.PersistentFlags().BoolVar(&jsonMode, "json", false, "shortcut for --format json")
 	root.PersistentFlags().BoolVar(&rawMode, "raw", false, "shortcut for --format raw")
-	root.PersistentFlags().BoolVar(&noColor, "no-color", false, "disable color output (reserved)")
+	root.PersistentFlags().BoolVar(&noColor, "no-color", false, "disable color output")
 	root.PersistentFlags().BoolVar(&quiet, "quiet", false, "suppress non-error output")
 	root.PersistentFlags().StringVar(&rootFlag, "root", "", "repository root")
 	root.PersistentFlags().StringVar(&cwd, "cwd", "", "working directory for command execution")
@@ -188,7 +230,11 @@ func buildOpsctlCommand(stdout, stderr io.Writer, args []string) *cobra.Command 
 			_, _ = fmt.Fprintln(cobraCmd.ErrOrStderr(), err)
 			return
 		}
-		rootPath := app.EnsureRoot(rootFlag)
+		rootPath, err := resolveRootPath(rootFlag)
+		if err != nil {
+			_, _ = fmt.Fprintln(cobraCmd.ErrOrStderr(), err)
+			return
+		}
 		printUsage(cobraCmd.OutOrStdout(), newOpsApp(rootPath), cobraCmd.Root().Name())
 	})
 

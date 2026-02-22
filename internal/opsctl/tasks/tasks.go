@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 
@@ -25,6 +26,7 @@ type shellTask struct {
 	description string
 	script      func(*app.Context) string
 	env         func(*app.Context) []string
+	prepare     func(*app.Context) error
 }
 
 func (t shellTask) Name() string {
@@ -36,6 +38,17 @@ func (t shellTask) Description() string {
 }
 
 func (t shellTask) Run(ctx context.Context, rnr runner.Runner, c *app.Context) (app.Result, error) {
+	if t.prepare != nil {
+		if err := t.prepare(c); err != nil {
+			return app.Result{
+				Task:     t.name,
+				Command:  t.script(c),
+				ExitCode: 1,
+				Err:      err.Error(),
+			}, err
+		}
+	}
+
 	script := t.script(c)
 	fullScript := applyDevcontainerWrapper(script, c)
 	workDir := c.Root
@@ -54,7 +67,7 @@ func (t shellTask) Run(ctx context.Context, rnr runner.Runner, c *app.Context) (
 	result, err := rnr.Run(ctx, spec)
 	res := app.Result{
 		Task:    t.name,
-		Command: script,
+		Command: fullScript,
 		Stdout:  result.Stdout,
 		Stderr:  result.Stderr,
 		Err: func() string {
@@ -69,6 +82,117 @@ func (t shellTask) Run(ctx context.Context, rnr runner.Runner, c *app.Context) (
 		return res, nil
 	}
 	return res, err
+}
+
+type commandTask struct {
+	name        string
+	description string
+	specs       func(*app.Context) []runner.CommandSpec
+	env         func(*app.Context) []string
+	prepare     func(*app.Context) error
+}
+
+func (t commandTask) Name() string {
+	return t.name
+}
+
+func (t commandTask) Description() string {
+	return t.description
+}
+
+func (t commandTask) Run(ctx context.Context, rnr runner.Runner, c *app.Context) (app.Result, error) {
+	if t.prepare != nil {
+		if err := t.prepare(c); err != nil {
+			return app.Result{
+				Task:     t.name,
+				ExitCode: 1,
+				Err:      err.Error(),
+			}, err
+		}
+	}
+
+	specs := t.specs(c)
+	workDir := c.Root
+	if c.Cwd != "" {
+		workDir = c.Cwd
+	}
+	baseEnv := mergeEnv(c, t.env)
+
+	result := app.Result{
+		Task: t.name,
+	}
+	commandParts := make([]string, 0, len(specs))
+	for i, spec := range specs {
+		spec.InheritOutput = c.Format == format.OutputRaw
+		if spec.Dir == "" {
+			spec.Dir = workDir
+		}
+		spec.Env = mergeEnvPairs(baseEnv, spec.Env)
+
+		commandParts = append(commandParts, describeCommandSpec(spec))
+		commandResult, err := rnr.Run(ctx, spec)
+		result.ExitCode = commandResult.ExitCode
+		result.Stdout += commandResult.Stdout
+		result.Stderr += commandResult.Stderr
+		if i == 0 {
+			result.Command = commandParts[i]
+		} else {
+			result.Command += " && " + commandParts[i]
+		}
+
+		if err != nil {
+			result.Err = err.Error()
+			return result, err
+		}
+	}
+
+	return result, nil
+}
+
+func describeCommandSpec(spec runner.CommandSpec) string {
+	if len(spec.Args) == 0 {
+		return spec.Name
+	}
+	quotedArgs := make([]string, 0, len(spec.Args))
+	for _, arg := range spec.Args {
+		quotedArgs = append(quotedArgs, strconv.Quote(arg))
+	}
+	return spec.Name + " " + strings.Join(quotedArgs, " ")
+}
+
+func mergeEnvPairs(base []string, extra []string) []string {
+	seen := make(map[string]int)
+	values := make(map[string]string)
+	keys := make([]string, 0, len(base)+len(extra))
+
+	merge := func(items []string) {
+		for _, item := range items {
+			eq := strings.Index(item, "=")
+			if eq <= 0 {
+				continue
+			}
+			key := item[:eq]
+			value := item[eq+1:]
+			if _, ok := seen[key]; !ok {
+				keys = append(keys, key)
+				seen[key] = len(keys) - 1
+			}
+			values[key] = value
+		}
+	}
+
+	merge(base)
+	merge(extra)
+
+	env := make([]string, 0, len(keys))
+	for _, key := range keys {
+		value := values[key]
+		if strings.TrimSpace(value) == "" {
+			continue
+		}
+		env = append(env, fmt.Sprintf("%s=%s", key, value))
+	}
+	return env
 }
 
 type helpTask struct {
@@ -134,12 +258,20 @@ func NewShellTask(name, description string, script func(*app.Context) string, en
 	return shellTask{name: name, description: description, script: script, env: env}
 }
 
+func NewCommandTask(name, description string, specs func(*app.Context) []runner.CommandSpec, env func(*app.Context) []string, prepare func(*app.Context) error) commandTask {
+	return commandTask{name: name, description: description, specs: specs, env: env, prepare: prepare}
+}
+
+func NewShellTaskWithPrepare(name, description string, script func(*app.Context) string, env func(*app.Context) []string, prepare func(*app.Context) error) shellTask {
+	return shellTask{name: name, description: description, script: script, env: env, prepare: prepare}
+}
+
 func NewRegistry(_ string) []app.Task {
 	tasks := []app.Task{
 		NewShellTask("all", "Build the dragonscale binary for current platform", buildScript, nil),
 		NewShellTask("generate", "Run generate", generateScript, nil),
-		NewShellTask("build", "Build the dragonscale binary for current platform", buildScript, nil),
-		NewShellTask("build-all", "Build dragonscale for all platforms", buildAllScript, nil),
+		NewShellTaskWithPrepare("build", "Build the dragonscale binary for current platform", buildScript, nil, validateBuildTaskEnv),
+		NewShellTaskWithPrepare("build-all", "Build dragonscale for linux target with CGO", buildAllScript, nil, validateBuildTaskEnv),
 		NewShellTask("install", "Install dragonscale to system and copy builtin skills", installScript, nil),
 		NewShellTask("uninstall", "Uninstall dragonscale from system", uninstallScript, nil),
 		NewShellTask("uninstall-all", "Uninstall dragonscale and workspace data", uninstallAllScript, nil),
@@ -147,7 +279,7 @@ func NewRegistry(_ string) []app.Task {
 		NewShellTask("vet", "Run go vet for static analysis", staticGoScript("vet ./..."), nil),
 		NewShellTask("test", "Run tests", staticGoScript("test ./..."), nil),
 		NewShellTask("fmt", "Format Go code", staticGoScript("fmt ./..."), nil),
-		NewShellTask("lint", "Run all linting checks", lintScript, nil),
+		NewCommandTask("lint", "Run all linting checks", lintSpecs, nil, nil),
 		NewShellTask("hooks", "Install git hooks", hooksScript, nil),
 		NewShellTask("deps", "Download dependencies", staticGoScript("mod download && mod verify"), nil),
 		NewShellTask("update-deps", "Update dependencies", staticGoScript("get -u ./... && mod tidy"), nil),
@@ -159,16 +291,16 @@ func NewRegistry(_ string) []app.Task {
 		NewShellTask("fantasy-sync", "Full sync of vendored Fantasy SDK", fantasySyncScript, nil),
 		NewShellTask("fantasy-patch", "Save local modifications as a patch", fantasyPatchScript, nil),
 		NewShellTask("test-integration", "Run integration tests", staticGoScript("-tags integration -count=1 -timeout 120s -v ./pkg/memory/..."), nil),
-		NewShellTask("check", "Run deps, formatting, linting and tests", checkScript, nil),
+		NewCommandTask("check", "Run deps, formatting, linting and tests", checkSpecs, nil, nil),
 		NewShellTask("run", "Build and run dragonscale", runScript, runTaskEnv),
-		NewShellTask("devcontainer-build", "Build the local devcontainer image via npx", devcontainerBuildScript, nil),
-		NewShellTask("devcontainer-up", "Start/update the local devcontainer", devcontainerUpScript, nil),
-		NewShellTask("devcontainer-generate", "Run generation in devcontainer", devcontainerGenerateScript, nil),
-		NewShellTask("devcontainer-verify", "Verify generated code in devcontainer", devcontainerVerifyScript, nil),
-		NewShellTask("eval-build", "Build the eval runner from current branch", evalBuildScript, nil),
-		NewShellTask("eval", "Run the eval suite", evalRunScript, nil),
-		NewShellTask("eval-fixtures", "Prepare eval fixture workspace", evalFixturesScript, nil),
-		NewShellTask("eval-view", "Open the promptfoo results viewer", evalViewScript, nil),
+		NewCommandTask("devcontainer-build", "Build the local devcontainer image via npx", devcontainerBuildSpecs, nil, nil),
+		NewCommandTask("devcontainer-up", "Start/update the local devcontainer", devcontainerUpSpecs, nil, nil),
+		NewCommandTask("devcontainer-generate", "Run generation in devcontainer", devcontainerGenerateSpecs, nil, nil),
+		NewCommandTask("devcontainer-verify", "Verify generated code in devcontainer", devcontainerVerifySpecs, nil, nil),
+		NewCommandTask("eval-build", "Build the eval runner from current branch", evalBuildSpecs, nil, nil),
+		NewCommandTask("eval", "Run the eval suite", evalRunSpecs, nil, nil),
+		NewCommandTask("eval-fixtures", "Prepare eval fixture workspace", evalFixturesSpecs, nil, nil),
+		NewCommandTask("eval-view", "Open the promptfoo results viewer", evalViewSpecs, nil, nil),
 		NewShellTask("eval-clean", "Cleanup eval artifacts", simpleScript("rm -rf eval/results eval/bin"), nil),
 		NewShellTask("eval-compare", "Run A/B comparison of current branch vs main", simpleScript("cd eval && DEVCONTAINER_EXEC= EVAL_NPM_CMD=$(npx --yes) ./scripts/compare.sh --repeat 3"), nil),
 		NewShellTask("eval-test", "Run Go-native component evals", staticGoScript("-v ./eval/go_evals/..."), nil),
@@ -177,64 +309,52 @@ func NewRegistry(_ string) []app.Task {
 }
 
 func defaultEnv(c *app.Context) []string {
-	env := []string{
-		fmt.Sprintf("GO=%s", cEnv(c, "GO", "go")),
-		fmt.Sprintf("GOFLAGS=%s", cEnv(c, "GOFLAGS", "-v -trimpath -tags stdjson")),
-		fmt.Sprintf("CGO_ENABLED=%s", cEnv(c, "CGO_ENABLED", "1")),
-		fmt.Sprintf("BINARY_NAME=%s", cEnv(c, "BINARY_NAME", defaultBinaryName)),
-		fmt.Sprintf("BUILD_DIR=%s", cEnv(c, "BUILD_DIR", defaultBuildDir)),
-		fmt.Sprintf("CMD_DIR=%s", cEnv(c, "CMD_DIR", defaultCmdDir)),
-		fmt.Sprintf("WORKSPACE_DIR=%s", cEnv(c, "WORKSPACE_DIR", filepath.Join(homeDir(), ".dragonscale", "workspace"))),
+	pairs := map[string]string{
+		"GO":            cEnv(c, "GO", "go"),
+		"GOFLAGS":       cEnv(c, "GOFLAGS", "-v -trimpath -tags=stdjson"),
+		"CGO_ENABLED":   cEnv(c, "CGO_ENABLED", "1"),
+		"BINARY_NAME":   cEnv(c, "BINARY_NAME", defaultBinaryName),
+		"BUILD_DIR":     cEnv(c, "BUILD_DIR", defaultBuildDir),
+		"CMD_DIR":       cEnv(c, "CMD_DIR", defaultCmdDir),
+		"WORKSPACE_DIR": cEnv(c, "WORKSPACE_DIR", filepath.Join(homeDir(), ".dragonscale", "workspace")),
+		"GOOS":          cEnv(c, "GOOS", "linux"),
+		"GOARCH":        cEnv(c, "GOARCH", runtime.GOARCH),
 	}
-	if value := cEnv(c, "GOOS", ""); value != "" {
-		env = append(env, fmt.Sprintf("GOOS=%s", value))
+	appendIfSet := func(key, value string) {
+		if strings.TrimSpace(value) != "" {
+			pairs[key] = value
+		}
 	}
-	if value := cEnv(c, "GOARCH", ""); value != "" {
-		env = append(env, fmt.Sprintf("GOARCH=%s", value))
-	}
-	if value := cEnv(c, "PLATFORM", ""); value != "" {
-		env = append(env, fmt.Sprintf("PLATFORM=%s", value))
-	}
-	if value := cEnv(c, "ARCH", ""); value != "" {
-		env = append(env, fmt.Sprintf("ARCH=%s", value))
-	}
-	if v := cEnv(c, "DEVCONTAINER_EXEC", ""); v != "" {
-		env = append(env, "DEVCONTAINER_EXEC="+v)
-	}
-	if value := cEnv(c, "DRAGONSCALE_EVAL_HOST_HOME", ""); value != "" {
-		env = append(env, fmt.Sprintf("DRAGONSCALE_EVAL_HOST_HOME=%s", value))
-	}
-	if value := cEnv(c, "DRAGONSCALE_EVAL_BASE_CONFIG", ""); value != "" {
-		env = append(env, fmt.Sprintf("DRAGONSCALE_EVAL_BASE_CONFIG=%s", value))
-	}
-	if value := cEnv(c, "DRAGONSCALE_EVAL_CONFIG", ""); value != "" {
-		env = append(env, fmt.Sprintf("DRAGONSCALE_EVAL_CONFIG=%s", value))
-	}
-	if value := cEnv(c, "DRAGONSCALE_EVAL_DEBUG", ""); value != "" {
-		env = append(env, fmt.Sprintf("DRAGONSCALE_EVAL_DEBUG=%s", value))
-	}
-	if value := cEnv(c, "VERSION", ""); value != "" {
-		env = append(env, fmt.Sprintf("VERSION=%s", value))
-	}
-	if value := cEnv(c, "FANTASY_VERSION", ""); value != "" {
-		env = append(env, fmt.Sprintf("FANTASY_VERSION=%s", value))
-	}
-	if value := cEnv(c, "NAME", ""); value != "" {
-		env = append(env, fmt.Sprintf("NAME=%s", value))
-	}
-	if value := cEnv(c, "ARGS", ""); value != "" {
-		env = append(env, fmt.Sprintf("ARGS=%s", value))
-	}
+	appendIfSet("PLATFORM", cEnv(c, "PLATFORM", ""))
+	appendIfSet("ARCH", cEnv(c, "ARCH", ""))
+	appendIfSet("DEVCONTAINER_EXEC", cEnv(c, "DEVCONTAINER_EXEC", ""))
+	appendIfSet("DRAGONSCALE_EVAL_HOST_HOME", cEnv(c, "DRAGONSCALE_EVAL_HOST_HOME", ""))
+	appendIfSet("DRAGONSCALE_EVAL_BASE_CONFIG", cEnv(c, "DRAGONSCALE_EVAL_BASE_CONFIG", ""))
+	appendIfSet("DRAGONSCALE_EVAL_CONFIG", cEnv(c, "DRAGONSCALE_EVAL_CONFIG", ""))
+	appendIfSet("DRAGONSCALE_EVAL_DEBUG", cEnv(c, "DRAGONSCALE_EVAL_DEBUG", ""))
+	appendIfSet("VERSION", cEnv(c, "VERSION", ""))
+	appendIfSet("FANTASY_VERSION", cEnv(c, "FANTASY_VERSION", ""))
+	appendIfSet("NAME", cEnv(c, "NAME", ""))
+	appendIfSet("ARGS", cEnv(c, "ARGS", ""))
 	if c.Root != "" {
-		env = append(env, fmt.Sprintf("DRAGONSCALE_HOME=%s", filepath.Join(homeDir(), ".dragonscale")))
+		appendIfSet("DRAGONSCALE_HOME", filepath.Join(homeDir(), ".dragonscale"))
+	}
+	env := make([]string, 0, len(pairs))
+	for key, value := range pairs {
+		if key == "" || value == "" {
+			continue
+		}
+		env = append(env, fmt.Sprintf("%s=%s", key, value))
 	}
 	return env
 }
 
 func cEnv(c *app.Context, key string, fallback string) string {
-	if v, ok := c.ExtraEnv[key]; ok {
-		if strings.TrimSpace(v) != "" {
-			return v
+	if c != nil && c.ExtraEnv != nil {
+		if v, ok := c.ExtraEnv[key]; ok {
+			if strings.TrimSpace(v) != "" {
+				return v
+			}
 		}
 	}
 	return fallback
@@ -270,15 +390,11 @@ func applyDevcontainerWrapper(script string, c *app.Context) string {
 		return script
 	}
 
-	workDir := c.Root
-	if c.Cwd != "" {
-		workDir = c.Cwd
-	}
-	if strings.TrimSpace(workDir) != "" {
-		script = fmt.Sprintf("cd %s\n%s", strconv.Quote(workDir), script)
-	}
+	return fmt.Sprintf("%s -- bash -lc %s", execCmd, shellSingleQuote(script))
+}
 
-	return fmt.Sprintf("%s -- bash -lc %s", execCmd, strconv.Quote(script))
+func shellSingleQuote(input string) string {
+	return "'" + strings.ReplaceAll(input, "'", `'"'"'`) + "'"
 }
 
 func detectDevcontainerExec(root string) string {
@@ -331,61 +447,116 @@ func staticGoScript(rest string) func(*app.Context) string {
 	}
 }
 
-func generateScript(*app.Context) string {
+func generateScript(c *app.Context) string {
+	cmdDir := cEnv(c, "CMD_DIR", defaultCmdDir)
 	return scriptHeader() +
-		"rm -rf ./$(CMD_DIR)/workspace 2>/dev/null || true\n" +
+		fmt.Sprintf("rm -rf ./%s/workspace 2>/dev/null || true\n", cmdDir) +
 		"$GO generate ./...\n"
 }
 
-func buildScript(*app.Context) string {
+func buildScript(c *app.Context) string {
 	version := "$(git describe --tags --always --dirty 2>/dev/null || echo \"dev\")"
 	gitCommit := "$(git rev-parse --short=8 HEAD 2>/dev/null || echo \"dev\")"
 	buildTime := "$(date +%FT%T%z)"
-	goVersion := "$($GO version | awk '{print \"$3\"}')"
+	goVersion := "$($GO version | awk '{print $3}')"
+	buildDir := cEnv(c, "BUILD_DIR", defaultBuildDir)
+	binaryName := cEnv(c, "BINARY_NAME", defaultBinaryName)
+	cmdDir := cEnv(c, "CMD_DIR", defaultCmdDir)
+	targetGOOS := cEnv(c, "GOOS", "linux")
+	targetGOARCH := cEnv(c, "GOARCH", runtime.GOARCH)
 	ldFlags := fmt.Sprintf("-X main.version=%s -X main.gitCommit=%s -X main.buildTime=%s -X main.goVersion=%s -s -w", version, gitCommit, buildTime, goVersion)
 	return scriptHeader() +
-		"mkdir -p $(BUILD_DIR)\n" +
-		"GOOS=$($GO env GOOS)\n" +
-		"GOARCH=$($GO env GOARCH)\n" +
-		fmt.Sprintf("$GO build $GOFLAGS -ldflags \"%s\" -o $(BUILD_DIR)/$(BINARY_NAME)-${GOOS}-${GOARCH} ./$(CMD_DIR)\n", ldFlags) +
-		"ln -sf $(BINARY_NAME)-$(GOOS)-$(GOARCH) $(BUILD_DIR)/$(BINARY_NAME)\n"
+		fmt.Sprintf("mkdir -p %s\n", buildDir) +
+		fmt.Sprintf("echo \"build: target=%s/%s/%s\"\n", targetGOOS, targetGOARCH, binaryName) +
+		fmt.Sprintf("GOOS=$GOOS GOARCH=$GOARCH CGO_ENABLED=$CGO_ENABLED $GO build $GOFLAGS -ldflags \"%s\" -o %s/%s-${GOOS}-${GOARCH} ./%s\n", ldFlags, buildDir, binaryName, cmdDir) +
+		fmt.Sprintf("ln -sf %s-${GOOS}-${GOARCH} %s/%s\n", binaryName, buildDir, binaryName)
 }
 
-func buildAllScript(*app.Context) string {
+func buildAllScript(c *app.Context) string {
 	ldFlags := "-ldflags '-s -w'"
-	return scriptHeader() +
-		"mkdir -p $(BUILD_DIR)\n" +
-		fmt.Sprintf("GOOS=linux GOARCH=amd64 $GO build $GOFLAGS %s -o $(BUILD_DIR)/$(BINARY_NAME)-linux-amd64 ./$(CMD_DIR)\n", ldFlags) +
-		fmt.Sprintf("GOOS=linux GOARCH=arm64 $GO build $GOFLAGS %s -o $(BUILD_DIR)/$(BINARY_NAME)-linux-arm64 ./$(CMD_DIR)\n", ldFlags) +
-		fmt.Sprintf("GOOS=linux GOARCH=loong64 $GO build $GOFLAGS %s -o $(BUILD_DIR)/$(BINARY_NAME)-linux-loong64 ./$(CMD_DIR)\n", ldFlags) +
-		fmt.Sprintf("GOOS=linux GOARCH=riscv64 $GO build $GOFLAGS %s -o $(BUILD_DIR)/$(BINARY_NAME)-linux-riscv64 ./$(CMD_DIR)\n", ldFlags) +
-		fmt.Sprintf("GOOS=darwin GOARCH=arm64 $GO build $GOFLAGS %s -o $(BUILD_DIR)/$(BINARY_NAME)-darwin-arm64 ./$(CMD_DIR)\n", ldFlags) +
-		fmt.Sprintf("GOOS=windows GOARCH=amd64 $GO build $GOFLAGS %s -o $(BUILD_DIR)/$(BINARY_NAME)-windows-amd64.exe ./$(CMD_DIR)\n", ldFlags)
+	buildDir := cEnv(c, "BUILD_DIR", defaultBuildDir)
+	binaryName := cEnv(c, "BINARY_NAME", defaultBinaryName)
+	cmdDir := cEnv(c, "CMD_DIR", defaultCmdDir)
+	targetGOOS := cEnv(c, "GOOS", "linux")
+	targetGOARCH := cEnv(c, "GOARCH", runtime.GOARCH)
+	var script strings.Builder
+	script.WriteString(scriptHeader())
+	fmt.Fprintf(&script, "mkdir -p %s\n", buildDir)
+	fmt.Fprintf(&script, "echo \"build-all: target=%s/%s output=%s/%s-%s-%s\"\n", targetGOOS, targetGOARCH, buildDir, binaryName, targetGOOS, targetGOARCH)
+	fmt.Fprintf(&script, "OUTPUT_NAME=%s/%s-%s-%s\n", buildDir, binaryName, targetGOOS, targetGOARCH)
+	script.WriteString("export CGO_ENABLED=1\n")
+	fmt.Fprintf(&script, "GOOS=$GOOS GOARCH=$GOARCH CGO_ENABLED=$CGO_ENABLED $GO build $GOFLAGS %s -o ${OUTPUT_NAME} ./%s\n", ldFlags, cmdDir)
+	fmt.Fprintf(&script, "ln -sf ./%s %s/%s\n", "${OUTPUT_NAME}", buildDir, binaryName)
+	return script.String()
+}
+
+func validateBuildTaskEnv(c *app.Context) error {
+	targetGOOS := cEnv(c, "GOOS", "linux")
+	if targetGOOS != "linux" {
+		return fmt.Errorf("unsupported GOOS=%s: this project only supports linux/gnu builds", targetGOOS)
+	}
+
+	if cgoEnabled := strings.TrimSpace(cEnv(c, "CGO_ENABLED", "1")); cgoEnabled != "" && cgoEnabled != "1" {
+		return fmt.Errorf("unsupported CGO_ENABLED=%s: builds require CGO_ENABLED=1", cgoEnabled)
+	}
+
+	if err := detectGlibc(); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+var detectGlibc = detectGlibcAvailable
+
+func detectGlibcAvailable() error {
+	output, err := exec.Command("ldd", "--version").Output()
+	if err != nil {
+		return fmt.Errorf("unable to verify libc: %w", err)
+	}
+	header := strings.ToLower(strings.SplitN(string(output), "\n", 2)[0])
+	if strings.Contains(header, "glibc") || strings.Contains(header, "gnu c library") {
+		return nil
+	}
+	return fmt.Errorf("unsupported libc: this project requires glibc")
 }
 
 func installScript(*app.Context) string {
 	prefix := filepath.Join(homeDir(), ".local")
+	buildDir := cEnv(nil, "BUILD_DIR", defaultBuildDir)
+	binaryName := cEnv(nil, "BINARY_NAME", defaultBinaryName)
 	return scriptHeader() +
 		"mkdir -p ${INSTALL_PREFIX:-" + prefix + "}/bin\n" +
-		"cp $(BUILD_DIR)/$(BINARY_NAME) ${INSTALL_PREFIX:-" + prefix + "}/bin/$(BINARY_NAME)\n" +
-		"chmod +x ${INSTALL_PREFIX:-" + prefix + "}/bin/$(BINARY_NAME)\n"
+		fmt.Sprintf("cp %s/%s ${INSTALL_PREFIX:-%s}/bin/%s\n", buildDir, binaryName, prefix, binaryName) +
+		fmt.Sprintf("chmod +x ${INSTALL_PREFIX:-%s}/bin/%s\n", prefix, binaryName)
 }
 
 func uninstallScript(*app.Context) string {
-	return "rm -f ${INSTALL_PREFIX:-" + filepath.Join(homeDir(), ".local") + "}/bin/$(BINARY_NAME)\n"
+	binaryName := cEnv(nil, "BINARY_NAME", defaultBinaryName)
+	prefix := filepath.Join(homeDir(), ".local")
+	return "rm -f ${INSTALL_PREFIX:-" + prefix + "}/bin/" + binaryName + "\n"
 }
 
-func uninstallAllScript(*app.Context) string {
-	return "rm -rf $(DRAGONSCALE_HOME)\n"
+func uninstallAllScript(c *app.Context) string {
+	dHome := filepath.Join(homeDir(), ".dragonscale")
+	if v := cEnv(c, "DRAGONSCALE_HOME", ""); v != "" {
+		dHome = v
+	}
+	return "rm -rf " + dHome + "\n"
 }
 
 func cleanScript(*app.Context) string {
-	return "rm -rf $(BUILD_DIR)\n"
+	buildDir := cEnv(nil, "BUILD_DIR", defaultBuildDir)
+	return "rm -rf " + buildDir + "\n"
 }
 
-func lintScript(*app.Context) string {
-	return scriptHeader() +
-		"$GO fmt ./...\n$GO vet ./...\n$GO build ./...\n"
+func lintSpecs(c *app.Context) []runner.CommandSpec {
+	goBinary := cEnv(c, "GO", "go")
+	return []runner.CommandSpec{
+		{Name: goBinary, Args: []string{"fmt", "./..."}},
+		{Name: goBinary, Args: []string{"vet", "./..."}},
+		{Name: goBinary, Args: []string{"build", "./..."}},
+	}
 }
 
 func hooksScript(*app.Context) string {
@@ -431,11 +602,15 @@ func fantasyPatchScript(c *app.Context) string {
 	return simpleScript("./scripts/sync-fantasy.sh --save-patch " + cEnv(c, "NAME", ""))(c)
 }
 
-func checkScript(*app.Context) string {
-	return staticGoScript("mod download && mod verify")(&app.Context{}) +
-		staticGoScript("fmt ./...")(&app.Context{}) +
-		staticGoScript("vet ./...")(&app.Context{}) +
-		staticGoScript("test ./...")(&app.Context{})
+func checkSpecs(c *app.Context) []runner.CommandSpec {
+	goBinary := cEnv(c, "GO", "go")
+	return []runner.CommandSpec{
+		{Name: goBinary, Args: []string{"mod", "download"}},
+		{Name: goBinary, Args: []string{"mod", "verify"}},
+		{Name: goBinary, Args: []string{"fmt", "./..."}},
+		{Name: goBinary, Args: []string{"vet", "./..."}},
+		{Name: goBinary, Args: []string{"test", "./..."}},
+	}
 }
 
 func runTaskEnv(c *app.Context) []string {
@@ -446,7 +621,9 @@ func runTaskEnv(c *app.Context) []string {
 }
 
 func runScript(c *app.Context) string {
-	return scriptHeader() + "$(BUILD_DIR)/$(BINARY_NAME) " + strings.Join(quoteArgs(c.Argv), " ") + "\n"
+	buildDir := cEnv(c, "BUILD_DIR", defaultBuildDir)
+	binaryName := cEnv(c, "BINARY_NAME", defaultBinaryName)
+	return scriptHeader() + buildDir + "/" + binaryName + " " + strings.Join(quoteArgs(c.Argv), " ") + "\n"
 }
 
 func quoteArgs(args []string) []string {
@@ -457,52 +634,173 @@ func quoteArgs(args []string) []string {
 	return quoted
 }
 
-func devcontainerBuildScript(*app.Context) string {
-	return "npx --yes @devcontainers/cli build --workspace-folder \"$(pwd)\"\n"
+func devcontainerRoot(c *app.Context) string {
+	if c != nil && c.Root != "" {
+		return c.Root
+	}
+	workspace := cValue(c, "DEVCONTAINER_WORKSPACE", ".")
+	if workspace == "" {
+		return "."
+	}
+	return workspace
 }
 
-func devcontainerUpScript(*app.Context) string {
-	return "npx --yes @devcontainers/cli up --workspace-folder \"$(pwd)\"\n"
+func devcontainerBuildSpecs(c *app.Context) []runner.CommandSpec {
+	return []runner.CommandSpec{
+		{
+			Name: "npx",
+			Args: []string{"--yes", "@devcontainers/cli", "build", "--workspace-folder", devcontainerRoot(c)},
+		},
+	}
 }
 
-func devcontainerGenerateScript(*app.Context) string {
-	return "npx --yes @devcontainers/cli exec --workspace-folder \"$(pwd)\" -- bash -lc \"go generate ./pkg/itr ./pkg/tools && sqlc generate -f pkg/memory/sqlc/sqlc.yaml\"\n"
+func devcontainerUpSpecs(c *app.Context) []runner.CommandSpec {
+	return []runner.CommandSpec{
+		{
+			Name: "npx",
+			Args: []string{"--yes", "@devcontainers/cli", "up", "--workspace-folder", devcontainerRoot(c)},
+		},
+	}
 }
 
-func devcontainerVerifyScript(*app.Context) string {
-	return "npx --yes @devcontainers/cli exec --workspace-folder \"$(pwd)\" -- bash -lc \"make flatc-check sqlc-check\"\n"
+func devcontainerGenerateSpecs(c *app.Context) []runner.CommandSpec {
+	root := devcontainerRoot(c)
+	goBinary := cEnv(c, "GO", "go")
+	return []runner.CommandSpec{
+		{
+			Name: "npx",
+			Args: []string{
+				"--yes", "@devcontainers/cli", "exec",
+				"--workspace-folder", root, "--",
+				"bash", "-lc",
+				fmt.Sprintf("%s generate ./pkg/itr ./pkg/tools && sqlc generate -f pkg/memory/sqlc/sqlc.yaml", goBinary),
+			},
+		},
+	}
 }
 
-func evalBuildScript(*app.Context) string {
-	ldFlags := "-X main.version=$(git describe --tags --always --dirty 2>/dev/null || echo \"dev\") -X main.gitCommit=$(git rev-parse --short=8 HEAD 2>/dev/null || echo \"dev\") -X main.buildTime=$(date +%FT%T%z) -X main.goVersion=\"$($GO version | awk '{print \"$3\"}')\" -s -w"
-	return scriptHeader() +
-		"$GO generate ./...\n" +
-		"mkdir -p eval/bin\n" +
-		fmt.Sprintf("$GO build $GOFLAGS -ldflags \"%s\" -o eval/bin/eval-runner ./eval/cmd/eval-runner\n", ldFlags)
+func devcontainerVerifySpecs(c *app.Context) []runner.CommandSpec {
+	root := devcontainerRoot(c)
+	return []runner.CommandSpec{
+		{
+			Name: "npx",
+			Args: []string{
+				"--yes", "@devcontainers/cli", "exec",
+				"--workspace-folder", root, "--",
+				"bash", "-lc", "make flatc-check sqlc-check",
+			},
+		},
+	}
 }
 
-func evalRunScript(*app.Context) string {
-	return `if [ -n "${DRAGONSCALE_EVAL_BASE_CONFIG:-}" ] && [ -n "${DRAGONSCALE_EVAL_DEBUG:-}" ]; then
-  echo "DRAGONSCALE_EVAL_BASE_CONFIG=${DRAGONSCALE_EVAL_BASE_CONFIG}"
-fi
-if [ -n "${DRAGONSCALE_EVAL_DEBUG:-}" ]; then
-  echo "DRAGONSCALE_EVAL_CONFIG=${DRAGONSCALE_EVAL_CONFIG:-./configs/default.json}"
-fi
-DRAGONSCALE_EVAL_HOST_HOME=/host_home DRAGONSCALE_EVAL_CONFIG="${DRAGONSCALE_EVAL_CONFIG:-./configs/default.json}" npx --yes promptfoo eval --config promptfooconfig.yaml --no-cache --no-progress-bar
-`
+func evalBuildSpecs(c *app.Context) []runner.CommandSpec {
+	goBinary := cEnv(c, "GO", "go")
+	goFlags := strings.Fields(cEnv(c, "GOFLAGS", "-v -trimpath -tags=stdjson"))
+	goVersion := "unknown"
+	goVersionParts := strings.Fields(outputOrDefault(goBinary + " version"))
+	if len(goVersionParts) >= 3 {
+		goVersion = goVersionParts[2]
+	}
+	version := outputOrDefault("git describe --tags --always --dirty 2>/dev/null || echo \"dev\"")
+	commit := outputOrDefault("git rev-parse --short=8 HEAD 2>/dev/null || echo \"dev\"")
+	buildTime := outputOrDefault("date +%FT%T%z")
+
+	ldFlags := fmt.Sprintf(
+		"-X main.version=%s -X main.gitCommit=%s -X main.buildTime=%s -X main.goVersion=%s -s -w",
+		version, commit, buildTime, goVersion,
+	)
+	return []runner.CommandSpec{
+		{Name: goBinary, Args: []string{"generate", "./..."}},
+		{Name: "mkdir", Args: []string{"-p", "eval/bin"}},
+		{
+			Name: goBinary,
+			Args: append(
+				append(append([]string{"build"}, goFlags...), "-ldflags", ldFlags),
+				"-o", filepath.Join("eval", "bin", "eval-runner"), "./eval/cmd/eval-runner",
+			),
+		},
+	}
 }
 
-func evalFixturesScript(*app.Context) string {
-	return scriptHeader() +
-		"mkdir -p \"$HOME/.local/share/dragonscale/sandbox\"\n" +
-		"rm -f \"$HOME/.local/share/dragonscale/sandbox/eval_test_output.txt\" \"$HOME/.local/share/dragonscale/sandbox/test_steps.txt\" \"$HOME/.local/share/dragonscale/sandbox/eval_checkpoint.txt\" \"$HOME/.local/share/dragonscale/sandbox/chain_test.txt\" \"$HOME/.local/share/dragonscale/sandbox/current_year.txt\" \"$HOME/.local/share/dragonscale/sandbox/result.txt\" \"$HOME/.local/share/dragonscale/sandbox/progressive_test.txt\" \"$HOME/.local/share/dragonscale/sandbox/os_name.txt\"\n" +
-		"rm -rf \"$HOME/.local/share/dragonscale/sandbox/project\"\n" +
-		"printf 'dragonscale eval fixture — hello from the eval harness\\nThis is line two of the fixture file.\\n' > \"$HOME/.local/share/dragonscale/sandbox/eval_fixture.txt\"\n" +
-		"cp -f eval/fixtures/sample_data.txt \"$HOME/.local/share/dragonscale/sandbox/sample_data.txt\"\n" +
-		"mkdir -p \"$HOME/.local/share/dragonscale/skills\"\n" +
-		"cp -rf eval/fixtures/skills/* \"$HOME/.local/share/dragonscale/skills/\" 2>/dev/null || true\n"
+func evalRunSpecs(c *app.Context) []runner.CommandSpec {
+	cfgPath := cEnv(c, "DRAGONSCALE_EVAL_CONFIG", "./configs/default.json")
+	baseCfg := cEnv(c, "DRAGONSCALE_EVAL_BASE_CONFIG", "")
+	debug := cEnv(c, "DRAGONSCALE_EVAL_DEBUG", "") != ""
+	promptfooArgs := strings.Fields(cEnv(c, "DRAGONSCALE_PROMPTFOO_ARGS", "--no-cache --no-progress-bar"))
+	if len(promptfooArgs) == 0 {
+		promptfooArgs = []string{"--no-cache", "--no-progress-bar"}
+	}
+
+	var specs []runner.CommandSpec
+	if debug && strings.TrimSpace(baseCfg) != "" {
+		specs = append(specs, runner.CommandSpec{
+			Name: "echo",
+			Args: []string{fmt.Sprintf("DRAGONSCALE_EVAL_BASE_CONFIG=%s", baseCfg)},
+		})
+	}
+	if debug {
+		specs = append(specs, runner.CommandSpec{
+			Name: "echo",
+			Args: []string{fmt.Sprintf("DRAGONSCALE_EVAL_CONFIG=%s", cfgPath)},
+		})
+	}
+	args := append([]string{"--yes", "promptfoo", "eval", "--config", "promptfooconfig.yaml"}, promptfooArgs...)
+	specs = append(specs, runner.CommandSpec{
+		Name: "npx",
+		Args: args,
+		Dir:  filepath.Join(c.Root, "eval"),
+		Env:  []string{fmt.Sprintf("DRAGONSCALE_EVAL_CONFIG=%s", cfgPath)},
+	})
+	return specs
 }
 
-func evalViewScript(*app.Context) string {
-	return "cd eval && npx --yes promptfoo view\n"
+func evalFixturesSpecs(c *app.Context) []runner.CommandSpec {
+	sandbox := filepath.Join(homeDir(), ".local", "share", "dragonscale", "sandbox")
+	project := filepath.Join(sandbox, "project")
+	skills := filepath.Join(homeDir(), ".local", "share", "dragonscale", "skills")
+	shared := filepath.Join(sandbox, "sample_data.txt")
+	fixture := filepath.Join(sandbox, "eval_fixture.txt")
+	files := []string{
+		filepath.Join(sandbox, "eval_test_output.txt"),
+		filepath.Join(sandbox, "test_steps.txt"),
+		filepath.Join(sandbox, "eval_checkpoint.txt"),
+		filepath.Join(sandbox, "chain_test.txt"),
+		filepath.Join(sandbox, "current_year.txt"),
+		filepath.Join(sandbox, "result.txt"),
+		filepath.Join(sandbox, "progressive_test.txt"),
+		filepath.Join(sandbox, "os_name.txt"),
+	}
+	sourceFixture := filepath.Join("eval", "fixtures", "sample_data.txt")
+
+	specs := []runner.CommandSpec{
+		{Name: "mkdir", Args: []string{"-p", sandbox}},
+		{Name: "rm", Args: append([]string{"-f"}, files...)},
+		{Name: "rm", Args: []string{"-rf", project}},
+		{Name: "mkdir", Args: []string{"-p", skills}},
+		{Name: "bash", Args: []string{"-lc", fmt.Sprintf("printf '%%s\\n%%s\\n' \"dragonscale eval fixture — hello from the eval harness\" \"This is line two of the fixture file.\" > %q", fixture)}},
+		{Name: "cp", Args: []string{"-f", sourceFixture, shared}},
+	}
+	specs = append(specs, runner.CommandSpec{
+		Name: "bash",
+		Args: []string{"-lc", "if [ -d eval/fixtures/skills ]; then cp -rf eval/fixtures/skills/. " + strconv.Quote(skills) + "; fi"},
+	})
+	return specs
+}
+
+func evalViewSpecs(c *app.Context) []runner.CommandSpec {
+	return []runner.CommandSpec{
+		{
+			Name: "npx",
+			Args: []string{"--yes", "promptfoo", "view"},
+			Dir:  filepath.Join(c.Root, "eval"),
+		},
+	}
+}
+
+func outputOrDefault(command string) string {
+	output, err := exec.Command("bash", "-lc", command).Output()
+	if err != nil {
+		return "dev"
+	}
+	return strings.TrimSpace(string(output))
 }
