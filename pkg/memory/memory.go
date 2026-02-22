@@ -244,72 +244,65 @@ type AuditEntry struct {
 // MemoryDelegate is the pure storage backend for the memory system.
 // Implementations wrap sqlc-generated queries. All persistence goes through here.
 // The Memory logic layer composes a MemoryDelegate for its backend.
-type MemoryDelegate interface {
-	// Init creates tables and runs migrations.
-	Init(ctx context.Context) error
-
-	// Close releases database resources.
-	Close() error
-
-	// --- Working Context ---
+// MemoryReader groups all read-only methods on the memory store. Enables
+// independent optimization of the read path (caching, read replicas).
+type MemoryReader interface {
 	GetWorkingContext(ctx context.Context, agentID, sessionKey string) (*WorkingContext, error)
-	UpsertWorkingContext(ctx context.Context, agentID, sessionKey, content string) error
-
-	// --- Recall Items ---
-	InsertRecallItem(ctx context.Context, item *RecallItem) error
 	GetRecallItem(ctx context.Context, agentID string, id ids.UUID) (*RecallItem, error)
-	UpdateRecallItem(ctx context.Context, item *RecallItem) error
-	DeleteRecallItem(ctx context.Context, agentID string, id ids.UUID) error
+	GetRecallItemsByIDs(ctx context.Context, agentID string, itemIDs []ids.UUID) (map[ids.UUID]*RecallItem, error)
 	ListRecallItems(ctx context.Context, agentID, sessionKey string, limit, offset int) ([]*RecallItem, error)
 	SearchRecallByKeyword(ctx context.Context, query, agentID string, limit int) ([]*RecallItem, error)
-
-	// --- Advanced Search ---
-
-	// SearchRecallByFTS performs full-text search using FTS5 MATCH with BM25 ranking.
-	// Returns nil (not error) if FTS5 is not available -- caller should fall back to keyword search.
 	SearchRecallByFTS(ctx context.Context, query, agentID string, limit int) ([]*RecallItem, error)
-
-	// SearchArchivalByVector performs DB-side vector similarity search.
-	// Returns nil (not error) if vector search is not available -- caller should fall back to Go-side.
 	SearchArchivalByVector(ctx context.Context, queryVec Embedding, limit, offset int) ([]SearchResult, error)
-
-	// --- Archival Chunks ---
-	InsertArchivalChunk(ctx context.Context, chunk *ArchivalChunk) error
 	GetArchivalChunk(ctx context.Context, agentID string, id ids.UUID) (*ArchivalChunk, error)
 	ListArchivalChunks(ctx context.Context, agentID string, recallID ids.UUID) ([]*ArchivalChunk, error)
 	ListAllArchivalChunks(ctx context.Context, agentID string, limit, offset int) ([]*ArchivalChunk, error)
-	DeleteArchivalChunks(ctx context.Context, recallID ids.UUID) error
-
-	// --- Summaries ---
-	InsertSummary(ctx context.Context, summary *MemorySummary) error
 	ListSummaries(ctx context.Context, agentID, sessionKey string, limit int) ([]*MemorySummary, error)
-
-	// --- Stats ---
 	CountRecallItems(ctx context.Context, agentID, sessionKey string) (int, error)
 	CountArchivalChunks(ctx context.Context, agentID string) (int, error)
-
-	// --- Key-Value Store ---
 	GetKV(ctx context.Context, agentID, key string) (string, error)
-	UpsertKV(ctx context.Context, agentID, key, value string) error
-	DeleteKV(ctx context.Context, agentID, key string) error
 	ListKVByPrefix(ctx context.Context, agentID, prefix string, limit int) (map[string]string, error)
-
-	// --- Documents ---
 	GetDocument(ctx context.Context, agentID, name string) (*AgentDocument, error)
-	UpsertDocument(ctx context.Context, doc *AgentDocument) error
-	DeleteDocument(ctx context.Context, agentID, name string) error
 	ListDocumentsByCategory(ctx context.Context, agentID, category string) ([]*AgentDocument, error)
 	ListAllDocuments(ctx context.Context, agentID string) ([]*AgentDocument, error)
-
-	// --- Audit Log ---
-	InsertAuditEntry(ctx context.Context, entry *AuditEntry) error
 	ListAuditEntries(ctx context.Context, agentID string, limit int) ([]*AuditEntry, error)
 	ListAuditEntriesByAction(ctx context.Context, agentID, action string, limit int) ([]*AuditEntry, error)
 	CountAuditEntries(ctx context.Context, agentID string) (int, error)
-
-	// --- Capability Detection ---
 	HasVectorSearch() bool
 	HasFTS() bool
+}
+
+// MemoryWriter groups all mutating methods on the memory store. Enables
+// write batching, buffering, and independent scaling of the write path.
+type MemoryWriter interface {
+	UpsertWorkingContext(ctx context.Context, agentID, sessionKey, content string) error
+	InsertRecallItem(ctx context.Context, item *RecallItem) error
+	UpdateRecallItem(ctx context.Context, item *RecallItem) error
+	DeleteRecallItem(ctx context.Context, agentID string, id ids.UUID) error
+	InsertArchivalChunk(ctx context.Context, chunk *ArchivalChunk) error
+	InsertArchivalChunkBatch(ctx context.Context, chunks []*ArchivalChunk) error
+	DeleteArchivalChunks(ctx context.Context, recallID ids.UUID) error
+	InsertSummary(ctx context.Context, summary *MemorySummary) error
+	UpsertKV(ctx context.Context, agentID, key, value string) error
+	DeleteKV(ctx context.Context, agentID, key string) error
+	UpsertDocument(ctx context.Context, doc *AgentDocument) error
+	DeleteDocument(ctx context.Context, agentID, name string) error
+	InsertAuditEntry(ctx context.Context, entry *AuditEntry) error
+	InsertAuditEntryBatch(ctx context.Context, entries []*AuditEntry) error
+}
+
+// MemoryDelegate is the full-capability interface for memory operations.
+// Embeds MemoryReader and MemoryWriter for CQRS-compatible usage: callers
+// that only need reads can accept MemoryReader, enabling independent
+// optimization, caching, and testing of each path.
+type MemoryDelegate interface {
+	MemoryReader
+	MemoryWriter
+
+	// Init creates tables and runs migrations.
+	Init(ctx context.Context) error
+	// Close releases database resources.
+	Close() error
 }
 
 // --- Embedding interface ---

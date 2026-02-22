@@ -318,6 +318,8 @@ func TestSearch_ShadowModeUsesBaselineAndTracksParity(t *testing.T) {
 	// Shadow mode should keep baseline result ordering for production output.
 	assert.NotContains(t, results[0].Source, "working-context:s1")
 
+	store.FlushPolicyCache(ctx)
+
 	metricsRaw, err := store.delegate.GetKV(ctx, "agent-1", retrievalPolicyMetricsKey)
 	require.NoError(t, err)
 	require.NotEmpty(t, metricsRaw)
@@ -363,6 +365,8 @@ func TestSearch_DoesNotPromoteWithoutAugmentedSignals(t *testing.T) {
 	})
 	require.NoError(t, err)
 
+	store.FlushPolicyCache(ctx)
+
 	stateRaw, err := store.delegate.GetKV(ctx, "agent-1", retrievalPolicyStateKey)
 	require.NoError(t, err)
 	var state retrievalPolicyState
@@ -406,6 +410,8 @@ func TestSearch_PromoteOnlyOnGateWin(t *testing.T) {
 		Limit:      5,
 	})
 	require.NoError(t, err)
+
+	store.FlushPolicyCache(ctx)
 
 	stateRaw, err := store.delegate.GetKV(ctx, "agent-1", retrievalPolicyStateKey)
 	require.NoError(t, err)
@@ -538,7 +544,7 @@ func TestUpdateRetrievalPolicy_PersistFailuresDoNotBlockTransitions(t *testing.T
 		{ID: ids.New(), Content: "baseline"},
 	}
 
-	next := store.updateRetrievalPolicy(ctx, state, gates, metrics, parity, true, baseline)
+	next, _ := store.updateRetrievalPolicy(ctx, state, gates, metrics, parity, true, baseline)
 	assert.Empty(t, cmp.Diff(retrievalModePromoted, next.Mode))
 }
 
@@ -581,6 +587,8 @@ func TestSearch_ConcurrentRetrievalPolicyUpdates(t *testing.T) {
 	for err := range errCh {
 		require.NoError(t, err)
 	}
+
+	store.FlushPolicyCache(ctx)
 
 	metricsRaw, err := store.delegate.GetKV(ctx, "agent-1", retrievalPolicyMetricsKey)
 	require.NoError(t, err)

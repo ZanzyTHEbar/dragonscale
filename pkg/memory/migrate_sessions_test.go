@@ -43,6 +43,9 @@ func (m *mockDelegate) InsertRecallItem(_ context.Context, item *RecallItem) err
 func (m *mockDelegate) GetRecallItem(_ context.Context, _ string, _ ids.UUID) (*RecallItem, error) {
 	return nil, nil
 }
+func (m *mockDelegate) GetRecallItemsByIDs(_ context.Context, _ string, _ []ids.UUID) (map[ids.UUID]*RecallItem, error) {
+	return make(map[ids.UUID]*RecallItem), nil
+}
 func (m *mockDelegate) UpdateRecallItem(_ context.Context, _ *RecallItem) error        { return nil }
 func (m *mockDelegate) DeleteRecallItem(_ context.Context, _ string, _ ids.UUID) error { return nil }
 func (m *mockDelegate) ListRecallItems(_ context.Context, _, _ string, _, _ int) ([]*RecallItem, error) {
@@ -58,6 +61,9 @@ func (m *mockDelegate) SearchArchivalByVector(_ context.Context, _ Embedding, _,
 	return nil, nil
 }
 func (m *mockDelegate) InsertArchivalChunk(_ context.Context, _ *ArchivalChunk) error { return nil }
+func (m *mockDelegate) InsertArchivalChunkBatch(_ context.Context, _ []*ArchivalChunk) error {
+	return nil
+}
 func (m *mockDelegate) GetArchivalChunk(_ context.Context, _ string, _ ids.UUID) (*ArchivalChunk, error) {
 	return nil, nil
 }
@@ -96,6 +102,9 @@ func (m *mockDelegate) ListAllDocuments(_ context.Context, _ string) ([]*AgentDo
 	return nil, nil
 }
 func (m *mockDelegate) InsertAuditEntry(_ context.Context, _ *AuditEntry) error { return nil }
+func (m *mockDelegate) InsertAuditEntryBatch(_ context.Context, _ []*AuditEntry) error {
+	return nil
+}
 func (m *mockDelegate) ListAuditEntries(_ context.Context, _ string, _ int) ([]*AuditEntry, error) {
 	return nil, nil
 }

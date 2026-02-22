@@ -13,7 +13,6 @@ import (
 	"github.com/ZanzyTHEbar/dragonscale/pkg/memory/migrations"
 	memsqlc "github.com/ZanzyTHEbar/dragonscale/pkg/memory/sqlc"
 	"github.com/pressly/goose/v3"
-
 	libsql "github.com/tursodatabase/go-libsql"
 )
 
@@ -268,6 +267,24 @@ func (d *LibSQLDelegate) GetRecallItem(ctx context.Context, agentID string, id i
 	return sqlcRecallToMemory(row), nil
 }
 
+func (d *LibSQLDelegate) GetRecallItemsByIDs(ctx context.Context, agentID string, itemIDs []ids.UUID) (map[ids.UUID]*memory.RecallItem, error) {
+	if len(itemIDs) == 0 {
+		return make(map[ids.UUID]*memory.RecallItem), nil
+	}
+	rows, err := d.queries.GetRecallItemsByIDs(ctx, memsqlc.GetRecallItemsByIDsParams{
+		Ids:     itemIDs,
+		AgentID: agentID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	result := make(map[ids.UUID]*memory.RecallItem, len(rows))
+	for _, row := range rows {
+		result[row.ID] = sqlcRecallToMemory(row)
+	}
+	return result, nil
+}
+
 func (d *LibSQLDelegate) UpdateRecallItem(ctx context.Context, item *memory.RecallItem) error {
 	return d.queries.UpdateRecallItem(ctx, memsqlc.UpdateRecallItemParams{
 		ID:         item.ID,
@@ -342,6 +359,31 @@ func archivalChunkToParams(chunk *memory.ArchivalChunk) memsqlc.InsertArchivalCh
 		Source:     chunk.Source,
 		Hash:       chunk.Hash,
 	}
+}
+
+func (d *LibSQLDelegate) InsertArchivalChunkBatch(ctx context.Context, chunks []*memory.ArchivalChunk) error {
+	if len(chunks) == 0 {
+		return nil
+	}
+	if len(chunks) == 1 {
+		return d.InsertArchivalChunk(ctx, chunks[0])
+	}
+
+	tx, err := d.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	qtx := d.queries.WithTx(tx)
+	for _, chunk := range chunks {
+		row, err := qtx.InsertArchivalChunk(ctx, archivalChunkToParams(chunk))
+		if err != nil {
+			return err
+		}
+		chunk.CreatedAt = row.CreatedAt
+	}
+	return tx.Commit()
 }
 
 func (d *LibSQLDelegate) GetArchivalChunk(ctx context.Context, agentID string, id ids.UUID) (*memory.ArchivalChunk, error) {
@@ -619,6 +661,40 @@ func (d *LibSQLDelegate) InsertAuditEntry(ctx context.Context, entry *memory.Aud
 	}
 	entry.CreatedAt = row.CreatedAt
 	return nil
+}
+
+func (d *LibSQLDelegate) InsertAuditEntryBatch(ctx context.Context, entries []*memory.AuditEntry) error {
+	if len(entries) == 0 {
+		return nil
+	}
+	if len(entries) == 1 {
+		return d.InsertAuditEntry(ctx, entries[0])
+	}
+
+	tx, err := d.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	qtx := d.queries.WithTx(tx)
+	for _, entry := range entries {
+		row, err := qtx.InsertAuditEntry(ctx, memsqlc.InsertAuditEntryParams{
+			ID:         entry.ID,
+			AgentID:    entry.AgentID,
+			SessionKey: entry.SessionKey,
+			Action:     entry.Action,
+			Target:     entry.Target,
+			Input:      &entry.Input,
+			Output:     &entry.Output,
+			DurationMs: ptrInt64(int64(entry.DurationMS)),
+		})
+		if err != nil {
+			return err
+		}
+		entry.CreatedAt = row.CreatedAt
+	}
+	return tx.Commit()
 }
 
 func (d *LibSQLDelegate) ListAuditEntries(ctx context.Context, agentID string, limit int) ([]*memory.AuditEntry, error) {

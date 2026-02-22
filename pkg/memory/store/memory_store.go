@@ -44,6 +44,30 @@ type MemoryStore struct {
 	cfg               Config
 	agentID           string
 	retrievalPolicyMu sync.Mutex
+
+	policyCache policyCacheState
+	vecCache    vectorCache
+}
+
+// vectorCache holds an in-memory copy of archival chunk embeddings so that
+// vectorSearchGoSide doesn't re-scan the entire DB on every search call.
+// Populated lazily on first search; updated incrementally in StoreArchival.
+type vectorCache struct {
+	mu     sync.RWMutex
+	items  []VectorSearchInput
+	loaded bool
+}
+
+// policyCacheState holds in-memory copies of retrieval policy data to avoid
+// 5 KV round-trips per search call. Flushed on Sync/Close or every N queries.
+type policyCacheState struct {
+	state      retrievalPolicyState
+	gates      retrievalPromotionGates
+	metrics    retrievalShadowMetrics
+	loaded     bool
+	dirty      bool
+	flushEvery int
+	queryCount int
 }
 
 // New creates a MemoryStore.
@@ -63,12 +87,59 @@ func New(delegate memory.MemoryDelegate, chunker memory.Chunker, embedder memory
 		embedder: embedder,
 		chunker:  chunker,
 		cfg:      cfg,
+		policyCache: policyCacheState{
+			flushEvery: 10,
+		},
 	}
 }
 
 // SetAgentID sets the agent identity used to scope all memory operations.
+// Invalidates the vector cache since chunks are agent-scoped.
 func (m *MemoryStore) SetAgentID(agentID string) {
 	m.agentID = agentID
+	m.invalidateVecCache()
+}
+
+// invalidateVecCache forces the next vector search to reload from DB.
+func (m *MemoryStore) invalidateVecCache() {
+	m.vecCache.mu.Lock()
+	m.vecCache.items = nil
+	m.vecCache.loaded = false
+	m.vecCache.mu.Unlock()
+}
+
+// ensurePolicyCacheLoaded initializes the in-memory retrieval policy cache
+// from KV on the first access. Must be called with retrievalPolicyMu held.
+func (m *MemoryStore) ensurePolicyCacheLoaded(ctx context.Context) {
+	if m.policyCache.loaded {
+		return
+	}
+	m.policyCache.state = m.loadRetrievalPolicyState(ctx)
+	m.policyCache.gates = m.loadRetrievalPromotionGates(ctx)
+	m.policyCache.metrics = m.loadRetrievalShadowMetrics(ctx)
+	m.policyCache.loaded = true
+	m.policyCache.dirty = false
+	m.policyCache.queryCount = 0
+}
+
+// flushPolicyCacheLocked persists cached policy state to KV.
+// Must be called with retrievalPolicyMu held.
+func (m *MemoryStore) flushPolicyCacheLocked(ctx context.Context) {
+	if !m.policyCache.dirty {
+		return
+	}
+	_ = m.persistRetrievalPolicyState(ctx, m.policyCache.state)
+	_ = m.persistRetrievalShadowMetrics(ctx, m.policyCache.metrics)
+	m.policyCache.dirty = false
+	m.policyCache.queryCount = 0
+}
+
+// FlushPolicyCache persists any dirty retrieval policy state. Safe to call
+// from Sync/Close paths.
+func (m *MemoryStore) FlushPolicyCache(ctx context.Context) {
+	m.retrievalPolicyMu.Lock()
+	defer m.retrievalPolicyMu.Unlock()
+	m.flushPolicyCacheLocked(ctx)
 }
 
 // --- Working Context (hot tier) ---
@@ -109,6 +180,7 @@ func (m *MemoryStore) DeleteRecall(ctx context.Context, id ids.UUID) error {
 	if err := m.delegate.DeleteArchivalChunks(ctx, id); err != nil {
 		return fmt.Errorf("delete archival chunks: %w", err)
 	}
+	m.invalidateVecCache()
 	return m.delegate.DeleteRecallItem(ctx, m.agentID, id)
 }
 
@@ -159,13 +231,14 @@ func (m *MemoryStore) StoreArchival(ctx context.Context, content, source string,
 		}
 	}
 
-	// Store each chunk
+	// Build all chunks, then batch-insert in a single transaction.
+	stored := make([]*memory.ArchivalChunk, len(chunks))
 	for i, chunk := range chunks {
 		var emb memory.Embedding
 		if i < len(embeddings) {
 			emb = embeddings[i]
 		}
-		archChunk := &memory.ArchivalChunk{
+		stored[i] = &memory.ArchivalChunk{
 			ID:         ids.New(),
 			RecallID:   recallID,
 			ChunkIndex: chunk.Index,
@@ -174,11 +247,13 @@ func (m *MemoryStore) StoreArchival(ctx context.Context, content, source string,
 			Source:     source,
 			Hash:       hashContent(chunk.Text),
 		}
-		if err := m.delegate.InsertArchivalChunk(ctx, archChunk); err != nil {
-			return recallID, fmt.Errorf("insert chunk %d: %w", i, err)
-		}
 	}
 
+	if err := m.delegate.InsertArchivalChunkBatch(ctx, stored); err != nil {
+		return recallID, fmt.Errorf("insert chunks: %w", err)
+	}
+
+	m.appendToVecCache(stored)
 	return recallID, nil
 }
 
@@ -292,11 +367,15 @@ func (m *MemoryStore) Search(ctx context.Context, query string, opts memory.Sear
 	}
 
 	m.retrievalPolicyMu.Lock()
-	state := m.loadRetrievalPolicyState(ctx)
-	gates := m.loadRetrievalPromotionGates(ctx)
-	metrics := m.loadRetrievalShadowMetrics(ctx)
+	m.ensurePolicyCacheLoaded(ctx)
 	parity := computeRetrievalParity(baselineFinal, augmentedFinal, limit)
-	state = m.updateRetrievalPolicy(ctx, state, gates, metrics, parity, augmentedUsed, baselineFinal)
+	m.policyCache.state, m.policyCache.metrics = m.updateRetrievalPolicy(ctx, m.policyCache.state, m.policyCache.gates, m.policyCache.metrics, parity, augmentedUsed, baselineFinal)
+	m.policyCache.dirty = true
+	m.policyCache.queryCount++
+	if m.policyCache.flushEvery > 0 && m.policyCache.queryCount >= m.policyCache.flushEvery {
+		m.flushPolicyCacheLocked(ctx)
+	}
+	state := m.policyCache.state
 	m.retrievalPolicyMu.Unlock()
 
 	switch state.Mode {
@@ -325,20 +404,28 @@ func (m *MemoryStore) postProcessMergedResults(
 		halfLife = m.cfg.DefaultHalfLifeHours
 	}
 
-	// Build a createdAt lookup from recall items
-	createdAtMap := make(map[ids.UUID]time.Time)
+	// Batch-fetch all recall items referenced by merged results (single query).
+	recallIDs := make([]ids.UUID, 0, len(merged))
 	for _, r := range merged {
-		item, err := m.delegate.GetRecallItem(ctx, m.agentID, r.ID)
-		if err == nil && item != nil {
-			createdAtMap[r.ID] = item.CreatedAt
+		if !r.ID.IsZero() && !strings.HasPrefix(r.Source, "working-context:") && !strings.HasPrefix(r.Source, "dag:") {
+			recallIDs = append(recallIDs, r.ID)
 		}
+	}
+	recallBatch, batchErr := m.delegate.GetRecallItemsByIDs(ctx, m.agentID, recallIDs)
+	if batchErr != nil {
+		recallBatch = make(map[ids.UUID]*memory.RecallItem)
+	}
+
+	createdAtMap := make(map[ids.UUID]time.Time, len(recallBatch))
+	for id, item := range recallBatch {
+		createdAtMap[id] = item.CreatedAt
 	}
 	ApplyRecencyDecay(merged, time.Now(), halfLife, func(id ids.UUID) time.Time {
 		return createdAtMap[id]
 	})
 
 	// 2. Metadata pre-filtering (sectors, session_key, date range)
-	merged = m.applyMetadataFilters(ctx, merged, opts)
+	merged = m.applyMetadataFiltersBatch(ctx, merged, opts, recallBatch)
 
 	// 3. Filter by min score
 	if opts.MinScore > 0 {
@@ -433,10 +520,10 @@ func (m *MemoryStore) hybridProjectionSearch(ctx context.Context, query string, 
 	return results, nil
 }
 
-// applyMetadataFilters removes results that don't match the requested sector,
-// session_key, or date range constraints. It fetches recall item metadata
-// from the delegate as needed.
-func (m *MemoryStore) applyMetadataFilters(ctx context.Context, results []memory.SearchResult, opts memory.SearchOptions) []memory.SearchResult {
+// applyMetadataFiltersBatch removes results that don't match the requested sector,
+// session_key, or date range constraints. Uses a pre-fetched batch of recall items
+// to avoid N+1 queries.
+func (m *MemoryStore) applyMetadataFiltersBatch(ctx context.Context, results []memory.SearchResult, opts memory.SearchOptions, batch map[ids.UUID]*memory.RecallItem) []memory.SearchResult {
 	needSectorFilter := len(opts.Sectors) > 0
 	needSessionFilter := opts.SessionKey != ""
 	needDateFilter := opts.DateAfter != nil || opts.DateBefore != nil
@@ -445,7 +532,6 @@ func (m *MemoryStore) applyMetadataFilters(ctx context.Context, results []memory
 		return results
 	}
 
-	// Build sector lookup set
 	sectorSet := make(map[memory.Sector]bool, len(opts.Sectors))
 	for _, s := range opts.Sectors {
 		sectorSet[s] = true
@@ -453,8 +539,6 @@ func (m *MemoryStore) applyMetadataFilters(ctx context.Context, results []memory
 
 	filtered := results[:0]
 	for _, r := range results {
-		// Synthetic projection entries (working-context + DAG summaries) are
-		// already scoped by session and do not map to recall item IDs.
 		if strings.HasPrefix(r.Source, "working-context:") || strings.HasPrefix(r.Source, "dag:") {
 			if needSessionFilter && !strings.Contains(r.Source, opts.SessionKey) {
 				continue
@@ -462,8 +546,6 @@ func (m *MemoryStore) applyMetadataFilters(ctx context.Context, results []memory
 			if needSectorFilter && !sectorSet[r.Sector] {
 				continue
 			}
-			// Synthetic entries do not carry durable timestamps, so honor
-			// explicit date filters conservatively by excluding them.
 			if needDateFilter {
 				continue
 			}
@@ -471,23 +553,20 @@ func (m *MemoryStore) applyMetadataFilters(ctx context.Context, results []memory
 			continue
 		}
 
-		item, err := m.delegate.GetRecallItem(ctx, m.agentID, r.ID)
-		if err != nil || item == nil {
+		item := batch[r.ID]
+		if item == nil {
 			continue
 		}
 
 		if needSessionFilter && item.SessionKey != opts.SessionKey {
 			continue
 		}
-
 		if needSectorFilter && !sectorSet[item.Sector] {
 			continue
 		}
-
 		if opts.DateAfter != nil && item.CreatedAt.Before(*opts.DateAfter) {
 			continue
 		}
-
 		if opts.DateBefore != nil && item.CreatedAt.After(*opts.DateBefore) {
 			continue
 		}
@@ -533,12 +612,41 @@ func (m *MemoryStore) vectorSearch(ctx context.Context, query string, opts memor
 	return m.vectorSearchGoSide(ctx, queryVec, limit)
 }
 
-// vectorSearchGoSide performs Go-side brute-force vector search as a fallback.
+// vectorSearchGoSide performs Go-side brute-force cosine similarity search.
+// Uses an in-memory cache of embeddings (populated lazily, updated on insert)
+// to avoid re-scanning the DB on every search call.
 func (m *MemoryStore) vectorSearchGoSide(ctx context.Context, queryVec memory.Embedding, limit int) ([]memory.SearchResult, error) {
+	items, err := m.ensureVecCacheLoaded(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return VectorSearch(queryVec, items, limit), nil
+}
+
+const maxVectorSearchChunks = 50_000
+
+// ensureVecCacheLoaded populates the vector cache from DB on first access.
+func (m *MemoryStore) ensureVecCacheLoaded(ctx context.Context) ([]VectorSearchInput, error) {
+	m.vecCache.mu.RLock()
+	if m.vecCache.loaded {
+		items := m.vecCache.items
+		m.vecCache.mu.RUnlock()
+		return items, nil
+	}
+	m.vecCache.mu.RUnlock()
+
+	m.vecCache.mu.Lock()
+	defer m.vecCache.mu.Unlock()
+
+	// Double-check after acquiring write lock
+	if m.vecCache.loaded {
+		return m.vecCache.items, nil
+	}
+
 	var allChunks []*memory.ArchivalChunk
 	offset := 0
 	batchSize := 5000
-	for {
+	for len(allChunks) < maxVectorSearchChunks {
 		batch, err := m.delegate.ListAllArchivalChunks(ctx, m.agentID, batchSize, offset)
 		if err != nil {
 			return nil, err
@@ -549,19 +657,46 @@ func (m *MemoryStore) vectorSearchGoSide(ctx context.Context, queryVec memory.Em
 		}
 		offset += batchSize
 	}
+	if len(allChunks) > maxVectorSearchChunks {
+		allChunks = allChunks[:maxVectorSearchChunks]
+	}
 
-	inputs := make([]VectorSearchInput, 0, len(allChunks))
+	items := make([]VectorSearchInput, 0, len(allChunks))
 	for _, chunk := range allChunks {
 		if len(chunk.Embedding) == 0 {
 			continue
 		}
-		inputs = append(inputs, VectorSearchInput{
+		items = append(items, VectorSearchInput{
 			Chunk:     chunk,
 			Embedding: chunk.Embedding,
 		})
 	}
 
-	return VectorSearch(queryVec, inputs, limit), nil
+	m.vecCache.items = items
+	m.vecCache.loaded = true
+	return items, nil
+}
+
+// appendToVecCache adds newly inserted chunks to the in-memory vector cache
+// without triggering a full reload.
+func (m *MemoryStore) appendToVecCache(chunks []*memory.ArchivalChunk) {
+	m.vecCache.mu.Lock()
+	defer m.vecCache.mu.Unlock()
+	if !m.vecCache.loaded {
+		return // not yet populated; first search will load everything
+	}
+	for _, chunk := range chunks {
+		if len(chunk.Embedding) == 0 {
+			continue
+		}
+		if len(m.vecCache.items) >= maxVectorSearchChunks {
+			break
+		}
+		m.vecCache.items = append(m.vecCache.items, VectorSearchInput{
+			Chunk:     chunk,
+			Embedding: chunk.Embedding,
+		})
+	}
 }
 
 // recallItemsToResults converts delegate recall items into search results.
@@ -671,8 +806,9 @@ func (m *MemoryStore) OffloadToolResult(ctx context.Context, toolName, content, 
 // --- Lifecycle ---
 
 // Sync flushes pending writes to the remote replica (Turso).
-// No-op if the underlying delegate doesn't support replication.
+// Also flushes in-memory caches (retrieval policy) to KV.
 func (m *MemoryStore) Sync() error {
+	m.FlushPolicyCache(context.Background())
 	type syncer interface{ Sync() error }
 	if s, ok := m.delegate.(syncer); ok {
 		return s.Sync()
@@ -681,6 +817,7 @@ func (m *MemoryStore) Sync() error {
 }
 
 func (m *MemoryStore) Close() error {
+	m.FlushPolicyCache(context.Background())
 	return m.delegate.Close()
 }
 

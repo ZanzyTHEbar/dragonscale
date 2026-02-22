@@ -285,7 +285,7 @@ func (m *MemoryStore) updateRetrievalPolicy(
 	parity retrievalParity,
 	augmentedUsed bool,
 	baseline []memory.SearchResult,
-) retrievalPolicyState {
+) (retrievalPolicyState, retrievalShadowMetrics) {
 	prevMode := state.Mode
 
 	metrics.TotalQueries++
@@ -369,15 +369,20 @@ func (m *MemoryStore) updateRetrievalPolicy(
 			})
 	}
 
-	if err := m.persistRetrievalShadowMetrics(ctx, metrics); err != nil {
-		logger.WarnCF("memory", "failed to persist retrieval shadow metrics",
-			map[string]interface{}{"mode": state.Mode, "error": err.Error()})
+	// State and metrics are written back to the in-memory policy cache by the
+	// caller; the cache handles periodic flush to KV. On mode transitions we
+	// flush immediately to guarantee durability.
+	if prevMode != state.Mode {
+		if err := m.persistRetrievalShadowMetrics(ctx, metrics); err != nil {
+			logger.WarnCF("memory", "failed to persist retrieval shadow metrics",
+				map[string]interface{}{"mode": state.Mode, "error": err.Error()})
+		}
+		if err := m.persistRetrievalPolicyState(ctx, state); err != nil {
+			logger.WarnCF("memory", "failed to persist retrieval policy state",
+				map[string]interface{}{"mode": state.Mode, "error": err.Error()})
+		}
 	}
-	if err := m.persistRetrievalPolicyState(ctx, state); err != nil {
-		logger.WarnCF("memory", "failed to persist retrieval policy state",
-			map[string]interface{}{"mode": state.Mode, "error": err.Error()})
-	}
-	return state
+	return state, metrics
 }
 
 func safeRate(numerator, denominator int) float64 {
