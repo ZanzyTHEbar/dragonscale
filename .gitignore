@@ -11,7 +11,7 @@ bin/
 /dragonscale-test
 cmd/dragonscale/workspace
 
-# Picoclaw specific
+# DragonScale specific
 
 # DragonScale
 .dragonscale/
@@ -34,7 +34,7 @@ coverage.html
 # Ralph workspace
 ralph/
 .ralph/
-tasks/
+/tasks/
 
 # IDE / Editors
 .vscode/
