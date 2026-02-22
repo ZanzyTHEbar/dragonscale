@@ -480,6 +480,17 @@ make deps           # go get -u + go mod tidy
 make clean          # Remove build artifacts
 ```
 
+The Makefile is now a thin compatibility layer.
+All task logic is delegated to the `opsctl` Go wrapper binary (`cmd/opsctl`),
+so command semantics are preserved while moving orchestration out of shell scripts.
+
+You can run the wrapper directly for faster iteration:
+
+```bash
+go run ./cmd/opsctl build
+go run ./cmd/opsctl help
+```
+
 ### Devcontainer (flatc + sqlc ready)
 
 If your host is missing `flatc`/`sqlc`, use the project devcontainer.

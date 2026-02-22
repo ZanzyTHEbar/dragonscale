@@ -53,4 +53,4 @@ Discussions: https://github.com/ZanzyTHEbar/dragonscale/discussions
 ---
 
 "Every bit helps, every bit matters."
-- Picoclaw
+- DragonScale

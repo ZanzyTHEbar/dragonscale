@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # ─────────────────────────────────────────────────────────────────────────────
-# picoclaw commit-msg hook
+# dragonclaw commit-msg hook
 #
 # Validates commit messages against Conventional Commits 1.0.0.
 # Install: make hooks

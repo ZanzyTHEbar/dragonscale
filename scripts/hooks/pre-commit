@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # ─────────────────────────────────────────────────────────────────────────────
-# picoclaw pre-commit hook
+# dragonclaw pre-commit hook
 #
 # Runs formatting, linting, build, and test checks on staged Go code.
 # Install: make hooks
@@ -116,7 +116,7 @@ STEP_TIMES=()
 FAILED=0
 
 echo ""
-printf "  ${CYAN}${BOLD}picoclaw${NC} ${DIM}pre-commit${NC}  ${DIM}(%d file%s)${NC}\n" \
+printf "  ${CYAN}${BOLD}dragonclaw${NC} ${DIM}pre-commit${NC}  ${DIM}(%d file%s)${NC}\n" \
     "$STAGED_COUNT" "$([ "$STAGED_COUNT" -eq 1 ] && echo '' || echo 's')"
 printf "  ${DIM}%s${NC}\n" "$DIVIDER"
 
