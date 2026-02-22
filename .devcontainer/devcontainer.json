@@ -6,6 +6,12 @@
   },
   "remoteUser": "vscode",
   "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
+  "mounts": [
+    "source=${localEnv:HOME},target=/host_home,type=bind,readonly"
+  ],
+  "containerEnv": {
+    "DRAGONSCALE_EVAL_HOST_HOME": "/host_home"
+  },
   "postCreateCommand": "make deps",
   "customizations": {
     "vscode": {
