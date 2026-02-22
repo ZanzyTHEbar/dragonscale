@@ -9,6 +9,7 @@ BINARY_NAME=dragonscale
 BUILD_DIR=bin
 CMD_DIR=cmd/$(BINARY_NAME)
 MAIN_GO=$(CMD_DIR)/main.go
+OPSCTL_SRCS := $(shell find cmd/opsctl internal/opsctl -type f -name '*.go')
 
 # Version
 VERSION?=$(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
@@ -19,7 +20,7 @@ LDFLAGS=-ldflags "-X main.version=$(VERSION) -X main.gitCommit=$(GIT_COMMIT) -X 
 
 # Go variables
 GO?=go
-GOFLAGS?=-v -trimpath -tags stdjson
+GOFLAGS?=-v -trimpath -tags=stdjson
 CGO_ENABLED?=1
 MAKEFILE_DIR := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 DEVCONTAINER_WORKSPACE ?= $(MAKEFILE_DIR)
@@ -78,18 +79,8 @@ ifeq ($(UNAME_S),Linux)
 	else
 		ARCH=$(UNAME_M)
 	endif
-else ifeq ($(UNAME_S),Darwin)
-	PLATFORM=darwin
-	ifeq ($(UNAME_M),x86_64)
-		ARCH=amd64
-	else ifeq ($(UNAME_M),arm64)
-		ARCH=arm64
-	else
-		ARCH=$(UNAME_M)
-	endif
 else
-	PLATFORM=$(UNAME_S)
-	ARCH=$(UNAME_M)
+	$(error This project is Linux/CGO-only. Build requires a Linux host with glibc-compatible tooling.)
 endif
 
 BINARY_PATH=$(BUILD_DIR)/$(BINARY_NAME)-$(PLATFORM)-$(ARCH)
@@ -97,8 +88,11 @@ BINARY_PATH=$(BUILD_DIR)/$(BINARY_NAME)-$(PLATFORM)-$(ARCH)
 # Compatibility shim: run everything through the Go wrapper.
 OPSCTL_BIN = bin/opsctl
 OPSCTL ?= $(OPSCTL_BIN)
+OPSCTL_EVAL_ARGS ?= --no-color --format raw
+OPSCTL_EVAL ?= $(EVAL_GO) run ./cmd/opsctl
+DRAGONSCALE_PROMPTFOO_ARGS ?= --no-cache --no-progress-bar
 
-$(OPSCTL_BIN):
+$(OPSCTL_BIN): $(OPSCTL_SRCS)
 	@mkdir -p $(dir $(OPSCTL_BIN))
 	@go build -o $(OPSCTL_BIN) ./cmd/opsctl
 
@@ -113,7 +107,7 @@ generate: $(OPSCTL_BIN)
 build: $(OPSCTL_BIN)
 	@$(OPSCTL) build
 
-## build-all: Build dragonscale for all platforms
+## build-all: Build dragonscale for the current Linux/CGO target
 build-all: $(OPSCTL_BIN)
 	@$(OPSCTL) build-all
 
@@ -227,31 +221,31 @@ devcontainer-verify: $(OPSCTL_BIN)
 # ---------------------------------------------------------------------------
 
 ## eval-build: Build the eval runner from the current branch
-eval-build: $(OPSCTL_BIN)
-	@$(OPSCTL) eval-build
+eval-build:
+	@DRAGONSCALE_PROMPTFOO_ARGS="$(DRAGONSCALE_PROMPTFOO_ARGS)" $(OPSCTL_EVAL) $(OPSCTL_EVAL_ARGS) eval-build
 
 ## eval: Run the eval suite against the current build
-eval: $(OPSCTL_BIN)
-	@$(OPSCTL) eval
+eval:
+	@DRAGONSCALE_PROMPTFOO_ARGS="$(DRAGONSCALE_PROMPTFOO_ARGS)" $(OPSCTL_EVAL) $(OPSCTL_EVAL_ARGS) eval
 
 ## eval-fixtures: Reset workspace to a known state and seed fixture files for eval
-eval-fixtures: $(OPSCTL_BIN)
-	@$(OPSCTL) eval-fixtures
+eval-fixtures:
+	@DRAGONSCALE_PROMPTFOO_ARGS="$(DRAGONSCALE_PROMPTFOO_ARGS)" $(OPSCTL_EVAL) $(OPSCTL_EVAL_ARGS) eval-fixtures
 
 ## eval-view: Open the promptfoo results viewer
-eval-view: $(OPSCTL_BIN)
-	@$(OPSCTL) eval-view
+eval-view:
+	@DRAGONSCALE_PROMPTFOO_ARGS="$(DRAGONSCALE_PROMPTFOO_ARGS)" $(OPSCTL_EVAL) $(OPSCTL_EVAL_ARGS) eval-view
 
-eval-clean: $(OPSCTL_BIN)
-	@$(OPSCTL) eval-clean
+eval-clean:
+	@DRAGONSCALE_PROMPTFOO_ARGS="$(DRAGONSCALE_PROMPTFOO_ARGS)" $(OPSCTL_EVAL) $(OPSCTL_EVAL_ARGS) eval-clean
 
 ## eval-compare: A/B comparison of current branch vs main
-eval-compare: $(OPSCTL_BIN)
-	@$(OPSCTL) eval-compare
+eval-compare:
+	@DRAGONSCALE_PROMPTFOO_ARGS="$(DRAGONSCALE_PROMPTFOO_ARGS)" $(OPSCTL_EVAL) $(OPSCTL_EVAL_ARGS) eval-compare
 
 ## eval-test: Run Go-native component evals
-eval-test: $(OPSCTL_BIN)
-	@$(OPSCTL) eval-test
+eval-test:
+	@DRAGONSCALE_PROMPTFOO_ARGS="$(DRAGONSCALE_PROMPTFOO_ARGS)" $(OPSCTL_EVAL) $(OPSCTL_EVAL_ARGS) eval-test
 
 ## help: Show this help message
 help: $(OPSCTL_BIN)

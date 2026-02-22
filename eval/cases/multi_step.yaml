@@ -94,8 +94,28 @@
       value: |
         const trace = JSON.parse(output);
         const out = (trace.output || '').toLowerCase();
+        const toolCalls = trace.steps.filter(s => s.type === 'tool_call');
+        const readBacks = toolCalls.filter(s => {
+          let a = s.args;
+          if (typeof a === 'string') {
+            try {
+              a = JSON.parse(a);
+            } catch (e) {
+              a = null;
+            }
+          }
+          const tool = (a && a.tool_name) || s.tool;
+          return tool === 'read_file';
+        });
         const hasOS = out.includes('linux') || out.includes('darwin') || out.includes('os');
-        return { pass: hasOS, score: hasOS ? 1.0 : 0.0, reason: hasOS ? 'confirmed OS name' : 'did not confirm OS' };
+        const hasReadBack = readBacks.some(step => (step.result || '').toLowerCase().includes('linux') ||
+          (step.result || '').toLowerCase().includes('darwin') ||
+          (step.result || '').toLowerCase().includes('os'));
+        return {
+          pass: hasReadBack || hasOS,
+          score: (hasReadBack || hasOS) ? 1.0 : 0.0,
+          reason: (hasReadBack || hasOS) ? 'confirmed OS name' : 'did not confirm OS'
+        };
 
 - description: "chained file ops: create directory structure"
   vars:

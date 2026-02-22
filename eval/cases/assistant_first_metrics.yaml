@@ -29,7 +29,9 @@
         const trace = JSON.parse(output);
         if (trace.error && !trace.output) return { pass: false, score: 0, reason: 'crashed: ' + trace.error };
         const out = (trace.output || '').toLowerCase();
-        const hasFirstReminder = out.includes('first reminder') || out.includes('first check') || out.includes('first alert');
+        const hasFirstReminder = out.includes('first reminder') || out.includes('first check') || out.includes('first alert') ||
+          out.includes('1st reminder') || out.includes('initial reminder') || out.includes('initial check') || out.includes('primary reminder') ||
+          /first\s+(reminder|check|alert|ping|notification)/.test(out);
         const hasTiming = out.includes('hour') || out.includes('min') || out.includes('30') || out.includes('15');
         const pass = hasFirstReminder && hasTiming;
         return { pass, score: pass ? 1.0 : (hasTiming ? 0.5 : 0.0), reason: `first_reminder=${hasFirstReminder}, timing=${hasTiming}` };

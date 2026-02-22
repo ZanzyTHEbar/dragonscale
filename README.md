@@ -184,6 +184,7 @@ config/                    # Example configuration files
 
 > [!IMPORTANT]
 > Requires `CGO_ENABLED=1` — the go-libsql driver links against glibc.
+> Build/runtime target is Linux only (no macOS, no Windows, no musl).
 
 ```bash
 git clone https://github.com/ZanzyTHEbar/dragonscale.git
@@ -473,7 +474,7 @@ See [ADR-001](docs/adr/001-isolated-tool-runtime.md) for the full design includi
 
 ```bash
 make build          # Build for current platform (output: bin/)
-make build-all      # Cross-compile (linux/amd64, linux/arm64, linux/riscv64, darwin/arm64, windows/amd64)
+make build-all      # Build for current Linux/CGO target (Linux host required, glibc runtime)
 make install        # Install to ~/.local/bin + copy skills
 make fmt            # go fmt ./...
 make deps           # go get -u + go mod tidy

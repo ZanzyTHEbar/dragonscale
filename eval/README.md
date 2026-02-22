@@ -12,6 +12,18 @@ npm install -g promptfoo
 make eval
 ```
 
+To show richer promptfoo output with progress bars (when supported), run:
+
+```bash
+make eval DRAGONSCALE_PROMPTFOO_ARGS="--no-cache"
+```
+
+To keep compact/no-progress output (current default), run:
+
+```bash
+make eval DRAGONSCALE_PROMPTFOO_ARGS="--no-cache --no-progress-bar"
+```
+
 `make eval`, `make eval-test`, `make eval-compare`, and `make eval-fixtures` run inside the devcontainer when `npx` is available, keeping command execution aligned with the container build environment.
 
 Set `DEVCONTAINER_EXEC=` to force host execution for these targets.
@@ -131,5 +143,5 @@ python eval/scripts/generate_long_context_cases.py --count 12 --seed 20260221
 
 - `DRAGONSCALE_EVAL_CONFIG` - Optional overlay config path applied on top of user base config.
 - `DRAGONSCALE_EVAL_BASE_CONFIG` - Optional explicit base config path for eval runs.
-- `DRAGONSCALE_EVAL_HOST_HOME` - Path to a host-style home used as a fallback when container home paths are empty (used for host-mounted config discovery, typically `/host_home` in devcontainer).
-- Base config discovery uses XDG first (`~/.config/dragonscale/config.json`) with `DRAGONSCALE_EVAL_HOST_HOME`/`/host_home/.config/dragonscale/config.json` as a host-mount fallback.
+- `DRAGONSCALE_EVAL_HOST_HOME` - Optional path to a host-style home directory used for host-mounted config discovery (commonly `/host_home` when set by devcontainer via `.devcontainer/devcontainer.json`).
+- Base config discovery order: `DRAGONSCALE_EVAL_BASE_CONFIG` (if set and valid), then `{DRAGONSCALE_EVAL_HOST_HOME}/.config/dragonscale/config.json` (if host home is set), then XDG at `~/.config/dragonscale/config.json`.

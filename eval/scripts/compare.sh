@@ -76,7 +76,6 @@ providers:
       timeout: 120000
     env:
       DRAGONSCALE_EVAL_CONFIG: "${EVAL_CONFIG}"
-      DRAGONSCALE_EVAL_HOST_HOME: "/host_home"
       DRAGONSCALE_EVAL_BASE_CONFIG: "${EVAL_BASE_CONFIG}"
   - id: "exec:./bin/eval-runner-main"
     label: "main"
@@ -84,7 +83,6 @@ providers:
       timeout: 120000
     env:
       DRAGONSCALE_EVAL_CONFIG: "${EVAL_CONFIG}"
-      DRAGONSCALE_EVAL_HOST_HOME: "/host_home"
       DRAGONSCALE_EVAL_BASE_CONFIG: "${EVAL_BASE_CONFIG}"
 
 defaultTest:
