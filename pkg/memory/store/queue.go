@@ -148,6 +148,12 @@ func (q *QueueManager) EvictOldest(ctx context.Context, agentID, sessionKey stri
 		evicted++
 	}
 
+	// DB trigger cascades chunk deletion, but the in-memory vecCache
+	// doesn't know about it. Force a reload on next search.
+	if evicted > 0 {
+		q.store.invalidateVecCache()
+	}
+
 	summary := ""
 	if evicted > 0 {
 		summary = fmt.Sprintf("[Memory compaction: %d items archived]\nEvicted topics: %s",

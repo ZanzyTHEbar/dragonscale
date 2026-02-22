@@ -77,8 +77,9 @@ func NewSkillsLoader(primarySkillsDir string, globalSkills string, builtinSkills
 	}
 }
 
-// DirsMtime returns the latest modification time across all skill directories.
-// Used for cache invalidation — if no directories exist, returns zero time.
+// DirsMtime returns the latest modification time across all skill directories
+// and their immediate children. Catches both file additions (directory mtime)
+// and in-place edits of existing skill files (file mtime).
 func (sl *SkillsLoader) DirsMtime() time.Time {
 	var latest time.Time
 	for _, dir := range []string{sl.primarySkills, sl.globalSkills, sl.builtinSkills} {
@@ -91,6 +92,19 @@ func (sl *SkillsLoader) DirsMtime() time.Time {
 		}
 		if mt := info.ModTime(); mt.After(latest) {
 			latest = mt
+		}
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			continue
+		}
+		for _, e := range entries {
+			fi, err := e.Info()
+			if err != nil {
+				continue
+			}
+			if mt := fi.ModTime(); mt.After(latest) {
+				latest = mt
+			}
 		}
 	}
 	return latest
