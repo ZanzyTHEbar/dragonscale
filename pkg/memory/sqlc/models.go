@@ -181,14 +181,15 @@ type AgentToolResult struct {
 }
 
 type ArchivalChunk struct {
-	ID         ids.UUID         `db:"id" json:"id"`
-	RecallID   ids.UUID         `db:"recall_id" json:"recall_id"`
-	ChunkIndex int64            `db:"chunk_index" json:"chunk_index"`
-	Content    string           `db:"content" json:"content"`
-	Embedding  memory.Embedding `db:"embedding" json:"embedding"`
-	Source     string           `db:"source" json:"source"`
-	Hash       string           `db:"hash" json:"hash"`
-	CreatedAt  time.Time        `db:"created_at" json:"created_at"`
+	ID           ids.UUID         `db:"id" json:"id"`
+	RecallID     ids.UUID         `db:"recall_id" json:"recall_id"`
+	ChunkIndex   int64            `db:"chunk_index" json:"chunk_index"`
+	Content      string           `db:"content" json:"content"`
+	Embedding    memory.Embedding `db:"embedding" json:"embedding"`
+	Source       string           `db:"source" json:"source"`
+	Hash         string           `db:"hash" json:"hash"`
+	CreatedAt    time.Time        `db:"created_at" json:"created_at"`
+	SuppressedAt *time.Time       `db:"suppressed_at" json:"suppressed_at"`
 }
 
 type DagEdge struct {
@@ -230,6 +231,17 @@ type DagSnapshot struct {
 	ContentHash string    `db:"content_hash" json:"content_hash"`
 	CreatedAt   time.Time `db:"created_at" json:"created_at"`
 	UpdatedAt   time.Time `db:"updated_at" json:"updated_at"`
+}
+
+type ImmutableMessage struct {
+	ID            ids.UUID  `db:"id" json:"id"`
+	SessionKey    string    `db:"session_key" json:"session_key"`
+	Role          string    `db:"role" json:"role"`
+	Content       string    `db:"content" json:"content"`
+	ToolCallID    string    `db:"tool_call_id" json:"tool_call_id"`
+	ToolCalls     string    `db:"tool_calls" json:"tool_calls"`
+	TokenEstimate int64     `db:"token_estimate" json:"token_estimate"`
+	CreatedAt     time.Time `db:"created_at" json:"created_at"`
 }
 
 type Job struct {
@@ -284,6 +296,15 @@ type MapRun struct {
 	CompletedAt    *time.Time `db:"completed_at" json:"completed_at"`
 }
 
+type MemoryEdge struct {
+	ID        int64     `db:"id" json:"id"`
+	FromID    ids.UUID  `db:"from_id" json:"from_id"`
+	ToID      ids.UUID  `db:"to_id" json:"to_id"`
+	EdgeType  string    `db:"edge_type" json:"edge_type"`
+	Weight    float64   `db:"weight" json:"weight"`
+	CreatedAt time.Time `db:"created_at" json:"created_at"`
+}
+
 type MemorySummary struct {
 	ID         ids.UUID  `db:"id" json:"id"`
 	AgentID    string    `db:"agent_id" json:"agent_id"`
@@ -294,19 +315,30 @@ type MemorySummary struct {
 	CreatedAt  time.Time `db:"created_at" json:"created_at"`
 }
 
-type RecallItem struct {
-	ID         ids.UUID      `db:"id" json:"id"`
-	AgentID    string        `db:"agent_id" json:"agent_id"`
-	SessionKey string        `db:"session_key" json:"session_key"`
-	Role       string        `db:"role" json:"role"`
-	Sector     memory.Sector `db:"sector" json:"sector"`
-	Importance float64       `db:"importance" json:"importance"`
-	Salience   float64       `db:"salience" json:"salience"`
-	DecayRate  float64       `db:"decay_rate" json:"decay_rate"`
-	Content    string        `db:"content" json:"content"`
-	Tags       string        `db:"tags" json:"tags"`
-	CreatedAt  time.Time     `db:"created_at" json:"created_at"`
-	UpdatedAt  time.Time     `db:"updated_at" json:"updated_at"`
+type TaskBaseline struct {
+	AgentID             string     `db:"agent_id" json:"agent_id"`
+	Count               *int64     `db:"count" json:"count"`
+	MeanTokens          *int64     `db:"mean_tokens" json:"mean_tokens"`
+	MeanErrors          *float64   `db:"mean_errors" json:"mean_errors"`
+	MeanUserCorrections *float64   `db:"mean_user_corrections" json:"mean_user_corrections"`
+	M2Tokens            *float64   `db:"m2_tokens" json:"m2_tokens"`
+	M2Errors            *float64   `db:"m2_errors" json:"m2_errors"`
+	M2UserCorrections   *float64   `db:"m2_user_corrections" json:"m2_user_corrections"`
+	UpdatedAt           *time.Time `db:"updated_at" json:"updated_at"`
+}
+
+type TaskCompletion struct {
+	ID              ids.UUID  `db:"id" json:"id"`
+	AgentID         string    `db:"agent_id" json:"agent_id"`
+	ConversationID  ids.UUID  `db:"conversation_id" json:"conversation_id"`
+	RunID           ids.UUID  `db:"run_id" json:"run_id"`
+	Description     string    `db:"description" json:"description"`
+	TokensUsed      *int64    `db:"tokens_used" json:"tokens_used"`
+	ToolCalls       *int64    `db:"tool_calls" json:"tool_calls"`
+	Errors          *int64    `db:"errors" json:"errors"`
+	UserCorrections *int64    `db:"user_corrections" json:"user_corrections"`
+	Completed       bool      `db:"completed" json:"completed"`
+	CreatedAt       time.Time `db:"created_at" json:"created_at"`
 }
 
 type WorkingContext struct {

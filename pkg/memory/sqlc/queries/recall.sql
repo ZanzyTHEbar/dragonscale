@@ -11,6 +11,7 @@ INSERT INTO recall_items (
         decay_rate,
         content,
         tags,
+        rl_weight,
         created_at,
         updated_at
     )
@@ -25,6 +26,7 @@ VALUES (
         sqlc.arg(decay_rate),
         sqlc.arg(content),
         sqlc.arg(tags),
+        sqlc.arg(rl_weight),
         datetime('now'),
         datetime('now')
     )
@@ -38,6 +40,7 @@ RETURNING id,
     decay_rate,
     content,
     tags,
+    rl_weight,
     created_at,
     updated_at;
 -- name: GetRecallItem :one
@@ -56,6 +59,7 @@ SELECT id,
 FROM recall_items
 WHERE id = sqlc.arg(id)
     AND agent_id = sqlc.arg(agent_id)
+    AND suppressed_at IS NULL
 LIMIT 1;
 -- name: UpdateRecallItem :exec
 UPDATE recall_items
@@ -88,6 +92,7 @@ SELECT id,
     updated_at
 FROM recall_items
 WHERE agent_id = sqlc.arg(agent_id)
+    AND suppressed_at IS NULL
     AND (
         session_key = sqlc.arg(session_key)
         OR sqlc.arg(session_key) = ''
@@ -110,12 +115,14 @@ SELECT ri.id,
 FROM recall_items ri
 WHERE ri.content LIKE '%' || sqlc.arg(keyword) || '%'
     AND ri.agent_id = sqlc.arg(agent_id)
+    AND ri.suppressed_at IS NULL
 ORDER BY ri.importance DESC
 LIMIT sqlc.arg(lim);
 -- name: CountRecallItems :one
 SELECT COUNT(*)
 FROM recall_items
 WHERE agent_id = sqlc.arg(agent_id)
+    AND suppressed_at IS NULL
     AND (
         session_key = sqlc.arg(session_key)
         OR sqlc.arg(session_key) = ''
@@ -135,7 +142,8 @@ SELECT id,
     updated_at
 FROM recall_items
 WHERE id IN (sqlc.slice('ids'))
-    AND agent_id = sqlc.arg(agent_id);
+    AND agent_id = sqlc.arg(agent_id)
+    AND suppressed_at IS NULL;
 -- name: InsertSessionMessage :one
 INSERT INTO recall_items (
         id,

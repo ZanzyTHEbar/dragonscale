@@ -208,6 +208,46 @@ sql:
             go_type:
               import: "github.com/ZanzyTHEbar/dragonscale/pkg/ids"
               type: "UUID"
+          # Immutable messages
+          - column: "immutable_messages.id"
+            go_type:
+              import: "github.com/ZanzyTHEbar/dragonscale/pkg/ids"
+              type: "UUID"
+          # Memory edges — from_id/to_id reference recall_items
+          - column: "memory_edges.from_id"
+            go_type:
+              import: "github.com/ZanzyTHEbar/dragonscale/pkg/ids"
+              type: "UUID"
+          - column: "memory_edges.to_id"
+            go_type:
+              import: "github.com/ZanzyTHEbar/dragonscale/pkg/ids"
+              type: "UUID"
+          # Task completions
+          - column: "task_completions.id"
+            go_type:
+              import: "github.com/ZanzyTHEbar/dragonscale/pkg/ids"
+              type: "UUID"
+          - column: "task_completions.conversation_id"
+            go_type:
+              import: "github.com/ZanzyTHEbar/dragonscale/pkg/ids"
+              type: "UUID"
+          - column: "task_completions.run_id"
+            go_type:
+              import: "github.com/ZanzyTHEbar/dragonscale/pkg/ids"
+              type: "UUID"
+          # Task retrievals
+          - column: "task_retrievals.id"
+            go_type:
+              import: "github.com/ZanzyTHEbar/dragonscale/pkg/ids"
+              type: "UUID"
+          - column: "task_retrievals.task_id"
+            go_type:
+              import: "github.com/ZanzyTHEbar/dragonscale/pkg/ids"
+              type: "UUID"
+          - column: "task_retrievals.memory_id"
+            go_type:
+              import: "github.com/ZanzyTHEbar/dragonscale/pkg/ids"
+              type: "UUID"
           # DAG
           - column: "dag_snapshots.id"
             go_type:

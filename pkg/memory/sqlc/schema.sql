@@ -26,7 +26,13 @@ CREATE TABLE IF NOT EXISTS recall_items (
     content TEXT NOT NULL,
     tags TEXT NOT NULL DEFAULT '',
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    suppressed_at DATETIME, -- soft delete timestamp (T2.4)
+    -- RL (Memelord) support columns
+    rl_weight REAL DEFAULT 1.0, -- current weight for credit assignment
+    rl_credit REAL, -- accumulated credit for this memory
+    self_report_score INTEGER, -- self-reported usefulness score
+    task_retrieval_count INTEGER DEFAULT 0 -- how many times retrieved for tasks
 );
 CREATE INDEX IF NOT EXISTS idx_recall_agent_session ON recall_items(agent_id, session_key);
 CREATE INDEX IF NOT EXISTS idx_recall_sector ON recall_items(sector);
@@ -44,7 +50,8 @@ CREATE TABLE IF NOT EXISTS archival_chunks (
     embedding BLOB,
     source TEXT NOT NULL DEFAULT '',
     hash TEXT NOT NULL DEFAULT '',
-    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    suppressed_at DATETIME -- soft delete timestamp (T2.4)
 );
 CREATE INDEX IF NOT EXISTS idx_chunks_recall ON archival_chunks(recall_id);
 CREATE INDEX IF NOT EXISTS idx_chunks_source ON archival_chunks(source);
@@ -385,3 +392,78 @@ CREATE TABLE IF NOT EXISTS dag_edges (
 CREATE INDEX IF NOT EXISTS idx_dag_edges_snapshot ON dag_edges(snapshot_id);
 CREATE INDEX IF NOT EXISTS idx_dag_edges_parent ON dag_edges(parent_node_id);
 CREATE INDEX IF NOT EXISTS idx_dag_edges_child ON dag_edges(child_node_id);
+-- ============================================================================
+-- Immutable Message Store (LCM ADR-001)
+-- ============================================================================
+-- Append-only verbatim record of every message. Never modified or deleted.
+CREATE TABLE IF NOT EXISTS immutable_messages (
+    id BLOB PRIMARY KEY,
+    session_key TEXT NOT NULL,
+    role TEXT NOT NULL,
+    content TEXT NOT NULL,
+    tool_call_id TEXT NOT NULL DEFAULT '',
+    tool_calls TEXT NOT NULL DEFAULT '',
+    token_estimate INTEGER NOT NULL DEFAULT 0,
+    created_at DATETIME NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+CREATE INDEX IF NOT EXISTS idx_immutable_session_created ON immutable_messages(session_key, created_at);
+-- ============================================================================
+-- Memory Graph Edges (ADR-004)
+-- ============================================================================
+-- Typed, weighted relationships between memory items.
+CREATE TABLE IF NOT EXISTS memory_edges (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    from_id BLOB NOT NULL,
+    to_id BLOB NOT NULL,
+    edge_type TEXT NOT NULL DEFAULT 'related_to',
+    weight REAL NOT NULL DEFAULT 1.0,
+    created_at DATETIME NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+CREATE INDEX IF NOT EXISTS idx_memory_edges_from ON memory_edges(from_id);
+CREATE INDEX IF NOT EXISTS idx_memory_edges_to ON memory_edges(to_id);
+CREATE INDEX IF NOT EXISTS idx_memory_edges_type ON memory_edges(edge_type);
+
+-- ============================================================================
+-- RL (Reinforcement Learning) Support Tables
+-- ============================================================================
+-- Task baselines: per-agent performance statistics for RL credit assignment
+CREATE TABLE IF NOT EXISTS task_baselines (
+    agent_id TEXT PRIMARY KEY,
+    count INTEGER DEFAULT 0,
+    mean_tokens INTEGER DEFAULT 0,
+    mean_errors REAL DEFAULT 0,
+    mean_user_corrections REAL DEFAULT 0,
+    m2_tokens REAL DEFAULT 0,
+    m2_errors REAL DEFAULT 0,
+    m2_user_corrections REAL DEFAULT 0,
+    updated_at DATETIME
+);
+
+-- Task completions: record of completed agent runs for RL analysis
+CREATE TABLE IF NOT EXISTS task_completions (
+    id BLOB PRIMARY KEY,
+    agent_id TEXT NOT NULL,
+    conversation_id BLOB NOT NULL REFERENCES agent_conversations(id) ON DELETE CASCADE,
+    run_id BLOB NOT NULL REFERENCES agent_runs(id) ON DELETE CASCADE,
+    description TEXT NOT NULL DEFAULT '',
+    tokens_used INTEGER DEFAULT 0,
+    tool_calls INTEGER DEFAULT 0,
+    errors INTEGER DEFAULT 0,
+    user_corrections INTEGER DEFAULT 0,
+    completed BOOLEAN NOT NULL DEFAULT 0,
+    created_at DATETIME NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+CREATE INDEX IF NOT EXISTS idx_task_completions_agent_created ON task_completions(agent_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_task_completions_run ON task_completions(run_id);
+
+-- Task retrievals: links memories retrieved during task execution for RL credit assignment
+CREATE TABLE IF NOT EXISTS task_retrievals (
+    id BLOB PRIMARY KEY,
+    task_id BLOB NOT NULL REFERENCES task_completions(id) ON DELETE CASCADE,
+    memory_id BLOB NOT NULL REFERENCES recall_items(id) ON DELETE CASCADE,
+    similarity REAL NOT NULL DEFAULT 0,
+    created_at DATETIME NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    UNIQUE(task_id, memory_id)
+);
+CREATE INDEX IF NOT EXISTS idx_task_retrievals_task ON task_retrievals(task_id);
+CREATE INDEX IF NOT EXISTS idx_task_retrievals_memory ON task_retrievals(memory_id);

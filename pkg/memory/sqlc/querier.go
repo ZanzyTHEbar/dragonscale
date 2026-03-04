@@ -115,6 +115,13 @@ type Querier interface {
 	//      JOIN recall_items ri ON ac.recall_id = ri.id
 	//  WHERE ri.agent_id = ?1
 	CountArchivalChunks(ctx context.Context, arg CountArchivalChunksParams) (int64, error)
+	//CountArchivalChunksWithoutEmbedding
+	//
+	//  SELECT COUNT(*)
+	//  FROM archival_chunks
+	//  WHERE embedding IS NULL
+	//      AND suppressed_at IS NULL
+	CountArchivalChunksWithoutEmbedding(ctx context.Context) (int64, error)
 	//CountAuditEntries
 	//
 	//  SELECT COUNT(*)
@@ -128,6 +135,12 @@ type Querier interface {
 	//  WHERE agent_id = ?1
 	//      AND action = ?2
 	CountAuditEntriesByAction(ctx context.Context, arg CountAuditEntriesByActionParams) (int64, error)
+	//CountImmutableMessages
+	//
+	//  SELECT COUNT(*)
+	//  FROM immutable_messages
+	//  WHERE session_key = ?1
+	CountImmutableMessages(ctx context.Context, arg CountImmutableMessagesParams) (int64, error)
 	//CountJobsByStatus
 	//
 	//  SELECT status,
@@ -149,11 +162,19 @@ type Querier interface {
 	//  WHERE run_id = ?1
 	//  GROUP BY status
 	CountMapItemsByRunAndStatus(ctx context.Context, arg CountMapItemsByRunAndStatusParams) ([]CountMapItemsByRunAndStatusRow, error)
+	//CountMemoryEdgesForItem
+	//
+	//  SELECT COUNT(*)
+	//  FROM memory_edges
+	//  WHERE from_id = ?1
+	//      OR to_id = ?1
+	CountMemoryEdgesForItem(ctx context.Context, arg CountMemoryEdgesForItemParams) (int64, error)
 	//CountRecallItems
 	//
 	//  SELECT COUNT(*)
 	//  FROM recall_items
 	//  WHERE agent_id = ?1
+	//      AND suppressed_at IS NULL
 	//      AND (
 	//          session_key = ?2
 	//          OR ?2 = ''
@@ -221,6 +242,23 @@ type Querier interface {
 	//  VALUES (?, ?, ?, ?)
 	//  RETURNING id, conversation_id, title, metadata_json, created_at, updated_at
 	CreateAgentThread(ctx context.Context, arg CreateAgentThreadParams) (AgentThread, error)
+	// Batch decay of recall item importance (Cortex decay task)
+	//
+	//  UPDATE recall_items
+	//  SET importance = MAX(
+	//          recall_items.importance * ?1,
+	//          ?2
+	//      ),
+	//      updated_at = datetime('now')
+	//  WHERE recall_items.id IN (
+	//          SELECT ri.id
+	//          FROM recall_items ri
+	//          WHERE ri.importance > ?2
+	//              AND ri.suppressed_at IS NULL
+	//          ORDER BY ri.updated_at ASC
+	//          LIMIT ?3
+	//      )
+	DecayRecallImportanceBatch(ctx context.Context, arg DecayRecallImportanceBatchParams) error
 	//DeleteAgentConversationLink
 	//
 	//  DELETE FROM agent_conversation_links
@@ -245,6 +283,12 @@ type Querier interface {
 	//  WHERE agent_id = ?1
 	//      AND key = ?2
 	DeleteKV(ctx context.Context, arg DeleteKVParams) error
+	//DeleteMemoryEdgesForItem
+	//
+	//  DELETE FROM memory_edges
+	//  WHERE from_id = ?1
+	//      OR to_id = ?1
+	DeleteMemoryEdgesForItem(ctx context.Context, arg DeleteMemoryEdgesForItemParams) error
 	//DeleteRecallItem
 	//
 	//  DELETE FROM recall_items
@@ -295,6 +339,24 @@ type Querier interface {
 	//      created_at ASC
 	//  LIMIT 1
 	FindNextRunnableJob(ctx context.Context) (ids.UUID, error)
+	// Finds recall items with high cosine similarity to the given embedding.
+	// Uses libSQL's built-in vector similarity if available, otherwise returns
+	// candidates for manual comparison.
+	//
+	//  SELECT ri.id,
+	//      ri.agent_id,
+	//      ri.content,
+	//      ac.embedding as embedding,
+	//      vector_distance_cosine(ac.embedding, ?1) as distance
+	//  FROM recall_items ri
+	//      JOIN archival_chunks ac ON ac.recall_id = ri.id
+	//      AND ac.chunk_index = 0
+	//  WHERE ri.agent_id = ?2
+	//      AND ri.id != ?3
+	//      AND ac.embedding IS NOT NULL
+	//  ORDER BY distance ASC
+	//  LIMIT ?4
+	FindSimilarRecallItems(ctx context.Context, arg FindSimilarRecallItemsParams) ([]FindSimilarRecallItemsRow, error)
 	//GetAgentCheckpointByConversationIDAndName
 	//
 	//  SELECT id, conversation_id, name, run_state_id, metadata_json, created_at, updated_at
@@ -354,7 +416,7 @@ type Querier interface {
 	//  WHERE ac.id = ?1
 	//      AND ri.agent_id = ?2
 	//  LIMIT 1
-	GetArchivalChunk(ctx context.Context, arg GetArchivalChunkParams) (ArchivalChunk, error)
+	GetArchivalChunk(ctx context.Context, arg GetArchivalChunkParams) (GetArchivalChunkRow, error)
 	//GetArchivalChunksByIDs
 	//
 	//  SELECT ac.id,
@@ -369,7 +431,26 @@ type Querier interface {
 	//      JOIN recall_items ri ON ac.recall_id = ri.id
 	//  WHERE ac.id IN (/*SLICE:ids*/?)
 	//      AND ri.agent_id = ?2
-	GetArchivalChunksByIDs(ctx context.Context, arg GetArchivalChunksByIDsParams) ([]ArchivalChunk, error)
+	GetArchivalChunksByIDs(ctx context.Context, arg GetArchivalChunksByIDsParams) ([]GetArchivalChunksByIDsRow, error)
+	// Get tasks completed since the given time for RL processing
+	//
+	//  SELECT id,
+	//      agent_id,
+	//      conversation_id,
+	//      run_id,
+	//      description,
+	//      tokens_used,
+	//      tool_calls,
+	//      errors,
+	//      user_corrections,
+	//      completed,
+	//      created_at
+	//  FROM task_completions
+	//  WHERE agent_id = ?1
+	//      AND created_at > ?2
+	//      AND completed = 1
+	//  ORDER BY created_at ASC
+	GetCompletedTasks(ctx context.Context, arg GetCompletedTasksParams) ([]TaskCompletion, error)
 	//GetDAGNodeBySnapshotAndNodeID
 	//
 	//  SELECT id,
@@ -423,6 +504,20 @@ type Querier interface {
 	//      AND name = ?2
 	//  LIMIT 1
 	GetDocument(ctx context.Context, arg GetDocumentParams) (AgentDocument, error)
+	//GetImmutableMessage
+	//
+	//  SELECT id,
+	//      session_key,
+	//      role,
+	//      content,
+	//      tool_call_id,
+	//      tool_calls,
+	//      token_estimate,
+	//      created_at
+	//  FROM immutable_messages
+	//  WHERE id = ?1
+	//  LIMIT 1
+	GetImmutableMessage(ctx context.Context, arg GetImmutableMessageParams) (ImmutableMessage, error)
 	//GetJob
 	//
 	//  SELECT id, kind, status, run_at, attempts, max_attempts, locked_at, locked_by, payload_json, dedupe_key, last_error, created_at, updated_at, completed_at
@@ -507,6 +602,30 @@ type Querier interface {
 	//      AND idempotency_key = ?4
 	//  LIMIT 1
 	GetMapRunByIdempotencyKey(ctx context.Context, arg GetMapRunByIdempotencyKeyParams) (MapRun, error)
+	// Get memories ordered by their task retrieval count (for RL analysis)
+	//
+	//  SELECT id,
+	//      agent_id,
+	//      session_key,
+	//      role,
+	//      sector,
+	//      importance,
+	//      salience,
+	//      decay_rate,
+	//      content,
+	//      tags,
+	//      rl_weight,
+	//      rl_credit,
+	//      self_report_score,
+	//      task_retrieval_count,
+	//      created_at,
+	//      updated_at
+	//  FROM recall_items
+	//  WHERE agent_id = ?1
+	//      AND suppressed_at IS NULL
+	//  ORDER BY task_retrieval_count DESC
+	//  LIMIT ?2
+	GetMemoriesByRetrievalCount(ctx context.Context, arg GetMemoriesByRetrievalCountParams) ([]GetMemoriesByRetrievalCountRow, error)
 	//GetRecallItem
 	//
 	//  SELECT id,
@@ -524,8 +643,9 @@ type Querier interface {
 	//  FROM recall_items
 	//  WHERE id = ?1
 	//      AND agent_id = ?2
+	//      AND suppressed_at IS NULL
 	//  LIMIT 1
-	GetRecallItem(ctx context.Context, arg GetRecallItemParams) (RecallItem, error)
+	GetRecallItem(ctx context.Context, arg GetRecallItemParams) (GetRecallItemRow, error)
 	//GetRecallItemsByIDs
 	//
 	//  SELECT id,
@@ -543,7 +663,35 @@ type Querier interface {
 	//  FROM recall_items
 	//  WHERE id IN (/*SLICE:ids*/?)
 	//      AND agent_id = ?2
-	GetRecallItemsByIDs(ctx context.Context, arg GetRecallItemsByIDsParams) ([]RecallItem, error)
+	//      AND suppressed_at IS NULL
+	GetRecallItemsByIDs(ctx context.Context, arg GetRecallItemsByIDsParams) ([]GetRecallItemsByIDsRow, error)
+	// Get memories retrieved during a specific task with their self-report scores
+	//
+	//  SELECT tr.memory_id,
+	//      tr.similarity,
+	//      ri.self_report_score
+	//  FROM task_retrievals tr
+	//      JOIN recall_items ri ON tr.memory_id = ri.id
+	//  WHERE tr.task_id = ?1
+	GetRetrievedMemories(ctx context.Context, arg GetRetrievedMemoriesParams) ([]GetRetrievedMemoriesRow, error)
+	// RL (Reinforcement Learning) queries for Memelord integration
+	// Task baseline queries for per-agent performance statistics
+	// Get the baseline statistics for an agent
+	//
+	//
+	//  SELECT agent_id,
+	//      count,
+	//      mean_tokens,
+	//      mean_errors,
+	//      mean_user_corrections,
+	//      m2_tokens,
+	//      m2_errors,
+	//      m2_user_corrections,
+	//      updated_at
+	//  FROM task_baselines
+	//  WHERE agent_id = ?1
+	//  LIMIT 1
+	GetTaskBaseline(ctx context.Context, arg GetTaskBaselineParams) (TaskBaseline, error)
 	// Working Context queries
 	//
 	//  SELECT agent_id,
@@ -555,6 +703,30 @@ type Querier interface {
 	//      AND session_key = ?2
 	//  LIMIT 1
 	GetWorkingContext(ctx context.Context, arg GetWorkingContextParams) (WorkingContext, error)
+	// Permanently deletes archival chunks for a recall item.
+	//
+	//  DELETE FROM archival_chunks
+	//  WHERE recall_id = ?1
+	HardDeleteArchivalChunks(ctx context.Context, arg HardDeleteArchivalChunksParams) error
+	// Permanently deletes a single archival chunk by ID.
+	//
+	//  DELETE FROM archival_chunks
+	//  WHERE id = ?1
+	HardDeleteChunk(ctx context.Context, arg HardDeleteChunkParams) error
+	// Permanently deletes a recall item (after quarantine period).
+	//
+	//  DELETE FROM recall_items
+	//  WHERE id = ?1
+	//      AND agent_id = ?2
+	HardDeleteRecallItem(ctx context.Context, arg HardDeleteRecallItemParams) error
+	// Increment the task retrieval counter for a memory item
+	//
+	//  UPDATE recall_items
+	//  SET task_retrieval_count = task_retrieval_count + 1,
+	//      updated_at = datetime('now')
+	//  WHERE id = ?1
+	//      AND agent_id = ?2
+	IncrementTaskRetrievalCount(ctx context.Context, arg IncrementTaskRetrievalCountParams) error
 	// Archival Chunk queries
 	//
 	//  INSERT INTO archival_chunks (
@@ -578,7 +750,7 @@ type Querier interface {
 	//          datetime('now')
 	//      )
 	//  RETURNING id, recall_id, chunk_index, content, embedding, source, hash, created_at
-	InsertArchivalChunk(ctx context.Context, arg InsertArchivalChunkParams) (ArchivalChunk, error)
+	InsertArchivalChunk(ctx context.Context, arg InsertArchivalChunkParams) (InsertArchivalChunkRow, error)
 	// Agent Audit Log queries
 	//
 	//  INSERT INTO agent_audit_log (
@@ -702,6 +874,35 @@ type Querier interface {
 	//      created_at,
 	//      updated_at
 	InsertDAGSnapshot(ctx context.Context, arg InsertDAGSnapshotParams) (DagSnapshot, error)
+	// Immutable Messages queries (LCM ADR-001: append-only verbatim message store)
+	//
+	//  INSERT INTO immutable_messages (
+	//          id,
+	//          session_key,
+	//          role,
+	//          content,
+	//          tool_call_id,
+	//          tool_calls,
+	//          token_estimate
+	//      )
+	//  VALUES (
+	//          ?1,
+	//          ?2,
+	//          ?3,
+	//          ?4,
+	//          ?5,
+	//          ?6,
+	//          ?7
+	//      )
+	//  RETURNING id,
+	//      session_key,
+	//      role,
+	//      content,
+	//      tool_call_id,
+	//      tool_calls,
+	//      token_estimate,
+	//      created_at
+	InsertImmutableMessage(ctx context.Context, arg InsertImmutableMessageParams) (ImmutableMessage, error)
 	//InsertMapItem
 	//
 	//  INSERT INTO map_items (
@@ -764,6 +965,22 @@ type Querier interface {
 	//      )
 	//  RETURNING id, agent_id, session_key, operator_kind, idempotency_key, status, total_items, queued_items, running_items, succeeded_items, failed_items, spec_fb, last_error, created_at, updated_at, completed_at
 	InsertMapRun(ctx context.Context, arg InsertMapRunParams) (MapRun, error)
+	// Memory Graph Edges queries (ADR-004: typed relational memory)
+	//
+	//  INSERT INTO memory_edges (from_id, to_id, edge_type, weight)
+	//  VALUES (
+	//          ?1,
+	//          ?2,
+	//          ?3,
+	//          ?4
+	//      )
+	//  RETURNING id,
+	//      from_id,
+	//      to_id,
+	//      edge_type,
+	//      weight,
+	//      created_at
+	InsertMemoryEdge(ctx context.Context, arg InsertMemoryEdgeParams) (MemoryEdge, error)
 	// Recall Item queries
 	//
 	//  INSERT INTO recall_items (
@@ -777,6 +994,7 @@ type Querier interface {
 	//          decay_rate,
 	//          content,
 	//          tags,
+	//          rl_weight,
 	//          created_at,
 	//          updated_at
 	//      )
@@ -791,6 +1009,7 @@ type Querier interface {
 	//          ?8,
 	//          ?9,
 	//          ?10,
+	//          ?11,
 	//          datetime('now'),
 	//          datetime('now')
 	//      )
@@ -804,9 +1023,10 @@ type Querier interface {
 	//      decay_rate,
 	//      content,
 	//      tags,
+	//      rl_weight,
 	//      created_at,
 	//      updated_at
-	InsertRecallItem(ctx context.Context, arg InsertRecallItemParams) (RecallItem, error)
+	InsertRecallItem(ctx context.Context, arg InsertRecallItemParams) (InsertRecallItemRow, error)
 	//InsertSessionMessage
 	//
 	//  INSERT INTO recall_items (
@@ -849,7 +1069,7 @@ type Querier interface {
 	//      tags,
 	//      created_at,
 	//      updated_at
-	InsertSessionMessage(ctx context.Context, arg InsertSessionMessageParams) (RecallItem, error)
+	InsertSessionMessage(ctx context.Context, arg InsertSessionMessageParams) (InsertSessionMessageRow, error)
 	// Memory Summary queries
 	//
 	//  INSERT INTO memory_summaries (
@@ -1012,7 +1232,7 @@ type Querier interface {
 	//  WHERE ri.agent_id = ?1
 	//  ORDER BY ac.created_at DESC
 	//  LIMIT ?3 OFFSET ?2
-	ListAllArchivalChunks(ctx context.Context, arg ListAllArchivalChunksParams) ([]ArchivalChunk, error)
+	ListAllArchivalChunks(ctx context.Context, arg ListAllArchivalChunksParams) ([]ListAllArchivalChunksRow, error)
 	//ListAllDocuments
 	//
 	//  SELECT id,
@@ -1047,7 +1267,22 @@ type Querier interface {
 	//      AND ri.agent_id = ?2
 	//  ORDER BY ac.chunk_index
 	//  LIMIT ?3
-	ListArchivalChunks(ctx context.Context, arg ListArchivalChunksParams) ([]ArchivalChunk, error)
+	ListArchivalChunks(ctx context.Context, arg ListArchivalChunksParams) ([]ListArchivalChunksRow, error)
+	//ListArchivalChunksWithoutEmbedding
+	//
+	//  SELECT id,
+	//      recall_id,
+	//      chunk_index,
+	//      content,
+	//      embedding,
+	//      source,
+	//      hash,
+	//      created_at
+	//  FROM archival_chunks
+	//  WHERE embedding IS NULL
+	//      AND suppressed_at IS NULL
+	//  LIMIT ?1
+	ListArchivalChunksWithoutEmbedding(ctx context.Context, arg ListArchivalChunksWithoutEmbeddingParams) ([]ListArchivalChunksWithoutEmbeddingRow, error)
 	//ListAuditEntries
 	//
 	//  SELECT id,
@@ -1151,6 +1386,49 @@ type Querier interface {
 	//  ORDER BY name
 	//  LIMIT ?3
 	ListDocumentsByCategory(ctx context.Context, arg ListDocumentsByCategoryParams) ([]AgentDocument, error)
+	// List memories with high RL weights (credits) for priority retention
+	//
+	//  SELECT id,
+	//      agent_id,
+	//      session_key,
+	//      role,
+	//      sector,
+	//      importance,
+	//      salience,
+	//      decay_rate,
+	//      content,
+	//      tags,
+	//      rl_weight,
+	//      rl_credit,
+	//      self_report_score,
+	//      task_retrieval_count,
+	//      created_at,
+	//      updated_at
+	//  FROM recall_items
+	//  WHERE agent_id = ?1
+	//      AND suppressed_at IS NULL
+	//      AND (
+	//          rl_credit > ?2
+	//          OR rl_weight > ?3
+	//      )
+	//  ORDER BY rl_credit DESC NULLS LAST
+	//  LIMIT ?4
+	ListHighValueMemories(ctx context.Context, arg ListHighValueMemoriesParams) ([]ListHighValueMemoriesRow, error)
+	//ListImmutableMessages
+	//
+	//  SELECT id,
+	//      session_key,
+	//      role,
+	//      content,
+	//      tool_call_id,
+	//      tool_calls,
+	//      token_estimate,
+	//      created_at
+	//  FROM immutable_messages
+	//  WHERE session_key = ?1
+	//  ORDER BY created_at ASC
+	//  LIMIT ?3 OFFSET ?2
+	ListImmutableMessages(ctx context.Context, arg ListImmutableMessagesParams) ([]ImmutableMessage, error)
 	//ListJobs
 	//
 	//  SELECT id, kind, status, run_at, attempts, max_attempts, locked_at, locked_by, payload_json, dedupe_key, last_error, created_at, updated_at, completed_at
@@ -1187,6 +1465,73 @@ type Querier interface {
 	//  ORDER BY created_at DESC
 	//  LIMIT ?4 OFFSET ?3
 	ListMapRunsBySession(ctx context.Context, arg ListMapRunsBySessionParams) ([]MapRun, error)
+	//ListMemoryEdgesByType
+	//
+	//  SELECT id,
+	//      from_id,
+	//      to_id,
+	//      edge_type,
+	//      weight,
+	//      created_at
+	//  FROM memory_edges
+	//  WHERE edge_type = ?1
+	//  ORDER BY created_at DESC
+	//  LIMIT ?2
+	ListMemoryEdgesByType(ctx context.Context, arg ListMemoryEdgesByTypeParams) ([]MemoryEdge, error)
+	//ListMemoryEdgesForItem
+	//
+	//  SELECT id,
+	//      from_id,
+	//      to_id,
+	//      edge_type,
+	//      weight,
+	//      created_at
+	//  FROM memory_edges
+	//  WHERE from_id = ?1
+	//      OR to_id = ?1
+	//  ORDER BY created_at DESC
+	//  LIMIT ?2
+	ListMemoryEdgesForItem(ctx context.Context, arg ListMemoryEdgesForItemParams) ([]MemoryEdge, error)
+	// Returns archival chunks that have been soft-deleted and are
+	// eligible for permanent deletion.
+	//
+	//  SELECT id,
+	//      recall_id,
+	//      chunk_index,
+	//      content,
+	//      embedding,
+	//      source,
+	//      hash,
+	//      created_at,
+	//      suppressed_at
+	//  FROM archival_chunks
+	//  WHERE suppressed_at IS NOT NULL
+	//      AND suppressed_at < ?1
+	//  ORDER BY suppressed_at ASC
+	//  LIMIT ?2
+	ListQuarantinedArchivalChunks(ctx context.Context, arg ListQuarantinedArchivalChunksParams) ([]ArchivalChunk, error)
+	// Returns recall items that have been soft-deleted (suppressed) and are
+	// eligible for permanent deletion (older than quarantine period).
+	//
+	//  SELECT id,
+	//      agent_id,
+	//      session_key,
+	//      role,
+	//      sector,
+	//      importance,
+	//      salience,
+	//      decay_rate,
+	//      content,
+	//      tags,
+	//      created_at,
+	//      updated_at,
+	//      suppressed_at
+	//  FROM recall_items
+	//  WHERE suppressed_at IS NOT NULL
+	//      AND suppressed_at < ?1
+	//  ORDER BY suppressed_at ASC
+	//  LIMIT ?2
+	ListQuarantinedRecallItems(ctx context.Context, arg ListQuarantinedRecallItemsParams) ([]ListQuarantinedRecallItemsRow, error)
 	//ListRecallItems
 	//
 	//  SELECT id,
@@ -1203,13 +1548,43 @@ type Querier interface {
 	//      updated_at
 	//  FROM recall_items
 	//  WHERE agent_id = ?1
+	//      AND suppressed_at IS NULL
 	//      AND (
 	//          session_key = ?2
 	//          OR ?2 = ''
 	//      )
 	//  ORDER BY created_at DESC
 	//  LIMIT ?4 OFFSET ?3
-	ListRecallItems(ctx context.Context, arg ListRecallItemsParams) ([]RecallItem, error)
+	ListRecallItems(ctx context.Context, arg ListRecallItemsParams) ([]ListRecallItemsRow, error)
+	// Consolidation queries for memory graph maintenance (ADR-004)
+	// Returns recall items created after the cutoff time, joined with their first
+	// archival chunk's embedding for similarity comparison.
+	//
+	//  SELECT ri.id,
+	//      ri.agent_id,
+	//      ri.session_key,
+	//      ri.role,
+	//      ri.sector,
+	//      ri.importance,
+	//      ri.salience,
+	//      ri.decay_rate,
+	//      ri.content,
+	//      ri.tags,
+	//      ri.created_at,
+	//      ri.updated_at,
+	//      ac.embedding as embedding
+	//  FROM recall_items ri
+	//      LEFT JOIN archival_chunks ac ON ac.recall_id = ri.id
+	//      AND ac.chunk_index = 0
+	//  WHERE ri.created_at > ?1
+	//      AND ri.suppressed_at IS NULL
+	//      AND (
+	//          ?2 = ''
+	//          OR ri.agent_id = ?2
+	//      )
+	//  ORDER BY ri.created_at DESC
+	//  LIMIT ?3
+	ListRecallItemsForConsolidation(ctx context.Context, arg ListRecallItemsForConsolidationParams) ([]ListRecallItemsForConsolidationRow, error)
 	//ListSessionMessages
 	//
 	//  SELECT id,
@@ -1234,7 +1609,7 @@ type Querier interface {
 	//      )
 	//  ORDER BY created_at ASC
 	//  LIMIT ?4
-	ListSessionMessages(ctx context.Context, arg ListSessionMessagesParams) ([]RecallItem, error)
+	ListSessionMessages(ctx context.Context, arg ListSessionMessagesParams) ([]ListSessionMessagesRow, error)
 	//ListSessionMessagesPaged
 	//
 	//  SELECT id,
@@ -1259,7 +1634,7 @@ type Querier interface {
 	//      )
 	//  ORDER BY created_at ASC
 	//  LIMIT ?5 OFFSET ?4
-	ListSessionMessagesPaged(ctx context.Context, arg ListSessionMessagesPagedParams) ([]RecallItem, error)
+	ListSessionMessagesPaged(ctx context.Context, arg ListSessionMessagesPagedParams) ([]ListSessionMessagesPagedRow, error)
 	//ListSummaries
 	//
 	//  SELECT id,
@@ -1352,6 +1727,13 @@ type Querier interface {
 	//  WHERE id = ?3
 	//  RETURNING id, kind, status, run_at, attempts, max_attempts, locked_at, locked_by, payload_json, dedupe_key, last_error, created_at, updated_at, completed_at
 	RequeueJob(ctx context.Context, arg RequeueJobParams) (Job, error)
+	// Restores a soft-deleted recall item by clearing suppressed_at.
+	//
+	//  UPDATE recall_items
+	//  SET suppressed_at = NULL
+	//  WHERE id = ?1
+	//      AND agent_id = ?2
+	RestoreRecallItem(ctx context.Context, arg RestoreRecallItemParams) error
 	//SearchRecallByKeyword
 	//
 	//  SELECT ri.id,
@@ -1369,9 +1751,69 @@ type Querier interface {
 	//  FROM recall_items ri
 	//  WHERE ri.content LIKE '%' || ?1 || '%'
 	//      AND ri.agent_id = ?2
+	//      AND ri.suppressed_at IS NULL
 	//  ORDER BY ri.importance DESC
 	//  LIMIT ?3
-	SearchRecallByKeyword(ctx context.Context, arg SearchRecallByKeywordParams) ([]RecallItem, error)
+	SearchRecallByKeyword(ctx context.Context, arg SearchRecallByKeywordParams) ([]SearchRecallByKeywordRow, error)
+	// Sets suppressed_at for all chunks belonging to a recall item.
+	//
+	//  UPDATE archival_chunks
+	//  SET suppressed_at = datetime('now')
+	//  WHERE recall_id = ?1
+	SoftDeleteArchivalChunks(ctx context.Context, arg SoftDeleteArchivalChunksParams) error
+	// Soft delete queries (T2.4: quarantine before permanent deletion)
+	// Sets suppressed_at for a recall item instead of permanently deleting it.
+	//
+	//  UPDATE recall_items
+	//  SET suppressed_at = datetime('now')
+	//  WHERE id = ?1
+	//      AND agent_id = ?2
+	SoftDeleteRecallItem(ctx context.Context, arg SoftDeleteRecallItemParams) error
+	// Store a task completion record for RL analysis
+	//
+	//  INSERT INTO task_completions (
+	//          id,
+	//          agent_id,
+	//          conversation_id,
+	//          run_id,
+	//          description,
+	//          tokens_used,
+	//          tool_calls,
+	//          errors,
+	//          user_corrections,
+	//          completed
+	//      )
+	//  VALUES (
+	//          ?1,
+	//          ?2,
+	//          ?3,
+	//          ?4,
+	//          ?5,
+	//          ?6,
+	//          ?7,
+	//          ?8,
+	//          ?9,
+	//          ?10
+	//      )
+	//  RETURNING id,
+	//      agent_id,
+	//      conversation_id,
+	//      run_id,
+	//      description,
+	//      tokens_used,
+	//      tool_calls,
+	//      errors,
+	//      user_corrections,
+	//      completed,
+	//      created_at
+	StoreTaskCompletion(ctx context.Context, arg StoreTaskCompletionParams) (TaskCompletion, error)
+	// Store a memory retrieval record for a task
+	//
+	//  INSERT INTO task_retrievals (id, task_id, memory_id, similarity)
+	//  VALUES (?1, ?2, ?3, ?4)
+	//  ON CONFLICT (task_id, memory_id) DO UPDATE SET
+	//      similarity = excluded.similarity
+	StoreTaskRetrieval(ctx context.Context, arg StoreTaskRetrievalParams) error
 	//UpdateAgentConversationTitle
 	//
 	//  UPDATE agent_conversations
@@ -1396,6 +1838,12 @@ type Querier interface {
 	//  WHERE id = ?
 	//  RETURNING id, conversation_id, status, metadata_json, created_at, updated_at
 	UpdateAgentRunStatus(ctx context.Context, arg UpdateAgentRunStatusParams) (AgentRun, error)
+	//UpdateArchivalChunkEmbedding
+	//
+	//  UPDATE archival_chunks
+	//  SET embedding = ?1
+	//  WHERE id = ?2
+	UpdateArchivalChunkEmbedding(ctx context.Context, arg UpdateArchivalChunkEmbeddingParams) error
 	//UpdateMapRunProgress
 	//
 	//  UPDATE map_runs
@@ -1410,6 +1858,23 @@ type Querier interface {
 	//  WHERE id = ?8
 	//  RETURNING id, agent_id, session_key, operator_kind, idempotency_key, status, total_items, queued_items, running_items, succeeded_items, failed_items, spec_fb, last_error, created_at, updated_at, completed_at
 	UpdateMapRunProgress(ctx context.Context, arg UpdateMapRunProgressParams) (MapRun, error)
+	// Update the self-reported score for a memory item
+	//
+	//  UPDATE recall_items
+	//  SET self_report_score = ?1,
+	//      updated_at = datetime('now')
+	//  WHERE id = ?2
+	//      AND agent_id = ?3
+	UpdateMemorySelfReportScore(ctx context.Context, arg UpdateMemorySelfReportScoreParams) error
+	// Update the RL weight and credit for a specific memory item
+	//
+	//  UPDATE recall_items
+	//  SET rl_weight = ?1,
+	//      rl_credit = ?2,
+	//      updated_at = datetime('now')
+	//  WHERE id = ?3
+	//      AND agent_id = ?4
+	UpdateMemoryWeight(ctx context.Context, arg UpdateMemoryWeightParams) error
 	//UpdateRecallItem
 	//
 	//  UPDATE recall_items
@@ -1424,6 +1889,41 @@ type Querier interface {
 	//  WHERE id = ?8
 	//      AND agent_id = ?9
 	UpdateRecallItem(ctx context.Context, arg UpdateRecallItemParams) error
+	// Insert or replace task baseline statistics for an agent
+	//
+	//  INSERT INTO task_baselines (
+	//          agent_id,
+	//          count,
+	//          mean_tokens,
+	//          mean_errors,
+	//          mean_user_corrections,
+	//          m2_tokens,
+	//          m2_errors,
+	//          m2_user_corrections,
+	//          updated_at
+	//      )
+	//  VALUES (
+	//          ?1,
+	//          ?2,
+	//          ?3,
+	//          ?4,
+	//          ?5,
+	//          ?6,
+	//          ?7,
+	//          ?8,
+	//          datetime('now')
+	//      )
+	//  ON CONFLICT (agent_id) DO
+	//  UPDATE
+	//  SET count = excluded.count,
+	//      mean_tokens = excluded.mean_tokens,
+	//      mean_errors = excluded.mean_errors,
+	//      mean_user_corrections = excluded.mean_user_corrections,
+	//      m2_tokens = excluded.m2_tokens,
+	//      m2_errors = excluded.m2_errors,
+	//      m2_user_corrections = excluded.m2_user_corrections,
+	//      updated_at = excluded.updated_at
+	UpdateTaskBaseline(ctx context.Context, arg UpdateTaskBaselineParams) error
 	//UpsertDocument
 	//
 	//  INSERT INTO agent_documents (
