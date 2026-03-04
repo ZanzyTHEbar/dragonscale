@@ -402,31 +402,25 @@ func TestIntegration_Streaming_TextDeltas(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
 
-	// Collect stream deltas in background
-	var deltas []string
-	var deltaDone = make(chan struct{})
-	go func() {
-		defer close(deltaDone)
-		for {
-			msg, ok := msgBus.SubscribeOutbound(ctx)
-			if !ok {
-				return
-			}
-			if msg.StreamDelta {
-				deltas = append(deltas, msg.Content)
-			}
-		}
-	}()
-
 	// Process with streaming
 	response, err := al.ProcessDirectStreaming(ctx, "Stream me", "stream-session", "test", "chat-1")
 	if err != nil {
 		t.Fatalf("ProcessDirectStreaming failed: %v", err)
 	}
 
-	// Cancel to stop delta collector
-	cancel()
-	<-deltaDone
+	// Drain outbound stream deltas after processing completes.
+	var deltas []string
+	for {
+		readCtx, readCancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+		msg, ok := msgBus.SubscribeOutbound(readCtx)
+		readCancel()
+		if !ok {
+			break
+		}
+		if msg.StreamDelta {
+			deltas = append(deltas, msg.Content)
+		}
+	}
 
 	// Verify complete response
 	if response != "Hello from streaming agent response" {

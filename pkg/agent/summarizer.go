@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 	"github.com/ZanzyTHEbar/dragonscale/pkg/bus"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/config"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/constants"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/contexttree"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/ids"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/logger"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/memory"
@@ -19,18 +21,52 @@ import (
 	"github.com/ZanzyTHEbar/dragonscale/pkg/memory/observation"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/messages"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/tools"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/utils"
 )
 
-// maybeSummarize only triggers emergency compression when hard limits are exceeded.
-// Normal background compaction is intentionally disabled for the unified kernel.
+// maybeSummarize implements LCM ADR-002 dual-threshold compaction.
+// Below soft threshold: no-op (zero cost).
+// Between soft and hard: async background compaction.
+// Above hard: synchronous blocking compaction with 3-level escalation.
 func (al *AgentLoop) maybeSummarize(ctx context.Context, sessionKey, channel, chatID string) {
 	newHistory := al.sessions.GetHistory(sessionKey)
 	tokenEstimate := al.estimateTokens(newHistory)
-	criticalThreshold := al.contextWindow * 95 / 100
 
-	if tokenEstimate > criticalThreshold {
-		al.forceCompression(ctx, sessionKey, channel, chatID)
+	softPct, hardPct := al.compactionThresholds()
+	softThreshold := al.contextWindow * softPct / 100
+	hardThreshold := al.contextWindow * hardPct / 100
+
+	if tokenEstimate <= softThreshold {
+		return
 	}
+
+	if tokenEstimate > hardThreshold {
+		al.forceCompression(ctx, sessionKey, channel, chatID)
+		return
+	}
+
+	go func() {
+		al.summarizeSession(context.WithoutCancel(ctx), sessionKey)
+	}()
+}
+
+// compactionThresholds returns the soft and hard compaction percentages from config.
+func (al *AgentLoop) compactionThresholds() (softPct, hardPct int) {
+	softPct = 70
+	hardPct = 90
+	if al.cfg != nil {
+		c := al.cfg.Agents.Defaults.Compaction
+		if c.SoftThresholdPct > 0 && c.SoftThresholdPct < 100 {
+			softPct = c.SoftThresholdPct
+		}
+		if c.HardThresholdPct > 0 && c.HardThresholdPct <= 100 {
+			hardPct = c.HardThresholdPct
+		}
+	}
+	if hardPct <= softPct {
+		hardPct = softPct + 10
+	}
+	return softPct, hardPct
 }
 
 // EmergencyProvenance captures provenance metadata for postmortem when
@@ -118,7 +154,7 @@ func (al *AgentLoop) forceCompression(ctx context.Context, sessionKey, channel, 
 			HistoryMsgCount: len(history),
 		})
 
-		al.summarizeSession(ctx, sessionKey)
+		al.summarizeSession(ctx, sessionKey, cycle)
 	}
 }
 
@@ -250,7 +286,12 @@ func (al *AgentLoop) persistOversizedRecoveryRefs(ctx context.Context, sessionKe
 }
 
 // summarizeSession summarizes the conversation history for a session.
-func (al *AgentLoop) summarizeSession(parentCtx context.Context, sessionKey string) {
+// An optional escalationLevel controls summarization aggressiveness (1=normal, 2=aggressive, 3=deterministic).
+func (al *AgentLoop) summarizeSession(parentCtx context.Context, sessionKey string, escalationLevel ...int) {
+	level := 1
+	if len(escalationLevel) > 0 && escalationLevel[0] > 0 {
+		level = escalationLevel[0]
+	}
 	ctx, cancel := context.WithTimeout(parentCtx, 120*time.Second)
 	defer cancel()
 
@@ -304,8 +345,8 @@ func (al *AgentLoop) summarizeSession(parentCtx context.Context, sessionKey stri
 		part1 := validMessages[:mid]
 		part2 := validMessages[mid:]
 
-		s1, _ := al.summarizeBatch(ctx, part1, "")
-		s2, _ := al.summarizeBatch(ctx, part2, "")
+		s1, _ := al.summarizeBatchEscalated(ctx, part1, "", level)
+		s2, _ := al.summarizeBatchEscalated(ctx, part2, "", level)
 
 		// Merge them
 		mergePrompt := fmt.Sprintf("Merge these two conversation summaries into one cohesive summary:\n\n1: %s\n\n2: %s", s1, s2)
@@ -316,7 +357,7 @@ func (al *AgentLoop) summarizeSession(parentCtx context.Context, sessionKey stri
 			finalSummary = s1 + " " + s2
 		}
 	} else {
-		finalSummary, _ = al.summarizeBatch(ctx, validMessages, summary)
+		finalSummary, _ = al.summarizeBatchEscalated(ctx, validMessages, summary, level)
 	}
 
 	if omitted && finalSummary != "" {
@@ -393,6 +434,38 @@ func (al *AgentLoop) summarizeBatch(ctx context.Context, batch []messages.Messag
 	return al.callModel(ctx, prompt.String())
 }
 
+// summarizeBatchEscalated applies escalation levels to summarization (LCM ADR-002).
+// Level 1: normal summary (existing behavior)
+// Level 2: aggressive bullet-point compression
+// Level 3: deterministic truncation (no LLM call)
+func (al *AgentLoop) summarizeBatchEscalated(ctx context.Context, batch []messages.Message, existingSummary string, level int) (string, error) {
+	switch level {
+	case 1:
+		return al.summarizeBatch(ctx, batch, existingSummary)
+	case 2:
+		var prompt strings.Builder
+		prompt.WriteString("Compress the following conversation into a VERY brief bullet-point list (max 5 bullets). Preserve only critical facts, decisions, and action items.\n")
+		if existingSummary != "" {
+			fmt.Fprintf(&prompt, "Prior context: %s\n", existingSummary)
+		}
+		prompt.WriteString("\nCONVERSATION:\n")
+		for _, m := range batch {
+			fmt.Fprintf(&prompt, "%s: %s\n", m.Role, m.Content)
+		}
+		return al.callModel(ctx, prompt.String())
+	default:
+		if len(batch) == 0 {
+			return existingSummary, nil
+		}
+		first := batch[0]
+		last := batch[len(batch)-1]
+		return fmt.Sprintf("[Deterministic truncation of %d messages] First: %s: %s | Last: %s: %s",
+			len(batch),
+			first.Role, utils.Truncate(first.Content, 200),
+			last.Role, utils.Truncate(last.Content, 200)), nil
+	}
+}
+
 // callModel makes a direct call to the Fantasy LanguageModel (no tools, no agent loop).
 // Used for summarization and other simple generation tasks.
 func (al *AgentLoop) callModel(ctx context.Context, prompt string) (string, error) {
@@ -423,136 +496,139 @@ func (al *AgentLoop) sessionsToMessagePairs(sessionKey string) []observation.Mes
 	return pairs
 }
 
-// dagCacheEntry holds the cached DAG compression output for a session,
-// enabling skip of recompression and repersistence when the compressible
-// portion hasn't grown since the last call.
-type dagCacheEntry struct {
-	msgCount      int
-	rendered      string
-	dag           *dag.DAG
-	persistFailed bool
+// contextTreeCacheEntry caches rendered query-selected history blocks per session.
+type contextTreeCacheEntry struct {
+	msgCount int
+	query    string
+	rendered string
 }
 
-// applyDAGCompression compresses old history into a DAG summary block and
-// returns only the tail messages that should be passed as raw conversation.
-// The compressed portion is injected into the system prompt via contextBuilder.
-// When memDelegate implements dag.DAGPersister, the DAG is persisted for dag_expand/describe/grep.
-//
-// Incremental optimization: if the compressible message count matches the
-// cached count, the previous DAG and rendered block are reused without
-// recompression or repersistence.
-func (al *AgentLoop) applyDAGCompression(ctx context.Context, sessionKey string, history []messages.Message) []messages.Message {
-	const minHistoryForDAG = 16
+// applyContextTreeSelection selects relevant historical context via query-adaptive
+// Context Tree scoring and keeps only the raw tail as messages.
+func (al *AgentLoop) applyContextTreeSelection(ctx context.Context, sessionKey, query string, history []messages.Message) []messages.Message {
+	const minHistoryForSelection = 16
 
-	if len(history) < minHistoryForDAG {
-		al.contextBuilder.SetDAGBlock("")
+	if len(history) < minHistoryForSelection {
+		al.contextBuilder.SetContextTreeBlock("")
 		return history
 	}
 
 	budget := dag.ComputeBudget(al.contextWindow, dag.DefaultBudgetConfig())
 	tailCount := dag.TailMessageCount(budget.RawTail)
 	if tailCount >= len(history) {
-		al.contextBuilder.SetDAGBlock("")
+		al.contextBuilder.SetContextTreeBlock("")
 		return history
 	}
 
-	// Split: compress old, keep tail raw
 	compressible := history[:len(history)-tailCount]
 	tail := history[len(history)-tailCount:]
 
-	// Tool-call-aware: don't split on a "tool" message
 	for len(tail) > 0 && tail[0].Role == "tool" && len(compressible) > 0 {
 		tail = append([]messages.Message{compressible[len(compressible)-1]}, tail...)
 		compressible = compressible[:len(compressible)-1]
 	}
 
 	if len(compressible) == 0 {
-		al.contextBuilder.SetDAGBlock("")
+		al.contextBuilder.SetContextTreeBlock("")
 		return history
 	}
 
-	// Check DAG cache: skip recompression if compressible count hasn't changed
-	if cached, ok := al.dagCache.Load(sessionKey); ok {
-		entry := cached.(dagCacheEntry)
-		if entry.msgCount == len(compressible) {
-			al.contextBuilder.SetDAGBlock(entry.rendered)
-			// Retry failed persistence from previous turn
-			if entry.persistFailed {
-				al.retryDAGPersist(ctx, sessionKey, entry)
-			}
+	cacheHit := false
+	if cached, ok := al.contextTreeCache.Load(sessionKey); ok {
+		entry := cached.(contextTreeCacheEntry)
+		if entry.msgCount == len(compressible) && entry.query == query {
+			al.contextBuilder.SetContextTreeBlock(entry.rendered)
 			return tail
 		}
 	}
 
-	dagMsgs := make([]dag.Message, len(compressible))
-	for i, m := range compressible {
-		dagMsgs[i] = dag.Message{Role: m.Role, Content: m.Content}
+	tree := contexttree.NewContextTree(contexttree.DefaultScoringConfig())
+	rootID := tree.Root.ID
+	for _, m := range compressible {
+		tree.AddNode(rootID, contextNodeTypeForRole(m.Role), m.Content, nil, contexttree.ExtractTerms(m.Content))
 	}
 
-	compressor := dag.NewCompressor(dag.DefaultCompressorConfig())
-	d := compressor.Compress(dagMsgs)
+	queryTerms := contexttree.ExtractTerms(query)
+	if len(queryTerms) == 0 && len(tail) > 0 {
+		queryTerms = contexttree.ExtractTerms(tail[len(tail)-1].Content)
+	}
 
-	rendered := dag.RenderDAGForBudget(d, budget.DAGSummaries)
-	al.contextBuilder.SetDAGBlock(rendered)
+	scores := tree.ScoreAll(nil, queryTerms)
+	nodes := make([]*contexttree.ContextNode, 0, len(tree.NodeIndex)-1)
+	for id, node := range tree.NodeIndex {
+		if node.Type == contexttree.NodeTypeRoot {
+			continue
+		}
+		node.TotalScore = scores[id]
+		nodes = append(nodes, node)
+	}
 
-	// Cache the result
-	al.dagCache.Store(sessionKey, dagCacheEntry{
-		msgCount: len(compressible),
-		rendered: rendered,
-		dag:      d,
+	sort.Slice(nodes, func(i, j int) bool {
+		if nodes[i].TotalScore == nodes[j].TotalScore {
+			return nodes[i].CreatedAt.After(nodes[j].CreatedAt)
+		}
+		return nodes[i].TotalScore > nodes[j].TotalScore
 	})
 
-	// Persist DAG for dag_expand, dag_describe, dag_grep (additive; in-memory behavior unchanged)
-	persistOK := al.tryDAGPersist(ctx, sessionKey, d, len(compressible))
-	if !persistOK {
-		// Mark for retry on next cache hit
-		al.dagCache.Store(sessionKey, dagCacheEntry{
-			msgCount:      len(compressible),
-			rendered:      rendered,
-			dag:           d,
-			persistFailed: true,
-		})
+	selectionBudget := budget.DAGSummaries
+	if selectionBudget <= 0 {
+		selectionBudget = 512
+	}
+	selected := make([]*contexttree.ContextNode, 0, len(nodes))
+	usedTokens := 0
+	for _, node := range nodes {
+		nodeTokens := observation.EstimateTokens(node.Content)
+		if nodeTokens == 0 {
+			continue
+		}
+		if usedTokens+nodeTokens > selectionBudget {
+			continue
+		}
+		selected = append(selected, node)
+		usedTokens += nodeTokens
 	}
 
-	logger.DebugCF("agent", "DAG compression applied",
-		map[string]interface{}{
-			"total_msgs":      len(history),
-			"compressed_msgs": len(compressible),
-			"tail_msgs":       len(tail),
-			"dag_nodes":       len(d.Nodes),
-			"cache_hit":       false,
-		})
+	rendered := renderContextTreeSelection(selected)
+	al.contextBuilder.SetContextTreeBlock(rendered)
+	al.contextTreeCache.Store(sessionKey, contextTreeCacheEntry{msgCount: len(compressible), query: query, rendered: rendered})
+
+	logger.DebugCF("agent", "Context-Tree selection applied", map[string]interface{}{
+		"total_msgs":      len(history),
+		"compressed_msgs": len(compressible),
+		"tail_msgs":       len(tail),
+		"selected_nodes":  len(selected),
+		"selected_tokens": usedTokens,
+		"cache_hit":       cacheHit,
+	})
 
 	return tail
 }
 
-func (al *AgentLoop) tryDAGPersist(ctx context.Context, sessionKey string, d *dag.DAG, msgCount int) bool {
-	dp, ok := al.memDelegate.(dag.DAGPersister)
-	if !ok {
-		return true
+func contextNodeTypeForRole(role string) contexttree.NodeType {
+	switch role {
+	case "tool":
+		return contexttree.NodeTypeToolCall
+	case "assistant":
+		return contexttree.NodeTypeSummary
+	default:
+		return contexttree.NodeTypeMessage
 	}
-	if err := dp.PersistDAG(ctx, pkg.NAME, sessionKey, &dag.PersistSnapshot{
-		FromMsgIdx: 0,
-		ToMsgIdx:   msgCount,
-		MsgCount:   msgCount,
-		DAG:        d,
-	}); err != nil {
-		logger.WarnCF("agent", "DAG persist failed (will retry next turn)",
-			map[string]interface{}{"error": err.Error(), "session_key": sessionKey})
-		return false
-	}
-	return true
 }
 
-func (al *AgentLoop) retryDAGPersist(ctx context.Context, sessionKey string, entry dagCacheEntry) {
-	if al.tryDAGPersist(ctx, sessionKey, entry.dag, entry.msgCount) {
-		al.dagCache.Store(sessionKey, dagCacheEntry{
-			msgCount:      entry.msgCount,
-			rendered:      entry.rendered,
-			dag:           entry.dag,
-			persistFailed: false,
-		})
+func renderContextTreeSelection(selected []*contexttree.ContextNode) string {
+	if len(selected) == 0 {
+		return ""
 	}
+	var b strings.Builder
+	for _, node := range selected {
+		line := strings.ReplaceAll(node.Content, "\n", " ")
+		line = strings.TrimSpace(line)
+		if len(line) > 320 {
+			line = line[:317] + "..."
+		}
+		fmt.Fprintf(&b, "[%s score=%.3f] %s\n", node.Type, node.TotalScore, line)
+	}
+	return strings.TrimSpace(b.String())
 }
 
 func (al *AgentLoop) estimateTokens(msgs []messages.Message) int {

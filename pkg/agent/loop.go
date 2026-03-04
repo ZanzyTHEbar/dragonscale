@@ -21,6 +21,7 @@ import (
 	"github.com/ZanzyTHEbar/dragonscale/pkg/channels"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/config"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/constants"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/cortex"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/ids"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/logger"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/memory"
@@ -63,7 +64,7 @@ type AgentLoop struct {
 	running               atomic.Bool                     // Owner: loop.go — lifecycle gate controlled by Run/Stop only
 	summarizing           sync.Map                        // Owner: summarizer.go — intended for async summarization lockout, currently gated by TODO path
 	summarizeFailures     sync.Map                        // Owner: summarizer.go — write/read in forceCompression + summarizeSession error paths
-	dagCache              sync.Map                        // Owner: summarizer.go — sessionKey → dagCacheEntry, skips recompression when compressible count unchanged
+	contextTreeCache      sync.Map                        // Owner: summarizer.go — sessionKey → contextTreeCacheEntry keyed by query and history size
 	auditChan             chan *memory.AuditEntry         // Buffered channel for async audit logging; drained by background worker
 	auditDone             chan struct{}                   // Closed when audit worker exits
 	focusDirty            sync.Map                        // sessionKey → struct{}: set by focus tool callbacks, cleared after context reload
@@ -73,6 +74,7 @@ type AgentLoop struct {
 	commandRegistry       []SlashCommand
 	outputOverride        atomic.Value // Owner: command_handler.go — CLI output redirection target for internal messages
 	toolResultSearch      fantasy.AgentTool
+	cortex                *cortex.Cortex
 }
 
 type outputTarget struct {
@@ -389,11 +391,59 @@ func NewAgentLoop(ctx context.Context, cfg *config.Config, msgBus *bus.MessageBu
 	al.SetupSecureBus(secretStore, securebus.DefaultBusConfig())
 	subagentManager.SetRunLoop(MakeUnifiedRunLoopFunc(al))
 
+	// Initialize Cortex autonomous scheduler with foundation tasks.
+	// DecayStore and BackfillStore are satisfied by LibSQLDelegate via duck typing.
+	var decayStore cortex.DecayStore
+	if ds, ok := al.memDelegate.(cortex.DecayStore); ok {
+		decayStore = ds
+	}
+	var backfillStore cortex.BackfillStore
+	if bs, ok := al.memDelegate.(cortex.BackfillStore); ok {
+		backfillStore = bs
+	}
+	var embedFn func(ctx context.Context, text string) ([]float32, error)
+	if al.memoryStore != nil && al.memoryStore.Embedder() != nil {
+		embedder := al.memoryStore.Embedder()
+		embedFn = func(ctx context.Context, text string) ([]float32, error) {
+			return embedder.Embed(ctx, text)
+		}
+	}
+	// ConsolidationStore for memory graph maintenance
+	var consolidationStore cortex.ConsolidationStore
+	if cs, ok := al.memDelegate.(cortex.ConsolidationStore); ok {
+		consolidationStore = cs
+	}
+	// PruneStore for permanent deletion of quarantined items
+	var pruneStore cortex.PruneStore
+	if ps, ok := al.memDelegate.(cortex.PruneStore); ok {
+		pruneStore = ps
+	}
+	// RLStore for reinforcement learning weight updates
+	var rlStore cortex.RLStore
+	if rs, ok := al.memDelegate.(cortex.RLStore); ok {
+		rlStore = rs
+	}
+	// AuditAnalysisStore for audit log pattern detection
+	var auditStore cortex.AuditAnalysisStore
+	if aus, ok := al.memDelegate.(cortex.AuditAnalysisStore); ok {
+		auditStore = aus
+	}
+	cortexTasks := []cortex.Task{
+		cortex.NewDecayTask(cortex.DefaultDecayConfig(), decayStore),
+		cortex.NewBackfillTask(cortex.DefaultBackfillConfig(), backfillStore, embedFn),
+		cortex.NewConsolidationTask(cortex.DefaultConsolidationConfig(), consolidationStore),
+		cortex.NewPruneTask(cortex.DefaultPruneConfig(), pruneStore),
+		cortex.NewRLTask(rlStore, pkg.NAME),
+		cortex.NewAuditAnalysisTask(auditStore),
+	}
+	al.cortex = cortex.New(cortexTasks, 60*time.Second)
+
 	return al, nil
 }
 
 func (al *AgentLoop) Run(ctx context.Context) error {
 	al.running.Store(true)
+	go al.cortex.Start(ctx)
 
 	for al.running.Load() {
 		select {

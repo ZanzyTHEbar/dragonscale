@@ -29,7 +29,7 @@ type ContextBuilder struct {
 	observationBlock string                // Pre-rendered observation block for prompt injection
 	focusBlock       string                // Pre-rendered active focus block
 	knowledgeBlock   string                // Pre-rendered knowledge block from Focus completions
-	dagBlock         string                // Pre-rendered DAG compressed history
+	contextTreeBlock string                // Pre-rendered Context-Tree selected history
 	contextWindow    int                   // Max tokens for context window (0 = no limit)
 
 	cacheMu         sync.Mutex
@@ -99,9 +99,9 @@ func (cb *ContextBuilder) SetKnowledgeBlock(block string) {
 	cb.knowledgeBlock = block
 }
 
-// SetDAGBlock sets the pre-rendered DAG compressed history for prompt injection.
-func (cb *ContextBuilder) SetDAGBlock(block string) {
-	cb.dagBlock = block
+// SetContextTreeBlock sets the pre-rendered query-selected context history block for prompt injection.
+func (cb *ContextBuilder) SetContextTreeBlock(block string) {
+	cb.contextTreeBlock = block
 }
 
 // SetContextWindow configures the token budget for the system prompt.
@@ -226,9 +226,9 @@ Do NOT assume skill content — always load before applying.
 		sections = append(sections, contextSection{"knowledge", cb.knowledgeBlock, 6})
 	}
 
-	// P7: DAG compressed history (lowest priority — can be reconstructed)
-	if cb.dagBlock != "" {
-		sections = append(sections, contextSection{"dag", "# Conversation History (Compressed)\n\n" + cb.dagBlock, 7})
+	// P7: Context-Tree selected history (query-adaptive)
+	if cb.contextTreeBlock != "" {
+		sections = append(sections, contextSection{"context_tree", "# Conversation Context (Query-Selected)\n\n" + cb.contextTreeBlock, 7})
 	}
 
 	// Proportional budget enforcement: each section gets a share of the
@@ -287,7 +287,7 @@ var priorityWeight = [8]float64{
 	4: 0.10, // observations
 	5: 0.08, // focus
 	6: 0.06, // knowledge
-	7: 0.06, // DAG
+	7: 0.06, // Context Tree
 }
 
 // applyProportionalBudget distributes tokens among sections using priority

@@ -116,9 +116,11 @@ func (r OffloadingToolRuntime) Execute(ctx context.Context, tools []fantasy.Agen
 				}
 			}
 
-			preview = truncateRunes(payloadText, threshold)
-			preview = strings.TrimSpace(preview) + "\n\n" +
+			// Type-aware summarization instead of blind truncation
+			summary := SummarizeContent(payloadText, threshold)
+			preview = summary.Summary + "\n\n" +
 				"[TRUNCATED]\n" +
+				"[Type: " + string(summary.ContentType) + "]\n" +
 				"- run_id: " + r.RunID.String() + "\n" +
 				"- tool_call_id: " + tc.ToolCallID + "\n" +
 				"- chunk_count: " + strconv.FormatInt(chunkCount, 10) + "\n" +

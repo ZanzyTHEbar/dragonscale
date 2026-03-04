@@ -222,7 +222,18 @@ func (al *AgentLoop) loadSessionState(ctx context.Context, opts processOptions) 
 		summary = al.sessions.GetSummary(opts.SessionKey)
 	}
 
-	return al.applyDAGCompression(ctx, opts.SessionKey, history), summary
+	// Zero-cost continuity (LCM ADR-002): skip DAG compression when context
+	// usage is below the soft compaction threshold. This eliminates overhead
+	// for ~80% of interactions where context is not under pressure.
+	softPct, _ := al.compactionThresholds()
+	softThreshold := al.contextWindow * softPct / 100
+	tokenEstimate := al.estimateTokens(history)
+	if tokenEstimate <= softThreshold {
+		al.contextBuilder.SetContextTreeBlock("")
+		return history, summary
+	}
+
+	return al.applyContextTreeSelection(ctx, opts.SessionKey, opts.UserMessage, history), summary
 }
 
 func (al *AgentLoop) buildPromptMessages(opts processOptions, history []messages.Message, summary string) []messages.Message {
