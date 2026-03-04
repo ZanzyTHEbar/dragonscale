@@ -93,6 +93,9 @@ func New(delegate memory.MemoryDelegate, chunker memory.Chunker, embedder memory
 	}
 }
 
+// Embedder returns the configured EmbeddingProvider, or nil if embeddings are disabled.
+func (m *MemoryStore) Embedder() memory.EmbeddingProvider { return m.embedder }
+
 // SetAgentID sets the agent identity used to scope all memory operations.
 // Invalidates the vector cache since chunks are agent-scoped.
 func (m *MemoryStore) SetAgentID(agentID string) {
@@ -165,7 +168,30 @@ func (m *MemoryStore) StoreRecall(ctx context.Context, item *memory.RecallItem) 
 	if item.ID.IsZero() {
 		item.ID = ids.New()
 	}
+	// Set initial RL weight based on category if not already set
+	if item.RLWeight == 0 {
+		item.RLWeight = m.initialWeightByCategory(item.Category)
+	}
 	return m.delegate.InsertRecallItem(ctx, item)
+}
+
+// initialWeightByCategory returns the initial RL weight based on memory category.
+// Higher weights are assigned to categories that indicate higher value memories.
+func (m *MemoryStore) initialWeightByCategory(category memory.Category) float64 {
+	switch category {
+	case memory.CategoryCorrection:
+		return 1.5 // High priority - corrections are valuable
+	case memory.CategoryDiscovery:
+		return 1.3 // Good insights - discoveries are useful
+	case memory.CategoryUserInput:
+		return 2.5 // User corrections highest priority
+	case memory.CategoryInsight:
+		return 1.1 // Slightly above baseline
+	case memory.CategoryFact:
+		return 1.0 // Baseline weight
+	default:
+		return 1.0 // Unknown category defaults to baseline
+	}
 }
 
 func (m *MemoryStore) GetRecall(ctx context.Context, id ids.UUID) (*memory.RecallItem, error) {

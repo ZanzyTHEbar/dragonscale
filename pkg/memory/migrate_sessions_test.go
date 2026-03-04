@@ -112,6 +112,28 @@ func (m *mockDelegate) ListAuditEntriesByAction(_ context.Context, _, _ string, 
 	return nil, nil
 }
 func (m *mockDelegate) CountAuditEntries(_ context.Context, _ string) (int, error) { return 0, nil }
+func (m *mockDelegate) InsertImmutableMessage(_ context.Context, _ *ImmutableMessage) error {
+	return nil
+}
+func (m *mockDelegate) ListImmutableMessages(_ context.Context, _ string, _, _ int) ([]*ImmutableMessage, error) {
+	return nil, nil
+}
+func (m *mockDelegate) GetImmutableMessage(_ context.Context, _ ids.UUID) (*ImmutableMessage, error) {
+	return nil, nil
+}
+func (m *mockDelegate) InsertMemoryEdge(_ context.Context, _ *MemoryEdge) error { return nil }
+func (m *mockDelegate) ListMemoryEdges(_ context.Context, _ ids.UUID) ([]*MemoryEdge, error) {
+	return nil, nil
+}
+func (m *mockDelegate) CountMemoryEdgesForItem(_ context.Context, _ ids.UUID) (int, error) {
+	return 0, nil
+}
+func (m *mockDelegate) ListRecallItemsForConsolidation(_ context.Context, _ string, _ time.Time, _ int) ([]*RecallItem, error) {
+	return nil, nil
+}
+func (m *mockDelegate) SoftDeleteRecallItem(_ context.Context, _ string, _ ids.UUID) error {
+	return nil
+}
 
 func writeSessionFile(t *testing.T, dir, name string, sess SessionFile) {
 	t.Helper()

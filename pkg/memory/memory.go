@@ -31,6 +31,18 @@ const (
 	SectorReflective Sector = "reflective" // Meta-observations, self-assessments
 )
 
+// Category classifies memories by their semantic role for RL weight assignment.
+type Category string
+
+const (
+	CategoryUnknown    Category = "unknown"
+	CategoryFact       Category = "fact"
+	CategoryInsight    Category = "insight"
+	CategoryCorrection Category = "correction"
+	CategoryDiscovery  Category = "discovery"
+	CategoryUserInput  Category = "user_input"
+)
+
 // --- Embedding type (F32_BLOB wire format) ---
 
 // Embedding is a float32 vector that transparently serializes to/from
@@ -84,30 +96,41 @@ func (e *Embedding) Scan(src interface{}) error {
 
 // RecallItem is a memory entry in the warm tier.
 type RecallItem struct {
-	ID         ids.UUID
-	AgentID    string
-	SessionKey string
-	Role       string // "system", "user", "assistant", "tool"
-	Sector     Sector
-	Importance float64 // [0, 1]
-	Salience   float64 // [0, 1]
-	DecayRate  float64 // exponential decay constant
-	Content    string
-	Tags       string // comma-separated
-	CreatedAt  time.Time
-	UpdatedAt  time.Time
+	ID           ids.UUID
+	AgentID      string
+	SessionKey   string
+	Role         string // "system", "user", "assistant", "tool"
+	Sector       Sector
+	Importance   float64 // [0, 1]
+	Salience     float64 // [0, 1]
+	DecayRate    float64 // exponential decay constant
+	Content      string
+	Tags         string // comma-separated
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
+	SuppressedAt *time.Time // nil if not soft-deleted
+	// Embedding is the vector representation of this item (populated during
+	// consolidation queries; nil for standard CRUD operations).
+	Embedding Embedding
+	// RL fields for Memelord reinforcement learning
+	RLWeight           float64  // current weight for credit assignment (default 1.0)
+	RLCredit           float64  // accumulated credit for this memory
+	SelfReportScore    *int     // self-reported usefulness score (0-3 scale)
+	TaskRetrievalCount int      // how many times retrieved for tasks
+	Category           Category // semantic category for initial weight assignment
 }
 
 // ArchivalChunk is an embedded chunk in the cold tier.
 type ArchivalChunk struct {
-	ID         ids.UUID
-	RecallID   ids.UUID // FK to RecallItem or standalone
-	ChunkIndex int
-	Content    string
-	Embedding  Embedding // F32_BLOB with auto-serialization via Valuer/Scanner
-	Source     string
-	Hash       string
-	CreatedAt  time.Time
+	ID           ids.UUID
+	RecallID     ids.UUID // FK to RecallItem or standalone
+	ChunkIndex   int
+	Content      string
+	Embedding    Embedding // F32_BLOB with auto-serialization via Valuer/Scanner
+	Source       string
+	Hash         string
+	CreatedAt    time.Time
+	SuppressedAt *time.Time // nil if not soft-deleted
 }
 
 // WorkingContext is the hot-tier mutable buffer.
@@ -127,6 +150,43 @@ type MemorySummary struct {
 	FromMsgIdx int
 	ToMsgIdx   int
 	CreatedAt  time.Time
+}
+
+// ImmutableMessage is a verbatim, append-only record of every message
+// exchanged during a session. Unlike recall_items (which can be truncated
+// during compaction), immutable messages are never modified or deleted.
+// They serve as the source of truth for lossless context recovery.
+type ImmutableMessage struct {
+	ID            ids.UUID
+	SessionKey    string
+	Role          string // "user", "assistant", "tool", "system"
+	Content       string
+	ToolCallID    string // non-empty for tool-result messages
+	ToolCalls     string // JSON-encoded tool calls for assistant messages
+	TokenEstimate int
+	CreatedAt     time.Time
+}
+
+// EdgeType classifies the relationship between two memory items.
+type EdgeType string
+
+const (
+	EdgeRelatedTo   EdgeType = "related_to"
+	EdgeUpdates     EdgeType = "updates"
+	EdgeContradicts EdgeType = "contradicts"
+	EdgeCausedBy    EdgeType = "caused_by"
+	EdgeResultOf    EdgeType = "result_of"
+	EdgePartOf      EdgeType = "part_of"
+)
+
+// MemoryEdge represents a typed, weighted relationship between two memory items.
+type MemoryEdge struct {
+	ID        int64
+	FromID    ids.UUID
+	ToID      ids.UUID
+	EdgeType  EdgeType
+	Weight    float64
+	CreatedAt time.Time
 }
 
 // SearchResult represents a result from hybrid retrieval.
@@ -268,6 +328,13 @@ type MemoryReader interface {
 	ListAuditEntries(ctx context.Context, agentID string, limit int) ([]*AuditEntry, error)
 	ListAuditEntriesByAction(ctx context.Context, agentID, action string, limit int) ([]*AuditEntry, error)
 	CountAuditEntries(ctx context.Context, agentID string) (int, error)
+	ListImmutableMessages(ctx context.Context, sessionKey string, limit, offset int) ([]*ImmutableMessage, error)
+	GetImmutableMessage(ctx context.Context, id ids.UUID) (*ImmutableMessage, error)
+	ListMemoryEdges(ctx context.Context, memoryID ids.UUID) ([]*MemoryEdge, error)
+	CountMemoryEdgesForItem(ctx context.Context, memoryID ids.UUID) (int, error)
+	// ListRecallItemsForConsolidation returns recent recall items with embeddings
+	// for similarity comparison during consolidation. Used by the Cortex scheduler.
+	ListRecallItemsForConsolidation(ctx context.Context, agentID string, cutoff time.Time, limit int) ([]*RecallItem, error)
 	HasVectorSearch() bool
 	HasFTS() bool
 }
@@ -289,6 +356,24 @@ type MemoryWriter interface {
 	DeleteDocument(ctx context.Context, agentID, name string) error
 	InsertAuditEntry(ctx context.Context, entry *AuditEntry) error
 	InsertAuditEntryBatch(ctx context.Context, entries []*AuditEntry) error
+	InsertImmutableMessage(ctx context.Context, msg *ImmutableMessage) error
+	InsertMemoryEdge(ctx context.Context, edge *MemoryEdge) error
+	// SoftDeleteRecallItem sets suppressed_at instead of permanently deleting.
+	// The item enters a 30-day quarantine before hard deletion.
+	SoftDeleteRecallItem(ctx context.Context, agentID string, id ids.UUID) error
+}
+
+// PruneStore is the interface for pruning quarantined items.
+// Implemented by LibSQLDelegate for the Cortex prune task.
+type PruneStore interface {
+	// ListQuarantinedRecallItems returns recall items ready for permanent deletion.
+	ListQuarantinedRecallItems(ctx context.Context, agentID string, cutoff time.Time, limit int) ([]*RecallItem, error)
+	// ListQuarantinedArchivalChunks returns chunks ready for permanent deletion.
+	ListQuarantinedArchivalChunks(ctx context.Context, cutoff time.Time, limit int) ([]*ArchivalChunk, error)
+	// HardDeleteRecallItem permanently deletes a recall item.
+	HardDeleteRecallItem(ctx context.Context, agentID string, id ids.UUID) error
+	// HardDeleteArchivalChunks permanently deletes chunks for a recall item.
+	HardDeleteArchivalChunks(ctx context.Context, recallID ids.UUID) error
 }
 
 // MemoryDelegate is the full-capability interface for memory operations.

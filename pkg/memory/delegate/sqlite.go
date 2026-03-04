@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/ZanzyTHEbar/dragonscale/pkg/ids"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/logger"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/memory"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/memory/dag"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/memory/migrations"
@@ -242,6 +243,10 @@ func (d *LibSQLDelegate) InsertRecallItem(ctx context.Context, item *memory.Reca
 }
 
 func recallItemToParams(item *memory.RecallItem) memsqlc.InsertRecallItemParams {
+	rlWeight := item.RLWeight
+	if rlWeight == 0 {
+		rlWeight = 1.0 // Default weight
+	}
 	return memsqlc.InsertRecallItemParams{
 		ID:         item.ID,
 		AgentID:    item.AgentID,
@@ -253,6 +258,7 @@ func recallItemToParams(item *memory.RecallItem) memsqlc.InsertRecallItemParams 
 		DecayRate:  item.DecayRate,
 		Content:    item.Content,
 		Tags:       item.Tags,
+		RlWeight:   &rlWeight,
 	}
 }
 
@@ -264,7 +270,22 @@ func (d *LibSQLDelegate) GetRecallItem(ctx context.Context, agentID string, id i
 	if err != nil {
 		return nil, err
 	}
-	return sqlcRecallToMemory(row), nil
+	// Inline conversion from GetRecallItemRow (no SuppressedAt in row)
+	return &memory.RecallItem{
+		ID:           row.ID,
+		AgentID:      row.AgentID,
+		SessionKey:   row.SessionKey,
+		Role:         row.Role,
+		Sector:       row.Sector,
+		Importance:   row.Importance,
+		Salience:     row.Salience,
+		DecayRate:    row.DecayRate,
+		Content:      row.Content,
+		Tags:         row.Tags,
+		CreatedAt:    row.CreatedAt,
+		UpdatedAt:    row.UpdatedAt,
+		SuppressedAt: nil, // GetRecallItem query filters out suppressed items
+	}, nil
 }
 
 func (d *LibSQLDelegate) GetRecallItemsByIDs(ctx context.Context, agentID string, itemIDs []ids.UUID) (map[ids.UUID]*memory.RecallItem, error) {
@@ -280,7 +301,22 @@ func (d *LibSQLDelegate) GetRecallItemsByIDs(ctx context.Context, agentID string
 	}
 	result := make(map[ids.UUID]*memory.RecallItem, len(rows))
 	for _, row := range rows {
-		result[row.ID] = sqlcRecallToMemory(row)
+		// Inline conversion from GetRecallItemsByIDsRow (no SuppressedAt in row)
+		result[row.ID] = &memory.RecallItem{
+			ID:           row.ID,
+			AgentID:      row.AgentID,
+			SessionKey:   row.SessionKey,
+			Role:         row.Role,
+			Sector:       row.Sector,
+			Importance:   row.Importance,
+			Salience:     row.Salience,
+			DecayRate:    row.DecayRate,
+			Content:      row.Content,
+			Tags:         row.Tags,
+			CreatedAt:    row.CreatedAt,
+			UpdatedAt:    row.UpdatedAt,
+			SuppressedAt: nil, // GetRecallItemsByIDs query filters out suppressed items
+		}
 	}
 	return result, nil
 }
@@ -303,6 +339,62 @@ func (d *LibSQLDelegate) DeleteRecallItem(ctx context.Context, agentID string, i
 	return d.queries.DeleteRecallItem(ctx, memsqlc.DeleteRecallItemParams{ID: id, AgentID: agentID})
 }
 
+// SoftDeleteRecallItem sets suppressed_at instead of permanently deleting.
+func (d *LibSQLDelegate) SoftDeleteRecallItem(ctx context.Context, agentID string, id ids.UUID) error {
+	if err := d.queries.SoftDeleteRecallItem(ctx, memsqlc.SoftDeleteRecallItemParams{ID: id, AgentID: agentID}); err != nil {
+		return err
+	}
+	// Also soft-delete associated archival chunks
+	return d.queries.SoftDeleteArchivalChunks(ctx, memsqlc.SoftDeleteArchivalChunksParams{RecallID: id})
+}
+
+// ListQuarantinedRecallItems returns recall items ready for permanent deletion.
+func (d *LibSQLDelegate) ListQuarantinedRecallItems(ctx context.Context, agentID string, cutoff time.Time, limit int) ([]*memory.RecallItem, error) {
+	rows, err := d.queries.ListQuarantinedRecallItems(ctx, memsqlc.ListQuarantinedRecallItemsParams{
+		BeforeDate: &cutoff,
+		Lim:        int64(limit),
+	})
+	if err != nil {
+		return nil, err
+	}
+	items := make([]*memory.RecallItem, 0, len(rows))
+	for _, r := range rows {
+		items = append(items, sqlcRecallToMemory(r))
+	}
+	return items, nil
+}
+
+// ListQuarantinedArchivalChunks returns chunks ready for permanent deletion.
+func (d *LibSQLDelegate) ListQuarantinedArchivalChunks(ctx context.Context, cutoff time.Time, limit int) ([]*memory.ArchivalChunk, error) {
+	rows, err := d.queries.ListQuarantinedArchivalChunks(ctx, memsqlc.ListQuarantinedArchivalChunksParams{
+		BeforeDate: &cutoff,
+		Lim:        int64(limit),
+	})
+	if err != nil {
+		return nil, err
+	}
+	chunks := make([]*memory.ArchivalChunk, 0, len(rows))
+	for _, r := range rows {
+		chunks = append(chunks, sqlcChunkToMemory(r))
+	}
+	return chunks, nil
+}
+
+// HardDeleteRecallItem permanently deletes a recall item.
+func (d *LibSQLDelegate) HardDeleteRecallItem(ctx context.Context, agentID string, id ids.UUID) error {
+	return d.queries.HardDeleteRecallItem(ctx, memsqlc.HardDeleteRecallItemParams{ID: id, AgentID: agentID})
+}
+
+// HardDeleteArchivalChunks permanently deletes chunks for a recall item.
+func (d *LibSQLDelegate) HardDeleteArchivalChunks(ctx context.Context, recallID ids.UUID) error {
+	return d.queries.HardDeleteArchivalChunks(ctx, memsqlc.HardDeleteArchivalChunksParams{RecallID: recallID})
+}
+
+// HardDeleteChunk permanently deletes a single archival chunk by ID.
+func (d *LibSQLDelegate) HardDeleteChunk(ctx context.Context, id ids.UUID) error {
+	return d.queries.HardDeleteChunk(ctx, memsqlc.HardDeleteChunkParams{ID: id})
+}
+
 func (d *LibSQLDelegate) ListRecallItems(ctx context.Context, agentID, sessionKey string, limit, offset int) ([]*memory.RecallItem, error) {
 	rows, err := d.queries.ListRecallItems(ctx, memsqlc.ListRecallItemsParams{
 		AgentID:    agentID,
@@ -315,7 +407,22 @@ func (d *LibSQLDelegate) ListRecallItems(ctx context.Context, agentID, sessionKe
 	}
 	items := make([]*memory.RecallItem, len(rows))
 	for i, row := range rows {
-		items[i] = sqlcRecallToMemory(row)
+		// Inline conversion from ListRecallItemsRow (no SuppressedAt in row)
+		items[i] = &memory.RecallItem{
+			ID:           row.ID,
+			AgentID:      row.AgentID,
+			SessionKey:   row.SessionKey,
+			Role:         row.Role,
+			Sector:       row.Sector,
+			Importance:   row.Importance,
+			Salience:     row.Salience,
+			DecayRate:    row.DecayRate,
+			Content:      row.Content,
+			Tags:         row.Tags,
+			CreatedAt:    row.CreatedAt,
+			UpdatedAt:    row.UpdatedAt,
+			SuppressedAt: nil, // ListRecallItems query filters out suppressed items
+		}
 	}
 	return items, nil
 }
@@ -331,7 +438,22 @@ func (d *LibSQLDelegate) SearchRecallByKeyword(ctx context.Context, query, agent
 	}
 	items := make([]*memory.RecallItem, len(rows))
 	for i, row := range rows {
-		items[i] = sqlcRecallToMemory(row)
+		// Inline conversion from SearchRecallByKeywordRow (no SuppressedAt in row)
+		items[i] = &memory.RecallItem{
+			ID:           row.ID,
+			AgentID:      row.AgentID,
+			SessionKey:   row.SessionKey,
+			Role:         row.Role,
+			Sector:       row.Sector,
+			Importance:   row.Importance,
+			Salience:     row.Salience,
+			DecayRate:    row.DecayRate,
+			Content:      row.Content,
+			Tags:         row.Tags,
+			CreatedAt:    row.CreatedAt,
+			UpdatedAt:    row.UpdatedAt,
+			SuppressedAt: nil, // SearchRecallByKeyword query filters out suppressed items
+		}
 	}
 	return items, nil
 }
@@ -394,7 +516,18 @@ func (d *LibSQLDelegate) GetArchivalChunk(ctx context.Context, agentID string, i
 	if err != nil {
 		return nil, err
 	}
-	return sqlcChunkToMemory(row), nil
+	// Inline conversion from GetArchivalChunkRow (no SuppressedAt in row)
+	return &memory.ArchivalChunk{
+		ID:           row.ID,
+		RecallID:     row.RecallID,
+		ChunkIndex:   int(row.ChunkIndex),
+		Content:      row.Content,
+		Embedding:    row.Embedding,
+		Source:       row.Source,
+		Hash:         row.Hash,
+		CreatedAt:    row.CreatedAt,
+		SuppressedAt: nil, // GetArchivalChunk query doesn't return suppressed items
+	}, nil
 }
 
 func (d *LibSQLDelegate) ListArchivalChunks(ctx context.Context, agentID string, recallID ids.UUID) ([]*memory.ArchivalChunk, error) {
@@ -404,7 +537,18 @@ func (d *LibSQLDelegate) ListArchivalChunks(ctx context.Context, agentID string,
 	}
 	chunks := make([]*memory.ArchivalChunk, len(rows))
 	for i, row := range rows {
-		chunks[i] = sqlcChunkToMemory(row)
+		// Inline conversion from ListArchivalChunksRow (no SuppressedAt in row)
+		chunks[i] = &memory.ArchivalChunk{
+			ID:           row.ID,
+			RecallID:     row.RecallID,
+			ChunkIndex:   int(row.ChunkIndex),
+			Content:      row.Content,
+			Embedding:    row.Embedding,
+			Source:       row.Source,
+			Hash:         row.Hash,
+			CreatedAt:    row.CreatedAt,
+			SuppressedAt: nil, // ListArchivalChunks query filters out suppressed items
+		}
 	}
 	return chunks, nil
 }
@@ -420,7 +564,18 @@ func (d *LibSQLDelegate) ListAllArchivalChunks(ctx context.Context, agentID stri
 	}
 	chunks := make([]*memory.ArchivalChunk, len(rows))
 	for i, row := range rows {
-		chunks[i] = sqlcChunkToMemory(row)
+		// Inline conversion from ListAllArchivalChunksRow (no SuppressedAt in row)
+		chunks[i] = &memory.ArchivalChunk{
+			ID:           row.ID,
+			RecallID:     row.RecallID,
+			ChunkIndex:   int(row.ChunkIndex),
+			Content:      row.Content,
+			Embedding:    row.Embedding,
+			Source:       row.Source,
+			Hash:         row.Hash,
+			CreatedAt:    row.CreatedAt,
+			SuppressedAt: nil, // ListAllArchivalChunks includes all chunks
+		}
 	}
 	return chunks, nil
 }
@@ -631,7 +786,20 @@ func (d *LibSQLDelegate) ListSessionMessages(ctx context.Context, agentID, sessi
 	}
 	items := make([]*memory.RecallItem, len(rows))
 	for i, row := range rows {
-		items[i] = sqlcRecallToMemory(row)
+		items[i] = &memory.RecallItem{
+			ID:         row.ID,
+			AgentID:    row.AgentID,
+			SessionKey: row.SessionKey,
+			Role:       row.Role,
+			Sector:     row.Sector,
+			Importance: row.Importance,
+			Salience:   row.Salience,
+			DecayRate:  row.DecayRate,
+			Content:    row.Content,
+			Tags:       row.Tags,
+			CreatedAt:  row.CreatedAt,
+			UpdatedAt:  row.UpdatedAt,
+		}
 	}
 	return items, nil
 }
@@ -771,35 +939,417 @@ func (d *LibSQLDelegate) PersistDAG(ctx context.Context, agentID, sessionKey str
 	return dag.PersistDAG(ctx, d.db, d.queries, agentID, sessionKey, snap)
 }
 
+// --- Memory Edges (via sqlc) ---
+
+func (d *LibSQLDelegate) InsertMemoryEdge(ctx context.Context, edge *memory.MemoryEdge) error {
+	row, err := d.queries.InsertMemoryEdge(ctx, memsqlc.InsertMemoryEdgeParams{
+		FromID:   edge.FromID,
+		ToID:     edge.ToID,
+		EdgeType: string(edge.EdgeType),
+		Weight:   edge.Weight,
+	})
+	if err != nil {
+		return err
+	}
+	edge.ID = row.ID
+	edge.CreatedAt = row.CreatedAt
+	return nil
+}
+
+func (d *LibSQLDelegate) ListMemoryEdges(ctx context.Context, memoryID ids.UUID) ([]*memory.MemoryEdge, error) {
+	rows, err := d.queries.ListMemoryEdgesForItem(ctx, memsqlc.ListMemoryEdgesForItemParams{
+		MemoryID: memoryID,
+		Lim:      1000,
+	})
+	if err != nil {
+		return nil, err
+	}
+	edges := make([]*memory.MemoryEdge, 0, len(rows))
+	for _, r := range rows {
+		edges = append(edges, sqlcEdgeToMemory(r))
+	}
+	return edges, nil
+}
+
+func (d *LibSQLDelegate) CountMemoryEdgesForItem(ctx context.Context, memoryID ids.UUID) (int, error) {
+	count, err := d.queries.CountMemoryEdgesForItem(ctx, memsqlc.CountMemoryEdgesForItemParams{
+		MemoryID: memoryID,
+	})
+	return int(count), err
+}
+
+// ListRecallItemsForConsolidation returns recall items with embeddings for similarity comparison.
+// Used by the Cortex consolidation task to build the memory graph.
+func (d *LibSQLDelegate) ListRecallItemsForConsolidation(ctx context.Context, agentID string, cutoff time.Time, limit int) ([]*memory.RecallItem, error) {
+	rows, err := d.queries.ListRecallItemsForConsolidation(ctx, memsqlc.ListRecallItemsForConsolidationParams{
+		Cutoff:  cutoff,
+		AgentID: agentID,
+		Lim:     int64(limit),
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	items := make([]*memory.RecallItem, 0, len(rows))
+	for _, r := range rows {
+		item := &memory.RecallItem{
+			ID:         r.ID,
+			AgentID:    r.AgentID,
+			SessionKey: r.SessionKey,
+			Role:       r.Role,
+			Sector:     r.Sector,
+			Importance: r.Importance,
+			Salience:   r.Salience,
+			DecayRate:  r.DecayRate,
+			Content:    r.Content,
+			Tags:       r.Tags,
+			CreatedAt:  r.CreatedAt,
+			UpdatedAt:  r.UpdatedAt,
+			Embedding:  r.Embedding,
+		}
+		items = append(items, item)
+	}
+	return items, nil
+}
+
+// --- RL (Reinforcement Learning) Store Methods ---
+
+// GetTaskBaseline retrieves the baseline statistics for an agent.
+// Implements cortex.RLStore interface.
+func (d *LibSQLDelegate) GetTaskBaseline(ctx context.Context, agentID string) (*TaskBaseline, error) {
+	row, err := d.queries.GetTaskBaseline(ctx, memsqlc.GetTaskBaselineParams{AgentID: agentID})
+	if err == sql.ErrNoRows {
+		// Return nil baseline for new agents - cold start handling
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	baseline := &TaskBaseline{}
+	if row.Count != nil {
+		baseline.Count = int(*row.Count)
+	}
+	if row.MeanTokens != nil {
+		baseline.MeanTokens = float64(*row.MeanTokens)
+	}
+	if row.MeanErrors != nil {
+		baseline.MeanErrors = *row.MeanErrors
+	}
+	if row.MeanUserCorrections != nil {
+		baseline.MeanUserCorrections = *row.MeanUserCorrections
+	}
+	if row.M2Tokens != nil {
+		baseline.M2Tokens = *row.M2Tokens
+	}
+	if row.M2Errors != nil {
+		baseline.M2Errors = *row.M2Errors
+	}
+	if row.M2UserCorrections != nil {
+		baseline.M2UserCorrections = *row.M2UserCorrections
+	}
+	return baseline, nil
+}
+
+// UpdateTaskBaseline saves the baseline statistics for an agent.
+// Implements cortex.RLStore interface.
+func (d *LibSQLDelegate) UpdateTaskBaseline(ctx context.Context, agentID string, baseline *TaskBaseline) error {
+	count := int64(baseline.Count)
+	meanTokens := int64(baseline.MeanTokens)
+	meanErrors := baseline.MeanErrors
+	meanUserCorrections := baseline.MeanUserCorrections
+	m2Tokens := baseline.M2Tokens
+	m2Errors := baseline.M2Errors
+	m2UserCorrections := baseline.M2UserCorrections
+
+	return d.queries.UpdateTaskBaseline(ctx, memsqlc.UpdateTaskBaselineParams{
+		AgentID:             agentID,
+		Count:               &count,
+		MeanTokens:          &meanTokens,
+		MeanErrors:          &meanErrors,
+		MeanUserCorrections: &meanUserCorrections,
+		M2Tokens:            &m2Tokens,
+		M2Errors:            &m2Errors,
+		M2UserCorrections:   &m2UserCorrections,
+	})
+}
+
+// UpdateMemoryWeight updates the RL weight and credit for a specific memory.
+// Implements cortex.RLStore interface.
+func (d *LibSQLDelegate) UpdateMemoryWeight(ctx context.Context, memoryID ids.UUID, weight, credit float64) error {
+	rlWeight := weight
+	rlCredit := credit
+	// Get the agent_id from the memory item first
+	item, err := d.GetRecallItem(ctx, "", memoryID)
+	if err != nil {
+		return err
+	}
+	if item == nil {
+		return fmt.Errorf("memory item not found: %s", memoryID)
+	}
+	return d.queries.UpdateMemoryWeight(ctx, memsqlc.UpdateMemoryWeightParams{
+		RlWeight: &rlWeight,
+		RlCredit: &rlCredit,
+		ID:       memoryID,
+		AgentID:  item.AgentID,
+	})
+}
+
+// UpdateMemorySelfReport updates the self-reported score for a memory.
+// Implements cortex.RLStore interface.
+func (d *LibSQLDelegate) UpdateMemorySelfReport(ctx context.Context, memoryID ids.UUID, score int) error {
+	selfReportScore := int64(score)
+	// Get the agent_id from the memory item first
+	item, err := d.GetRecallItem(ctx, "", memoryID)
+	if err != nil {
+		return err
+	}
+	if item == nil {
+		return fmt.Errorf("memory item not found: %s", memoryID)
+	}
+	return d.queries.UpdateMemorySelfReportScore(ctx, memsqlc.UpdateMemorySelfReportScoreParams{
+		SelfReportScore: &selfReportScore,
+		ID:              memoryID,
+		AgentID:         item.AgentID,
+	})
+}
+
+// GetCompletedTasks returns tasks completed since the given time.
+// Implements cortex.RLStore interface.
+// Note: This is a placeholder implementation - actual task storage needs to be defined.
+func (d *LibSQLDelegate) GetCompletedTasks(ctx context.Context, since time.Time) ([]TaskRecord, error) {
+	// TODO: Implement actual task retrieval from jobs or runs tables
+	// For now, return empty list
+	return []TaskRecord{}, nil
+}
+
+// GetRetrievedMemories returns memories retrieved during a task.
+// Implements cortex.RLStore interface.
+// Note: This is a placeholder implementation - actual retrieval tracking needs to be defined.
+func (d *LibSQLDelegate) GetRetrievedMemories(ctx context.Context, taskID string) ([]RetrievedMemoryRecord, error) {
+	// TODO: Implement actual retrieved memory tracking
+	// For now, return empty list
+	return []RetrievedMemoryRecord{}, nil
+}
+
+// --- Audit Analysis Store Methods ---
+
+// GetRecentAuditEntries returns audit entries since the given time.
+// Implements cortex.AuditAnalysisStore interface.
+func (d *LibSQLDelegate) GetRecentAuditEntries(ctx context.Context, since time.Time) ([]AuditEntry, error) {
+	// Get all audit entries and filter by time
+	rows, err := d.queries.ListAuditEntries(ctx, memsqlc.ListAuditEntriesParams{
+		AgentID: "", // Get all agents
+		Lim:     10000,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	var entries []AuditEntry
+	for _, row := range rows {
+		if row.CreatedAt.After(since) {
+			entry := AuditEntry{
+				ID:        row.ID.String(),
+				Timestamp: row.CreatedAt,
+				ToolName:  row.Action, // Using action as tool name proxy
+				ToolInput: "",
+				Success:   true, // Default to success
+				SessionID: row.SessionKey,
+				AgentID:   row.AgentID,
+			}
+			if row.Input != nil {
+				entry.ToolInput = *row.Input
+			}
+			entries = append(entries, entry)
+		}
+	}
+	return entries, nil
+}
+
+// StoreDetectedPattern stores a detected pattern as a recall item.
+// Implements cortex.AuditAnalysisStore interface.
+func (d *LibSQLDelegate) StoreDetectedPattern(ctx context.Context, pattern DetectedPattern) error {
+	item := &memory.RecallItem{
+		ID:         ids.New(),
+		AgentID:    pattern.AgentID,
+		SessionKey: pattern.SessionID,
+		Role:       "system",
+		Sector:     memory.SectorReflective,
+		Importance: pattern.Weight,
+		Salience:   pattern.Weight,
+		Content:    pattern.Description,
+		Tags:       fmt.Sprintf("audit,%s,%s", pattern.Type, pattern.Category),
+		CreatedAt:  time.Now(),
+		UpdatedAt:  time.Now(),
+	}
+	return d.InsertRecallItem(ctx, item)
+}
+
+// GetHighTokenSessions returns sessions with token usage above threshold.
+// Implements cortex.AuditAnalysisStore interface.
+// Note: This is a placeholder - actual token tracking needs to be implemented.
+func (d *LibSQLDelegate) GetHighTokenSessions(ctx context.Context, minTokens int64) ([]SessionSummary, error) {
+	// TODO: Implement token-based session filtering when token tracking is available
+	return []SessionSummary{}, nil
+}
+
+// --- Batch Operations for Cortex Tasks (via sqlc) ---
+
+// DecayRecallImportance applies multiplicative decay to the oldest recall items
+// whose importance exceeds the floor. Uses sqlc-generated query string with
+// raw ExecContext to preserve RowsAffected for observability.
+func (d *LibSQLDelegate) DecayRecallImportance(ctx context.Context, factor, floor float64, batchSize int) (int64, error) {
+	result, err := d.db.ExecContext(ctx, memsqlc.DecayRecallImportanceBatch, factor, floor, int64(batchSize))
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+// CountArchivalChunksWithoutEmbedding returns the count of chunks with NULL embeddings.
+func (d *LibSQLDelegate) CountArchivalChunksWithoutEmbedding(ctx context.Context) (int, error) {
+	count, err := d.queries.CountArchivalChunksWithoutEmbedding(ctx)
+	return int(count), err
+}
+
+// BackfillArchivalEmbeddings finds chunks without embeddings, calls embedFn for each,
+// and writes the embedding back via sqlc UpdateArchivalChunkEmbedding.
+func (d *LibSQLDelegate) BackfillArchivalEmbeddings(ctx context.Context, batchSize int, embedFn func(ctx context.Context, text string) ([]float32, error)) (int, error) {
+	chunks, err := d.queries.ListArchivalChunksWithoutEmbedding(ctx, memsqlc.ListArchivalChunksWithoutEmbeddingParams{
+		Lim: int64(batchSize),
+	})
+	if err != nil {
+		return 0, err
+	}
+
+	processed := 0
+	for _, c := range chunks {
+		vec, err := embedFn(ctx, c.Content)
+		if err != nil {
+			logger.WarnCF("cortex", "Embedding failed for chunk", map[string]interface{}{
+				"chunk_id": c.ID.String(),
+				"error":    err.Error(),
+			})
+			continue
+		}
+		emb := memory.Embedding(vec)
+		if err := d.queries.UpdateArchivalChunkEmbedding(ctx, memsqlc.UpdateArchivalChunkEmbeddingParams{
+			Embedding: emb,
+			ID:        c.ID,
+		}); err != nil {
+			logger.WarnCF("cortex", "Failed to update chunk embedding", map[string]interface{}{
+				"chunk_id": c.ID.String(),
+				"error":    err.Error(),
+			})
+			continue
+		}
+		processed++
+	}
+	return processed, nil
+}
+
+// --- Immutable Messages (via sqlc) ---
+
+func (d *LibSQLDelegate) InsertImmutableMessage(ctx context.Context, msg *memory.ImmutableMessage) error {
+	row, err := d.queries.InsertImmutableMessage(ctx, memsqlc.InsertImmutableMessageParams{
+		ID:            msg.ID,
+		SessionKey:    msg.SessionKey,
+		Role:          msg.Role,
+		Content:       msg.Content,
+		ToolCallID:    msg.ToolCallID,
+		ToolCalls:     msg.ToolCalls,
+		TokenEstimate: int64(msg.TokenEstimate),
+	})
+	if err != nil {
+		return err
+	}
+	msg.CreatedAt = row.CreatedAt
+	return nil
+}
+
+func (d *LibSQLDelegate) GetImmutableMessage(ctx context.Context, id ids.UUID) (*memory.ImmutableMessage, error) {
+	row, err := d.queries.GetImmutableMessage(ctx, memsqlc.GetImmutableMessageParams{ID: id})
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return sqlcImmutableToMemory(row), nil
+}
+
+func (d *LibSQLDelegate) ListImmutableMessages(ctx context.Context, sessionKey string, limit, offset int) ([]*memory.ImmutableMessage, error) {
+	rows, err := d.queries.ListImmutableMessages(ctx, memsqlc.ListImmutableMessagesParams{
+		SessionKey: sessionKey,
+		Lim:        int64(limit),
+		Off:        int64(offset),
+	})
+	if err != nil {
+		return nil, err
+	}
+	msgs := make([]*memory.ImmutableMessage, 0, len(rows))
+	for _, r := range rows {
+		msgs = append(msgs, sqlcImmutableToMemory(r))
+	}
+	return msgs, nil
+}
+
 // --- Conversion helpers ---
 
-func sqlcRecallToMemory(row memsqlc.RecallItem) *memory.RecallItem {
+func sqlcRecallToMemory(row memsqlc.ListQuarantinedRecallItemsRow) *memory.RecallItem {
 	return &memory.RecallItem{
-		ID:         row.ID,
-		AgentID:    row.AgentID,
-		SessionKey: row.SessionKey,
-		Role:       row.Role,
-		Sector:     row.Sector, // already memory.Sector via sqlc override
-		Importance: row.Importance,
-		Salience:   row.Salience,
-		DecayRate:  row.DecayRate,
-		Content:    row.Content,
-		Tags:       row.Tags,
-		CreatedAt:  row.CreatedAt,
-		UpdatedAt:  row.UpdatedAt,
+		ID:           row.ID,
+		AgentID:      row.AgentID,
+		SessionKey:   row.SessionKey,
+		Role:         row.Role,
+		Sector:       row.Sector, // already memory.Sector via sqlc override
+		Importance:   row.Importance,
+		Salience:     row.Salience,
+		DecayRate:    row.DecayRate,
+		Content:      row.Content,
+		Tags:         row.Tags,
+		CreatedAt:    row.CreatedAt,
+		UpdatedAt:    row.UpdatedAt,
+		SuppressedAt: row.SuppressedAt,
 	}
 }
 
 func sqlcChunkToMemory(row memsqlc.ArchivalChunk) *memory.ArchivalChunk {
 	return &memory.ArchivalChunk{
-		ID:         row.ID,
-		RecallID:   row.RecallID,
-		ChunkIndex: int(row.ChunkIndex),
-		Content:    row.Content,
-		Embedding:  row.Embedding, // memory.Embedding with auto-deserialization via Scanner
-		Source:     row.Source,
-		Hash:       row.Hash,
-		CreatedAt:  row.CreatedAt,
+		ID:           row.ID,
+		RecallID:     row.RecallID,
+		ChunkIndex:   int(row.ChunkIndex),
+		Content:      row.Content,
+		Embedding:    row.Embedding, // memory.Embedding with auto-deserialization via Scanner
+		Source:       row.Source,
+		Hash:         row.Hash,
+		CreatedAt:    row.CreatedAt,
+		SuppressedAt: row.SuppressedAt,
+	}
+}
+
+func sqlcImmutableToMemory(row memsqlc.ImmutableMessage) *memory.ImmutableMessage {
+	return &memory.ImmutableMessage{
+		ID:            row.ID,
+		SessionKey:    row.SessionKey,
+		Role:          row.Role,
+		Content:       row.Content,
+		ToolCallID:    row.ToolCallID,
+		ToolCalls:     row.ToolCalls,
+		TokenEstimate: int(row.TokenEstimate),
+		CreatedAt:     row.CreatedAt,
+	}
+}
+
+func sqlcEdgeToMemory(row memsqlc.MemoryEdge) *memory.MemoryEdge {
+	return &memory.MemoryEdge{
+		ID:        row.ID,
+		FromID:    row.FromID,
+		ToID:      row.ToID,
+		EdgeType:  memory.EdgeType(row.EdgeType),
+		Weight:    row.Weight,
+		CreatedAt: row.CreatedAt,
 	}
 }
 
