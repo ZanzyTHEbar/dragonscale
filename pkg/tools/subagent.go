@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 	"sync"
 	"time"
@@ -185,6 +186,14 @@ func (sm *SubagentManager) Spawn(ctx context.Context, task, label, delegatedScop
 			sm.mu.Unlock()
 			return "", fmt.Errorf("nested delegation requires delegated_scope and kept_work")
 		}
+	}
+	if keptWork != "" {
+		slog.Debug("delegation scope-reduction",
+			"parent_depth", parentDepth,
+			"child_depth", childDepth,
+			"kept_work", keptWork,
+			"delegated_scope", delegatedScope,
+		)
 	}
 	if sm.runLoop == nil {
 		sm.mu.Unlock()
@@ -460,6 +469,14 @@ func (t *SubagentTool) Execute(ctx context.Context, args map[string]interface{})
 		if strings.TrimSpace(delegatedScope) == "" || strings.TrimSpace(keptWork) == "" {
 			return ErrorResult("nested delegation requires delegated_scope and kept_work")
 		}
+	}
+	if keptWork != "" {
+		slog.Debug("delegation scope-reduction",
+			"parent_depth", parentDepth,
+			"child_depth", childDepth,
+			"kept_work", keptWork,
+			"delegated_scope", delegatedScope,
+		)
 	}
 
 	systemPrompt := "You are a subagent operating with main-loop control flow. Execute actions via tools, call discovered tools directly, and provide a clear concise result."

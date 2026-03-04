@@ -402,6 +402,27 @@ func (sm *SessionManager) persistMessageToDelegate(sessionKey string, msg messag
 			map[string]interface{}{"session": sessionKey, "error": err.Error()})
 		return
 	}
+
+	// Dual-write: persist verbatim copy to immutable store (LCM ADR-001).
+	immutableWriter, ok := sm.delegate.(interface {
+		InsertImmutableMessage(ctx context.Context, msg *memory.ImmutableMessage) error
+	})
+	if ok {
+		imMsg := &memory.ImmutableMessage{
+			ID:            ids.New(),
+			SessionKey:    sessionKey,
+			Role:          msg.Role,
+			Content:       msg.Content,
+			ToolCallID:    msg.ToolCallID,
+			ToolCalls:     toolCallsJSON(msg),
+			TokenEstimate: estimateTokensSimple(msg.Content),
+		}
+		if err := immutableWriter.InsertImmutableMessage(ctx, imMsg); err != nil {
+			logger.WarnCF("session", "Failed to persist immutable message",
+				map[string]interface{}{"session": sessionKey, "error": err.Error()})
+		}
+	}
+
 	priorPtr, _ := sm.loadProjectionPointer(ctx, sessionKey)
 	newPtr := advancePointer(priorPtr, item.ID, now)
 	if err := sm.persistProjectionPointer(ctx, sessionKey, newPtr); err != nil {
@@ -728,4 +749,19 @@ func (sm *SessionManager) SetHistory(key string, history []messages.Message) {
 		session.Messages = msgs
 		session.Updated = time.Now()
 	}
+}
+
+func toolCallsJSON(msg messages.Message) string {
+	if len(msg.ToolCalls) == 0 {
+		return ""
+	}
+	b, err := jsonv2.Marshal(msg.ToolCalls)
+	if err != nil {
+		return ""
+	}
+	return string(b)
+}
+
+func estimateTokensSimple(content string) int {
+	return (len(content) + 3) / 4
 }

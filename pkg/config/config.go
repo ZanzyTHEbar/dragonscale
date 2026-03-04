@@ -144,6 +144,14 @@ type ContinuityRetentionConfig struct {
 	FailureKeepMessages int `json:"failure_keep_messages" env:"DRAGONSCALE_AGENTS_DEFAULTS_CONTINUITY_RETENTION_FAILURE_KEEP_MESSAGES"`
 }
 
+// CompactionConfig controls the dual-threshold compaction control loop (LCM ADR-002).
+type CompactionConfig struct {
+	// SoftThresholdPct triggers async background compaction (default 70).
+	SoftThresholdPct int `json:"soft_threshold_pct" env:"DRAGONSCALE_AGENTS_DEFAULTS_COMPACTION_SOFT_THRESHOLD_PCT"`
+	// HardThresholdPct triggers synchronous blocking compaction (default 90).
+	HardThresholdPct int `json:"hard_threshold_pct" env:"DRAGONSCALE_AGENTS_DEFAULTS_COMPACTION_HARD_THRESHOLD_PCT"`
+}
+
 type AgentDefaults struct {
 	// Sandbox is the directory for agent file operations (tools sandbox).
 	// Defaults to $XDG_DATA_HOME/dragonscale/sandbox when empty.
@@ -155,6 +163,7 @@ type AgentDefaults struct {
 	Temperature         float64                   `json:"temperature" env:"DRAGONSCALE_AGENTS_DEFAULTS_TEMPERATURE"`
 	MaxToolIterations   int                       `json:"max_tool_iterations" env:"DRAGONSCALE_AGENTS_DEFAULTS_MAX_TOOL_ITERATIONS"`
 	ContinuityRetention ContinuityRetentionConfig `json:"continuity_retention"`
+	Compaction          CompactionConfig          `json:"compaction"`
 
 	// Deprecated: Use Sandbox instead. Kept for backward compatibility during migration.
 	Workspace           string `json:"workspace,omitempty" env:"DRAGONSCALE_AGENTS_DEFAULTS_WORKSPACE"`
@@ -372,6 +381,10 @@ func DefaultConfig() *Config {
 					MaxMessages:         24,
 					TargetContextRatio:  0.10,
 					FailureKeepMessages: 10,
+				},
+				Compaction: CompactionConfig{
+					SoftThresholdPct: 70,
+					HardThresholdPct: 90,
 				},
 			},
 		},

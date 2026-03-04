@@ -29,7 +29,7 @@ type DAGToolDeps struct {
 	SessionFn func() string // returns current session key
 }
 
-func recallRowToItem(row memsqlc.RecallItem) *memory.RecallItem {
+func recallRowToItem(row memsqlc.ListSessionMessagesPagedRow) *memory.RecallItem {
 	return &memory.RecallItem{
 		ID:         row.ID,
 		AgentID:    row.AgentID,
