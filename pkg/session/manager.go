@@ -361,7 +361,7 @@ func (sm *SessionManager) AddFullMessage(sessionKey string, msg messages.Message
 	sm.touchLRU(sessionKey)
 
 	if sm.msgChan != nil {
-		sm.msgChan <- msgPersistItem{sessionKey: sessionKey, msg: msg}
+		_ = sm.enqueuePersistItem(msgPersistItem{sessionKey: sessionKey, msg: msg})
 	}
 
 }
@@ -376,6 +376,19 @@ func (sm *SessionManager) msgPersistWorker() {
 		}
 		sm.persistMessageToDelegate(item.sessionKey, item.msg)
 	}
+}
+
+func (sm *SessionManager) enqueuePersistItem(item msgPersistItem) (ok bool) {
+	if sm.msgChan == nil {
+		return false
+	}
+	defer func() {
+		if recover() != nil {
+			ok = false
+		}
+	}()
+	sm.msgChan <- item
+	return true
 }
 
 func (sm *SessionManager) persistMessageToDelegate(sessionKey string, msg messages.Message) {
@@ -581,7 +594,9 @@ func (sm *SessionManager) Flush() {
 		return
 	}
 	barrier := make(chan struct{})
-	sm.msgChan <- msgPersistItem{barrier: barrier}
+	if !sm.enqueuePersistItem(msgPersistItem{barrier: barrier}) {
+		return
+	}
 	<-barrier
 }
 
