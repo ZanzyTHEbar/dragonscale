@@ -41,26 +41,26 @@ const (
 )
 
 type ExecTool struct {
-	workingDir          string
-	timeout             time.Duration
-	denyPatterns        []*regexp.Regexp
-	allowPatterns       []*regexp.Regexp
-	restrictToWorkspace bool
-	mode                ShellMode
-	workspace           string // root workspace path for audit logging
+	workingDir        string
+	timeout           time.Duration
+	denyPatterns      []*regexp.Regexp
+	allowPatterns     []*regexp.Regexp
+	restrictToSandbox bool
+	mode              ShellMode
+	workspace         string // root workspace path for audit logging
 }
 
 func NewExecTool(workingDir string, restrict bool) *ExecTool {
 	denyPatterns := buildDenyPatterns()
 
 	return &ExecTool{
-		workingDir:          workingDir,
-		timeout:             60 * time.Second,
-		denyPatterns:        denyPatterns,
-		allowPatterns:       nil,
-		restrictToWorkspace: restrict,
-		mode:                ShellModeDenyList,
-		workspace:           workingDir,
+		workingDir:        workingDir,
+		timeout:           60 * time.Second,
+		denyPatterns:      denyPatterns,
+		allowPatterns:     nil,
+		restrictToSandbox: restrict,
+		mode:              ShellModeDenyList,
+		workspace:         workingDir,
 	}
 }
 
@@ -196,7 +196,7 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]interface{}) *To
 
 	cwd := t.workingDir
 	if wd, ok := args["working_dir"].(string); ok && wd != "" {
-		if t.restrictToWorkspace && t.workspace != "" {
+		if t.restrictToSandbox && t.workspace != "" {
 			resolved, err := validatePath(wd, t.workspace, true)
 			if err != nil {
 				return ErrorResult(fmt.Sprintf("working_dir blocked: %v", err))
@@ -385,7 +385,7 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
 		}
 	}
 
-	if t.restrictToWorkspace {
+	if t.restrictToSandbox {
 		if strings.Contains(cmd, "..\\") || strings.Contains(cmd, "../") {
 			return "Command blocked by safety guard (path traversal detected)"
 		}
@@ -443,13 +443,8 @@ func (t *ExecTool) SetTimeout(timeout time.Duration) {
 	t.timeout = timeout
 }
 
-// SetRestrictToWorkspace is the legacy name. Use SetRestrictToSandbox for new code.
-func (t *ExecTool) SetRestrictToWorkspace(restrict bool) {
-	t.restrictToWorkspace = restrict
-}
-
 func (t *ExecTool) SetRestrictToSandbox(restrict bool) {
-	t.restrictToWorkspace = restrict
+	t.restrictToSandbox = restrict
 }
 
 func (t *ExecTool) SetMode(mode ShellMode) {

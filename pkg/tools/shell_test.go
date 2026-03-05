@@ -195,12 +195,12 @@ func TestShellTool_OutputTruncation(t *testing.T) {
 	}
 }
 
-// TestShellTool_RestrictToWorkspace verifies workspace restriction
-func TestShellTool_RestrictToWorkspace(t *testing.T) {
+// TestShellTool_RestrictToSandbox verifies sandbox restriction
+func TestShellTool_RestrictToSandbox(t *testing.T) {
 	t.Parallel()
 	tmpDir := t.TempDir()
 	tool := NewExecTool(tmpDir, false)
-	tool.SetRestrictToWorkspace(true)
+	tool.SetRestrictToSandbox(true)
 
 	ctx := t.Context()
 	args := map[string]interface{}{
@@ -211,7 +211,7 @@ func TestShellTool_RestrictToWorkspace(t *testing.T) {
 
 	// Path traversal should be blocked
 	if !result.IsError {
-		t.Errorf("Expected path traversal to be blocked with restrictToWorkspace=true")
+		t.Errorf("Expected path traversal to be blocked with restrictToSandbox=true")
 	}
 
 	if !strings.Contains(result.ForLLM, "blocked") && !strings.Contains(result.ForUser, "blocked") {

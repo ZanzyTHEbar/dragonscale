@@ -3,9 +3,6 @@ package state
 import (
 	"context"
 	"fmt"
-	"log"
-	"os"
-	"path/filepath"
 	"sync"
 	"time"
 
@@ -40,18 +37,16 @@ func WithDelegate(del memory.MemoryDelegate) Option {
 	return func(m *Manager) { m.delegate = del }
 }
 
-// Manager manages persistent state with atomic saves.
-// When a delegate is present, state persists through agent_kv.
-// Otherwise, it falls back to file-based atomic JSON writes.
+// Manager manages persistent state through the delegate (agent_kv).
 type Manager struct {
 	workspace string
 	state     *State
 	mu        sync.RWMutex
-	stateFile string
 	delegate  memory.MemoryDelegate
 }
 
-// NewManager creates a new state manager for the given workspace.
+// NewManager creates a new state manager with the provided delegate.
+// The delegate is required for state persistence.
 func NewManager(workspace string, opts ...Option) *Manager {
 	sm := &Manager{
 		workspace: workspace,
@@ -64,25 +59,6 @@ func NewManager(workspace string, opts ...Option) *Manager {
 
 	if sm.delegate != nil {
 		sm.loadFromDelegate()
-		return sm
-	}
-
-	stateDir := filepath.Join(workspace, "state")
-	stateFile := filepath.Join(stateDir, "state.json")
-	oldStateFile := filepath.Join(workspace, "state.json")
-
-	os.MkdirAll(stateDir, 0755)
-	sm.stateFile = stateFile
-
-	if _, err := os.Stat(stateFile); os.IsNotExist(err) {
-		if data, err := os.ReadFile(oldStateFile); err == nil {
-			if err := jsonv2.Unmarshal(data, sm.state); err == nil {
-				sm.saveAtomic()
-				log.Printf("[INFO] state: migrated state from %s to %s", oldStateFile, stateFile)
-			}
-		}
-	} else {
-		sm.load()
 	}
 
 	return sm
@@ -92,24 +68,8 @@ func (sm *Manager) loadFromDelegate() {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	// Prefer single-key format (state:json)
 	if v, err := sm.delegate.GetKV(ctx, kvAgentID, "state:json"); err == nil && v != "" {
-		if err := jsonv2.Unmarshal([]byte(v), sm.state); err == nil {
-			return
-		}
-	}
-
-	// Fallback: legacy 3-key format
-	if v, err := sm.delegate.GetKV(ctx, kvAgentID, "state:last_channel"); err == nil && v != "" {
-		sm.state.LastChannel = v
-	}
-	if v, err := sm.delegate.GetKV(ctx, kvAgentID, "state:last_chat_id"); err == nil && v != "" {
-		sm.state.LastChatID = v
-	}
-	if v, err := sm.delegate.GetKV(ctx, kvAgentID, "state:timestamp"); err == nil && v != "" {
-		if t, err := time.Parse(time.RFC3339Nano, v); err == nil {
-			sm.state.Timestamp = t
-		}
+		_ = jsonv2.Unmarshal([]byte(v), sm.state)
 	}
 }
 
@@ -147,13 +107,13 @@ func (sm *Manager) SetChannelAndChatID(ctx context.Context, channel, chatID stri
 	return sm.persist(ctx)
 }
 
-// persist writes the current state to the delegate (KV) or file.
+// persist writes the current state to the delegate (KV) if available.
 // Must be called with the lock held.
 func (sm *Manager) persist(ctx context.Context) error {
-	if sm.delegate != nil {
-		return sm.persistToDelegate(ctx)
+	if sm.delegate == nil {
+		return nil
 	}
-	return sm.saveAtomic()
+	return sm.persistToDelegate(ctx)
 }
 
 func (sm *Manager) persistToDelegate(ctx context.Context) error {
@@ -186,54 +146,4 @@ func (sm *Manager) GetTimestamp() time.Time {
 	sm.mu.RLock()
 	defer sm.mu.RUnlock()
 	return sm.state.Timestamp
-}
-
-// saveAtomic performs an atomic save using temp file + rename.
-// This ensures that the state file is never corrupted:
-// 1. Write to a temp file
-// 2. Rename temp file to target (atomic on POSIX systems)
-// 3. If rename fails, cleanup the temp file
-//
-// Must be called with the lock held.
-func (sm *Manager) saveAtomic() error {
-	// Create temp file in the same directory as the target
-	tempFile := sm.stateFile + ".tmp"
-
-	// Marshal state to JSON
-	data, err := jsonv2.Marshal(sm.state, jsontext.WithIndent("  "))
-	if err != nil {
-		return fmt.Errorf("failed to marshal state: %w", err)
-	}
-
-	// Write to temp file
-	if err := os.WriteFile(tempFile, data, 0644); err != nil {
-		return fmt.Errorf("failed to write temp file: %w", err)
-	}
-
-	// Atomic rename from temp to target
-	if err := os.Rename(tempFile, sm.stateFile); err != nil {
-		// Cleanup temp file if rename fails
-		os.Remove(tempFile)
-		return fmt.Errorf("failed to rename temp file: %w", err)
-	}
-
-	return nil
-}
-
-// load loads the state from disk.
-func (sm *Manager) load() error {
-	data, err := os.ReadFile(sm.stateFile)
-	if err != nil {
-		// File doesn't exist yet, that's OK
-		if os.IsNotExist(err) {
-			return nil
-		}
-		return fmt.Errorf("failed to read state file: %w", err)
-	}
-
-	if err := jsonv2.Unmarshal(data, sm.state); err != nil {
-		return fmt.Errorf("failed to unmarshal state: %w", err)
-	}
-
-	return nil
 }
