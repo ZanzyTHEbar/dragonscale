@@ -29,6 +29,9 @@ type PrioritizeStore interface {
 
 	// UpdateActionableStatus updates the status of an actionable item
 	UpdateActionableStatus(ctx context.Context, itemID ids.UUID, status ActionableStatus) error
+
+	// ListActiveAgents returns all agent IDs with recent activity
+	ListActiveAgents(ctx context.Context, since time.Time) ([]string, error)
 }
 
 // ActionableStatus represents the state of an actionable item.
@@ -114,28 +117,66 @@ func (t *PrioritizeTask) Interval() time.Duration {
 	return t.cfg.ProcessInterval
 }
 
-// Execute performs prioritization of memory items.
+// Execute performs prioritization of memory items across all agents.
 func (t *PrioritizeTask) Execute(ctx context.Context) error {
 	logger.InfoCF("cortex", "Running prioritization scan", map[string]interface{}{"task": "prioritize"})
 
-	agentID := "default" // TODO: Iterate over all agents
+	// Get all active agents
+	since := time.Now().Add(-t.cfg.LookbackWindow)
+	agents, err := t.store.ListActiveAgents(ctx, since)
+	if err != nil {
+		logger.WarnCF("cortex", "Failed to list active agents, falling back to default",
+			map[string]interface{}{"error": err.Error()})
+		agents = []string{"default"}
+	}
+	if len(agents) == 0 {
+		logger.DebugCF("cortex", "No active agents found, skipping prioritization", nil)
+		return nil
+	}
 
+	// Process prioritization for each agent
+	var totalProcessed, totalExtracted int
+	for _, agentID := range agents {
+		processed, extracted, err := t.processAgentItems(ctx, agentID)
+		if err != nil {
+			logger.WarnCF("cortex", "Failed to process items for agent",
+				map[string]interface{}{"agent_id": agentID, "error": err.Error()})
+			// Continue with other agents
+		}
+		totalProcessed += processed
+		totalExtracted += extracted
+	}
+
+	logger.DebugCF("cortex", "Prioritization complete", map[string]interface{}{
+		"task":             "prioritize",
+		"agents_processed": len(agents),
+		"items_processed":  totalProcessed,
+		"items_extracted":  totalExtracted,
+	})
+
+	return nil
+}
+
+// processAgentItems processes prioritization for a single agent.
+func (t *PrioritizeTask) processAgentItems(ctx context.Context, agentID string) (int, int, error) {
 	since := time.Now().Add(-t.cfg.LookbackWindow)
 
 	// Get unprocessed items
 	items, err := t.store.GetUnprocessedItems(ctx, agentID, since, t.cfg.MaxItemsPerRun)
 	if err != nil {
-		return fmt.Errorf("get unprocessed items: %w", err)
+		return 0, 0, fmt.Errorf("get unprocessed items for agent %s: %w", agentID, err)
 	}
 
 	if len(items) == 0 {
-		logger.DebugCF("cortex", "No new items to prioritize", map[string]interface{}{"task": "prioritize"})
-		return nil
+		logger.DebugCF("cortex", "No new items to prioritize",
+			map[string]interface{}{"task": "prioritize", "agent_id": agentID})
+		return 0, 0, nil
 	}
 
 	logger.DebugCF("cortex", "Processing items for actionability", map[string]interface{}{
-		"task":  "prioritize",
-		"count": len(items),
+		"task":     "prioritize",
+		"agent_id": agentID,
+		"count":    len(items),
 	})
 
 	// Process each item
@@ -147,8 +188,9 @@ func (t *PrioritizeTask) Execute(ctx context.Context) error {
 		if isActionable {
 			if err := t.store.StoreActionableItem(ctx, actionable); err != nil {
 				logger.DebugCF("cortex", "Failed to store actionable item", map[string]interface{}{
-					"error":   err,
-					"item_id": item.ID,
+					"error":    err,
+					"item_id":  item.ID,
+					"agent_id": agentID,
 				})
 				continue
 			}
@@ -159,16 +201,18 @@ func (t *PrioritizeTask) Execute(ctx context.Context) error {
 
 	// Mark items as processed
 	if err := t.store.MarkAsProcessed(ctx, processed); err != nil {
-		logger.DebugCF("cortex", "Failed to mark items as processed", map[string]interface{}{"error": err})
+		logger.DebugCF("cortex", "Failed to mark items as processed",
+			map[string]interface{}{"error": err, "agent_id": agentID})
 	}
 
-	logger.DebugCF("cortex", "Prioritization complete", map[string]interface{}{
+	logger.DebugCF("cortex", "Prioritization complete for agent", map[string]interface{}{
 		"task":      "prioritize",
+		"agent_id":  agentID,
 		"processed": len(processed),
 		"extracted": extracted,
 	})
 
-	return nil
+	return len(processed), extracted, nil
 }
 
 // analyzeItem determines if a memory item contains an actionable task.

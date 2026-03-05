@@ -27,6 +27,9 @@ type BulletinStore interface {
 
 	// GetLastBulletin retrieves the most recent bulletin
 	GetLastBulletin(ctx context.Context, agentID string) (*DailyBulletin, error)
+
+	// ListActiveAgents returns all agent IDs with recent activity
+	ListActiveAgents(ctx context.Context, since time.Time) ([]string, error)
 }
 
 // LLMClient provides LLM generation capabilities.
@@ -97,17 +100,42 @@ func (t *BulletinTask) Interval() time.Duration {
 	return t.cfg.GenerateInterval
 }
 
-// Execute generates the daily bulletin.
+// Execute generates the daily bulletin for all active agents.
 func (t *BulletinTask) Execute(ctx context.Context) error {
 	logger.InfoCF("cortex", "Generating daily bulletin", map[string]interface{}{"task": "bulletin"})
 
-	// For now, process a single agent (in production, iterate over all agents)
-	agentID := "default" // TODO: Get from context or iterate
+	// Get all active agents
+	since := time.Now().Add(-t.cfg.LookbackWindow)
+	agents, err := t.store.ListActiveAgents(ctx, since)
+	if err != nil {
+		logger.WarnCF("cortex", "Failed to list active agents, falling back to default",
+			map[string]interface{}{"error": err.Error()})
+		agents = []string{"default"}
+	}
+	if len(agents) == 0 {
+		logger.DebugCF("cortex", "No active agents found, skipping bulletin generation", nil)
+		return nil
+	}
 
+	// Process bulletin for each agent
+	for _, agentID := range agents {
+		if err := t.processAgentBulletin(ctx, agentID); err != nil {
+			logger.WarnCF("cortex", "Failed to generate bulletin for agent",
+				map[string]interface{}{"agent_id": agentID, "error": err.Error()})
+			// Continue with other agents - don't let one failure stop the batch
+		}
+	}
+
+	return nil
+}
+
+// processAgentBulletin generates and stores a bulletin for a single agent.
+func (t *BulletinTask) processAgentBulletin(ctx context.Context, agentID string) error {
 	// Check if we need to generate
 	last, err := t.store.GetLastBulletin(ctx, agentID)
 	if err == nil && last != nil && time.Since(last.GeneratedAt) < t.cfg.GenerateInterval {
-		logger.DebugCF("cortex", "Bulletin still fresh, skipping", map[string]interface{}{"last_generated": last.GeneratedAt})
+		logger.DebugCF("cortex", "Bulletin still fresh, skipping",
+			map[string]interface{}{"agent_id": agentID, "last_generated": last.GeneratedAt})
 		return nil
 	}
 
@@ -123,8 +151,9 @@ func (t *BulletinTask) Execute(ctx context.Context) error {
 	}
 
 	logger.DebugCF("cortex", "Bulletin generated successfully", map[string]interface{}{
-		"task":   "bulletin",
-		"tokens": bulletin.Tokens,
+		"task":     "bulletin",
+		"agent_id": agentID,
+		"tokens":   bulletin.Tokens,
 	})
 
 	return nil

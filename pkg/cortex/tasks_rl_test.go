@@ -46,7 +46,7 @@ func (m *mockRLStore) UpdateTaskBaseline(ctx context.Context, agentID string, ba
 	return nil
 }
 
-func (m *mockRLStore) GetCompletedTasks(ctx context.Context, since time.Time) ([]TaskRecord, error) {
+func (m *mockRLStore) GetCompletedTasks(ctx context.Context, agentID string, since time.Time) ([]TaskRecord, error) {
 	if m.getCompletedTasksErr != nil {
 		return nil, m.getCompletedTasksErr
 	}
@@ -81,6 +81,10 @@ func (m *mockRLStore) UpdateMemorySelfReport(ctx context.Context, memoryID ids.U
 		score int
 	}{memoryID, score})
 	return nil
+}
+
+func (m *mockRLStore) ListActiveAgents(ctx context.Context, since time.Time) ([]string, error) {
+	return []string{"test-agent"}, nil
 }
 
 func TestRLTask_Name(t *testing.T) {

@@ -60,6 +60,9 @@ type DriftStore interface {
 
 	// GetDriftStatus retrieves the current drift status for a domain
 	GetDriftStatus(ctx context.Context, agentID string, domain string) (*DomainDrift, error)
+
+	// ListActiveAgents returns all agent IDs with recent activity
+	ListActiveAgents(ctx context.Context, since time.Time) ([]string, error)
 }
 
 // DomainActivity holds raw activity counts.
@@ -129,20 +132,55 @@ func (t *DriftTask) Interval() time.Duration {
 	return t.cfg.CheckInterval
 }
 
-// Execute performs drift detection across all domains.
+// Execute performs drift detection across all agents and their domains.
 func (t *DriftTask) Execute(ctx context.Context) error {
 	logger.InfoCF("cortex", "Running drift detection", map[string]interface{}{"task": "drift"})
 
-	agentID := "default" // TODO: Iterate over all agents
+	// Get all active agents
+	since := time.Now().Add(-t.cfg.ActivityWindow)
+	agents, err := t.store.ListActiveAgents(ctx, since)
+	if err != nil {
+		logger.WarnCF("cortex", "Failed to list active agents, falling back to default",
+			map[string]interface{}{"error": err.Error()})
+		agents = []string{"default"}
+	}
+	if len(agents) == 0 {
+		logger.DebugCF("cortex", "No active agents found, skipping drift detection", nil)
+		return nil
+	}
 
-	// Get all domains
+	// Process drift detection for each agent
+	var totalDriftDetected int
+	for _, agentID := range agents {
+		count, err := t.processAgentDrift(ctx, agentID)
+		if err != nil {
+			logger.WarnCF("cortex", "Failed to process drift for agent",
+				map[string]interface{}{"agent_id": agentID, "error": err.Error()})
+			// Continue with other agents
+		}
+		totalDriftDetected += count
+	}
+
+	logger.DebugCF("cortex", "Drift detection complete", map[string]interface{}{
+		"task":           "drift",
+		"agents_checked": len(agents),
+		"drift_detected": totalDriftDetected,
+	})
+
+	return nil
+}
+
+// processAgentDrift performs drift detection for a single agent.
+func (t *DriftTask) processAgentDrift(ctx context.Context, agentID string) (int, error) {
+	// Get all domains for this agent
 	domains, err := t.store.GetDomains(ctx, agentID)
 	if err != nil {
-		return fmt.Errorf("get domains: %w", err)
+		return 0, fmt.Errorf("get domains for agent %s: %w", agentID, err)
 	}
 
 	logger.DebugCF("cortex", "Checking drift for domains", map[string]interface{}{
 		"task":         "drift",
+		"agent_id":     agentID,
 		"domain_count": len(domains),
 	})
 
@@ -151,16 +189,18 @@ func (t *DriftTask) Execute(ctx context.Context) error {
 		drift, err := t.analyzeDomain(ctx, agentID, domain)
 		if err != nil {
 			logger.DebugCF("cortex", "Failed to analyze domain", map[string]interface{}{
-				"error":  err,
-				"domain": domain,
+				"error":    err,
+				"agent_id": agentID,
+				"domain":   domain,
 			})
 			continue
 		}
 
 		if err := t.store.StoreDriftStatus(ctx, drift); err != nil {
 			logger.DebugCF("cortex", "Failed to store drift status", map[string]interface{}{
-				"error":  err,
-				"domain": domain,
+				"error":    err,
+				"agent_id": agentID,
+				"domain":   domain,
 			})
 			continue
 		}
@@ -177,13 +217,14 @@ func (t *DriftTask) Execute(ctx context.Context) error {
 		}
 	}
 
-	logger.DebugCF("cortex", "Drift detection complete", map[string]interface{}{
+	logger.DebugCF("cortex", "Drift detection complete for agent", map[string]interface{}{
 		"task":            "drift",
+		"agent_id":        agentID,
 		"domains_checked": len(domains),
 		"drift_detected":  driftDetected,
 	})
 
-	return nil
+	return driftDetected, nil
 }
 
 func (t *DriftTask) analyzeDomain(ctx context.Context, agentID, domain string) (*DomainDrift, error) {
@@ -467,4 +508,9 @@ func (m *MemoryDriftAdapter) GetDriftStatus(ctx context.Context, agentID string,
 		Status:   StatusActive,
 		Score:    0.5,
 	}, nil
+}
+
+func (m *MemoryDriftAdapter) ListActiveAgents(ctx context.Context, since time.Time) ([]string, error) {
+	// TODO: Query memory store for actual active agents
+	return []string{"default"}, nil
 }

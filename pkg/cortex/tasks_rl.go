@@ -13,12 +13,13 @@ import (
 // RLStore is the minimal interface for reinforcement learning weight updates.
 // Implemented by the memory delegate via hand-written SQL.
 type RLStore interface {
-	GetCompletedTasks(ctx context.Context, since time.Time) ([]TaskRecord, error)
+	GetCompletedTasks(ctx context.Context, agentID string, since time.Time) ([]TaskRecord, error)
 	GetRetrievedMemories(ctx context.Context, taskID string) ([]RetrievedMemoryRecord, error)
 	GetTaskBaseline(ctx context.Context, agentID string) (*TaskBaseline, error)
 	UpdateTaskBaseline(ctx context.Context, agentID string, baseline *TaskBaseline) error
 	UpdateMemoryWeight(ctx context.Context, memoryID ids.UUID, weight, credit float64) error
 	UpdateMemorySelfReport(ctx context.Context, memoryID ids.UUID, score int) error
+	ListActiveAgents(ctx context.Context, since time.Time) ([]string, error)
 }
 
 // TaskRecord represents a completed task with performance metrics.
@@ -84,7 +85,7 @@ func (t *RLTask) Execute(ctx context.Context) error {
 	}
 
 	// Get tasks completed since last run
-	tasks, err := t.store.GetCompletedTasks(ctx, t.lastRun)
+	tasks, err := t.store.GetCompletedTasks(ctx, t.agentID, t.lastRun)
 	if err != nil {
 		return fmt.Errorf("failed to get completed tasks: %w", err)
 	}
@@ -115,7 +116,14 @@ func (t *RLTask) Execute(ctx context.Context) error {
 
 		// Get memory stats for logging
 		memories, err := t.store.GetRetrievedMemories(ctx, task.ID)
-		if err == nil {
+		if err != nil {
+			logger.WarnCF("cortex", "Failed to get retrieved memories for RL processing",
+				map[string]interface{}{
+					"task_id": task.ID,
+					"error":   err.Error(),
+				})
+			// Continue processing - don't let memory retrieval failure stop the batch
+		} else {
 			totalMemoriesUpdated += len(memories)
 			for _, m := range memories {
 				if m.SelfReportScore != nil {
