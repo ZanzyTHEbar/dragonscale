@@ -4,11 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	jsonv2 "github.com/go-json-experiment/json"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
+
+	jsonv2 "github.com/go-json-experiment/json"
 )
 
 // DAGToolRuntime executes tool calls according to an explicit dependency DAG.
@@ -222,7 +223,7 @@ func executeDAGNode(ctx context.Context, toolMap map[string]AgentTool, toolCall 
 	}
 	tc := toolCall
 	tc.Input = resolvedInput
-	res, critical := executeSingleToolCompat(ctx, toolMap, tc, nil)
+	res, critical := executeSingleTool(ctx, toolMap, tc, nil)
 	return res, critical, nil
 }
 

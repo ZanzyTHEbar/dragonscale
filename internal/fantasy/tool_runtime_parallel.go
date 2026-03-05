@@ -76,7 +76,7 @@ func (r ParallelToolRuntime) Execute(ctx context.Context, tools []AgentTool, too
 			barrierWaits++
 			emit()
 			logEvent(ToolRuntimeLogEvent{Event: "barrier_start", ToolCallID: toolCalls[i].ToolCallID, ToolName: toolCalls[i].ToolName})
-			res, critical := executeSingleToolCompat(ctx, toolMap, toolCalls[i], toolResultCallback)
+			res, critical := executeSingleTool(ctx, toolMap, toolCalls[i], toolResultCallback)
 			logEvent(ToolRuntimeLogEvent{Event: "barrier_finish", ToolCallID: toolCalls[i].ToolCallID, ToolName: toolCalls[i].ToolName})
 			results[i] = res
 			if critical {
@@ -119,7 +119,7 @@ func (r ParallelToolRuntime) Execute(ctx context.Context, tools []AgentTool, too
 					emit()
 				}()
 
-				res, critical := executeSingleToolCompat(ctx, toolMap, tc, nil)
+				res, critical := executeSingleTool(ctx, toolMap, tc, nil)
 				outcomes[localIndex] = outcome{res: res, critical: critical}
 				logEvent(ToolRuntimeLogEvent{Event: "finish", ToolCallID: tc.ToolCallID, ToolName: tc.ToolName})
 			}()
@@ -145,9 +145,9 @@ func (r ParallelToolRuntime) Execute(ctx context.Context, tools []AgentTool, too
 	return results, nil
 }
 
-// executeSingleToolCompat mirrors the legacy sequential agent tool execution
-// semantics, but is packaged as a helper so tool runtimes can share it.
-func executeSingleToolCompat(ctx context.Context, toolMap map[string]AgentTool, toolCall ToolCallContent, toolResultCallback func(result ToolResultContent) error) (ToolResultContent, bool) {
+// executeSingleTool executes a single tool call and returns the result.
+// This helper is shared by all tool runtimes (sequential, parallel, DAG).
+func executeSingleTool(ctx context.Context, toolMap map[string]AgentTool, toolCall ToolCallContent, toolResultCallback func(result ToolResultContent) error) (ToolResultContent, bool) {
 	result := ToolResultContent{
 		ToolCallID:       toolCall.ToolCallID,
 		ToolName:         toolCall.ToolName,
