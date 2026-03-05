@@ -200,3 +200,25 @@ SELECT tr.memory_id,
 FROM task_retrievals tr
     JOIN recall_items ri ON tr.memory_id = ri.id
 WHERE tr.task_id = sqlc.arg(task_id);
+
+-- name: ListActiveAgents :many
+-- Get all unique agent IDs that have completed tasks (for multi-agent processing)
+SELECT DISTINCT agent_id
+FROM task_completions
+WHERE created_at > sqlc.arg(since)
+ORDER BY agent_id;
+
+-- name: GetHighTokenSessions :many
+-- Get sessions with high token usage grouped by conversation/agent
+SELECT
+    conversation_id as session_id,
+    agent_id,
+    SUM(tokens_used) as total_tokens,
+    COUNT(*) as task_count
+FROM task_completions
+WHERE tokens_used > sqlc.arg(min_tokens)
+    AND created_at > datetime('now', '-24 hours')
+GROUP BY conversation_id, agent_id
+HAVING total_tokens > sqlc.arg(min_tokens)
+ORDER BY total_tokens DESC
+LIMIT sqlc.arg(lim);

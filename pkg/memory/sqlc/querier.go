@@ -504,6 +504,21 @@ type Querier interface {
 	//      AND name = ?2
 	//  LIMIT 1
 	GetDocument(ctx context.Context, arg GetDocumentParams) (AgentDocument, error)
+	// Get sessions with high token usage grouped by conversation/agent
+	//
+	//  SELECT
+	//      conversation_id as session_id,
+	//      agent_id,
+	//      SUM(tokens_used) as total_tokens,
+	//      COUNT(*) as task_count
+	//  FROM task_completions
+	//  WHERE tokens_used > ?1
+	//      AND created_at > datetime('now', '-24 hours')
+	//  GROUP BY conversation_id, agent_id
+	//  HAVING total_tokens > ?1
+	//  ORDER BY total_tokens DESC
+	//  LIMIT ?2
+	GetHighTokenSessions(ctx context.Context, arg GetHighTokenSessionsParams) ([]GetHighTokenSessionsRow, error)
 	//GetImmutableMessage
 	//
 	//  SELECT id,
@@ -1092,6 +1107,13 @@ type Querier interface {
 	//      )
 	//  RETURNING id, agent_id, session_key, content, from_msg_idx, to_msg_idx, created_at
 	InsertSummary(ctx context.Context, arg InsertSummaryParams) (MemorySummary, error)
+	// Get all unique agent IDs that have completed tasks (for multi-agent processing)
+	//
+	//  SELECT DISTINCT agent_id
+	//  FROM task_completions
+	//  WHERE created_at > ?1
+	//  ORDER BY agent_id
+	ListActiveAgents(ctx context.Context, arg ListActiveAgentsParams) ([]string, error)
 	//ListAgentCheckpointsByConversationID
 	//
 	//  SELECT id, conversation_id, name, run_state_id, metadata_json, created_at, updated_at

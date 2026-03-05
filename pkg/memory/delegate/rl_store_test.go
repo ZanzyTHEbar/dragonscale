@@ -364,13 +364,13 @@ func TestSQLiteDelegate_GetCompletedTasks(t *testing.T) {
 	d := setupRLTest(t)
 	ctx := t.Context()
 
-	// This is a placeholder implementation that returns empty list
-	tasks, err := d.GetCompletedTasks(ctx, time.Time{})
+	tasks, err := d.GetCompletedTasks(ctx, "test-agent", time.Time{})
 	if err != nil {
 		t.Fatalf("GetCompletedTasks: %v", err)
 	}
+	// Should return empty list when no tasks exist
 	if len(tasks) != 0 {
-		t.Errorf("expected 0 tasks (placeholder), got %d", len(tasks))
+		t.Errorf("expected 0 tasks, got %d", len(tasks))
 	}
 }
 
@@ -379,13 +379,167 @@ func TestSQLiteDelegate_GetRetrievedMemories(t *testing.T) {
 	d := setupRLTest(t)
 	ctx := t.Context()
 
-	// This is a placeholder implementation that returns empty list
-	memories, err := d.GetRetrievedMemories(ctx, "task-123")
+	// Drop and recreate tables with relaxed constraints for testing
+	// (the real schema from Init() has FK constraints requiring valid conversations/runs)
+	_, _ = d.db.ExecContext(ctx, `DROP TABLE IF EXISTS task_retrievals`)
+	_, _ = d.db.ExecContext(ctx, `DROP TABLE IF EXISTS task_completions`)
+
+	// Create test tables with relaxed constraints
+	// Use WITHOUT ROWID for BLOB PRIMARY KEY to match schema.sql
+	_, err := d.db.ExecContext(ctx, `
+		CREATE TABLE task_completions (
+			id BLOB PRIMARY KEY,
+			agent_id TEXT NOT NULL,
+			conversation_id BLOB NOT NULL DEFAULT (x'00000000000000000000000000000000'),
+			run_id BLOB NOT NULL DEFAULT (x'00000000000000000000000000000000'),
+			description TEXT,
+			tokens_used INTEGER DEFAULT 0,
+			tool_calls INTEGER DEFAULT 0,
+			errors INTEGER DEFAULT 0,
+			user_corrections INTEGER DEFAULT 0,
+			completed BOOLEAN NOT NULL DEFAULT 0,
+			created_at DATETIME NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+		) WITHOUT ROWID
+	`)
+	if err != nil {
+		t.Fatalf("create task_completions table: %v", err)
+	}
+
+	_, err = d.db.ExecContext(ctx, `
+		CREATE TABLE task_retrievals (
+			id BLOB PRIMARY KEY,
+			task_id BLOB NOT NULL,
+			memory_id BLOB NOT NULL,
+			similarity REAL NOT NULL DEFAULT 0,
+			created_at DATETIME NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+			UNIQUE(task_id, memory_id)
+		) WITHOUT ROWID
+	`)
+	if err != nil {
+		t.Fatalf("create task_retrievals table: %v", err)
+	}
+
+	// Create a valid task ID
+	taskID := ids.New()
+
+	// Insert a task completion first (required for FK)
+	_, err = d.db.ExecContext(ctx, `
+		INSERT INTO task_completions (id, agent_id, description, completed)
+		VALUES (?, ?, ?, ?)
+	`, taskID, "test-agent", "test task", true)
+	if err != nil {
+		t.Fatalf("insert task completion: %v", err)
+	}
+
+	// Insert a recall item to retrieve
+	memoryID := insertTestRecallItem(ctx, t, d, "test-agent")
+
+	// Store a task retrieval record
+	err = d.queries.StoreTaskRetrieval(ctx, memsqlc.StoreTaskRetrievalParams{
+		ID:         ids.New(),
+		TaskID:     taskID,
+		MemoryID:   memoryID,
+		Similarity: 0.95,
+	})
+	if err != nil {
+		t.Fatalf("StoreTaskRetrieval: %v", err)
+	}
+
+	// Update self-report score on the recall item
+	selfReportScore := int64(3)
+	err = d.queries.UpdateMemorySelfReportScore(ctx, memsqlc.UpdateMemorySelfReportScoreParams{
+		SelfReportScore: &selfReportScore,
+		ID:              memoryID,
+		AgentID:         "test-agent",
+	})
+	if err != nil {
+		t.Fatalf("UpdateMemorySelfReportScore: %v", err)
+	}
+
+	// Retrieve memories for the task
+	memories, err := d.GetRetrievedMemories(ctx, taskID.String())
+	if err != nil {
+		t.Fatalf("GetRetrievedMemories: %v", err)
+	}
+	if len(memories) != 1 {
+		t.Fatalf("expected 1 memory, got %d", len(memories))
+	}
+
+	// Verify the retrieved memory
+	if memories[0].MemoryID != memoryID {
+		t.Errorf("expected memory ID %s, got %s", memoryID, memories[0].MemoryID)
+	}
+	if memories[0].Similarity != 0.95 {
+		t.Errorf("expected similarity 0.95, got %f", memories[0].Similarity)
+	}
+	if memories[0].SelfReportScore == nil || *memories[0].SelfReportScore != 3 {
+		t.Errorf("expected self-report score 3, got %v", memories[0].SelfReportScore)
+	}
+}
+
+func TestSQLiteDelegate_GetRetrievedMemories_InvalidTaskID(t *testing.T) {
+	t.Parallel()
+	d := setupRLTest(t)
+	ctx := t.Context()
+
+	// Test with invalid task ID format
+	_, err := d.GetRetrievedMemories(ctx, "invalid-task-id")
+	if err == nil {
+		t.Error("expected error for invalid task ID, got nil")
+	}
+}
+
+func TestSQLiteDelegate_GetRetrievedMemories_Empty(t *testing.T) {
+	t.Parallel()
+	d := setupRLTest(t)
+	ctx := t.Context()
+
+	// Drop and recreate tables with relaxed constraints for testing
+	_, _ = d.db.ExecContext(ctx, `DROP TABLE IF EXISTS task_retrievals`)
+	_, _ = d.db.ExecContext(ctx, `DROP TABLE IF EXISTS task_completions`)
+
+	// Create test tables with relaxed constraints
+	_, err := d.db.ExecContext(ctx, `
+		CREATE TABLE task_completions (
+			id BLOB PRIMARY KEY,
+			agent_id TEXT NOT NULL,
+			conversation_id BLOB NOT NULL DEFAULT (x'00000000000000000000000000000000'),
+			run_id BLOB NOT NULL DEFAULT (x'00000000000000000000000000000000'),
+			description TEXT,
+			tokens_used INTEGER DEFAULT 0,
+			tool_calls INTEGER DEFAULT 0,
+			errors INTEGER DEFAULT 0,
+			user_corrections INTEGER DEFAULT 0,
+			completed BOOLEAN NOT NULL DEFAULT 0,
+			created_at DATETIME NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+		) WITHOUT ROWID
+	`)
+	if err != nil {
+		t.Fatalf("create task_completions table: %v", err)
+	}
+
+	_, err = d.db.ExecContext(ctx, `
+		CREATE TABLE task_retrievals (
+			id BLOB PRIMARY KEY,
+			task_id BLOB NOT NULL,
+			memory_id BLOB NOT NULL,
+			similarity REAL NOT NULL DEFAULT 0,
+			created_at DATETIME NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+			UNIQUE(task_id, memory_id)
+		) WITHOUT ROWID
+	`)
+	if err != nil {
+		t.Fatalf("create task_retrievals table: %v", err)
+	}
+
+	// Test with valid UUID but no retrievals
+	taskID := ids.New()
+	memories, err := d.GetRetrievedMemories(ctx, taskID.String())
 	if err != nil {
 		t.Fatalf("GetRetrievedMemories: %v", err)
 	}
 	if len(memories) != 0 {
-		t.Errorf("expected 0 memories (placeholder), got %d", len(memories))
+		t.Errorf("expected 0 memories for task with no retrievals, got %d", len(memories))
 	}
 }
 

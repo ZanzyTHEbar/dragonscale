@@ -1114,22 +1114,92 @@ func (d *LibSQLDelegate) UpdateMemorySelfReport(ctx context.Context, memoryID id
 	})
 }
 
-// GetCompletedTasks returns tasks completed since the given time.
+// GetCompletedTasks returns tasks completed since the given time for a specific agent.
 // Implements cortex.RLStore interface.
-// Note: This is a placeholder implementation - actual task storage needs to be defined.
-func (d *LibSQLDelegate) GetCompletedTasks(ctx context.Context, since time.Time) ([]TaskRecord, error) {
-	// TODO: Implement actual task retrieval from jobs or runs tables
-	// For now, return empty list
-	return []TaskRecord{}, nil
+func (d *LibSQLDelegate) GetCompletedTasks(ctx context.Context, agentID string, since time.Time) ([]TaskRecord, error) {
+	rows, err := d.queries.GetCompletedTasks(ctx, memsqlc.GetCompletedTasksParams{
+		AgentID: agentID,
+		Since:   since,
+	})
+	if err != nil {
+		logger.WarnCF("memory", "Failed to get completed tasks", map[string]interface{}{
+			"agent_id": agentID,
+			"since":    since.String(),
+			"error":    err.Error(),
+		})
+		return nil, fmt.Errorf("get completed tasks: %w", err)
+	}
+
+	tasks := make([]TaskRecord, 0, len(rows))
+	for _, task := range rows {
+		record := TaskRecord{
+			ID:          task.ID.String(),
+			Description: task.Description,
+			Completed:   task.Completed,
+			CreatedAt:   task.CreatedAt,
+		}
+		if task.TokensUsed != nil {
+			record.TokensUsed = int(*task.TokensUsed)
+		}
+		if task.ToolCalls != nil {
+			record.ToolCalls = int(*task.ToolCalls)
+		}
+		if task.Errors != nil {
+			record.Errors = int(*task.Errors)
+		}
+		if task.UserCorrections != nil {
+			record.UserCorrections = int(*task.UserCorrections)
+		}
+		tasks = append(tasks, record)
+	}
+
+	return tasks, nil
 }
 
 // GetRetrievedMemories returns memories retrieved during a task.
 // Implements cortex.RLStore interface.
-// Note: This is a placeholder implementation - actual retrieval tracking needs to be defined.
 func (d *LibSQLDelegate) GetRetrievedMemories(ctx context.Context, taskID string) ([]RetrievedMemoryRecord, error) {
-	// TODO: Implement actual retrieved memory tracking
-	// For now, return empty list
-	return []RetrievedMemoryRecord{}, nil
+	parsedID, err := ids.Parse(taskID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid task id: %w", err)
+	}
+
+	rows, err := d.queries.GetRetrievedMemories(ctx, memsqlc.GetRetrievedMemoriesParams{
+		TaskID: parsedID,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	records := make([]RetrievedMemoryRecord, len(rows))
+	for i, row := range rows {
+		records[i] = RetrievedMemoryRecord{
+			MemoryID:   row.MemoryID,
+			Similarity: row.Similarity,
+		}
+		if row.SelfReportScore != nil {
+			score := int(*row.SelfReportScore)
+			records[i].SelfReportScore = &score
+		}
+	}
+
+	return records, nil
+}
+
+// ListActiveAgents returns all agent IDs that have completed tasks since the given time.
+// Implements cortex.RLStore interface for multi-agent support.
+func (d *LibSQLDelegate) ListActiveAgents(ctx context.Context, since time.Time) ([]string, error) {
+	rows, err := d.queries.ListActiveAgents(ctx, memsqlc.ListActiveAgentsParams{
+		Since: since,
+	})
+	if err != nil {
+		logger.WarnCF("memory", "Failed to list active agents", map[string]interface{}{
+			"since": since,
+			"error": err.Error(),
+		})
+		return nil, fmt.Errorf("list active agents: %w", err)
+	}
+	return rows, nil
 }
 
 // --- Audit Analysis Store Methods ---

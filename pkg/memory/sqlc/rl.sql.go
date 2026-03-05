@@ -90,6 +90,75 @@ func (q *Queries) GetCompletedTasks(ctx context.Context, arg GetCompletedTasksPa
 	return items, nil
 }
 
+const GetHighTokenSessions = `-- name: GetHighTokenSessions :many
+SELECT
+    conversation_id as session_id,
+    agent_id,
+    SUM(tokens_used) as total_tokens,
+    COUNT(*) as task_count
+FROM task_completions
+WHERE tokens_used > ?1
+    AND created_at > datetime('now', '-24 hours')
+GROUP BY conversation_id, agent_id
+HAVING total_tokens > ?1
+ORDER BY total_tokens DESC
+LIMIT ?2
+`
+
+type GetHighTokenSessionsParams struct {
+	MinTokens *int64 `db:"min_tokens" json:"min_tokens"`
+	Lim       int64  `db:"lim" json:"lim"`
+}
+
+type GetHighTokenSessionsRow struct {
+	SessionID   ids.UUID `db:"session_id" json:"session_id"`
+	AgentID     string   `db:"agent_id" json:"agent_id"`
+	TotalTokens *float64 `db:"total_tokens" json:"total_tokens"`
+	TaskCount   int64    `db:"task_count" json:"task_count"`
+}
+
+// Get sessions with high token usage grouped by conversation/agent
+//
+//	SELECT
+//	    conversation_id as session_id,
+//	    agent_id,
+//	    SUM(tokens_used) as total_tokens,
+//	    COUNT(*) as task_count
+//	FROM task_completions
+//	WHERE tokens_used > ?1
+//	    AND created_at > datetime('now', '-24 hours')
+//	GROUP BY conversation_id, agent_id
+//	HAVING total_tokens > ?1
+//	ORDER BY total_tokens DESC
+//	LIMIT ?2
+func (q *Queries) GetHighTokenSessions(ctx context.Context, arg GetHighTokenSessionsParams) ([]GetHighTokenSessionsRow, error) {
+	rows, err := q.db.QueryContext(ctx, GetHighTokenSessions, arg.MinTokens, arg.Lim)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []GetHighTokenSessionsRow{}
+	for rows.Next() {
+		var i GetHighTokenSessionsRow
+		if err := rows.Scan(
+			&i.SessionID,
+			&i.AgentID,
+			&i.TotalTokens,
+			&i.TaskCount,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const GetMemoriesByRetrievalCount = `-- name: GetMemoriesByRetrievalCount :many
 SELECT id,
     agent_id,
@@ -327,6 +396,46 @@ type IncrementTaskRetrievalCountParams struct {
 func (q *Queries) IncrementTaskRetrievalCount(ctx context.Context, arg IncrementTaskRetrievalCountParams) error {
 	_, err := q.db.ExecContext(ctx, IncrementTaskRetrievalCount, arg.ID, arg.AgentID)
 	return err
+}
+
+const ListActiveAgents = `-- name: ListActiveAgents :many
+SELECT DISTINCT agent_id
+FROM task_completions
+WHERE created_at > ?1
+ORDER BY agent_id
+`
+
+type ListActiveAgentsParams struct {
+	Since time.Time `db:"since" json:"since"`
+}
+
+// Get all unique agent IDs that have completed tasks (for multi-agent processing)
+//
+//	SELECT DISTINCT agent_id
+//	FROM task_completions
+//	WHERE created_at > ?1
+//	ORDER BY agent_id
+func (q *Queries) ListActiveAgents(ctx context.Context, arg ListActiveAgentsParams) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, ListActiveAgents, arg.Since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var agent_id string
+		if err := rows.Scan(&agent_id); err != nil {
+			return nil, err
+		}
+		items = append(items, agent_id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const ListHighValueMemories = `-- name: ListHighValueMemories :many
