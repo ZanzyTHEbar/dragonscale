@@ -358,7 +358,7 @@ func (al *AgentLoop) createFantasyAgent(ctx context.Context, opts processOptions
 
 // postProcess handles the common finalization after Generate or Stream:
 // extract final text, save session, summarize, observe, optionally send response.
-func (al *AgentLoop) postProcess(ctx context.Context, opts processOptions, finalContent string, stepCount int) string {
+func (al *AgentLoop) postProcess(ctx context.Context, opts processOptions, finalContent string, stepCount int, totalTokens int) string {
 	// Snapshot BEFORE summarization can truncate history, preventing
 	// observation manager from seeing an incomplete view.
 	tail := al.sessionsToMessagePairs(opts.SessionKey)
@@ -393,7 +393,7 @@ func (al *AgentLoop) postProcess(ctx context.Context, opts processOptions, final
 	completion := TaskCompletion{
 		TaskID:      opts.SessionKey,
 		Description: utils.Truncate(opts.UserMessage, 100),
-		TokensUsed:  0, // TODO: track actual token usage
+		TokensUsed:  totalTokens,
 		ToolCalls:   stepCount,
 		Errors:      0,
 		Completed:   true,
@@ -546,7 +546,7 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, opts processOptions) (str
 	opts.ConversationID = ac.conversationID
 	opts.RunID = ac.runID
 
-	return al.postProcess(ctx, opts, finalContent, len(result.Steps)), nil
+	return al.postProcess(ctx, opts, finalContent, len(result.Steps), int(result.TotalUsage.TotalTokens)), nil
 }
 
 // runStreaming uses Fantasy's agent.Stream() to stream token deltas to the bus
@@ -608,7 +608,7 @@ func (al *AgentLoop) runStreaming(ctx context.Context, opts processOptions, ac a
 	opts.ConversationID = ac.conversationID
 	opts.RunID = ac.runID
 
-	return al.postProcess(ctx, opts, finalContent, len(result.Steps)), nil
+	return al.postProcess(ctx, opts, finalContent, len(result.Steps), int(result.TotalUsage.TotalTokens)), nil
 }
 
 // runLLMIteration — DELETED. Replaced by Fantasy's internal agent loop.
