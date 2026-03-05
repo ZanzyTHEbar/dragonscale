@@ -302,7 +302,7 @@ func NewRegistry(_ string) []app.Task {
 		NewCommandTask("eval-fixtures", "Prepare eval fixture workspace", evalFixturesSpecs, nil, nil),
 		NewCommandTask("eval-view", "Open the promptfoo results viewer", evalViewSpecs, nil, nil),
 		NewShellTask("eval-clean", "Cleanup eval artifacts", simpleScript("rm -rf eval/results eval/bin"), nil),
-		NewShellTask("eval-compare", "Run A/B comparison of current branch vs main", simpleScript("cd eval && DEVCONTAINER_EXEC= EVAL_NPM_CMD=$(npx --yes) ./scripts/compare.sh --repeat 3"), nil),
+		NewShellTask("eval-compare", "Run A/B comparison of current branch vs main", simpleScript("cd eval && DEVCONTAINER_EXEC= EVAL_NPM_CMD=\"npx --yes\" ./scripts/compare.sh --repeat 3"), nil),
 		NewShellTask("eval-test", "Run Go-native component evals", staticGoScript("-v ./eval/go_evals/..."), nil),
 	}
 	return tasks
@@ -332,6 +332,7 @@ func defaultEnv(c *app.Context) []string {
 	appendIfSet("DRAGONSCALE_EVAL_BASE_CONFIG", cEnv(c, "DRAGONSCALE_EVAL_BASE_CONFIG", ""))
 	appendIfSet("DRAGONSCALE_EVAL_CONFIG", cEnv(c, "DRAGONSCALE_EVAL_CONFIG", ""))
 	appendIfSet("DRAGONSCALE_EVAL_DEBUG", cEnv(c, "DRAGONSCALE_EVAL_DEBUG", ""))
+	appendIfSet("DRAGONSCALE_PROMPTFOO_ARGS", cEnv(c, "DRAGONSCALE_PROMPTFOO_ARGS", ""))
 	appendIfSet("VERSION", cEnv(c, "VERSION", ""))
 	appendIfSet("FANTASY_VERSION", cEnv(c, "FANTASY_VERSION", ""))
 	appendIfSet("NAME", cEnv(c, "NAME", ""))

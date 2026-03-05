@@ -136,6 +136,13 @@ func TestRunHelpIncludesGlobalOutputFlags(t *testing.T) {
 	require.Contains(t, out.String(), "--timeout")
 }
 
+func TestDefaultRunEnvKeysIncludesPromptfooArgs(t *testing.T) {
+	t.Parallel()
+
+	keys := defaultRunEnvKeys()
+	require.Contains(t, keys, "DRAGONSCALE_PROMPTFOO_ARGS")
+}
+
 func TestMakefilePhonyTargetsAreAvailableInOpsctl(t *testing.T) {
 	makeTargets := parseMakefilePhonyTargets(t)
 	out := &bytes.Buffer{}

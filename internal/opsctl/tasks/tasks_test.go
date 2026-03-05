@@ -238,6 +238,25 @@ func TestEvalRunSpecsUsesBaseConfigWhenSetAndDebugEnabled(t *testing.T) {
 	require.Equal(t, []string{"--yes", "promptfoo", "eval", "--config", "promptfooconfig.yaml", "--no-cache", "--no-progress-bar"}, specs[2].Args)
 }
 
+func TestEvalRunSpecsUsesPromptfooArgsOverride(t *testing.T) {
+	t.Parallel()
+
+	specs := evalRunSpecs(&app.Context{
+		Root: t.TempDir(),
+		ExtraEnv: map[string]string{
+			"DRAGONSCALE_PROMPTFOO_ARGS": "--no-cache --max-concurrency 1",
+		},
+	})
+
+	require.NotEmpty(t, specs)
+	last := specs[len(specs)-1]
+	require.Equal(t, "npx", last.Name)
+	require.Equal(t, []string{
+		"--yes", "promptfoo", "eval", "--config", "promptfooconfig.yaml",
+		"--no-cache", "--max-concurrency", "1",
+	}, last.Args)
+}
+
 func TestEvalCompareTaskDisablesNestedDevcontainerExecution(t *testing.T) {
 	t.Parallel()
 
@@ -265,7 +284,7 @@ func TestEvalCompareTaskDisablesNestedDevcontainerExecution(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, fake.Calls, 1)
 	script := strings.Join(fake.Calls[0].Args, " ")
-	require.Contains(t, script, "cd eval && DEVCONTAINER_EXEC= EVAL_NPM_CMD=$(npx --yes) ./scripts/compare.sh --repeat 3")
+	require.Contains(t, script, "cd eval && DEVCONTAINER_EXEC= EVAL_NPM_CMD=\"npx --yes\" ./scripts/compare.sh --repeat 3")
 	joinedEnv := strings.Join(fake.Calls[0].Env, " ")
 	require.Contains(t, joinedEnv, "DEVCONTAINER_EXEC=npx --yes @devcontainers/cli exec --workspace-folder \"$PWD\" --")
 
