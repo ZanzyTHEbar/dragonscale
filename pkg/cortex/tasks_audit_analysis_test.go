@@ -192,17 +192,74 @@ func TestAuditAnalysisTask_Execute_DetectsCorrections(t *testing.T) {
 	}
 }
 
+func TestAuditAnalysisTask_Execute_SortsSessionEntriesByTimestamp(t *testing.T) {
+	store := &mockAuditAnalysisStore{
+		entries: []AuditEntry{
+			{
+				ID:        "entry-2",
+				Timestamp: time.Now().Add(time.Second),
+				ToolName:  "read_file",
+				ToolInput: "path/to/file2",
+				Success:   true,
+				SessionID: "session-1",
+				AgentID:   "agent-1",
+			},
+			{
+				ID:        "entry-1",
+				Timestamp: time.Now(),
+				ToolName:  "read_file",
+				ToolInput: "path/to/file1",
+				Success:   false,
+				SessionID: "session-1",
+				AgentID:   "agent-1",
+			},
+		},
+	}
+	task := NewAuditAnalysisTask(store)
+
+	err := task.Execute(context.Background())
+	if err != nil {
+		t.Fatalf("Execute() error: %v", err)
+	}
+	if len(store.patternsStored) != 1 {
+		t.Fatalf("expected 1 correction pattern, got %d", len(store.patternsStored))
+	}
+	if store.patternsStored[0].Type != "correction" {
+		t.Fatalf("expected correction pattern, got %q", store.patternsStored[0].Type)
+	}
+}
+
+func TestAuditAnalysisTask_Execute_AdvancesWatermarkToLatestEntry(t *testing.T) {
+	now := time.Now().UTC()
+	store := &mockAuditAnalysisStore{
+		entries: []AuditEntry{
+			{ID: "e1", Timestamp: now.Add(-30 * time.Second), ToolName: "read", Success: true, SessionID: "s1", AgentID: "a1"},
+			{ID: "e2", Timestamp: now.Add(-10 * time.Second), ToolName: "read", Success: true, SessionID: "s1", AgentID: "a1"},
+		},
+	}
+	task := NewAuditAnalysisTask(store)
+
+	err := task.Execute(context.Background())
+	if err != nil {
+		t.Fatalf("Execute() error: %v", err)
+	}
+	if !task.lastRun.Equal(now.Add(-10 * time.Second)) {
+		t.Fatalf("lastRun = %v, want %v", task.lastRun, now.Add(-10*time.Second))
+	}
+}
+
 func TestAuditAnalysisTask_Execute_DetectsDiscovery(t *testing.T) {
-	// Create entries with high token usage and read/search tools
-	// Need ~200k characters total to get 50k tokens (divided by 4 in estimateTokensFromEntries)
-	longInput := make([]byte, 10000) // 10k chars per entry
+	// Create entries with high token usage and read/search tools.
+	// Threshold is 50k tokens and estimateTokensFromEntries uses len(input)/4.
+	// 12 * 20k chars = 240k chars => 60k estimated tokens.
+	longInput := make([]byte, 20000)
 	for i := range longInput {
 		longInput[i] = 'a' + byte(i%26)
 	}
 	longInputStr := string(longInput)
 
 	var entries []AuditEntry
-	for i := 0; i < 6; i++ { // 6 entries * 10k chars = 60k chars / 4 = 15k tokens, need more
+	for i := 0; i < 12; i++ {
 		toolName := "read"
 		if i%2 == 0 {
 			toolName = "search"
@@ -228,11 +285,6 @@ func TestAuditAnalysisTask_Execute_DetectsDiscovery(t *testing.T) {
 		t.Fatalf("Execute() error: %v", err)
 	}
 
-	// Should have detected discovery pattern (60k chars / 4 = 15k tokens per estimate,
-	// but actually we need 50k tokens. Let me recalculate: 50k tokens * 4 = 200k chars)
-	// The check is: tokens >= 50000, so we need 200,000+ chars total
-	// With 6 entries of 10k chars = 60k chars total, we only get 15k tokens
-	// Let's check if any pattern was detected
 	foundDiscovery := false
 	for _, pattern := range store.patternsStored {
 		if pattern.Type == "discovery" {
@@ -243,11 +295,8 @@ func TestAuditAnalysisTask_Execute_DetectsDiscovery(t *testing.T) {
 			break
 		}
 	}
-
-	// For now, we accept that the discovery test may not detect with current mock data
-	// The important thing is that the detection algorithm works (tested in TestIsDiscovery)
 	if !foundDiscovery {
-		t.Log("Note: Discovery pattern not detected - input may not be long enough to exceed 50k token threshold")
+		t.Fatal("expected discovery pattern to be detected")
 	}
 }
 

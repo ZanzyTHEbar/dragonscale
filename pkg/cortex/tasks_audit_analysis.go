@@ -3,6 +3,7 @@ package cortex
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -148,10 +149,18 @@ func (t *AuditAnalysisTask) Execute(ctx context.Context) error {
 
 	// Group entries by session
 	sessions := groupBySession(entries)
+	maxProcessed := since
 
 	patternsDetected := 0
 
 	for sessionID, sessionEntries := range sessions {
+		sort.Slice(sessionEntries, func(i, j int) bool {
+			return sessionEntries[i].Timestamp.Before(sessionEntries[j].Timestamp)
+		})
+		if n := len(sessionEntries); n > 0 && sessionEntries[n-1].Timestamp.After(maxProcessed) {
+			maxProcessed = sessionEntries[n-1].Timestamp
+		}
+
 		agentID := ""
 		if len(sessionEntries) > 0 {
 			agentID = sessionEntries[0].AgentID
@@ -184,7 +193,7 @@ func (t *AuditAnalysisTask) Execute(ctx context.Context) error {
 		totalTokens := estimateTokensFromEntries(sessionEntries)
 
 		// Check for discovery pattern
-		if IsDiscovery(totalTokens, toolCounts) {
+		if IsDiscoveryWithThreshold(totalTokens, toolCounts, t.cfg.DiscoveryThreshold) {
 			pattern := DetectedPattern{
 				Type:        "discovery",
 				Description: fmt.Sprintf("Discovery session detected: %d tokens, high read/search ratio", totalTokens),
@@ -203,7 +212,7 @@ func (t *AuditAnalysisTask) Execute(ctx context.Context) error {
 
 		// Detect failure patterns
 		failures := filterFailures(sessionEntries)
-		failurePatterns := DetectFailurePatterns(failures)
+		failurePatterns := DetectFailurePatternsWithThreshold(failures, t.cfg.FailureThreshold)
 		for _, fp := range failurePatterns {
 			fp.SessionID = sessionID
 			fp.AgentID = agentID
@@ -225,7 +234,11 @@ func (t *AuditAnalysisTask) Execute(ctx context.Context) error {
 			})
 	}
 
-	t.lastRun = time.Now()
+	if maxProcessed.IsZero() {
+		t.lastRun = time.Now()
+	} else {
+		t.lastRun = maxProcessed
+	}
 	return nil
 }
 
@@ -286,8 +299,14 @@ func DetectCorrections(sequence []ToolSequence) []DetectedCorrection {
 // IsDiscovery determines if a session represents a discovery pattern.
 // Discovery sessions have high token usage and are read/search heavy.
 func IsDiscovery(tokens int64, toolCounts map[string]int) bool {
+	return IsDiscoveryWithThreshold(tokens, toolCounts, 50000)
+}
+
+// IsDiscoveryWithThreshold determines if a session represents a discovery pattern
+// using a configurable minimum token threshold.
+func IsDiscoveryWithThreshold(tokens int64, toolCounts map[string]int, minTokens int64) bool {
 	// Minimum token threshold
-	if tokens < 50000 {
+	if tokens < minTokens {
 		return false
 	}
 
@@ -318,6 +337,16 @@ func IsDiscovery(tokens int64, toolCounts map[string]int) bool {
 
 // DetectFailurePatterns groups failures by tool and detects recurring patterns.
 func DetectFailurePatterns(failures []AuditEntry) []DetectedPattern {
+	return DetectFailurePatternsWithThreshold(failures, 3)
+}
+
+// DetectFailurePatternsWithThreshold groups failures by tool and emits patterns
+// when a tool reaches the configured minimum failure count.
+func DetectFailurePatternsWithThreshold(failures []AuditEntry, minFailures int) []DetectedPattern {
+	if minFailures < 1 {
+		minFailures = 1
+	}
+
 	// Group by tool name
 	toolFailures := make(map[string][]AuditEntry)
 	for _, f := range failures {
@@ -327,7 +356,7 @@ func DetectFailurePatterns(failures []AuditEntry) []DetectedPattern {
 	var patterns []DetectedPattern
 
 	for tool, toolFails := range toolFailures {
-		if len(toolFails) >= 3 {
+		if len(toolFails) >= minFailures {
 			// Create pattern for recurring failures
 			pattern := DetectedPattern{
 				Type:        "failure_pattern",

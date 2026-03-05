@@ -2,12 +2,16 @@ package cortex
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math"
+	"sort"
 	"strings"
 	"time"
 
+	"github.com/ZanzyTHEbar/dragonscale/pkg/ids"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/logger"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/memory"
 )
 
 // DriftStatus represents the health state of a domain.
@@ -132,6 +136,11 @@ func (t *DriftTask) Interval() time.Duration {
 	return t.cfg.CheckInterval
 }
 
+// Timeout returns the maximum execution time for one drift cycle.
+func (t *DriftTask) Timeout() time.Duration {
+	return t.cfg.Timeout
+}
+
 // Execute performs drift detection across all agents and their domains.
 func (t *DriftTask) Execute(ctx context.Context) error {
 	logger.InfoCF("cortex", "Running drift detection", map[string]interface{}{"task": "drift"})
@@ -140,9 +149,9 @@ func (t *DriftTask) Execute(ctx context.Context) error {
 	since := time.Now().Add(-t.cfg.ActivityWindow)
 	agents, err := t.store.ListActiveAgents(ctx, since)
 	if err != nil {
-		logger.WarnCF("cortex", "Failed to list active agents, falling back to default",
+		logger.WarnCF("cortex", "Failed to list active agents; skipping drift cycle",
 			map[string]interface{}{"error": err.Error()})
-		agents = []string{"default"}
+		return nil
 	}
 	if len(agents) == 0 {
 		logger.DebugCF("cortex", "No active agents found, skipping drift detection", nil)
@@ -464,53 +473,288 @@ func (hs *HealthSummary) Format() string {
 	return b.String()
 }
 
-// MemoryDriftAdapter adapts the memory store to the DriftStore interface.
+const (
+	driftSessionKey = "__cortex_drift__"
+	driftTagPrefix  = "drift_status"
+	driftPageSize   = 500
+	driftMaxScan    = 20000
+)
+
+// DriftMemorySource is the minimal memory interface needed by MemoryDriftAdapter.
+type DriftMemorySource interface {
+	ListActiveAgents(ctx context.Context, since time.Time) ([]string, error)
+	ListRecallItems(ctx context.Context, agentID, sessionKey string, limit, offset int) ([]*memory.RecallItem, error)
+	InsertRecallItem(ctx context.Context, item *memory.RecallItem) error
+}
+
+// MemoryDriftAdapter adapts memory delegate data into DriftStore metrics.
 type MemoryDriftAdapter struct {
-	// TODO: Integrate with actual memory store
+	source DriftMemorySource
 }
 
 // Ensure MemoryDriftAdapter implements DriftStore.
 var _ DriftStore = (*MemoryDriftAdapter)(nil)
 
+// NewMemoryDriftAdapter creates a drift adapter backed by memory recall data.
+func NewMemoryDriftAdapter(source DriftMemorySource) *MemoryDriftAdapter {
+	return &MemoryDriftAdapter{source: source}
+}
+
 func (m *MemoryDriftAdapter) GetDomains(ctx context.Context, agentID string) ([]string, error) {
-	// Return common domains or extract from memory tags
-	return []string{
-		"general",
-		"tasks",
-		"knowledge",
-		"preferences",
-	}, nil
+	if m == nil || m.source == nil {
+		return []string{}, nil
+	}
+
+	items, err := m.listRecallItemsAll(ctx, agentID, "")
+	if err != nil {
+		return nil, fmt.Errorf("list recall items for domains: %w", err)
+	}
+
+	seen := map[string]struct{}{}
+	for _, item := range items {
+		if isDriftSyntheticItem(item) {
+			continue
+		}
+		domain := strings.TrimSpace(string(item.Sector))
+		if domain == "" {
+			continue
+		}
+		seen[domain] = struct{}{}
+	}
+
+	if len(seen) == 0 {
+		return []string{"general"}, nil
+	}
+
+	domains := make([]string, 0, len(seen))
+	for domain := range seen {
+		domains = append(domains, domain)
+	}
+	sort.Strings(domains)
+	return domains, nil
 }
 
 func (m *MemoryDriftAdapter) GetDomainActivity(ctx context.Context, agentID, domain string, since time.Time) (*DomainActivity, error) {
-	// TODO: Query memory store for actual activity metrics
-	return &DomainActivity{
+	activity := &DomainActivity{
 		Domain:       domain,
-		LastActivity: time.Now(),
-	}, nil
+		LastActivity: since,
+	}
+	if m == nil || m.source == nil {
+		return activity, nil
+	}
+
+	items, err := m.listRecallItemsAll(ctx, agentID, "")
+	if err != nil {
+		return nil, fmt.Errorf("list recall items for domain activity: %w", err)
+	}
+
+	var importanceTotal float64
+	for _, item := range items {
+		if isDriftSyntheticItem(item) {
+			continue
+		}
+		if strings.TrimSpace(string(item.Sector)) != domain {
+			continue
+		}
+
+		ts := item.UpdatedAt
+		if ts.IsZero() {
+			ts = item.CreatedAt
+		}
+		if !since.IsZero() && ts.Before(since) {
+			continue
+		}
+
+		activity.MessageCount++
+		activity.MemoryCount++
+		importanceTotal += item.Importance
+		if item.Role == "tool" || strings.Contains(item.Tags, "tool") {
+			activity.ToolCallCount++
+		}
+		if ts.After(activity.LastActivity) {
+			activity.LastActivity = ts
+		}
+	}
+
+	if activity.MemoryCount > 0 {
+		activity.AvgImportance = importanceTotal / float64(activity.MemoryCount)
+	}
+	return activity, nil
 }
 
 func (m *MemoryDriftAdapter) GetHistoricalMetrics(ctx context.Context, agentID string, domain string, periods int) ([]*DomainMetrics, error) {
-	// TODO: Query historical data
-	return nil, nil
+	if m == nil || m.source == nil || periods <= 0 {
+		return nil, nil
+	}
+
+	items, err := m.listRecallItemsAll(ctx, agentID, driftSessionKey)
+	if err != nil {
+		return nil, fmt.Errorf("list drift history: %w", err)
+	}
+
+	metrics := make([]*DomainMetrics, 0, periods)
+	for _, item := range items {
+		if !hasDriftDomainTag(item.Tags, domain) {
+			continue
+		}
+
+		var drift DomainDrift
+		if err := json.Unmarshal([]byte(item.Content), &drift); err != nil {
+			continue
+		}
+
+		metrics = append(metrics, &DomainMetrics{
+			Period:        item.CreatedAt,
+			Score:         drift.Score,
+			MessageCount:  drift.MessageCount,
+			ToolCallCount: drift.ToolCallCount,
+			MemoryCount:   drift.MemoryCount,
+		})
+	}
+
+	if len(metrics) == 0 {
+		return nil, nil
+	}
+
+	sort.Slice(metrics, func(i, j int) bool {
+		return metrics[i].Period.Before(metrics[j].Period)
+	})
+	if len(metrics) > periods {
+		metrics = metrics[len(metrics)-periods:]
+	}
+	return metrics, nil
 }
 
 func (m *MemoryDriftAdapter) StoreDriftStatus(ctx context.Context, drift *DomainDrift) error {
-	// TODO: Store drift status in memory system
-	return nil
+	if drift == nil || m == nil || m.source == nil {
+		return nil
+	}
+
+	payload, err := json.Marshal(drift)
+	if err != nil {
+		return fmt.Errorf("marshal drift status: %w", err)
+	}
+
+	observedAt := drift.DetectedAt
+	if observedAt.IsZero() {
+		observedAt = time.Now()
+	}
+
+	item := &memory.RecallItem{
+		ID:         ids.New(),
+		AgentID:    drift.AgentID,
+		SessionKey: driftSessionKey,
+		Role:       "system",
+		Sector:     memory.SectorReflective,
+		Importance: 0.6,
+		Salience:   0.6,
+		Content:    string(payload),
+		Tags:       fmt.Sprintf("%s,domain:%s,status:%s", driftTagPrefix, drift.DomainID, drift.Status),
+		CreatedAt:  observedAt,
+		UpdatedAt:  observedAt,
+	}
+	return m.source.InsertRecallItem(ctx, item)
 }
 
 func (m *MemoryDriftAdapter) GetDriftStatus(ctx context.Context, agentID string, domain string) (*DomainDrift, error) {
-	// TODO: Retrieve drift status
-	return &DomainDrift{
-		DomainID: domain,
-		AgentID:  agentID,
-		Status:   StatusActive,
-		Score:    0.5,
-	}, nil
+	defaultStatus := &DomainDrift{
+		DomainID:   domain,
+		AgentID:    agentID,
+		Status:     StatusActive,
+		Score:      0.5,
+		DetectedAt: time.Now(),
+	}
+	if m == nil || m.source == nil {
+		return defaultStatus, nil
+	}
+
+	items, err := m.listRecallItemsAll(ctx, agentID, driftSessionKey)
+	if err != nil {
+		return nil, fmt.Errorf("list drift statuses: %w", err)
+	}
+
+	for _, item := range items {
+		if !hasDriftDomainTag(item.Tags, domain) {
+			continue
+		}
+		var drift DomainDrift
+		if err := json.Unmarshal([]byte(item.Content), &drift); err != nil {
+			continue
+		}
+		if drift.DomainID == "" {
+			drift.DomainID = domain
+		}
+		if drift.AgentID == "" {
+			drift.AgentID = agentID
+		}
+		return &drift, nil
+	}
+
+	return defaultStatus, nil
 }
 
 func (m *MemoryDriftAdapter) ListActiveAgents(ctx context.Context, since time.Time) ([]string, error) {
-	// TODO: Query memory store for actual active agents
-	return []string{"default"}, nil
+	if m == nil || m.source == nil {
+		return []string{}, nil
+	}
+	return m.source.ListActiveAgents(ctx, since)
+}
+
+func hasDriftDomainTag(tags, domain string) bool {
+	if tags == "" || domain == "" {
+		return false
+	}
+	parts := strings.Split(tags, ",")
+	want := "domain:" + domain
+	hasPrefix := false
+	hasDomain := false
+	for _, raw := range parts {
+		tag := strings.TrimSpace(raw)
+		if tag == driftTagPrefix {
+			hasPrefix = true
+		}
+		if tag == want {
+			hasDomain = true
+		}
+	}
+	return hasPrefix && hasDomain
+}
+
+func (m *MemoryDriftAdapter) listRecallItemsAll(ctx context.Context, agentID, sessionKey string) ([]*memory.RecallItem, error) {
+	if m == nil || m.source == nil {
+		return nil, nil
+	}
+
+	all := make([]*memory.RecallItem, 0, driftPageSize)
+	offset := 0
+	for offset < driftMaxScan {
+		page, err := m.source.ListRecallItems(ctx, agentID, sessionKey, driftPageSize, offset)
+		if err != nil {
+			return nil, err
+		}
+		if len(page) == 0 {
+			break
+		}
+		all = append(all, page...)
+		if len(page) < driftPageSize {
+			break
+		}
+		offset += len(page)
+	}
+	return all, nil
+}
+
+func isDriftSyntheticItem(item *memory.RecallItem) bool {
+	if item == nil {
+		return false
+	}
+	if item.SessionKey == driftSessionKey {
+		return true
+	}
+	for _, raw := range strings.Split(item.Tags, ",") {
+		if strings.TrimSpace(raw) == driftTagPrefix {
+			return true
+		}
+	}
+	return false
 }
