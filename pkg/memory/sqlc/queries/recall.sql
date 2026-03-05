@@ -61,6 +61,23 @@ WHERE id = sqlc.arg(id)
     AND agent_id = sqlc.arg(agent_id)
     AND suppressed_at IS NULL
 LIMIT 1;
+-- name: GetRecallItemByID :one
+SELECT id,
+    agent_id,
+    session_key,
+    role,
+    sector,
+    importance,
+    salience,
+    decay_rate,
+    content,
+    tags,
+    created_at,
+    updated_at
+FROM recall_items
+WHERE id = sqlc.arg(id)
+    AND suppressed_at IS NULL
+LIMIT 1;
 -- name: UpdateRecallItem :exec
 UPDATE recall_items
 SET role = sqlc.arg(role),

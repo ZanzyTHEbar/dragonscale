@@ -509,13 +509,12 @@ type Querier interface {
 	//  SELECT
 	//      conversation_id as session_id,
 	//      agent_id,
-	//      SUM(tokens_used) as total_tokens,
+	//      SUM(COALESCE(tokens_used, 0)) as total_tokens,
 	//      COUNT(*) as task_count
 	//  FROM task_completions
-	//  WHERE tokens_used > ?1
-	//      AND created_at > datetime('now', '-24 hours')
+	//  WHERE created_at > strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-24 hours')
 	//  GROUP BY conversation_id, agent_id
-	//  HAVING total_tokens > ?1
+	//  HAVING SUM(COALESCE(tokens_used, 0)) > ?1
 	//  ORDER BY total_tokens DESC
 	//  LIMIT ?2
 	GetHighTokenSessions(ctx context.Context, arg GetHighTokenSessionsParams) ([]GetHighTokenSessionsRow, error)
@@ -661,6 +660,25 @@ type Querier interface {
 	//      AND suppressed_at IS NULL
 	//  LIMIT 1
 	GetRecallItem(ctx context.Context, arg GetRecallItemParams) (GetRecallItemRow, error)
+	//GetRecallItemByID
+	//
+	//  SELECT id,
+	//      agent_id,
+	//      session_key,
+	//      role,
+	//      sector,
+	//      importance,
+	//      salience,
+	//      decay_rate,
+	//      content,
+	//      tags,
+	//      created_at,
+	//      updated_at
+	//  FROM recall_items
+	//  WHERE id = ?1
+	//      AND suppressed_at IS NULL
+	//  LIMIT 1
+	GetRecallItemByID(ctx context.Context, arg GetRecallItemByIDParams) (GetRecallItemByIDRow, error)
 	//GetRecallItemsByIDs
 	//
 	//  SELECT id,
@@ -788,9 +806,17 @@ type Querier interface {
 	//          ?6,
 	//          ?7,
 	//          ?8,
-	//          datetime('now')
+	//          strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
 	//      )
-	//  RETURNING id, agent_id, session_key, action, target, input, output, duration_ms, created_at
+	//  RETURNING id,
+	//      agent_id,
+	//      session_key,
+	//      action,
+	//      target,
+	//      input,
+	//      output,
+	//      duration_ms,
+	//      created_at
 	InsertAuditEntry(ctx context.Context, arg InsertAuditEntryParams) (AgentAuditLog, error)
 	//InsertDAGEdge
 	//
@@ -1355,6 +1381,37 @@ type Querier interface {
 	//  ORDER BY created_at DESC
 	//  LIMIT ?3
 	ListAuditEntriesBySession(ctx context.Context, arg ListAuditEntriesBySessionParams) ([]AgentAuditLog, error)
+	//ListAuditEntriesGlobal
+	//
+	//  SELECT id,
+	//      agent_id,
+	//      session_key,
+	//      action,
+	//      target,
+	//      input,
+	//      output,
+	//      duration_ms,
+	//      created_at
+	//  FROM agent_audit_log
+	//  ORDER BY created_at DESC
+	//  LIMIT ?1
+	ListAuditEntriesGlobal(ctx context.Context, arg ListAuditEntriesGlobalParams) ([]AgentAuditLog, error)
+	//ListAuditEntriesGlobalSincePaged
+	//
+	//  SELECT id,
+	//      agent_id,
+	//      session_key,
+	//      action,
+	//      target,
+	//      input,
+	//      output,
+	//      duration_ms,
+	//      created_at
+	//  FROM agent_audit_log
+	//  WHERE julianday(created_at) > julianday(?1)
+	//  ORDER BY created_at ASC, id ASC
+	//  LIMIT ?3 OFFSET ?2
+	ListAuditEntriesGlobalSincePaged(ctx context.Context, arg ListAuditEntriesGlobalSincePagedParams) ([]AgentAuditLog, error)
 	//ListDAGEdgesBySnapshotID
 	//
 	//  SELECT id,

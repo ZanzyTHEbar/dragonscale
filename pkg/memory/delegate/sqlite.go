@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/ZanzyTHEbar/dragonscale/pkg/ids"
@@ -1079,19 +1080,20 @@ func (d *LibSQLDelegate) UpdateTaskBaseline(ctx context.Context, agentID string,
 func (d *LibSQLDelegate) UpdateMemoryWeight(ctx context.Context, memoryID ids.UUID, weight, credit float64) error {
 	rlWeight := weight
 	rlCredit := credit
-	// Get the agent_id from the memory item first
-	item, err := d.GetRecallItem(ctx, "", memoryID)
+	row, err := d.queries.GetRecallItemByID(ctx, memsqlc.GetRecallItemByIDParams{
+		ID: memoryID,
+	})
+	if err == sql.ErrNoRows {
+		return fmt.Errorf("memory item not found: %s", memoryID)
+	}
 	if err != nil {
 		return err
-	}
-	if item == nil {
-		return fmt.Errorf("memory item not found: %s", memoryID)
 	}
 	return d.queries.UpdateMemoryWeight(ctx, memsqlc.UpdateMemoryWeightParams{
 		RlWeight: &rlWeight,
 		RlCredit: &rlCredit,
 		ID:       memoryID,
-		AgentID:  item.AgentID,
+		AgentID:  row.AgentID,
 	})
 }
 
@@ -1099,18 +1101,19 @@ func (d *LibSQLDelegate) UpdateMemoryWeight(ctx context.Context, memoryID ids.UU
 // Implements cortex.RLStore interface.
 func (d *LibSQLDelegate) UpdateMemorySelfReport(ctx context.Context, memoryID ids.UUID, score int) error {
 	selfReportScore := int64(score)
-	// Get the agent_id from the memory item first
-	item, err := d.GetRecallItem(ctx, "", memoryID)
+	row, err := d.queries.GetRecallItemByID(ctx, memsqlc.GetRecallItemByIDParams{
+		ID: memoryID,
+	})
+	if err == sql.ErrNoRows {
+		return fmt.Errorf("memory item not found: %s", memoryID)
+	}
 	if err != nil {
 		return err
-	}
-	if item == nil {
-		return fmt.Errorf("memory item not found: %s", memoryID)
 	}
 	return d.queries.UpdateMemorySelfReportScore(ctx, memsqlc.UpdateMemorySelfReportScoreParams{
 		SelfReportScore: &selfReportScore,
 		ID:              memoryID,
-		AgentID:         item.AgentID,
+		AgentID:         row.AgentID,
 	})
 }
 
@@ -1207,33 +1210,67 @@ func (d *LibSQLDelegate) ListActiveAgents(ctx context.Context, since time.Time) 
 // GetRecentAuditEntries returns audit entries since the given time.
 // Implements cortex.AuditAnalysisStore interface.
 func (d *LibSQLDelegate) GetRecentAuditEntries(ctx context.Context, since time.Time) ([]AuditEntry, error) {
-	// Get all audit entries and filter by time
-	rows, err := d.queries.ListAuditEntries(ctx, memsqlc.ListAuditEntriesParams{
-		AgentID: "", // Get all agents
-		Lim:     10000,
-	})
-	if err != nil {
-		return nil, err
+	cutoff := since.UTC()
+	if cutoff.IsZero() {
+		cutoff = time.Unix(0, 0).UTC()
 	}
 
-	var entries []AuditEntry
-	for _, row := range rows {
-		if row.CreatedAt.After(since) {
+	const pageSize int64 = 1000
+	offset := int64(0)
+	entries := make([]AuditEntry, 0, pageSize)
+
+	for {
+		rows, err := d.queries.ListAuditEntriesGlobalSincePaged(ctx, memsqlc.ListAuditEntriesGlobalSincePagedParams{
+			Since: cutoff,
+			Lim:   pageSize,
+			Off:   offset,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("list audit entries since: %w", err)
+		}
+		if len(rows) == 0 {
+			break
+		}
+
+		for _, row := range rows {
+			lowerAction := strings.ToLower(strings.TrimSpace(row.Action))
+			toolName := strings.TrimSpace(row.Action)
+			if strings.HasPrefix(lowerAction, "tool_") && strings.TrimSpace(row.Target) != "" {
+				toolName = strings.TrimSpace(row.Target)
+			}
+			if toolName == "" {
+				toolName = strings.TrimSpace(row.Target)
+			}
+
+			success := true
+			if lowerAction == "tool_error" || strings.Contains(lowerAction, "error") || strings.Contains(lowerAction, "fail") {
+				success = false
+			}
+
 			entry := AuditEntry{
 				ID:        row.ID.String(),
 				Timestamp: row.CreatedAt,
-				ToolName:  row.Action, // Using action as tool name proxy
+				ToolName:  toolName,
 				ToolInput: "",
-				Success:   true, // Default to success
+				Success:   success,
 				SessionID: row.SessionKey,
 				AgentID:   row.AgentID,
 			}
 			if row.Input != nil {
 				entry.ToolInput = *row.Input
 			}
+			if !success && row.Output != nil {
+				entry.ErrorMsg = *row.Output
+			}
 			entries = append(entries, entry)
 		}
+
+		if len(rows) < int(pageSize) {
+			break
+		}
+		offset += int64(len(rows))
 	}
+
 	return entries, nil
 }
 
@@ -1258,10 +1295,31 @@ func (d *LibSQLDelegate) StoreDetectedPattern(ctx context.Context, pattern Detec
 
 // GetHighTokenSessions returns sessions with token usage above threshold.
 // Implements cortex.AuditAnalysisStore interface.
-// Note: This is a placeholder - actual token tracking needs to be implemented.
 func (d *LibSQLDelegate) GetHighTokenSessions(ctx context.Context, minTokens int64) ([]SessionSummary, error) {
-	// TODO: Implement token-based session filtering when token tracking is available
-	return []SessionSummary{}, nil
+	min := minTokens
+	rows, err := d.queries.GetHighTokenSessions(ctx, memsqlc.GetHighTokenSessionsParams{
+		MinTokens: &min,
+		Lim:       100,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("get high token sessions: %w", err)
+	}
+
+	summaries := make([]SessionSummary, 0, len(rows))
+	for _, row := range rows {
+		totalTokens := int64(0)
+		if row.TotalTokens != nil {
+			totalTokens = int64(*row.TotalTokens)
+		}
+		summaries = append(summaries, SessionSummary{
+			SessionID:   row.SessionID.String(),
+			AgentID:     row.AgentID,
+			TotalTokens: totalTokens,
+			ToolCounts:  map[string]int{},
+		})
+	}
+
+	return summaries, nil
 }
 
 // --- Batch Operations for Cortex Tasks (via sqlc) ---

@@ -20,9 +20,17 @@ VALUES (
         sqlc.arg(input),
         sqlc.arg(output),
         sqlc.arg(duration_ms),
-        datetime('now')
+        strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
     )
-RETURNING id, agent_id, session_key, action, target, input, output, duration_ms, created_at;
+RETURNING id,
+    agent_id,
+    session_key,
+    action,
+    target,
+    input,
+    output,
+    duration_ms,
+    created_at;
 -- name: ListAuditEntries :many
 SELECT id,
     agent_id,
@@ -37,6 +45,34 @@ FROM agent_audit_log
 WHERE agent_id = sqlc.arg(agent_id)
 ORDER BY created_at DESC
 LIMIT sqlc.arg(lim);
+-- name: ListAuditEntriesGlobal :many
+SELECT id,
+    agent_id,
+    session_key,
+    action,
+    target,
+    input,
+    output,
+    duration_ms,
+    created_at
+FROM agent_audit_log
+ORDER BY created_at DESC
+LIMIT sqlc.arg(lim);
+-- name: ListAuditEntriesGlobalSincePaged :many
+SELECT id,
+    agent_id,
+    session_key,
+    action,
+    target,
+    input,
+    output,
+    duration_ms,
+    created_at
+FROM agent_audit_log
+WHERE julianday(created_at) > julianday(sqlc.arg(since))
+ORDER BY created_at ASC,
+    id ASC
+LIMIT sqlc.arg(lim) OFFSET sqlc.arg(off);
 -- name: ListAuditEntriesByAction :many
 SELECT id,
     agent_id,

@@ -180,17 +180,10 @@ func TestSQLiteDelegate_UpdateMemoryWeight(t *testing.T) {
 	// Insert a recall item first
 	memoryID := insertTestRecallItem(ctx, t, d, agentID)
 
-	// Update the memory weight via direct query
+	// Update the memory weight via delegate API
 	newWeight := 2.5
 	credit := 3.0
-	paramsRLWeight := newWeight
-	paramsRLCredit := credit
-	err := d.Queries().UpdateMemoryWeight(ctx, memsqlc.UpdateMemoryWeightParams{
-		RlWeight: &paramsRLWeight,
-		RlCredit: &paramsRLCredit,
-		ID:       memoryID,
-		AgentID:  agentID,
-	})
+	err := d.UpdateMemoryWeight(ctx, memoryID, newWeight, credit)
 	if err != nil {
 		t.Fatalf("UpdateMemoryWeight: %v", err)
 	}
@@ -209,21 +202,12 @@ func TestSQLiteDelegate_UpdateMemoryWeight_NonExistent(t *testing.T) {
 	t.Parallel()
 	d := setupRLTest(t)
 	ctx := t.Context()
-	agentID := "test-agent"
 
-	// Try to update weight for non-existent memory via direct query
+	// Try to update weight for non-existent memory.
 	nonExistentID := ids.New()
-	paramsWeight := 2.0
-	paramsCredit := 1.0
-	err := d.Queries().UpdateMemoryWeight(ctx, memsqlc.UpdateMemoryWeightParams{
-		RlWeight: &paramsWeight,
-		RlCredit: &paramsCredit,
-		ID:       nonExistentID,
-		AgentID:  agentID,
-	})
-	// Query succeeds but doesn't update anything (no error for non-existent)
-	if err != nil {
-		t.Errorf("UpdateMemoryWeight should not error for non-existent: %v", err)
+	err := d.UpdateMemoryWeight(ctx, nonExistentID, 2.0, 1.0)
+	if err == nil {
+		t.Fatal("expected error for non-existent memory update")
 	}
 }
 
@@ -236,13 +220,8 @@ func TestSQLiteDelegate_UpdateMemorySelfReport(t *testing.T) {
 	// Insert a recall item first
 	memoryID := insertTestRecallItem(ctx, t, d, agentID)
 
-	// Update self-report score via direct query
-	score := int64(2)
-	err := d.Queries().UpdateMemorySelfReportScore(ctx, memsqlc.UpdateMemorySelfReportScoreParams{
-		SelfReportScore: &score,
-		ID:              memoryID,
-		AgentID:         agentID,
-	})
+	// Update self-report score via delegate API.
+	err := d.UpdateMemorySelfReport(ctx, memoryID, 2)
 	if err != nil {
 		t.Fatalf("UpdateMemorySelfReportScore: %v", err)
 	}
@@ -261,19 +240,12 @@ func TestSQLiteDelegate_UpdateMemorySelfReport_NonExistent(t *testing.T) {
 	t.Parallel()
 	d := setupRLTest(t)
 	ctx := t.Context()
-	agentID := "test-agent"
 
-	// Try to update self-report for non-existent memory via direct query
+	// Try to update self-report for non-existent memory.
 	nonExistentID := ids.New()
-	score := int64(3)
-	err := d.Queries().UpdateMemorySelfReportScore(ctx, memsqlc.UpdateMemorySelfReportScoreParams{
-		SelfReportScore: &score,
-		ID:              nonExistentID,
-		AgentID:         agentID,
-	})
-	// Query succeeds but doesn't update anything (no error for non-existent)
-	if err != nil {
-		t.Errorf("UpdateMemorySelfReportScore should not error for non-existent: %v", err)
+	err := d.UpdateMemorySelfReport(ctx, nonExistentID, 3)
+	if err == nil {
+		t.Fatal("expected error for non-existent memory self-report update")
 	}
 }
 
@@ -547,6 +519,7 @@ func TestSQLiteDelegate_GetRecentAuditEntries(t *testing.T) {
 	t.Parallel()
 	d := setupRLTest(t)
 	ctx := t.Context()
+	since := time.Now().Add(-1 * time.Minute)
 
 	// Insert some audit entries
 	entries := []*memory.AuditEntry{
@@ -561,8 +534,8 @@ func TestSQLiteDelegate_GetRecentAuditEntries(t *testing.T) {
 		},
 		{
 			ID:         ids.New(),
-			AgentID:    "audit-agent",
-			SessionKey: "session-1",
+			AgentID:    "audit-agent-2",
+			SessionKey: "session-2",
 			Action:     "write_file",
 			Target:     "/path/to/output",
 			Input:      `{"path": "/output"}`,
@@ -576,15 +549,27 @@ func TestSQLiteDelegate_GetRecentAuditEntries(t *testing.T) {
 		}
 	}
 
-	// Get recent audit entries (all of them, since time is in the past)
-	auditEntries, err := d.GetRecentAuditEntries(ctx, time.Time{})
+	// Get recent audit entries across all agents.
+	auditEntries, err := d.GetRecentAuditEntries(ctx, since)
 	if err != nil {
 		t.Fatalf("GetRecentAuditEntries: %v", err)
 	}
+	if len(auditEntries) != 2 {
+		t.Fatalf("expected 2 recent audit entries, got %d", len(auditEntries))
+	}
 
-	// The implementation uses ListAuditEntries with empty agent_id which may filter results
-	// Just verify the query executes without error
-	t.Logf("Got %d audit entries", len(auditEntries))
+	foundAgents := map[string]bool{}
+	foundTools := map[string]bool{}
+	for _, entry := range auditEntries {
+		foundAgents[entry.AgentID] = true
+		foundTools[entry.ToolName] = true
+	}
+	if !foundAgents["audit-agent"] || !foundAgents["audit-agent-2"] {
+		t.Fatalf("expected entries from both agents, got %+v", foundAgents)
+	}
+	if !foundTools["read_file"] || !foundTools["write_file"] {
+		t.Fatalf("expected tool names mapped from action, got %+v", foundTools)
+	}
 }
 
 func TestSQLiteDelegate_GetHighTokenSessions(t *testing.T) {
@@ -592,13 +577,79 @@ func TestSQLiteDelegate_GetHighTokenSessions(t *testing.T) {
 	d := setupRLTest(t)
 	ctx := t.Context()
 
-	// This is a placeholder implementation that returns empty list
-	sessions, err := d.GetHighTokenSessions(ctx, 1000)
+	// Recreate task_completions with relaxed constraints for focused aggregation testing.
+	_, _ = d.db.ExecContext(ctx, `DROP TABLE IF EXISTS task_completions`)
+	_, err := d.db.ExecContext(ctx, `
+		CREATE TABLE task_completions (
+			id BLOB PRIMARY KEY,
+			agent_id TEXT NOT NULL,
+			conversation_id BLOB NOT NULL,
+			run_id BLOB NOT NULL,
+			description TEXT,
+			tokens_used INTEGER DEFAULT 0,
+			tool_calls INTEGER DEFAULT 0,
+			errors INTEGER DEFAULT 0,
+			user_corrections INTEGER DEFAULT 0,
+			completed BOOLEAN NOT NULL DEFAULT 0,
+			created_at DATETIME NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+		) WITHOUT ROWID
+	`)
+	if err != nil {
+		t.Fatalf("create task_completions table: %v", err)
+	}
+
+	session1 := ids.New()
+	session2 := ids.New()
+	session3 := ids.New()
+	runID := ids.New()
+
+	_, err = d.db.ExecContext(ctx, `
+		INSERT INTO task_completions (id, agent_id, conversation_id, run_id, description, tokens_used, completed)
+		VALUES (?, ?, ?, ?, ?, ?, ?), (?, ?, ?, ?, ?, ?, ?), (?, ?, ?, ?, ?, ?, ?), (?, ?, ?, ?, ?, ?, ?), (?, ?, ?, ?, ?, ?, ?)
+	`,
+		ids.New(), "agent-a", session1, runID, "task-1", 800, true,
+		ids.New(), "agent-a", session1, runID, "task-2", 900, true,
+		ids.New(), "agent-b", session2, runID, "task-3", 400, true,
+		ids.New(), "agent-c", session3, runID, "task-4", 300, true,
+		ids.New(), "agent-c", session3, runID, "task-5", 450, true,
+	)
+	if err != nil {
+		t.Fatalf("insert task completions: %v", err)
+	}
+
+	sessions, err := d.GetHighTokenSessions(ctx, 700)
 	if err != nil {
 		t.Fatalf("GetHighTokenSessions: %v", err)
 	}
-	if len(sessions) != 0 {
-		t.Errorf("expected 0 sessions (placeholder), got %d", len(sessions))
+	if len(sessions) != 2 {
+		t.Fatalf("expected 2 high-token sessions, got %d", len(sessions))
+	}
+
+	gotByAgent := map[string]SessionSummary{}
+	for _, s := range sessions {
+		gotByAgent[s.AgentID] = s
+	}
+
+	a, ok := gotByAgent["agent-a"]
+	if !ok {
+		t.Fatalf("expected aggregated session for agent-a, got %+v", gotByAgent)
+	}
+	if a.SessionID != session1.String() {
+		t.Fatalf("expected session %s for agent-a, got %s", session1.String(), a.SessionID)
+	}
+	if a.TotalTokens < 1700 {
+		t.Fatalf("expected aggregated tokens >= 1700 for agent-a, got %d", a.TotalTokens)
+	}
+
+	c, ok := gotByAgent["agent-c"]
+	if !ok {
+		t.Fatalf("expected aggregated session for agent-c, got %+v", gotByAgent)
+	}
+	if c.SessionID != session3.String() {
+		t.Fatalf("expected session %s for agent-c, got %s", session3.String(), c.SessionID)
+	}
+	if c.TotalTokens < 750 {
+		t.Fatalf("expected aggregated tokens >= 750 for agent-c, got %d", c.TotalTokens)
 	}
 }
 
@@ -654,19 +705,11 @@ func TestSQLiteDelegate_RLStore_Integration(t *testing.T) {
 			memoryIDs[i] = insertTestRecallItem(ctx, t, d, agentID)
 		}
 
-		// Update weights for each memory via direct query
-		// Note: GetRecallItem doesn't return RL fields, so we just verify no errors
+		// Update weights for each memory via delegate API.
 		weights := []float64{1.5, 2.0, 2.5}
 		credits := []float64{1.0, 2.0, 3.0}
 		for i, memoryID := range memoryIDs {
-			paramsRLWeight := weights[i]
-			paramsRLCredit := credits[i]
-			err := d.Queries().UpdateMemoryWeight(ctx, memsqlc.UpdateMemoryWeightParams{
-				RlWeight: &paramsRLWeight,
-				RlCredit: &paramsRLCredit,
-				ID:       memoryID,
-				AgentID:  agentID,
-			})
+			err := d.UpdateMemoryWeight(ctx, memoryID, weights[i], credits[i])
 			if err != nil {
 				t.Fatalf("UpdateMemoryWeight %d: %v", i, err)
 			}
@@ -687,15 +730,10 @@ func TestSQLiteDelegate_RLStore_Integration(t *testing.T) {
 	t.Run("SelfReportUpdates", func(t *testing.T) {
 		memoryID := insertTestRecallItem(ctx, t, d, agentID)
 
-		// Update self-report scores via direct query
-		// Note: GetRecallItem doesn't return self_report_score, so we just verify no errors
+		// Update self-report scores via delegate API.
 		scores := []int64{0, 1, 2, 3}
 		for _, score := range scores {
-			err := d.Queries().UpdateMemorySelfReportScore(ctx, memsqlc.UpdateMemorySelfReportScoreParams{
-				SelfReportScore: &score,
-				ID:              memoryID,
-				AgentID:         agentID,
-			})
+			err := d.UpdateMemorySelfReport(ctx, memoryID, int(score))
 			if err != nil {
 				t.Fatalf("UpdateMemorySelfReportScore %d: %v", score, err)
 			}

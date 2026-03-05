@@ -80,9 +80,17 @@ VALUES (
         ?6,
         ?7,
         ?8,
-        datetime('now')
+        strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
     )
-RETURNING id, agent_id, session_key, action, target, input, output, duration_ms, created_at
+RETURNING id,
+    agent_id,
+    session_key,
+    action,
+    target,
+    input,
+    output,
+    duration_ms,
+    created_at
 `
 
 type InsertAuditEntryParams struct {
@@ -118,9 +126,17 @@ type InsertAuditEntryParams struct {
 //	        ?6,
 //	        ?7,
 //	        ?8,
-//	        datetime('now')
+//	        strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
 //	    )
-//	RETURNING id, agent_id, session_key, action, target, input, output, duration_ms, created_at
+//	RETURNING id,
+//	    agent_id,
+//	    session_key,
+//	    action,
+//	    target,
+//	    input,
+//	    output,
+//	    duration_ms,
+//	    created_at
 func (q *Queries) InsertAuditEntry(ctx context.Context, arg InsertAuditEntryParams) (AgentAuditLog, error) {
 	row := q.db.QueryRowContext(ctx, InsertAuditEntry,
 		arg.ID,
@@ -329,6 +345,142 @@ type ListAuditEntriesBySessionParams struct {
 //	LIMIT ?3
 func (q *Queries) ListAuditEntriesBySession(ctx context.Context, arg ListAuditEntriesBySessionParams) ([]AgentAuditLog, error) {
 	rows, err := q.db.QueryContext(ctx, ListAuditEntriesBySession, arg.AgentID, arg.SessionKey, arg.Lim)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AgentAuditLog{}
+	for rows.Next() {
+		var i AgentAuditLog
+		if err := rows.Scan(
+			&i.ID,
+			&i.AgentID,
+			&i.SessionKey,
+			&i.Action,
+			&i.Target,
+			&i.Input,
+			&i.Output,
+			&i.DurationMs,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const ListAuditEntriesGlobal = `-- name: ListAuditEntriesGlobal :many
+SELECT id,
+    agent_id,
+    session_key,
+    action,
+    target,
+    input,
+    output,
+    duration_ms,
+    created_at
+FROM agent_audit_log
+ORDER BY created_at DESC
+LIMIT ?1
+`
+
+type ListAuditEntriesGlobalParams struct {
+	Lim int64 `db:"lim" json:"lim"`
+}
+
+// ListAuditEntriesGlobal
+//
+//	SELECT id,
+//	    agent_id,
+//	    session_key,
+//	    action,
+//	    target,
+//	    input,
+//	    output,
+//	    duration_ms,
+//	    created_at
+//	FROM agent_audit_log
+//	ORDER BY created_at DESC
+//	LIMIT ?1
+func (q *Queries) ListAuditEntriesGlobal(ctx context.Context, arg ListAuditEntriesGlobalParams) ([]AgentAuditLog, error) {
+	rows, err := q.db.QueryContext(ctx, ListAuditEntriesGlobal, arg.Lim)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AgentAuditLog{}
+	for rows.Next() {
+		var i AgentAuditLog
+		if err := rows.Scan(
+			&i.ID,
+			&i.AgentID,
+			&i.SessionKey,
+			&i.Action,
+			&i.Target,
+			&i.Input,
+			&i.Output,
+			&i.DurationMs,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const ListAuditEntriesGlobalSincePaged = `-- name: ListAuditEntriesGlobalSincePaged :many
+SELECT id,
+    agent_id,
+    session_key,
+    action,
+    target,
+    input,
+    output,
+    duration_ms,
+    created_at
+FROM agent_audit_log
+WHERE julianday(created_at) > julianday(?1)
+ORDER BY created_at ASC, id ASC
+LIMIT ?3 OFFSET ?2
+`
+
+type ListAuditEntriesGlobalSincePagedParams struct {
+	Since interface{} `db:"since" json:"since"`
+	Off   int64       `db:"off" json:"off"`
+	Lim   int64       `db:"lim" json:"lim"`
+}
+
+// ListAuditEntriesGlobalSincePaged
+//
+//	SELECT id,
+//	    agent_id,
+//	    session_key,
+//	    action,
+//	    target,
+//	    input,
+//	    output,
+//	    duration_ms,
+//	    created_at
+//	FROM agent_audit_log
+//	WHERE julianday(created_at) > julianday(?1)
+//	ORDER BY created_at ASC, id ASC
+//	LIMIT ?3 OFFSET ?2
+func (q *Queries) ListAuditEntriesGlobalSincePaged(ctx context.Context, arg ListAuditEntriesGlobalSincePagedParams) ([]AgentAuditLog, error) {
+	rows, err := q.db.QueryContext(ctx, ListAuditEntriesGlobalSincePaged, arg.Since, arg.Off, arg.Lim)
 	if err != nil {
 		return nil, err
 	}

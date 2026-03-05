@@ -174,6 +174,82 @@ func (q *Queries) GetRecallItem(ctx context.Context, arg GetRecallItemParams) (G
 	return i, err
 }
 
+const GetRecallItemByID = `-- name: GetRecallItemByID :one
+SELECT id,
+    agent_id,
+    session_key,
+    role,
+    sector,
+    importance,
+    salience,
+    decay_rate,
+    content,
+    tags,
+    created_at,
+    updated_at
+FROM recall_items
+WHERE id = ?1
+    AND suppressed_at IS NULL
+LIMIT 1
+`
+
+type GetRecallItemByIDParams struct {
+	ID ids.UUID `db:"id" json:"id"`
+}
+
+type GetRecallItemByIDRow struct {
+	ID         ids.UUID      `db:"id" json:"id"`
+	AgentID    string        `db:"agent_id" json:"agent_id"`
+	SessionKey string        `db:"session_key" json:"session_key"`
+	Role       string        `db:"role" json:"role"`
+	Sector     memory.Sector `db:"sector" json:"sector"`
+	Importance float64       `db:"importance" json:"importance"`
+	Salience   float64       `db:"salience" json:"salience"`
+	DecayRate  float64       `db:"decay_rate" json:"decay_rate"`
+	Content    string        `db:"content" json:"content"`
+	Tags       string        `db:"tags" json:"tags"`
+	CreatedAt  time.Time     `db:"created_at" json:"created_at"`
+	UpdatedAt  time.Time     `db:"updated_at" json:"updated_at"`
+}
+
+// GetRecallItemByID
+//
+//	SELECT id,
+//	    agent_id,
+//	    session_key,
+//	    role,
+//	    sector,
+//	    importance,
+//	    salience,
+//	    decay_rate,
+//	    content,
+//	    tags,
+//	    created_at,
+//	    updated_at
+//	FROM recall_items
+//	WHERE id = ?1
+//	    AND suppressed_at IS NULL
+//	LIMIT 1
+func (q *Queries) GetRecallItemByID(ctx context.Context, arg GetRecallItemByIDParams) (GetRecallItemByIDRow, error) {
+	row := q.db.QueryRowContext(ctx, GetRecallItemByID, arg.ID)
+	var i GetRecallItemByIDRow
+	err := row.Scan(
+		&i.ID,
+		&i.AgentID,
+		&i.SessionKey,
+		&i.Role,
+		&i.Sector,
+		&i.Importance,
+		&i.Salience,
+		&i.DecayRate,
+		&i.Content,
+		&i.Tags,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const GetRecallItemsByIDs = `-- name: GetRecallItemsByIDs :many
 SELECT id,
     agent_id,

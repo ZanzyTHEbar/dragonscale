@@ -94,13 +94,12 @@ const GetHighTokenSessions = `-- name: GetHighTokenSessions :many
 SELECT
     conversation_id as session_id,
     agent_id,
-    SUM(tokens_used) as total_tokens,
+    SUM(COALESCE(tokens_used, 0)) as total_tokens,
     COUNT(*) as task_count
 FROM task_completions
-WHERE tokens_used > ?1
-    AND created_at > datetime('now', '-24 hours')
+WHERE created_at > strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-24 hours')
 GROUP BY conversation_id, agent_id
-HAVING total_tokens > ?1
+HAVING SUM(COALESCE(tokens_used, 0)) > ?1
 ORDER BY total_tokens DESC
 LIMIT ?2
 `
@@ -122,13 +121,12 @@ type GetHighTokenSessionsRow struct {
 //	SELECT
 //	    conversation_id as session_id,
 //	    agent_id,
-//	    SUM(tokens_used) as total_tokens,
+//	    SUM(COALESCE(tokens_used, 0)) as total_tokens,
 //	    COUNT(*) as task_count
 //	FROM task_completions
-//	WHERE tokens_used > ?1
-//	    AND created_at > datetime('now', '-24 hours')
+//	WHERE created_at > strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-24 hours')
 //	GROUP BY conversation_id, agent_id
-//	HAVING total_tokens > ?1
+//	HAVING SUM(COALESCE(tokens_used, 0)) > ?1
 //	ORDER BY total_tokens DESC
 //	LIMIT ?2
 func (q *Queries) GetHighTokenSessions(ctx context.Context, arg GetHighTokenSessionsParams) ([]GetHighTokenSessionsRow, error) {
