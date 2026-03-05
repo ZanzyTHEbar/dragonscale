@@ -30,6 +30,8 @@ type assembledContext struct {
 	fantasyHistory []fantasy.Message
 	adaptedTools   []fantasy.AgentTool
 	agent          fantasy.Agent
+	conversationID ids.UUID
+	runID          ids.UUID
 }
 
 func (al *AgentLoop) prepareRuntimeState(ctx context.Context, sessionKey string) (ids.UUID, ids.UUID, error) {
@@ -96,7 +98,7 @@ func (al *AgentLoop) assembleContext(ctx context.Context, opts processOptions) (
 
 	fantasyHistory := dragonfantasy.MessagesToFantasy(historyMsgs)
 	adaptedTools, prepareStep := al.prepareToolset(ctx, opts)
-	agent, err := al.createFantasyAgent(ctx, opts, systemPrompt, adaptedTools, prepareStep)
+	agent, conversationID, runID, err := al.createFantasyAgent(ctx, opts, systemPrompt, adaptedTools, prepareStep)
 	if err != nil {
 		return assembledContext{}, err
 	}
@@ -116,6 +118,8 @@ func (al *AgentLoop) assembleContext(ctx context.Context, opts processOptions) (
 		fantasyHistory: fantasyHistory,
 		adaptedTools:   adaptedTools,
 		agent:          agent,
+		conversationID: conversationID,
+		runID:          runID,
 	}, nil
 }
 
@@ -317,10 +321,10 @@ func (al *AgentLoop) prepareToolset(ctx context.Context, opts processOptions) ([
 	return adaptedTools, prepareStep
 }
 
-func (al *AgentLoop) createFantasyAgent(ctx context.Context, opts processOptions, systemPrompt string, adaptedTools []fantasy.AgentTool, prepareStep func(context.Context, fantasy.PrepareStepFunctionOptions) (context.Context, fantasy.PrepareStepResult, error)) (fantasy.Agent, error) {
+func (al *AgentLoop) createFantasyAgent(ctx context.Context, opts processOptions, systemPrompt string, adaptedTools []fantasy.AgentTool, prepareStep func(context.Context, fantasy.PrepareStepFunctionOptions) (context.Context, fantasy.PrepareStepResult, error)) (fantasy.Agent, ids.UUID, ids.UUID, error) {
 	conversationID, runID, err := al.prepareRuntimeState(ctx, opts.SessionKey)
 	if err != nil {
-		return nil, err
+		return nil, ids.UUID{}, ids.UUID{}, err
 	}
 
 	baseRuntime := OffloadingToolRuntime{
@@ -349,7 +353,7 @@ func (al *AgentLoop) createFantasyAgent(ctx context.Context, opts processOptions
 		agentOpts = append(agentOpts, fantasy.WithSystemPrompt(systemPrompt))
 	}
 
-	return fantasy.NewAgent(al.languageModel, agentOpts...), nil
+	return fantasy.NewAgent(al.languageModel, agentOpts...), conversationID, runID, nil
 }
 
 // postProcess handles the common finalization after Generate or Stream:
@@ -384,6 +388,21 @@ func (al *AgentLoop) postProcess(ctx context.Context, opts processOptions, final
 			"steps":        stepCount,
 			"final_length": len(finalContent),
 		})
+
+	// Record task completion for RL analysis (best-effort, don't fail on error)
+	completion := TaskCompletion{
+		TaskID:      opts.SessionKey,
+		Description: utils.Truncate(opts.UserMessage, 100),
+		TokensUsed:  0, // TODO: track actual token usage
+		ToolCalls:   stepCount,
+		Errors:      0,
+		Completed:   true,
+		CreatedAt:   time.Now().UTC(),
+	}
+	if err := al.endTask(ctx, opts.ConversationID, opts.RunID, completion); err != nil {
+		logger.WarnCF("agent", "Failed to record task completion",
+			map[string]interface{}{"error": err.Error(), "session": opts.SessionKey})
+	}
 
 	return finalContent
 }
@@ -522,6 +541,11 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, opts processOptions) (str
 			})
 		return "", err
 	}
+
+	// Populate IDs for task completion tracking
+	opts.ConversationID = ac.conversationID
+	opts.RunID = ac.runID
+
 	return al.postProcess(ctx, opts, finalContent, len(result.Steps)), nil
 }
 
@@ -579,6 +603,11 @@ func (al *AgentLoop) runStreaming(ctx context.Context, opts processOptions, ac a
 			})
 		return "", err
 	}
+
+	// Populate IDs for task completion tracking
+	opts.ConversationID = ac.conversationID
+	opts.RunID = ac.runID
+
 	return al.postProcess(ctx, opts, finalContent, len(result.Steps)), nil
 }
 

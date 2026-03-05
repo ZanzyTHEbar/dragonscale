@@ -84,15 +84,17 @@ type outputTarget struct {
 
 // processOptions configures how a message is processed
 type processOptions struct {
-	SessionKey    string // Session identifier for history/context
-	Channel       string // Target channel for tool execution
-	ChatID        string // Target chat ID for tool execution
-	SenderID      string // Originating sender identifier (for logging/audit)
-	UserMessage   string // User message content (may include prefix)
-	EnableSummary bool   // Whether to trigger summarization
-	SendResponse  bool   // Whether to send response via bus
-	NoHistory     bool   // If true, don't load session history (for heartbeat)
-	Streaming     bool   // If true, stream token deltas to bus via OnTextDelta
+	SessionKey     string   // Session identifier for history/context
+	Channel        string   // Target channel for tool execution
+	ChatID         string   // Target chat ID for tool execution
+	SenderID       string   // Originating sender identifier (for logging/audit)
+	UserMessage    string   // User message content (may include prefix)
+	EnableSummary  bool     // Whether to trigger summarization
+	SendResponse   bool     // Whether to send response via bus
+	NoHistory      bool     // If true, don't load session history (for heartbeat)
+	Streaming      bool     // If true, stream token deltas to bus via OnTextDelta
+	ConversationID ids.UUID // Conversation identifier for task tracking
+	RunID          ids.UUID // Run identifier for task completion
 }
 
 // Option configures AgentLoop creation.
@@ -207,23 +209,6 @@ func NewAgentLoop(ctx context.Context, cfg *config.Config, msgBus *bus.MessageBu
 	}
 
 	contextBuilder.SetDelegate(del)
-
-	if migErr := memory.MigrateState(ctx, workspace, del, pkg.NAME); migErr != nil {
-		logger.WarnCF("agent", "State KV migration failed (non-fatal)",
-			map[string]interface{}{"error": migErr.Error()})
-	}
-	if migErr := memory.MigrateDocuments(ctx, workspace, del, pkg.NAME); migErr != nil {
-		logger.WarnCF("agent", "Document migration failed (non-fatal)",
-			map[string]interface{}{"error": migErr.Error()})
-	}
-	if migErr := memory.MigrateLongTermMemory(ctx, workspace, del, pkg.NAME); migErr != nil {
-		logger.WarnCF("agent", "Long-term memory migration failed (non-fatal)",
-			map[string]interface{}{"error": migErr.Error()})
-	}
-	if migErr := memory.MigrateDailyNotes(ctx, workspace, del, pkg.NAME); migErr != nil {
-		logger.WarnCF("agent", "Daily notes migration failed (non-fatal)",
-			map[string]interface{}{"error": migErr.Error()})
-	}
 
 	// Identity file sync (disk → DB)
 	var idSync *dragonsync.IdentitySync

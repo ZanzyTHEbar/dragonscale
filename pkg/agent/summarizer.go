@@ -46,6 +46,10 @@ func (al *AgentLoop) maybeSummarize(ctx context.Context, sessionKey, channel, ch
 	}
 
 	go func() {
+		if _, loading := al.summarizing.LoadOrStore(sessionKey, true); loading {
+			return
+		}
+		defer al.summarizing.Delete(sessionKey)
 		al.summarizeSession(context.WithoutCancel(ctx), sessionKey)
 	}()
 }
@@ -64,7 +68,7 @@ func (al *AgentLoop) compactionThresholds() (softPct, hardPct int) {
 		}
 	}
 	if hardPct <= softPct {
-		hardPct = softPct + 10
+		hardPct = min(softPct+10, 100)
 	}
 	return softPct, hardPct
 }
@@ -335,12 +339,14 @@ func (al *AgentLoop) summarizeSession(parentCtx context.Context, sessionKey stri
 	}
 
 	if len(validMessages) == 0 {
+		al.summarizeFailures.Delete(sessionKey)
 		return
 	}
 
-	// Multi-Part Summarization
+	// **NEW**: Merge protection. If validMessages is very large and the model
+	// context window is small, split into two halves, summarize each, then merge.
 	var finalSummary string
-	if len(validMessages) > 10 {
+	if len(validMessages) > 40 && al.contextWindow < 16000 {
 		mid := len(validMessages) / 2
 		part1 := validMessages[:mid]
 		part2 := validMessages[mid:]

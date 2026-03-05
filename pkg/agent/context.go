@@ -44,10 +44,9 @@ const promptCacheTTL = 30 * time.Second
 
 func NewContextBuilder(workspace string) *ContextBuilder {
 	// Primary skills dir: XDG data dir (installed skills).
-	// Falls back to workspace/skills for legacy setups.
-	primarySkillsDir := filepath.Join(workspace, "skills")
-	if dir, err := config.SkillsDir(); err == nil {
-		primarySkillsDir = dir
+	primarySkillsDir, _ := config.SkillsDir()
+	if primarySkillsDir == "" {
+		primarySkillsDir = filepath.Join(workspace, "skills")
 	}
 
 	// Global skills: ~/.config/dragonscale/skills (user-level overrides).

@@ -172,7 +172,7 @@ func TestIntegration_FullAgentLoop_SimpleResponse(t *testing.T) {
 	cfg := &config.Config{
 		Agents: config.AgentsConfig{
 			Defaults: config.AgentDefaults{
-				Workspace:         tmpDir,
+				Sandbox:           tmpDir,
 				Model:             "test-model",
 				MaxTokens:         4096,
 				MaxToolIterations: 10,
@@ -236,7 +236,7 @@ func TestIntegration_FullAgentLoop_WithToolCalls(t *testing.T) {
 	cfg := &config.Config{
 		Agents: config.AgentsConfig{
 			Defaults: config.AgentDefaults{
-				Workspace:         tmpDir,
+				Sandbox:           tmpDir,
 				Model:             "mock-tool-model",
 				MaxTokens:         4096,
 				MaxToolIterations: 10,
@@ -291,7 +291,7 @@ func TestIntegration_ProcessDirect(t *testing.T) {
 	cfg := &config.Config{
 		Agents: config.AgentsConfig{
 			Defaults: config.AgentDefaults{
-				Workspace:         tmpDir,
+				Sandbox:           tmpDir,
 				Model:             "test-model",
 				MaxTokens:         4096,
 				MaxToolIterations: 10,
@@ -387,7 +387,7 @@ func TestIntegration_Streaming_TextDeltas(t *testing.T) {
 	cfg := &config.Config{
 		Agents: config.AgentsConfig{
 			Defaults: config.AgentDefaults{
-				Workspace:         tmpDir,
+				Sandbox:           tmpDir,
 				Model:             "streaming-mock",
 				MaxTokens:         4096,
 				MaxToolIterations: 10,
@@ -458,7 +458,7 @@ func TestIntegration_Streaming_WithToolCalls(t *testing.T) {
 	cfg := &config.Config{
 		Agents: config.AgentsConfig{
 			Defaults: config.AgentDefaults{
-				Workspace:         tmpDir,
+				Sandbox:           tmpDir,
 				Model:             "mock-tool-model",
 				MaxTokens:         4096,
 				MaxToolIterations: 10,
@@ -521,7 +521,7 @@ func TestIntegration_MultipleMessages(t *testing.T) {
 	cfg := &config.Config{
 		Agents: config.AgentsConfig{
 			Defaults: config.AgentDefaults{
-				Workspace:         tmpDir,
+				Sandbox:           tmpDir,
 				Model:             "test-model",
 				MaxTokens:         4096,
 				MaxToolIterations: 10,
