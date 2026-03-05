@@ -355,12 +355,16 @@ Content.
 	assert.Nil(t, g.GetIndex())
 }
 
-func TestExtendedFrontmatter_JSON(t *testing.T) {
+func TestExtendedFrontmatter_YAML(t *testing.T) {
 	t.Parallel()
 	tmp := t.TempDir()
 
-	writeSkill(t, tmp, "json-skill", `---
-{"name":"json-skill","description":"A JSON frontmatter skill","tags":["alpha","beta"],"domain":"testing","is_moc":true}
+	writeSkill(t, tmp, "yaml-skill", `---
+name: yaml-skill
+description: A YAML frontmatter skill
+tags: alpha, beta
+domain: testing
+is_moc: true
 ---
 Content with [[some-link]].
 `)
@@ -370,7 +374,7 @@ Content with [[some-link]].
 	require.Len(t, skills, 1)
 
 	s := skills[0]
-	assert.Empty(t, cmp.Diff("json-skill", s.Name))
+	assert.Empty(t, cmp.Diff("yaml-skill", s.Name))
 	assert.Empty(t, cmp.Diff([]string{"alpha", "beta"}, s.Tags))
 	assert.Empty(t, cmp.Diff("testing", s.Domain))
 }

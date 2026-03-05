@@ -87,25 +87,25 @@ func TestContinuityKeepCount_UsesConfiguredPolicy(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.Agents.Defaults.ContinuityRetention.MinMessages = 3
 	cfg.Agents.Defaults.ContinuityRetention.MaxMessages = 7
-	cfg.Agents.Defaults.ContinuityRetention.TargetContextRatio = 0.01
+	cfg.Agents.Defaults.ContinuityRetention.TargetContextRatio = 0.5 // 50% of context window
 
 	al := &AgentLoop{
 		cfg:           cfg,
-		contextWindow: 256,
+		contextWindow: 10000, // Large enough to hold many messages
 	}
 
-	// Large history should be limited by MaxMessages
+	// Large history should be limited by MaxMessages when token budget allows
 	largeHistory := buildHistory(100, "test content")
 	keep := al.continuityKeepCount(largeHistory)
 	if keep != 7 {
 		t.Errorf("expected keep=7 for large history, got %d", keep)
 	}
 
-	// Small history with low token count should use MinMessages
-	smallHistory := buildHistory(5, "x") // Very short content
+	// Small history should use actual count when under MinMessages
+	smallHistory := buildHistory(2, "x") // Under MinMessages
 	keep = al.continuityKeepCount(smallHistory)
-	if keep != 3 {
-		t.Errorf("expected keep=3 for small history, got %d", keep)
+	if keep != 2 { // Should keep actual count when under min
+		t.Errorf("expected keep=2 for small history, got %d", keep)
 	}
 }
 

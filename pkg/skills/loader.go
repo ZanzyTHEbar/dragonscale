@@ -9,8 +9,6 @@ import (
 	"regexp"
 	"strings"
 	"time"
-
-	jsonv2 "github.com/go-json-experiment/json"
 )
 
 var namePattern = regexp.MustCompile(`^[a-zA-Z0-9]+(-[a-zA-Z0-9]+)*$`)
@@ -315,13 +313,6 @@ func (sl *SkillsLoader) getSkillMetadata(skillPath string) *SkillMetadata {
 		}
 	}
 
-	// Try JSON first (for backward compatibility)
-	var jsonMeta SkillMetadata
-	if err := jsonv2.Unmarshal([]byte(frontmatter), &jsonMeta); err == nil && jsonMeta.Name != "" {
-		return &jsonMeta
-	}
-
-	// Fall back to simple YAML parsing
 	yamlMeta := sl.parseSimpleYAML(frontmatter)
 	meta := &SkillMetadata{
 		Name:        yamlMeta["name"],
