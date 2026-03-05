@@ -75,6 +75,7 @@ type AgentLoop struct {
 	outputOverride        atomic.Value // Owner: command_handler.go — CLI output redirection target for internal messages
 	toolResultSearch      fantasy.AgentTool
 	cortex                *cortex.Cortex
+	inflight              sync.WaitGroup
 }
 
 type outputTarget struct {
@@ -413,6 +414,11 @@ func NewAgentLoop(ctx context.Context, cfg *config.Config, msgBus *bus.MessageBu
 	if aus, ok := al.memDelegate.(cortex.AuditAnalysisStore); ok {
 		auditStore = aus
 	}
+	// DriftStore for domain health monitoring and trend tracking
+	var driftStore cortex.DriftStore
+	if ds, ok := al.memDelegate.(cortex.DriftMemorySource); ok {
+		driftStore = cortex.NewMemoryDriftAdapter(ds)
+	}
 	cortexTasks := []cortex.Task{
 		cortex.NewDecayTask(cortex.DefaultDecayConfig(), decayStore),
 		cortex.NewBackfillTask(cortex.DefaultBackfillConfig(), backfillStore, embedFn),
@@ -420,6 +426,7 @@ func NewAgentLoop(ctx context.Context, cfg *config.Config, msgBus *bus.MessageBu
 		cortex.NewPruneTask(cortex.DefaultPruneConfig(), pruneStore),
 		cortex.NewRLTask(rlStore, pkg.NAME),
 		cortex.NewAuditAnalysisTask(auditStore),
+		cortex.NewDriftTask(cortex.DefaultDriftConfig(), driftStore),
 	}
 	al.cortex = cortex.New(cortexTasks, 60*time.Second)
 
@@ -440,7 +447,11 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 				continue
 			}
 
-			response, err := al.processMessage(ctx, msg)
+			al.inflight.Add(1)
+			response, err := func() (string, error) {
+				defer al.inflight.Done()
+				return al.processMessage(ctx, msg)
+			}()
 			if err != nil {
 				response = fmt.Sprintf("Error processing message: %v", err)
 			}
@@ -480,9 +491,15 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 
 func (al *AgentLoop) Stop() {
 	al.running.Store(false)
-	close(al.auditChan)
-	<-al.auditDone // wait for audit worker to drain
-	al.sessions.Close()
+	al.inflight.Wait()
+
+	if al.auditChan != nil {
+		close(al.auditChan)
+		<-al.auditDone // wait for audit worker to drain
+	}
+	if al.sessions != nil {
+		al.sessions.Close()
+	}
 	if al.identitySync != nil {
 		al.identitySync.Close()
 	}

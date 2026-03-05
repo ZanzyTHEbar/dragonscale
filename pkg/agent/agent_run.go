@@ -196,11 +196,13 @@ func (al *AgentLoop) refreshContextBlocks(ctx context.Context, opts processOptio
 
 	_ = g.Wait()
 
-	al.ctxBlockCache.Store(opts.SessionKey, ctxBlockCacheEntry{
-		focusBlock: focusBlock,
-		knowledge:  kb,
-		cachedAt:   time.Now(),
-	})
+	if !useCached {
+		al.ctxBlockCache.Store(opts.SessionKey, ctxBlockCacheEntry{
+			focusBlock: focusBlock,
+			knowledge:  kb,
+			cachedAt:   time.Now(),
+		})
+	}
 
 	// Prune stale entries from other sessions to prevent unbounded growth.
 	al.ctxBlockCache.Range(func(key, value any) bool {
@@ -616,10 +618,63 @@ func (al *AgentLoop) runStreaming(ctx context.Context, opts processOptions, ac a
 // auditStep logs tool calls from a Fantasy step result to the audit log.
 func (al *AgentLoop) auditStep(_ context.Context, step fantasy.StepResult, sessionKey string) {
 	toolCalls := step.Content.ToolCalls()
-	if len(toolCalls) == 0 {
+	toolResults := step.Content.ToolResults()
+	if len(toolCalls) == 0 && len(toolResults) == 0 {
 		return
 	}
 
+	callByID := make(map[string]fantasy.ToolCallContent, len(toolCalls))
+	for _, tc := range toolCalls {
+		callByID[tc.ToolCallID] = tc
+	}
+
+	// Prefer result-based entries because they carry success/failure semantics.
+	if len(toolResults) > 0 {
+		for _, tr := range toolResults {
+			toolName := ""
+			toolInput := ""
+			if tc, ok := callByID[tr.ToolCallID]; ok {
+				toolName = tc.ToolName
+				toolInput = tc.Input
+			}
+			if toolName == "" {
+				toolName = "unknown_tool"
+			}
+
+			action := "tool_success"
+			output := ""
+			switch out := tr.Result.(type) {
+			case fantasy.ToolResultOutputContentText:
+				output = out.Text
+			case fantasy.ToolResultOutputContentMedia:
+				output = out.Text
+			case fantasy.ToolResultOutputContentError:
+				action = "tool_error"
+				if out.Error != nil {
+					output = out.Error.Error()
+				} else {
+					output = "tool returned error output"
+				}
+			}
+
+			entry := &memory.AuditEntry{
+				ID:         ids.New(),
+				AgentID:    pkg.NAME,
+				SessionKey: sessionKey,
+				Action:     action,
+				Target:     toolName,
+				Input:      toolInput,
+				Output:     output,
+			}
+			if !al.enqueueAuditEntry(entry) {
+				logger.WarnCF("agent", "Audit channel unavailable, dropping tool result entry",
+					map[string]interface{}{"tool": toolName, "action": action})
+			}
+		}
+		return
+	}
+
+	// Legacy fallback: if no tool results were emitted, record tool calls.
 	for _, tc := range toolCalls {
 		entry := &memory.AuditEntry{
 			ID:         ids.New(),
@@ -629,12 +684,28 @@ func (al *AgentLoop) auditStep(_ context.Context, step fantasy.StepResult, sessi
 			Target:     tc.ToolName,
 			Input:      tc.Input,
 		}
-		select {
-		case al.auditChan <- entry:
-		default:
-			logger.WarnCF("agent", "Audit channel full, dropping entry",
+		if !al.enqueueAuditEntry(entry) {
+			logger.WarnCF("agent", "Audit channel unavailable, dropping tool call entry",
 				map[string]interface{}{"tool": tc.ToolName})
 		}
+	}
+}
+
+func (al *AgentLoop) enqueueAuditEntry(entry *memory.AuditEntry) (ok bool) {
+	if al.auditChan == nil || entry == nil {
+		return false
+	}
+	defer func() {
+		if recover() != nil {
+			ok = false
+		}
+	}()
+
+	select {
+	case al.auditChan <- entry:
+		return true
+	default:
+		return false
 	}
 }
 
