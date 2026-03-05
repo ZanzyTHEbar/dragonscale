@@ -24,7 +24,6 @@ import (
 	"github.com/ZanzyTHEbar/dragonscale/pkg/health"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/heartbeat"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/logger"
-	"github.com/ZanzyTHEbar/dragonscale/pkg/migrate"
 	dragonruntime "github.com/ZanzyTHEbar/dragonscale/pkg/runtime"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/security"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/security/securebus"
@@ -75,10 +74,6 @@ func (s *Service) Onboard(ctx context.Context, in io.Reader, out io.Writer) erro
 		return fmt.Errorf("error saving config: %w", err)
 	}
 
-	if migErr := migrate.MigrateToXDG(""); migErr != nil {
-		fmt.Fprintf(out, "Warning: XDG migration failed: %v\n", migErr)
-	}
-
 	s.createWorkspaceTemplates(cfg, out)
 
 	fmt.Fprintf(out, "%s dragonscale is ready!\n", s.Logo)
@@ -108,27 +103,6 @@ func (s *Service) Onboard(ctx context.Context, in io.Reader, out io.Writer) erro
 	fmt.Fprintln(out, "  1. Add your API key to", configPath)
 	fmt.Fprintln(out, "     Get one at: https://openrouter.ai/keys")
 	fmt.Fprintln(out, "  2. Chat: dragonscale agent -m \"Hello!\"")
-	return nil
-}
-
-func (s *Service) Migrate(ctx context.Context, opts MigrateOptions, out io.Writer) error {
-	_ = ctx
-	result, err := migrate.Run(migrate.Options{
-		DryRun:          opts.DryRun,
-		ConfigOnly:      opts.ConfigOnly,
-		WorkspaceOnly:   opts.WorkspaceOnly,
-		Force:           opts.Force,
-		Refresh:         opts.Refresh,
-		OpenClawHome:    opts.OpenClawHome,
-		DragonScaleHome: opts.DragonscaleHome,
-	})
-	if err != nil {
-		return err
-	}
-
-	if !opts.DryRun {
-		migrate.PrintSummary(result)
-	}
 	return nil
 }
 
@@ -481,7 +455,7 @@ func (s *Service) Status(ctx context.Context, out io.Writer) error {
 
 		memDBPath := cfg.Memory.DBPath
 		if memDBPath == "" {
-			memDBPath = filepath.Join(cfg.WorkspacePath(), "memory", "dragonscale.db")
+			memDBPath = filepath.Join(cfg.SandboxPath(), "memory", "dragonscale.db")
 		}
 		if fi, err := os.Stat(memDBPath); err == nil {
 			fmt.Printf("  DB size: %.1f KB\n", float64(fi.Size())/1024)

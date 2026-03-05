@@ -164,10 +164,6 @@ type AgentDefaults struct {
 	MaxToolIterations   int                       `json:"max_tool_iterations" env:"DRAGONSCALE_AGENTS_DEFAULTS_MAX_TOOL_ITERATIONS"`
 	ContinuityRetention ContinuityRetentionConfig `json:"continuity_retention"`
 	Compaction          CompactionConfig          `json:"compaction"`
-
-	// Deprecated: Use Sandbox instead. Kept for backward compatibility during migration.
-	Workspace           string `json:"workspace,omitempty" env:"DRAGONSCALE_AGENTS_DEFAULTS_WORKSPACE"`
-	RestrictToWorkspace bool   `json:"restrict_to_workspace,omitempty" env:"DRAGONSCALE_AGENTS_DEFAULTS_RESTRICT_TO_WORKSPACE"`
 }
 
 type ChannelsConfig struct {
@@ -659,22 +655,11 @@ func (c *Config) SandboxPath() string {
 }
 
 // RestrictToSandbox returns whether tool file operations should be restricted
-// to the sandbox directory. Also checks the deprecated RestrictToWorkspace field.
+// to the sandbox directory.
 func (c *Config) RestrictToSandbox() bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	return c.Agents.Defaults.RestrictToSandbox || c.Agents.Defaults.RestrictToWorkspace
-}
-
-// WorkspacePath returns the legacy workspace path for backward compatibility.
-// Deprecated: callers should migrate to SandboxPath().
-func (c *Config) WorkspacePath() string {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	if c.Agents.Defaults.Workspace != "" {
-		return expandHome(c.Agents.Defaults.Workspace)
-	}
-	return c.SandboxPath()
+	return c.Agents.Defaults.RestrictToSandbox
 }
 
 // DBPath returns the resolved database path.

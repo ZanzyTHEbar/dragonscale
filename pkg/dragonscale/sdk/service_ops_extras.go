@@ -14,12 +14,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/ZanzyTHEbar/dragonscale/pkg"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/config"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/itr"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/logger"
-	"github.com/ZanzyTHEbar/dragonscale/pkg/memory"
-	"github.com/ZanzyTHEbar/dragonscale/pkg/memory/delegate"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/security"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/security/securebus"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/skills"
@@ -96,11 +93,6 @@ func (s *Service) SkillsListBuiltin(ctx context.Context, out io.Writer) error {
 		return nil
 	}
 
-	legacyBuiltin := filepath.Join(filepath.Dir(s.getConfigPath()), "skills")
-	if err := s.printBuiltinFromPath(out, legacyBuiltin); err == nil {
-		return nil
-	}
-
 	return fmt.Errorf(`no builtin skills source available`)
 }
 
@@ -167,7 +159,7 @@ func (s *Service) SkillsInstallBuiltin(ctx context.Context, out io.Writer, works
 		if err != nil {
 			return err
 		}
-		workspace = cfg.WorkspacePath()
+		workspace = cfg.SandboxPath()
 	}
 
 	target := filepath.Join(workspace, "skills")
@@ -544,46 +536,6 @@ func (s *Service) DaemonStatus(ctx context.Context, out io.Writer) error {
 	}
 
 	fmt.Fprintf(out, `Daemon running with PID %d\n`, pid)
-	return nil
-}
-
-func (s *Service) MemoryMigrateSessions(ctx context.Context, out io.Writer) error {
-	cfg, err := s.LoadConfig()
-	if err != nil {
-		return err
-	}
-
-	dbPath := cfg.Memory.DBPath
-	if dbPath == "" {
-		dbPath, err = config.DefaultDBPath()
-		if err != nil {
-			return err
-		}
-	}
-
-	delegate, err := delegate.NewLibSQLDelegate(dbPath)
-	if err != nil {
-		return fmt.Errorf(`memory delegate: %w`, err)
-	}
-	defer delegate.Close()
-
-	if err := delegate.Init(context.Background()); err != nil {
-		return fmt.Errorf(`initialize memory delegate: %w`, err)
-	}
-
-	result, err := memory.MigrateFileSessions(ctx, delegate, pkg.NAME, filepath.Join(cfg.WorkspacePath(), ".sessions"))
-	if err != nil {
-		return err
-	}
-	if result == nil {
-		fmt.Fprintln(out, `No sessions to migrate.`)
-		return nil
-	}
-
-	fmt.Fprintf(out, `sessions_found=%d\n`, result.SessionsFound)
-	fmt.Fprintf(out, `sessions_migrated=%d\n`, result.SessionsMigrated)
-	fmt.Fprintf(out, `items_created=%d\n`, result.ItemsCreated)
-	fmt.Fprintf(out, `errors=%d\n`, result.Errors)
 	return nil
 }
 

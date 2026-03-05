@@ -33,7 +33,6 @@ type CLIService interface {
 	SecretService
 	DaemonService
 	MemoryService
-	MigrationService
 	StatusService
 }
 
@@ -130,11 +129,6 @@ type StatusService interface {
 	Status(context.Context, io.Writer) error
 }
 
-// MigrationService defines migration operations.
-type MigrationService interface {
-	Migrate(context.Context, MigrateOptions, io.Writer) error
-}
-
 // AuthService defines auth lifecycle operations.
 type AuthService interface {
 	AuthLogin(context.Context, io.Reader, io.Writer, string, bool) error
@@ -178,7 +172,6 @@ type DaemonService interface {
 
 // MemoryService defines memory system operations.
 type MemoryService interface {
-	MemoryMigrateSessions(context.Context, io.Writer) error
 	MemoryDBStatus(context.Context, io.Writer) error
 }
 
@@ -189,7 +182,6 @@ var (
 	_ AgentService      = (*Service)(nil)
 	_ GatewayService    = (*Service)(nil)
 	_ StatusService     = (*Service)(nil)
-	_ MigrationService  = (*Service)(nil)
 	_ AuthService       = (*Service)(nil)
 	_ CronService       = (*Service)(nil)
 	_ SkillsService     = (*Service)(nil)
