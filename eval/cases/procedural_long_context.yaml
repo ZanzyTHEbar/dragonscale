@@ -1,0 +1,1078 @@
+# Procedurally generated long-context eval cases.
+# seed: 20260221
+
+- description: "procedural long-context retrieval #01"
+  vars:
+    prompt: |
+      You are reading a synthetic operations timeline.
+      Most lines are noise; one line contains a verification code.
+      Day 1: Project-01 triage log update 4724.
+      Day 2: Project-01 prep log update 9090.
+      Day 3: Project-01 handoff log update 8310.
+      Day 4: Project-01 review log update 4049.
+      Day 5: Project-01 intake log update 8071.
+      Day 6: Project-01 triage log update 6531.
+      Day 7: Project-01 prep log update 5252.
+      Day 8: Project-01 handoff log update 2322.
+      Day 9: Project-01 review log update 2176.
+      Day 10: Project-01 intake log update 1224.
+      Day 11: Project-01 triage log update 8394.
+      Day 12: Project-01 prep log update 6655.
+      Day 13: Project-01 handoff log update 2621.
+      Day 14: Project-01 review log update 2539.
+      Day 15: Project-01 intake log update 3746.
+      Day 16: Project-01 triage log update 5170.
+      Day 17: Project-01 prep log update 1846.
+      Day 18: Project-01 handoff log update 6260.
+      Day 19: Project-01 review log update 9823.
+      Day 20: Project-01 intake log update 1966.
+      Day 21: Project-01 triage log update 5876.
+      Day 22: Project-01 prep log update 1839.
+      Day 23: Project-01 handoff log update 8409.
+      Day 24: Project-01 review log update 6835.
+      Day 25: Project-01 intake log update 6424.
+      Day 26: Project-01 triage log update 6855.
+      Day 27: Project-01 prep log update 7466.
+      Day 28: Project-01 handoff log update 5818.
+      Day 29: Project-01 review log update 3518.
+      Day 30: Project-01 intake log update 8367.
+      Day 31: Project-01 triage log update 4179.
+      Day 32: Project-01 prep log update 6414.
+      Day 33: Project-01 verification code is VC-196663; keep this for final handoff.
+      Day 34: Project-01 review log update 1058.
+      Day 35: Project-01 intake log update 3759.
+      Day 36: Project-01 triage log update 8087.
+      Day 37: Project-01 prep log update 1854.
+      Day 38: Project-01 handoff log update 1428.
+      Day 39: Project-01 review log update 6244.
+      Day 40: Project-01 intake log update 6351.
+      Day 41: Project-01 triage log update 2100.
+      Day 42: Project-01 prep log update 6095.
+      Day 43: Project-01 handoff log update 9762.
+      Day 44: Project-01 review log update 4353.
+      Day 45: Project-01 intake log update 6516.
+      Day 46: Project-01 triage log update 9419.
+      Day 47: Project-01 prep log update 4768.
+      Day 48: Project-01 handoff log update 7913.
+      Day 49: Project-01 review log update 9171.
+      Day 50: Project-01 intake log update 1345.
+      Day 51: Project-01 triage log update 4808.
+      Day 52: Project-01 prep log update 3118.
+      Day 53: Project-01 handoff log update 6090.
+      Day 54: Project-01 review log update 8856.
+      Day 55: Project-01 intake log update 2675.
+      Day 56: Project-01 triage log update 9471.
+      Day 57: Project-01 prep log update 3597.
+      Day 58: Project-01 handoff log update 1800.
+      Day 59: Project-01 review log update 4841.
+      Day 60: Project-01 intake log update 7763.
+      Day 61: Project-01 triage log update 4559.
+      Day 62: Project-01 prep log update 4940.
+      Day 63: Project-01 handoff log update 5700.
+      Day 64: Project-01 review log update 7102.
+      Day 65: Project-01 intake log update 9561.
+      Day 66: Project-01 triage log update 9114.
+      Day 67: Project-01 prep log update 8626.
+      Day 68: Project-01 handoff log update 2693.
+      Day 69: Project-01 review log update 1239.
+      Day 70: Project-01 intake log update 8061.
+      Day 71: Project-01 triage log update 3988.
+      Day 72: Project-01 prep log update 7762.
+      Day 73: Project-01 handoff log update 8651.
+      Day 74: Project-01 review log update 8699.
+      Day 75: Project-01 intake log update 4952.
+      Question: What is the verification code for Project-01? Respond with only the code.
+  assert:
+    - type: javascript
+      value: |
+        const trace = JSON.parse(output);
+        if (trace.error && !trace.output) return { pass: false, score: 0, reason: 'crashed: ' + trace.error };
+        const out = (trace.output || '').toLowerCase();
+        const expected = 'vc-196663';
+        const pass = out.includes(expected);
+        return { pass, score: pass ? 1.0 : 0.0, reason: pass ? 'retrieved correct anchor token' : `missing ${expected}` };
+
+- description: "procedural long-context retrieval #02"
+  vars:
+    prompt: |
+      You are reading a synthetic operations timeline.
+      Most lines are noise; one line contains a verification code.
+      Day 1: Project-02 triage log update 2885.
+      Day 2: Project-02 prep log update 1152.
+      Day 3: Project-02 handoff log update 1449.
+      Day 4: Project-02 review log update 8736.
+      Day 5: Project-02 intake log update 1972.
+      Day 6: Project-02 triage log update 2008.
+      Day 7: Project-02 prep log update 1757.
+      Day 8: Project-02 handoff log update 7347.
+      Day 9: Project-02 review log update 4287.
+      Day 10: Project-02 intake log update 1999.
+      Day 11: Project-02 triage log update 6305.
+      Day 12: Project-02 prep log update 9276.
+      Day 13: Project-02 handoff log update 7676.
+      Day 14: Project-02 review log update 7445.
+      Day 15: Project-02 intake log update 2758.
+      Day 16: Project-02 triage log update 2279.
+      Day 17: Project-02 prep log update 5897.
+      Day 18: Project-02 handoff log update 2059.
+      Day 19: Project-02 review log update 5491.
+      Day 20: Project-02 intake log update 3134.
+      Day 21: Project-02 triage log update 6291.
+      Day 22: Project-02 verification code is VC-670623; keep this for final handoff.
+      Day 23: Project-02 handoff log update 7169.
+      Day 24: Project-02 review log update 4356.
+      Day 25: Project-02 intake log update 7765.
+      Day 26: Project-02 triage log update 6920.
+      Day 27: Project-02 prep log update 3482.
+      Day 28: Project-02 handoff log update 9381.
+      Day 29: Project-02 review log update 2735.
+      Day 30: Project-02 intake log update 1189.
+      Day 31: Project-02 triage log update 8563.
+      Day 32: Project-02 prep log update 1435.
+      Day 33: Project-02 handoff log update 9852.
+      Day 34: Project-02 review log update 6128.
+      Day 35: Project-02 intake log update 6658.
+      Day 36: Project-02 triage log update 6303.
+      Day 37: Project-02 prep log update 3368.
+      Day 38: Project-02 handoff log update 5898.
+      Day 39: Project-02 review log update 6019.
+      Day 40: Project-02 intake log update 9254.
+      Day 41: Project-02 triage log update 3999.
+      Day 42: Project-02 prep log update 2813.
+      Day 43: Project-02 handoff log update 8183.
+      Day 44: Project-02 review log update 3097.
+      Day 45: Project-02 intake log update 3020.
+      Day 46: Project-02 triage log update 2692.
+      Day 47: Project-02 prep log update 5919.
+      Day 48: Project-02 handoff log update 3933.
+      Day 49: Project-02 review log update 9196.
+      Day 50: Project-02 intake log update 4223.
+      Day 51: Project-02 triage log update 4387.
+      Day 52: Project-02 prep log update 8239.
+      Day 53: Project-02 handoff log update 8646.
+      Day 54: Project-02 review log update 7714.
+      Day 55: Project-02 intake log update 7654.
+      Day 56: Project-02 triage log update 7942.
+      Day 57: Project-02 prep log update 6325.
+      Day 58: Project-02 handoff log update 5951.
+      Day 59: Project-02 review log update 2423.
+      Day 60: Project-02 intake log update 9167.
+      Day 61: Project-02 triage log update 9321.
+      Day 62: Project-02 prep log update 9396.
+      Day 63: Project-02 handoff log update 3367.
+      Day 64: Project-02 review log update 2094.
+      Day 65: Project-02 intake log update 2212.
+      Day 66: Project-02 triage log update 7785.
+      Day 67: Project-02 prep log update 3468.
+      Day 68: Project-02 handoff log update 1268.
+      Day 69: Project-02 review log update 4624.
+      Day 70: Project-02 intake log update 2748.
+      Day 71: Project-02 triage log update 6990.
+      Day 72: Project-02 prep log update 3829.
+      Day 73: Project-02 handoff log update 8698.
+      Day 74: Project-02 review log update 9824.
+      Day 75: Project-02 intake log update 2581.
+      Day 76: Project-02 triage log update 1266.
+      Day 77: Project-02 prep log update 6602.
+      Day 78: Project-02 handoff log update 3129.
+      Day 79: Project-02 review log update 4375.
+      Day 80: Project-02 intake log update 7967.
+      Day 81: Project-02 triage log update 1228.
+      Day 82: Project-02 prep log update 7617.
+      Day 83: Project-02 handoff log update 8094.
+      Day 84: Project-02 review log update 6698.
+      Question: What is the verification code for Project-02? Respond with only the code.
+  assert:
+    - type: javascript
+      value: |
+        const trace = JSON.parse(output);
+        if (trace.error && !trace.output) return { pass: false, score: 0, reason: 'crashed: ' + trace.error };
+        const out = (trace.output || '').toLowerCase();
+        const expected = 'vc-670623';
+        const pass = out.includes(expected);
+        return { pass, score: pass ? 1.0 : 0.0, reason: pass ? 'retrieved correct anchor token' : `missing ${expected}` };
+
+- description: "procedural long-context retrieval #03"
+  vars:
+    prompt: |
+      You are reading a synthetic operations timeline.
+      Most lines are noise; one line contains a verification code.
+      Day 1: Project-03 triage log update 3787.
+      Day 2: Project-03 prep log update 2384.
+      Day 3: Project-03 handoff log update 6578.
+      Day 4: Project-03 review log update 5910.
+      Day 5: Project-03 intake log update 7607.
+      Day 6: Project-03 triage log update 7699.
+      Day 7: Project-03 prep log update 5837.
+      Day 8: Project-03 handoff log update 3568.
+      Day 9: Project-03 review log update 2014.
+      Day 10: Project-03 verification code is VC-576667; keep this for final handoff.
+      Day 11: Project-03 triage log update 9669.
+      Day 12: Project-03 prep log update 8534.
+      Day 13: Project-03 handoff log update 8558.
+      Day 14: Project-03 review log update 1423.
+      Day 15: Project-03 intake log update 5217.
+      Day 16: Project-03 triage log update 9857.
+      Day 17: Project-03 prep log update 1685.
+      Day 18: Project-03 handoff log update 3121.
+      Day 19: Project-03 review log update 7799.
+      Day 20: Project-03 intake log update 3524.
+      Day 21: Project-03 triage log update 7818.
+      Day 22: Project-03 prep log update 2960.
+      Day 23: Project-03 handoff log update 8788.
+      Day 24: Project-03 review log update 9250.
+      Day 25: Project-03 intake log update 5980.
+      Day 26: Project-03 triage log update 4183.
+      Day 27: Project-03 prep log update 6406.
+      Day 28: Project-03 handoff log update 7691.
+      Day 29: Project-03 review log update 7398.
+      Day 30: Project-03 intake log update 5149.
+      Day 31: Project-03 triage log update 8185.
+      Day 32: Project-03 prep log update 1834.
+      Day 33: Project-03 handoff log update 8440.
+      Day 34: Project-03 review log update 1626.
+      Day 35: Project-03 intake log update 1660.
+      Day 36: Project-03 triage log update 6367.
+      Day 37: Project-03 prep log update 5011.
+      Day 38: Project-03 handoff log update 6682.
+      Day 39: Project-03 review log update 6769.
+      Day 40: Project-03 intake log update 9690.
+      Day 41: Project-03 triage log update 6194.
+      Day 42: Project-03 prep log update 1176.
+      Day 43: Project-03 handoff log update 1332.
+      Day 44: Project-03 review log update 2891.
+      Day 45: Project-03 intake log update 9761.
+      Day 46: Project-03 triage log update 8008.
+      Day 47: Project-03 prep log update 9735.
+      Day 48: Project-03 handoff log update 1978.
+      Day 49: Project-03 review log update 9551.
+      Day 50: Project-03 intake log update 8941.
+      Day 51: Project-03 triage log update 3057.
+      Day 52: Project-03 prep log update 2768.
+      Day 53: Project-03 handoff log update 4259.
+      Day 54: Project-03 review log update 2910.
+      Day 55: Project-03 intake log update 2254.
+      Day 56: Project-03 triage log update 9429.
+      Day 57: Project-03 prep log update 3306.
+      Day 58: Project-03 handoff log update 3193.
+      Day 59: Project-03 review log update 2019.
+      Day 60: Project-03 intake log update 1624.
+      Day 61: Project-03 triage log update 2607.
+      Day 62: Project-03 prep log update 7496.
+      Day 63: Project-03 handoff log update 4343.
+      Day 64: Project-03 review log update 5007.
+      Day 65: Project-03 intake log update 8016.
+      Day 66: Project-03 triage log update 2669.
+      Day 67: Project-03 prep log update 5853.
+      Question: What is the verification code for Project-03? Respond with only the code.
+  assert:
+    - type: javascript
+      value: |
+        const trace = JSON.parse(output);
+        if (trace.error && !trace.output) return { pass: false, score: 0, reason: 'crashed: ' + trace.error };
+        const out = (trace.output || '').toLowerCase();
+        const expected = 'vc-576667';
+        const pass = out.includes(expected);
+        return { pass, score: pass ? 1.0 : 0.0, reason: pass ? 'retrieved correct anchor token' : `missing ${expected}` };
+
+- description: "procedural long-context retrieval #04"
+  vars:
+    prompt: |
+      You are reading a synthetic operations timeline.
+      Most lines are noise; one line contains a verification code.
+      Day 1: Project-04 triage log update 9703.
+      Day 2: Project-04 prep log update 1471.
+      Day 3: Project-04 handoff log update 9652.
+      Day 4: Project-04 review log update 5367.
+      Day 5: Project-04 intake log update 1788.
+      Day 6: Project-04 triage log update 5866.
+      Day 7: Project-04 prep log update 6412.
+      Day 8: Project-04 handoff log update 2589.
+      Day 9: Project-04 review log update 1043.
+      Day 10: Project-04 intake log update 1844.
+      Day 11: Project-04 triage log update 3205.
+      Day 12: Project-04 prep log update 4271.
+      Day 13: Project-04 handoff log update 7775.
+      Day 14: Project-04 review log update 5660.
+      Day 15: Project-04 intake log update 5294.
+      Day 16: Project-04 triage log update 8866.
+      Day 17: Project-04 prep log update 5567.
+      Day 18: Project-04 handoff log update 7749.
+      Day 19: Project-04 review log update 9470.
+      Day 20: Project-04 intake log update 2963.
+      Day 21: Project-04 triage log update 6535.
+      Day 22: Project-04 prep log update 1482.
+      Day 23: Project-04 handoff log update 2499.
+      Day 24: Project-04 review log update 8874.
+      Day 25: Project-04 intake log update 2693.
+      Day 26: Project-04 triage log update 2562.
+      Day 27: Project-04 prep log update 8046.
+      Day 28: Project-04 handoff log update 6193.
+      Day 29: Project-04 review log update 7629.
+      Day 30: Project-04 intake log update 5253.
+      Day 31: Project-04 triage log update 8493.
+      Day 32: Project-04 prep log update 6769.
+      Day 33: Project-04 handoff log update 1317.
+      Day 34: Project-04 review log update 2959.
+      Day 35: Project-04 intake log update 7605.
+      Day 36: Project-04 triage log update 3243.
+      Day 37: Project-04 verification code is VC-970438; keep this for final handoff.
+      Day 38: Project-04 handoff log update 5876.
+      Day 39: Project-04 review log update 2988.
+      Day 40: Project-04 intake log update 1958.
+      Day 41: Project-04 triage log update 6206.
+      Day 42: Project-04 prep log update 4834.
+      Day 43: Project-04 handoff log update 1291.
+      Day 44: Project-04 review log update 5432.
+      Day 45: Project-04 intake log update 9774.
+      Day 46: Project-04 triage log update 6213.
+      Day 47: Project-04 prep log update 1425.
+      Day 48: Project-04 handoff log update 7039.
+      Day 49: Project-04 review log update 2766.
+      Day 50: Project-04 intake log update 6343.
+      Day 51: Project-04 triage log update 1527.
+      Day 52: Project-04 prep log update 5127.
+      Day 53: Project-04 handoff log update 2435.
+      Day 54: Project-04 review log update 5884.
+      Day 55: Project-04 intake log update 6255.
+      Day 56: Project-04 triage log update 3680.
+      Day 57: Project-04 prep log update 9784.
+      Day 58: Project-04 handoff log update 5941.
+      Day 59: Project-04 review log update 2234.
+      Day 60: Project-04 intake log update 3163.
+      Day 61: Project-04 triage log update 5002.
+      Day 62: Project-04 prep log update 5919.
+      Day 63: Project-04 handoff log update 7770.
+      Day 64: Project-04 review log update 7635.
+      Day 65: Project-04 intake log update 7614.
+      Day 66: Project-04 triage log update 7990.
+      Day 67: Project-04 prep log update 4826.
+      Day 68: Project-04 handoff log update 7484.
+      Day 69: Project-04 review log update 2776.
+      Day 70: Project-04 intake log update 1604.
+      Day 71: Project-04 triage log update 4073.
+      Day 72: Project-04 prep log update 1181.
+      Day 73: Project-04 handoff log update 9633.
+      Day 74: Project-04 review log update 7875.
+      Day 75: Project-04 intake log update 6222.
+      Day 76: Project-04 triage log update 8032.
+      Day 77: Project-04 prep log update 7584.
+      Day 78: Project-04 handoff log update 9739.
+      Day 79: Project-04 review log update 7573.
+      Day 80: Project-04 intake log update 8143.
+      Day 81: Project-04 triage log update 6211.
+      Question: What is the verification code for Project-04? Respond with only the code.
+  assert:
+    - type: javascript
+      value: |
+        const trace = JSON.parse(output);
+        if (trace.error && !trace.output) return { pass: false, score: 0, reason: 'crashed: ' + trace.error };
+        const out = (trace.output || '').toLowerCase();
+        const expected = 'vc-970438';
+        const pass = out.includes(expected);
+        return { pass, score: pass ? 1.0 : 0.0, reason: pass ? 'retrieved correct anchor token' : `missing ${expected}` };
+
+- description: "procedural long-context retrieval #05"
+  vars:
+    prompt: |
+      You are reading a synthetic operations timeline.
+      Most lines are noise; one line contains a verification code.
+      Day 1: Project-05 triage log update 7613.
+      Day 2: Project-05 prep log update 5822.
+      Day 3: Project-05 handoff log update 5778.
+      Day 4: Project-05 review log update 1574.
+      Day 5: Project-05 intake log update 7713.
+      Day 6: Project-05 triage log update 3804.
+      Day 7: Project-05 prep log update 9583.
+      Day 8: Project-05 handoff log update 7470.
+      Day 9: Project-05 review log update 8825.
+      Day 10: Project-05 intake log update 6711.
+      Day 11: Project-05 triage log update 7309.
+      Day 12: Project-05 prep log update 5081.
+      Day 13: Project-05 handoff log update 5538.
+      Day 14: Project-05 review log update 1375.
+      Day 15: Project-05 intake log update 9131.
+      Day 16: Project-05 triage log update 5840.
+      Day 17: Project-05 prep log update 2780.
+      Day 18: Project-05 handoff log update 1111.
+      Day 19: Project-05 review log update 2229.
+      Day 20: Project-05 intake log update 7863.
+      Day 21: Project-05 triage log update 5403.
+      Day 22: Project-05 prep log update 5667.
+      Day 23: Project-05 handoff log update 8267.
+      Day 24: Project-05 review log update 1696.
+      Day 25: Project-05 intake log update 5724.
+      Day 26: Project-05 triage log update 1153.
+      Day 27: Project-05 prep log update 3998.
+      Day 28: Project-05 handoff log update 7913.
+      Day 29: Project-05 review log update 5338.
+      Day 30: Project-05 intake log update 9989.
+      Day 31: Project-05 verification code is VC-723528; keep this for final handoff.
+      Day 32: Project-05 prep log update 4455.
+      Day 33: Project-05 handoff log update 7663.
+      Day 34: Project-05 review log update 2762.
+      Day 35: Project-05 intake log update 6409.
+      Day 36: Project-05 triage log update 8368.
+      Day 37: Project-05 prep log update 3237.
+      Day 38: Project-05 handoff log update 4373.
+      Day 39: Project-05 review log update 5253.
+      Day 40: Project-05 intake log update 9739.
+      Day 41: Project-05 triage log update 1645.
+      Day 42: Project-05 prep log update 1211.
+      Day 43: Project-05 handoff log update 1609.
+      Day 44: Project-05 review log update 7893.
+      Day 45: Project-05 intake log update 3794.
+      Day 46: Project-05 triage log update 9606.
+      Day 47: Project-05 prep log update 9779.
+      Day 48: Project-05 handoff log update 2179.
+      Day 49: Project-05 review log update 2055.
+      Day 50: Project-05 intake log update 3521.
+      Day 51: Project-05 triage log update 1134.
+      Day 52: Project-05 prep log update 2188.
+      Day 53: Project-05 handoff log update 6629.
+      Day 54: Project-05 review log update 4052.
+      Day 55: Project-05 intake log update 1883.
+      Day 56: Project-05 triage log update 4850.
+      Day 57: Project-05 prep log update 2782.
+      Day 58: Project-05 handoff log update 5666.
+      Day 59: Project-05 review log update 5887.
+      Day 60: Project-05 intake log update 8795.
+      Day 61: Project-05 triage log update 5855.
+      Day 62: Project-05 prep log update 3971.
+      Day 63: Project-05 handoff log update 2327.
+      Day 64: Project-05 review log update 4010.
+      Day 65: Project-05 intake log update 2981.
+      Day 66: Project-05 triage log update 3000.
+      Day 67: Project-05 prep log update 7482.
+      Day 68: Project-05 handoff log update 3519.
+      Day 69: Project-05 review log update 6309.
+      Day 70: Project-05 intake log update 7367.
+      Day 71: Project-05 triage log update 7454.
+      Day 72: Project-05 prep log update 5942.
+      Day 73: Project-05 handoff log update 7082.
+      Day 74: Project-05 review log update 4266.
+      Day 75: Project-05 intake log update 4328.
+      Day 76: Project-05 triage log update 1048.
+      Day 77: Project-05 prep log update 5332.
+      Day 78: Project-05 handoff log update 7019.
+      Day 79: Project-05 review log update 8434.
+      Question: What is the verification code for Project-05? Respond with only the code.
+  assert:
+    - type: javascript
+      value: |
+        const trace = JSON.parse(output);
+        if (trace.error && !trace.output) return { pass: false, score: 0, reason: 'crashed: ' + trace.error };
+        const out = (trace.output || '').toLowerCase();
+        const expected = 'vc-723528';
+        const pass = out.includes(expected);
+        return { pass, score: pass ? 1.0 : 0.0, reason: pass ? 'retrieved correct anchor token' : `missing ${expected}` };
+
+- description: "procedural long-context retrieval #06"
+  vars:
+    prompt: |
+      You are reading a synthetic operations timeline.
+      Most lines are noise; one line contains a verification code.
+      Day 1: Project-06 triage log update 8717.
+      Day 2: Project-06 prep log update 3558.
+      Day 3: Project-06 handoff log update 5451.
+      Day 4: Project-06 review log update 3532.
+      Day 5: Project-06 intake log update 6661.
+      Day 6: Project-06 triage log update 4178.
+      Day 7: Project-06 prep log update 4062.
+      Day 8: Project-06 handoff log update 3380.
+      Day 9: Project-06 review log update 2023.
+      Day 10: Project-06 intake log update 8245.
+      Day 11: Project-06 triage log update 3762.
+      Day 12: Project-06 prep log update 3096.
+      Day 13: Project-06 handoff log update 5556.
+      Day 14: Project-06 review log update 8797.
+      Day 15: Project-06 intake log update 1692.
+      Day 16: Project-06 triage log update 2853.
+      Day 17: Project-06 prep log update 3634.
+      Day 18: Project-06 handoff log update 7753.
+      Day 19: Project-06 review log update 9126.
+      Day 20: Project-06 intake log update 4049.
+      Day 21: Project-06 triage log update 7003.
+      Day 22: Project-06 prep log update 7457.
+      Day 23: Project-06 handoff log update 1618.
+      Day 24: Project-06 review log update 6205.
+      Day 25: Project-06 intake log update 4290.
+      Day 26: Project-06 triage log update 5108.
+      Day 27: Project-06 prep log update 2060.
+      Day 28: Project-06 handoff log update 2235.
+      Day 29: Project-06 review log update 2436.
+      Day 30: Project-06 intake log update 4865.
+      Day 31: Project-06 triage log update 6666.
+      Day 32: Project-06 prep log update 5327.
+      Day 33: Project-06 handoff log update 6400.
+      Day 34: Project-06 review log update 5312.
+      Day 35: Project-06 intake log update 9993.
+      Day 36: Project-06 triage log update 9080.
+      Day 37: Project-06 prep log update 9131.
+      Day 38: Project-06 handoff log update 9190.
+      Day 39: Project-06 review log update 7494.
+      Day 40: Project-06 verification code is VC-235365; keep this for final handoff.
+      Day 41: Project-06 triage log update 4562.
+      Day 42: Project-06 prep log update 9999.
+      Day 43: Project-06 handoff log update 2235.
+      Day 44: Project-06 review log update 3128.
+      Day 45: Project-06 intake log update 9416.
+      Day 46: Project-06 triage log update 3870.
+      Day 47: Project-06 prep log update 7832.
+      Day 48: Project-06 handoff log update 1543.
+      Day 49: Project-06 review log update 7247.
+      Day 50: Project-06 intake log update 1887.
+      Day 51: Project-06 triage log update 5943.
+      Day 52: Project-06 prep log update 3617.
+      Day 53: Project-06 handoff log update 5497.
+      Day 54: Project-06 review log update 5117.
+      Day 55: Project-06 intake log update 3916.
+      Day 56: Project-06 triage log update 3549.
+      Day 57: Project-06 prep log update 8388.
+      Day 58: Project-06 handoff log update 7323.
+      Day 59: Project-06 review log update 7919.
+      Day 60: Project-06 intake log update 8738.
+      Day 61: Project-06 triage log update 6575.
+      Day 62: Project-06 prep log update 5178.
+      Day 63: Project-06 handoff log update 4436.
+      Day 64: Project-06 review log update 5046.
+      Day 65: Project-06 intake log update 3075.
+      Day 66: Project-06 triage log update 7552.
+      Day 67: Project-06 prep log update 8528.
+      Day 68: Project-06 handoff log update 1421.
+      Day 69: Project-06 review log update 9240.
+      Day 70: Project-06 intake log update 7132.
+      Day 71: Project-06 triage log update 1798.
+      Day 72: Project-06 prep log update 8425.
+      Day 73: Project-06 handoff log update 1681.
+      Day 74: Project-06 review log update 3939.
+      Day 75: Project-06 intake log update 1475.
+      Day 76: Project-06 triage log update 5719.
+      Day 77: Project-06 prep log update 9612.
+      Day 78: Project-06 handoff log update 7210.
+      Day 79: Project-06 review log update 2631.
+      Day 80: Project-06 intake log update 5105.
+      Question: What is the verification code for Project-06? Respond with only the code.
+  assert:
+    - type: javascript
+      value: |
+        const trace = JSON.parse(output);
+        if (trace.error && !trace.output) return { pass: false, score: 0, reason: 'crashed: ' + trace.error };
+        const out = (trace.output || '').toLowerCase();
+        const expected = 'vc-235365';
+        const pass = out.includes(expected);
+        return { pass, score: pass ? 1.0 : 0.0, reason: pass ? 'retrieved correct anchor token' : `missing ${expected}` };
+
+- description: "procedural long-context retrieval #07"
+  vars:
+    prompt: |
+      You are reading a synthetic operations timeline.
+      Most lines are noise; one line contains a verification code.
+      Day 1: Project-07 triage log update 3959.
+      Day 2: Project-07 prep log update 1360.
+      Day 3: Project-07 handoff log update 7837.
+      Day 4: Project-07 review log update 4892.
+      Day 5: Project-07 intake log update 8667.
+      Day 6: Project-07 triage log update 6276.
+      Day 7: Project-07 prep log update 8587.
+      Day 8: Project-07 handoff log update 6316.
+      Day 9: Project-07 review log update 2074.
+      Day 10: Project-07 intake log update 9845.
+      Day 11: Project-07 triage log update 8923.
+      Day 12: Project-07 prep log update 5361.
+      Day 13: Project-07 handoff log update 1407.
+      Day 14: Project-07 review log update 5673.
+      Day 15: Project-07 intake log update 3333.
+      Day 16: Project-07 triage log update 4567.
+      Day 17: Project-07 prep log update 6444.
+      Day 18: Project-07 handoff log update 8236.
+      Day 19: Project-07 review log update 8621.
+      Day 20: Project-07 intake log update 4553.
+      Day 21: Project-07 triage log update 2112.
+      Day 22: Project-07 prep log update 4223.
+      Day 23: Project-07 handoff log update 7714.
+      Day 24: Project-07 review log update 3144.
+      Day 25: Project-07 intake log update 1848.
+      Day 26: Project-07 triage log update 1458.
+      Day 27: Project-07 prep log update 8014.
+      Day 28: Project-07 handoff log update 4100.
+      Day 29: Project-07 review log update 5703.
+      Day 30: Project-07 intake log update 8083.
+      Day 31: Project-07 triage log update 9170.
+      Day 32: Project-07 verification code is VC-894348; keep this for final handoff.
+      Day 33: Project-07 handoff log update 2939.
+      Day 34: Project-07 review log update 5415.
+      Day 35: Project-07 intake log update 5132.
+      Day 36: Project-07 triage log update 9133.
+      Day 37: Project-07 prep log update 3301.
+      Day 38: Project-07 handoff log update 3591.
+      Day 39: Project-07 review log update 7276.
+      Day 40: Project-07 intake log update 9112.
+      Day 41: Project-07 triage log update 8934.
+      Day 42: Project-07 prep log update 8085.
+      Day 43: Project-07 handoff log update 5808.
+      Day 44: Project-07 review log update 5185.
+      Day 45: Project-07 intake log update 9199.
+      Day 46: Project-07 triage log update 5378.
+      Day 47: Project-07 prep log update 3845.
+      Day 48: Project-07 handoff log update 8123.
+      Day 49: Project-07 review log update 6052.
+      Day 50: Project-07 intake log update 5404.
+      Day 51: Project-07 triage log update 6802.
+      Day 52: Project-07 prep log update 7768.
+      Day 53: Project-07 handoff log update 9963.
+      Day 54: Project-07 review log update 9885.
+      Day 55: Project-07 intake log update 2856.
+      Question: What is the verification code for Project-07? Respond with only the code.
+  assert:
+    - type: javascript
+      value: |
+        const trace = JSON.parse(output);
+        if (trace.error && !trace.output) return { pass: false, score: 0, reason: 'crashed: ' + trace.error };
+        const out = (trace.output || '').toLowerCase();
+        const expected = 'vc-894348';
+        const pass = out.includes(expected);
+        return { pass, score: pass ? 1.0 : 0.0, reason: pass ? 'retrieved correct anchor token' : `missing ${expected}` };
+
+- description: "procedural long-context retrieval #08"
+  vars:
+    prompt: |
+      You are reading a synthetic operations timeline.
+      Most lines are noise; one line contains a verification code.
+      Day 1: Project-08 triage log update 7834.
+      Day 2: Project-08 prep log update 3416.
+      Day 3: Project-08 handoff log update 8630.
+      Day 4: Project-08 review log update 4977.
+      Day 5: Project-08 intake log update 5549.
+      Day 6: Project-08 triage log update 5639.
+      Day 7: Project-08 prep log update 6268.
+      Day 8: Project-08 handoff log update 8154.
+      Day 9: Project-08 review log update 3037.
+      Day 10: Project-08 intake log update 2035.
+      Day 11: Project-08 triage log update 4085.
+      Day 12: Project-08 prep log update 6443.
+      Day 13: Project-08 handoff log update 7022.
+      Day 14: Project-08 review log update 7154.
+      Day 15: Project-08 intake log update 7633.
+      Day 16: Project-08 triage log update 3811.
+      Day 17: Project-08 prep log update 9363.
+      Day 18: Project-08 handoff log update 9666.
+      Day 19: Project-08 review log update 6590.
+      Day 20: Project-08 intake log update 6745.
+      Day 21: Project-08 triage log update 2726.
+      Day 22: Project-08 prep log update 9338.
+      Day 23: Project-08 handoff log update 9441.
+      Day 24: Project-08 review log update 1732.
+      Day 25: Project-08 intake log update 8026.
+      Day 26: Project-08 triage log update 9856.
+      Day 27: Project-08 prep log update 3478.
+      Day 28: Project-08 handoff log update 8696.
+      Day 29: Project-08 review log update 4275.
+      Day 30: Project-08 intake log update 9743.
+      Day 31: Project-08 triage log update 8091.
+      Day 32: Project-08 prep log update 5247.
+      Day 33: Project-08 handoff log update 5873.
+      Day 34: Project-08 review log update 6953.
+      Day 35: Project-08 intake log update 2689.
+      Day 36: Project-08 triage log update 1172.
+      Day 37: Project-08 prep log update 1303.
+      Day 38: Project-08 handoff log update 3619.
+      Day 39: Project-08 verification code is VC-154271; keep this for final handoff.
+      Day 40: Project-08 intake log update 6593.
+      Day 41: Project-08 triage log update 1296.
+      Day 42: Project-08 prep log update 9031.
+      Day 43: Project-08 handoff log update 7247.
+      Day 44: Project-08 review log update 6028.
+      Day 45: Project-08 intake log update 6866.
+      Day 46: Project-08 triage log update 6354.
+      Day 47: Project-08 prep log update 6905.
+      Day 48: Project-08 handoff log update 2485.
+      Day 49: Project-08 review log update 1175.
+      Day 50: Project-08 intake log update 6899.
+      Day 51: Project-08 triage log update 5475.
+      Day 52: Project-08 prep log update 3702.
+      Day 53: Project-08 handoff log update 8930.
+      Day 54: Project-08 review log update 2514.
+      Day 55: Project-08 intake log update 3695.
+      Day 56: Project-08 triage log update 8223.
+      Day 57: Project-08 prep log update 8284.
+      Day 58: Project-08 handoff log update 8505.
+      Day 59: Project-08 review log update 1274.
+      Day 60: Project-08 intake log update 2291.
+      Day 61: Project-08 triage log update 5123.
+      Day 62: Project-08 prep log update 1490.
+      Day 63: Project-08 handoff log update 7615.
+      Day 64: Project-08 review log update 3636.
+      Day 65: Project-08 intake log update 8225.
+      Day 66: Project-08 triage log update 9111.
+      Day 67: Project-08 prep log update 2978.
+      Day 68: Project-08 handoff log update 3536.
+      Day 69: Project-08 review log update 4297.
+      Day 70: Project-08 intake log update 2249.
+      Day 71: Project-08 triage log update 1433.
+      Day 72: Project-08 prep log update 8897.
+      Day 73: Project-08 handoff log update 9743.
+      Day 74: Project-08 review log update 1518.
+      Day 75: Project-08 intake log update 8506.
+      Day 76: Project-08 triage log update 5619.
+      Day 77: Project-08 prep log update 2560.
+      Day 78: Project-08 handoff log update 7708.
+      Day 79: Project-08 review log update 4609.
+      Day 80: Project-08 intake log update 1785.
+      Day 81: Project-08 triage log update 1081.
+      Day 82: Project-08 prep log update 4582.
+      Question: What is the verification code for Project-08? Respond with only the code.
+  assert:
+    - type: javascript
+      value: |
+        const trace = JSON.parse(output);
+        if (trace.error && !trace.output) return { pass: false, score: 0, reason: 'crashed: ' + trace.error };
+        const out = (trace.output || '').toLowerCase();
+        const expected = 'vc-154271';
+        const pass = out.includes(expected);
+        return { pass, score: pass ? 1.0 : 0.0, reason: pass ? 'retrieved correct anchor token' : `missing ${expected}` };
+
+- description: "procedural long-context retrieval #09"
+  vars:
+    prompt: |
+      You are reading a synthetic operations timeline.
+      Most lines are noise; one line contains a verification code.
+      Day 1: Project-09 triage log update 4879.
+      Day 2: Project-09 prep log update 9249.
+      Day 3: Project-09 handoff log update 4394.
+      Day 4: Project-09 review log update 4528.
+      Day 5: Project-09 intake log update 8107.
+      Day 6: Project-09 triage log update 2826.
+      Day 7: Project-09 prep log update 8132.
+      Day 8: Project-09 handoff log update 6088.
+      Day 9: Project-09 review log update 4112.
+      Day 10: Project-09 intake log update 9397.
+      Day 11: Project-09 triage log update 5597.
+      Day 12: Project-09 prep log update 9002.
+      Day 13: Project-09 handoff log update 8837.
+      Day 14: Project-09 verification code is VC-505568; keep this for final handoff.
+      Day 15: Project-09 intake log update 2846.
+      Day 16: Project-09 triage log update 6865.
+      Day 17: Project-09 prep log update 4458.
+      Day 18: Project-09 handoff log update 1013.
+      Day 19: Project-09 review log update 8723.
+      Day 20: Project-09 intake log update 2359.
+      Day 21: Project-09 triage log update 4334.
+      Day 22: Project-09 prep log update 8135.
+      Day 23: Project-09 handoff log update 3107.
+      Day 24: Project-09 review log update 1031.
+      Day 25: Project-09 intake log update 4948.
+      Day 26: Project-09 triage log update 3588.
+      Day 27: Project-09 prep log update 8671.
+      Day 28: Project-09 handoff log update 8305.
+      Day 29: Project-09 review log update 7036.
+      Day 30: Project-09 intake log update 9056.
+      Day 31: Project-09 triage log update 4617.
+      Day 32: Project-09 prep log update 9188.
+      Day 33: Project-09 handoff log update 8242.
+      Day 34: Project-09 review log update 1224.
+      Day 35: Project-09 intake log update 2919.
+      Day 36: Project-09 triage log update 8187.
+      Day 37: Project-09 prep log update 5655.
+      Day 38: Project-09 handoff log update 8489.
+      Day 39: Project-09 review log update 6618.
+      Day 40: Project-09 intake log update 6921.
+      Day 41: Project-09 triage log update 4247.
+      Day 42: Project-09 prep log update 3068.
+      Day 43: Project-09 handoff log update 9577.
+      Day 44: Project-09 review log update 7878.
+      Day 45: Project-09 intake log update 2404.
+      Day 46: Project-09 triage log update 1536.
+      Day 47: Project-09 prep log update 3317.
+      Day 48: Project-09 handoff log update 7064.
+      Day 49: Project-09 review log update 1095.
+      Day 50: Project-09 intake log update 5147.
+      Day 51: Project-09 triage log update 4835.
+      Day 52: Project-09 prep log update 1102.
+      Day 53: Project-09 handoff log update 8936.
+      Day 54: Project-09 review log update 4556.
+      Day 55: Project-09 intake log update 7973.
+      Day 56: Project-09 triage log update 2661.
+      Day 57: Project-09 prep log update 1892.
+      Day 58: Project-09 handoff log update 1487.
+      Day 59: Project-09 review log update 5724.
+      Day 60: Project-09 intake log update 2142.
+      Day 61: Project-09 triage log update 9355.
+      Day 62: Project-09 prep log update 9258.
+      Day 63: Project-09 handoff log update 4236.
+      Day 64: Project-09 review log update 8829.
+      Day 65: Project-09 intake log update 1068.
+      Day 66: Project-09 triage log update 4046.
+      Day 67: Project-09 prep log update 9284.
+      Day 68: Project-09 handoff log update 1922.
+      Day 69: Project-09 review log update 1286.
+      Day 70: Project-09 intake log update 8256.
+      Day 71: Project-09 triage log update 7244.
+      Day 72: Project-09 prep log update 1556.
+      Day 73: Project-09 handoff log update 8270.
+      Day 74: Project-09 review log update 8725.
+      Day 75: Project-09 intake log update 4427.
+      Day 76: Project-09 triage log update 3234.
+      Day 77: Project-09 prep log update 5235.
+      Day 78: Project-09 handoff log update 4561.
+      Day 79: Project-09 review log update 5113.
+      Day 80: Project-09 intake log update 5418.
+      Day 81: Project-09 triage log update 6650.
+      Day 82: Project-09 prep log update 3936.
+      Question: What is the verification code for Project-09? Respond with only the code.
+  assert:
+    - type: javascript
+      value: |
+        const trace = JSON.parse(output);
+        if (trace.error && !trace.output) return { pass: false, score: 0, reason: 'crashed: ' + trace.error };
+        const out = (trace.output || '').toLowerCase();
+        const expected = 'vc-505568';
+        const pass = out.includes(expected);
+        return { pass, score: pass ? 1.0 : 0.0, reason: pass ? 'retrieved correct anchor token' : `missing ${expected}` };
+
+- description: "procedural long-context retrieval #10"
+  vars:
+    prompt: |
+      You are reading a synthetic operations timeline.
+      Most lines are noise; one line contains a verification code.
+      Day 1: Project-10 triage log update 8743.
+      Day 2: Project-10 prep log update 2403.
+      Day 3: Project-10 handoff log update 6317.
+      Day 4: Project-10 review log update 1999.
+      Day 5: Project-10 intake log update 8731.
+      Day 6: Project-10 triage log update 3198.
+      Day 7: Project-10 prep log update 6483.
+      Day 8: Project-10 handoff log update 8328.
+      Day 9: Project-10 review log update 8220.
+      Day 10: Project-10 intake log update 4463.
+      Day 11: Project-10 triage log update 5394.
+      Day 12: Project-10 prep log update 4394.
+      Day 13: Project-10 handoff log update 5301.
+      Day 14: Project-10 review log update 7144.
+      Day 15: Project-10 intake log update 3881.
+      Day 16: Project-10 triage log update 3960.
+      Day 17: Project-10 prep log update 1283.
+      Day 18: Project-10 handoff log update 4175.
+      Day 19: Project-10 review log update 5472.
+      Day 20: Project-10 intake log update 7120.
+      Day 21: Project-10 triage log update 8233.
+      Day 22: Project-10 prep log update 3262.
+      Day 23: Project-10 handoff log update 5337.
+      Day 24: Project-10 review log update 1620.
+      Day 25: Project-10 intake log update 6645.
+      Day 26: Project-10 triage log update 7315.
+      Day 27: Project-10 verification code is VC-317679; keep this for final handoff.
+      Day 28: Project-10 handoff log update 8339.
+      Day 29: Project-10 review log update 8768.
+      Day 30: Project-10 intake log update 3049.
+      Day 31: Project-10 triage log update 3538.
+      Day 32: Project-10 prep log update 1101.
+      Day 33: Project-10 handoff log update 9343.
+      Day 34: Project-10 review log update 6763.
+      Day 35: Project-10 intake log update 7171.
+      Day 36: Project-10 triage log update 5651.
+      Day 37: Project-10 prep log update 1300.
+      Day 38: Project-10 handoff log update 5636.
+      Day 39: Project-10 review log update 8344.
+      Day 40: Project-10 intake log update 4340.
+      Day 41: Project-10 triage log update 9145.
+      Day 42: Project-10 prep log update 5680.
+      Day 43: Project-10 handoff log update 2702.
+      Day 44: Project-10 review log update 1154.
+      Day 45: Project-10 intake log update 6939.
+      Day 46: Project-10 triage log update 4831.
+      Day 47: Project-10 prep log update 6441.
+      Day 48: Project-10 handoff log update 5018.
+      Day 49: Project-10 review log update 2100.
+      Day 50: Project-10 intake log update 2655.
+      Day 51: Project-10 triage log update 4216.
+      Day 52: Project-10 prep log update 6151.
+      Day 53: Project-10 handoff log update 5312.
+      Day 54: Project-10 review log update 6356.
+      Day 55: Project-10 intake log update 8832.
+      Question: What is the verification code for Project-10? Respond with only the code.
+  assert:
+    - type: javascript
+      value: |
+        const trace = JSON.parse(output);
+        if (trace.error && !trace.output) return { pass: false, score: 0, reason: 'crashed: ' + trace.error };
+        const out = (trace.output || '').toLowerCase();
+        const expected = 'vc-317679';
+        const pass = out.includes(expected);
+        return { pass, score: pass ? 1.0 : 0.0, reason: pass ? 'retrieved correct anchor token' : `missing ${expected}` };
+
+- description: "procedural long-context retrieval #11"
+  vars:
+    prompt: |
+      You are reading a synthetic operations timeline.
+      Most lines are noise; one line contains a verification code.
+      Day 1: Project-11 triage log update 4415.
+      Day 2: Project-11 prep log update 4797.
+      Day 3: Project-11 handoff log update 7283.
+      Day 4: Project-11 review log update 1576.
+      Day 5: Project-11 intake log update 4941.
+      Day 6: Project-11 triage log update 8786.
+      Day 7: Project-11 prep log update 9383.
+      Day 8: Project-11 handoff log update 4790.
+      Day 9: Project-11 review log update 7418.
+      Day 10: Project-11 intake log update 7825.
+      Day 11: Project-11 triage log update 1145.
+      Day 12: Project-11 prep log update 3533.
+      Day 13: Project-11 handoff log update 4310.
+      Day 14: Project-11 review log update 7613.
+      Day 15: Project-11 intake log update 5658.
+      Day 16: Project-11 verification code is VC-858501; keep this for final handoff.
+      Day 17: Project-11 prep log update 1716.
+      Day 18: Project-11 handoff log update 4834.
+      Day 19: Project-11 review log update 8177.
+      Day 20: Project-11 intake log update 1869.
+      Day 21: Project-11 triage log update 6279.
+      Day 22: Project-11 prep log update 1652.
+      Day 23: Project-11 handoff log update 8355.
+      Day 24: Project-11 review log update 4040.
+      Day 25: Project-11 intake log update 1680.
+      Day 26: Project-11 triage log update 8200.
+      Day 27: Project-11 prep log update 8352.
+      Day 28: Project-11 handoff log update 7944.
+      Day 29: Project-11 review log update 9815.
+      Day 30: Project-11 intake log update 9287.
+      Day 31: Project-11 triage log update 4463.
+      Day 32: Project-11 prep log update 4799.
+      Day 33: Project-11 handoff log update 2742.
+      Day 34: Project-11 review log update 2609.
+      Day 35: Project-11 intake log update 2414.
+      Day 36: Project-11 triage log update 6706.
+      Day 37: Project-11 prep log update 1079.
+      Day 38: Project-11 handoff log update 6394.
+      Day 39: Project-11 review log update 4832.
+      Day 40: Project-11 intake log update 1008.
+      Day 41: Project-11 triage log update 8825.
+      Day 42: Project-11 prep log update 9492.
+      Day 43: Project-11 handoff log update 7090.
+      Day 44: Project-11 review log update 9077.
+      Day 45: Project-11 intake log update 8175.
+      Day 46: Project-11 triage log update 9633.
+      Day 47: Project-11 prep log update 7943.
+      Day 48: Project-11 handoff log update 1411.
+      Day 49: Project-11 review log update 3806.
+      Day 50: Project-11 intake log update 3304.
+      Day 51: Project-11 triage log update 5226.
+      Day 52: Project-11 prep log update 9640.
+      Day 53: Project-11 handoff log update 9957.
+      Day 54: Project-11 review log update 8485.
+      Day 55: Project-11 intake log update 3473.
+      Day 56: Project-11 triage log update 2981.
+      Day 57: Project-11 prep log update 4789.
+      Day 58: Project-11 handoff log update 9593.
+      Day 59: Project-11 review log update 4029.
+      Day 60: Project-11 intake log update 6974.
+      Question: What is the verification code for Project-11? Respond with only the code.
+  assert:
+    - type: javascript
+      value: |
+        const trace = JSON.parse(output);
+        if (trace.error && !trace.output) return { pass: false, score: 0, reason: 'crashed: ' + trace.error };
+        const out = (trace.output || '').toLowerCase();
+        const expected = 'vc-858501';
+        const pass = out.includes(expected);
+        return { pass, score: pass ? 1.0 : 0.0, reason: pass ? 'retrieved correct anchor token' : `missing ${expected}` };
+
+- description: "procedural long-context retrieval #12"
+  vars:
+    prompt: |
+      You are reading a synthetic operations timeline.
+      Most lines are noise; one line contains a verification code.
+      Day 1: Project-12 triage log update 6479.
+      Day 2: Project-12 prep log update 8353.
+      Day 3: Project-12 handoff log update 3114.
+      Day 4: Project-12 review log update 8512.
+      Day 5: Project-12 intake log update 8790.
+      Day 6: Project-12 triage log update 7724.
+      Day 7: Project-12 prep log update 4843.
+      Day 8: Project-12 handoff log update 7933.
+      Day 9: Project-12 review log update 1161.
+      Day 10: Project-12 intake log update 3526.
+      Day 11: Project-12 triage log update 3440.
+      Day 12: Project-12 prep log update 8117.
+      Day 13: Project-12 handoff log update 5009.
+      Day 14: Project-12 review log update 9529.
+      Day 15: Project-12 intake log update 3888.
+      Day 16: Project-12 triage log update 5331.
+      Day 17: Project-12 prep log update 8663.
+      Day 18: Project-12 handoff log update 3061.
+      Day 19: Project-12 review log update 2210.
+      Day 20: Project-12 intake log update 8518.
+      Day 21: Project-12 triage log update 8413.
+      Day 22: Project-12 prep log update 5159.
+      Day 23: Project-12 handoff log update 7842.
+      Day 24: Project-12 review log update 3297.
+      Day 25: Project-12 verification code is VC-657887; keep this for final handoff.
+      Day 26: Project-12 triage log update 7356.
+      Day 27: Project-12 prep log update 1145.
+      Day 28: Project-12 handoff log update 3537.
+      Day 29: Project-12 review log update 8634.
+      Day 30: Project-12 intake log update 9823.
+      Day 31: Project-12 triage log update 6410.
+      Day 32: Project-12 prep log update 1219.
+      Day 33: Project-12 handoff log update 2155.
+      Day 34: Project-12 review log update 6570.
+      Day 35: Project-12 intake log update 5525.
+      Day 36: Project-12 triage log update 5917.
+      Day 37: Project-12 prep log update 6945.
+      Day 38: Project-12 handoff log update 9085.
+      Day 39: Project-12 review log update 3901.
+      Day 40: Project-12 intake log update 1996.
+      Day 41: Project-12 triage log update 6719.
+      Day 42: Project-12 prep log update 7988.
+      Day 43: Project-12 handoff log update 9731.
+      Day 44: Project-12 review log update 1847.
+      Day 45: Project-12 intake log update 2642.
+      Day 46: Project-12 triage log update 2679.
+      Day 47: Project-12 prep log update 7161.
+      Day 48: Project-12 handoff log update 4034.
+      Day 49: Project-12 review log update 8722.
+      Day 50: Project-12 intake log update 8610.
+      Day 51: Project-12 triage log update 7421.
+      Day 52: Project-12 prep log update 9363.
+      Day 53: Project-12 handoff log update 6043.
+      Day 54: Project-12 review log update 8315.
+      Day 55: Project-12 intake log update 3031.
+      Day 56: Project-12 triage log update 6109.
+      Day 57: Project-12 prep log update 2448.
+      Day 58: Project-12 handoff log update 7281.
+      Day 59: Project-12 review log update 7185.
+      Day 60: Project-12 intake log update 3131.
+      Day 61: Project-12 triage log update 3758.
+      Day 62: Project-12 prep log update 5243.
+      Day 63: Project-12 handoff log update 7852.
+      Day 64: Project-12 review log update 5920.
+      Day 65: Project-12 intake log update 1695.
+      Day 66: Project-12 triage log update 5661.
+      Day 67: Project-12 prep log update 4528.
+      Day 68: Project-12 handoff log update 6326.
+      Day 69: Project-12 review log update 3197.
+      Day 70: Project-12 intake log update 5901.
+      Day 71: Project-12 triage log update 3526.
+      Day 72: Project-12 prep log update 2600.
+      Day 73: Project-12 handoff log update 8303.
+      Day 74: Project-12 review log update 7691.
+      Day 75: Project-12 intake log update 5203.
+      Day 76: Project-12 triage log update 2669.
+      Day 77: Project-12 prep log update 4221.
+      Day 78: Project-12 handoff log update 2574.
+      Day 79: Project-12 review log update 5068.
+      Day 80: Project-12 intake log update 8126.
+      Day 81: Project-12 triage log update 7399.
+      Day 82: Project-12 prep log update 4263.
+      Day 83: Project-12 handoff log update 2466.
+      Day 84: Project-12 review log update 5721.
+      Question: What is the verification code for Project-12? Respond with only the code.
+  assert:
+    - type: javascript
+      value: |
+        const trace = JSON.parse(output);
+        if (trace.error && !trace.output) return { pass: false, score: 0, reason: 'crashed: ' + trace.error };
+        const out = (trace.output || '').toLowerCase();
+        const expected = 'vc-657887';
+        const pass = out.includes(expected);
+        return { pass, score: pass ? 1.0 : 0.0, reason: pass ? 'retrieved correct anchor token' : `missing ${expected}` };

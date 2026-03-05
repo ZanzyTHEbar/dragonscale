@@ -1,0 +1,51 @@
+# Subagent Evaluation Cases
+# Tests synchronous subagent delegation and async spawn.
+
+- description: "subagent sync: delegate a focused subtask"
+  vars:
+    prompt: "Use a subagent to calculate the sum of 10 + 20 + 30 and report the result back to me."
+  assert:
+    - type: javascript
+      value: |
+        const trace = JSON.parse(output);
+        if (trace.error) return { pass: false, score: 0, reason: trace.error };
+        const toolCalls = trace.steps.filter(s => s.type === 'tool_call');
+        const getToolName = (t) => {
+          if (t.tool !== 'tool_call') return t.tool;
+          try { const a = typeof t.args === 'string' ? JSON.parse(t.args) : t.args; return (a && a.tool_name) || t.tool; } catch(e) { return t.tool; }
+        };
+        const toolNames = toolCalls.map(getToolName);
+        const usedSubagent = toolNames.includes('subagent') || toolNames.includes('spawn');
+        return { pass: usedSubagent, score: usedSubagent ? 1.0 : 0.0, reason: usedSubagent ? 'used subagent system' : `no subagent tools (tools: ${toolNames.join(', ')})` };
+    - type: javascript
+      value: |
+        const trace = JSON.parse(output);
+        const out = (trace.output || '');
+        const has60 = out.includes('60');
+        return { pass: has60, score: has60 ? 1.0 : 0.0, reason: has60 ? 'correct result (60)' : 'missing expected sum' };
+
+- description: "spawn async: launch a background task"
+  vars:
+    prompt: "Spawn a background task to write the text 'async-spawn-test' to a file called spawn_output.txt."
+  assert:
+    - type: javascript
+      value: |
+        const trace = JSON.parse(output);
+        if (trace.error) return { pass: false, score: 0, reason: trace.error };
+        const toolCalls = trace.steps.filter(s => s.type === 'tool_call');
+        const getToolName = (t) => {
+          if (t.tool !== 'tool_call') return t.tool;
+          try { const a = typeof t.args === 'string' ? JSON.parse(t.args) : t.args; return (a && a.tool_name) || t.tool; } catch(e) { return t.tool; }
+        };
+        const toolNames = toolCalls.map(getToolName);
+        const usedSpawn = toolNames.includes('spawn');
+        const usedAny = toolNames.length > 0;
+        return { pass: usedSpawn || usedAny, score: usedSpawn ? 1.0 : (usedAny ? 0.5 : 0.0), reason: `spawn=${usedSpawn}, any_tool=${usedAny} (tools: ${toolNames.join(', ')})` };
+    - type: javascript
+      value: |
+        const trace = JSON.parse(output);
+        const out = (trace.output || '').toLowerCase();
+        const isDefault = out.includes('completed processing but have no response');
+        if (isDefault) return { pass: false, score: 0.2, reason: 'fell back to default empty response' };
+        const acknowledged = out.length > 10;
+        return { pass: acknowledged, score: acknowledged ? 1.0 : 0.0, reason: acknowledged ? 'acknowledged task' : 'no acknowledgment' };
