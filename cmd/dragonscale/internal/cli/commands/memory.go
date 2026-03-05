@@ -22,25 +22,9 @@ func buildMemoryCommand(ctx *cli.AppContext) *cobra.Command {
 		},
 	}
 
-	cmd.AddCommand(buildMemoryMigrateSessionsCommand(ctx))
 	cmd.AddCommand(buildMemoryDBStatusCommand(ctx))
 
 	return cmd
-}
-
-func buildMemoryMigrateSessionsCommand(ctx *cli.AppContext) *cobra.Command {
-	return &cobra.Command{
-		Use:   "migrate-sessions",
-		Short: "Migrate sessions into memory DB",
-		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			if ctx == nil || ctx.Service == nil {
-				return errors.New("service is not initialized")
-			}
-
-			return ctx.Service.MemoryMigrateSessions(cmd.Context(), cmd.OutOrStdout())
-		},
-	}
 }
 
 func buildMemoryDBStatusCommand(ctx *cli.AppContext) *cobra.Command {

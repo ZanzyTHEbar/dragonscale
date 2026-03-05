@@ -10,7 +10,6 @@ func RegisterAll() {
 	// Command factories are intentionally registered by their feature modules.
 	registerAgentCommand()
 	registerGatewayCommand()
-	registerMigrateCommand()
 	registerAuthCommand()
 	registerCronCommand()
 	registerSkillsCommand()

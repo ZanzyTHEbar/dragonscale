@@ -74,7 +74,6 @@ func TestBuildRoot_RegistersExpectedCommands(t *testing.T) {
 	expected := []string{
 		"agent",
 		"gateway",
-		"migrate",
 		"auth",
 		"cron",
 		"skills",
