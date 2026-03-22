@@ -1,10 +1,28 @@
 # ADR-001: Isolated Tool Runtime (ITR) + DAG Task Executor
 
 **Date**: 2026-02-18 (updated 2026-02-19)
-**Status**: Proposed
+**Status**: Accepted (incremental rollout)
 **Authors**: @ZanzyTHEbar
 
 ---
+
+## Current Rollout Status
+
+This ADR mixes shipped kernel behavior with the longer-range secure execution roadmap.
+
+### Live in production
+
+- Layer 1-2 SecureBus mediation is active for tool execution.
+- FlatBuffers command vocabulary is live for the internal command surface.
+- Capability enforcement, secret injection, leak scanning, and audit logging are on the hot path.
+- Dependency-aware parallel tool execution is active through the DAG tool runtime.
+- `pkg/rlm` is now wired into active-context assembly as a reducer for oversized DAG / recall / archival projection segments.
+
+### Still planned
+
+- Daemon-mode SecureBus separation and Schnorr ZKP session establishment.
+- wazero-backed isolated execution for untrusted tools.
+- Full DAG-planner-time recursive RLM expansion through SecureBus as the universal long-context backbone.
 
 ## Context
 

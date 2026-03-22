@@ -821,8 +821,11 @@ func (d *LibSQLDelegate) InsertAuditEntry(ctx context.Context, entry *memory.Aud
 		SessionKey: entry.SessionKey,
 		Action:     entry.Action,
 		Target:     entry.Target,
+		ToolCallID: entry.ToolCallID,
 		Input:      &entry.Input,
 		Output:     &entry.Output,
+		Success:    entry.Success,
+		ErrorMsg:   entry.ErrorMsg,
 		DurationMs: ptrInt64(int64(entry.DurationMS)),
 	})
 	if err != nil {
@@ -854,8 +857,11 @@ func (d *LibSQLDelegate) InsertAuditEntryBatch(ctx context.Context, entries []*m
 			SessionKey: entry.SessionKey,
 			Action:     entry.Action,
 			Target:     entry.Target,
+			ToolCallID: entry.ToolCallID,
 			Input:      &entry.Input,
 			Output:     &entry.Output,
+			Success:    entry.Success,
+			ErrorMsg:   entry.ErrorMsg,
 			DurationMs: ptrInt64(int64(entry.DurationMS)),
 		})
 		if err != nil {
@@ -1097,6 +1103,31 @@ func (d *LibSQLDelegate) UpdateMemoryWeight(ctx context.Context, memoryID ids.UU
 	})
 }
 
+// StoreTaskCompletion persists a completed run for downstream RL analysis.
+func (d *LibSQLDelegate) StoreTaskCompletion(ctx context.Context, agentID string, completion memory.TaskCompletionRecord, conversationID, runID ids.UUID) error {
+	tokensUsed := int64(completion.TokensUsed)
+	toolCalls := int64(completion.ToolCalls)
+	errorsCount := int64(completion.Errors)
+	userCorrections := int64(completion.UserCorrections)
+
+	_, err := d.queries.StoreTaskCompletion(ctx, memsqlc.StoreTaskCompletionParams{
+		ID:              ids.New(),
+		AgentID:         agentID,
+		ConversationID:  conversationID,
+		RunID:           runID,
+		Description:     completion.Description,
+		TokensUsed:      &tokensUsed,
+		ToolCalls:       &toolCalls,
+		Errors:          &errorsCount,
+		UserCorrections: &userCorrections,
+		Completed:       completion.Completed,
+	})
+	if err != nil {
+		return fmt.Errorf("store task completion: %w", err)
+	}
+	return nil
+}
+
 // UpdateMemorySelfReport updates the self-reported score for a memory.
 // Implements cortex.RLStore interface.
 func (d *LibSQLDelegate) UpdateMemorySelfReport(ctx context.Context, memoryID ids.UUID, score int) error {
@@ -1235,32 +1266,31 @@ func (d *LibSQLDelegate) GetRecentAuditEntries(ctx context.Context, since time.T
 		for _, row := range rows {
 			lowerAction := strings.ToLower(strings.TrimSpace(row.Action))
 			toolName := strings.TrimSpace(row.Action)
-			if strings.HasPrefix(lowerAction, "tool_") && strings.TrimSpace(row.Target) != "" {
+			switch {
+			case strings.HasPrefix(lowerAction, "tool_"),
+				strings.HasPrefix(lowerAction, "memory_"),
+				strings.HasPrefix(lowerAction, "doc_"),
+				strings.HasPrefix(lowerAction, "state_"),
+				lowerAction == "emergency_compression":
 				toolName = strings.TrimSpace(row.Target)
 			}
 			if toolName == "" {
 				toolName = strings.TrimSpace(row.Target)
 			}
 
-			success := true
-			if lowerAction == "tool_error" || strings.Contains(lowerAction, "error") || strings.Contains(lowerAction, "fail") {
-				success = false
-			}
-
 			entry := AuditEntry{
-				ID:        row.ID.String(),
-				Timestamp: row.CreatedAt,
-				ToolName:  toolName,
-				ToolInput: "",
-				Success:   success,
-				SessionID: row.SessionKey,
-				AgentID:   row.AgentID,
+				ID:         row.ID.String(),
+				Timestamp:  row.CreatedAt,
+				ToolName:   toolName,
+				ToolCallID: row.ToolCallID,
+				ToolInput:  "",
+				Success:    row.Success,
+				ErrorMsg:   row.ErrorMsg,
+				SessionID:  row.SessionKey,
+				AgentID:    row.AgentID,
 			}
 			if row.Input != nil {
 				entry.ToolInput = *row.Input
-			}
-			if !success && row.Output != nil {
-				entry.ErrorMsg = *row.Output
 			}
 			entries = append(entries, entry)
 		}
@@ -1502,6 +1532,9 @@ func sqlcAuditToMemory(row memsqlc.AgentAuditLog) *memory.AuditEntry {
 		SessionKey: row.SessionKey,
 		Action:     row.Action,
 		Target:     row.Target,
+		ToolCallID: row.ToolCallID,
+		Success:    row.Success,
+		ErrorMsg:   row.ErrorMsg,
 		CreatedAt:  row.CreatedAt,
 	}
 	if row.Input != nil {

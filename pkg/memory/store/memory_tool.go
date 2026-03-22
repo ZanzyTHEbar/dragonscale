@@ -3,8 +3,9 @@ package store
 import (
 	"context"
 	"fmt"
-	jsonv2 "github.com/go-json-experiment/json"
 	"strings"
+
+	jsonv2 "github.com/go-json-experiment/json"
 
 	"github.com/ZanzyTHEbar/dragonscale/pkg/ids"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/memory"
@@ -131,9 +132,10 @@ func (t *MemoryTool) search(ctx context.Context, req *MemoryToolRequest) (*Memor
 	}
 
 	results, err := t.store.Search(ctx, req.Query, memory.SearchOptions{
-		AgentID: t.agentID,
-		Sectors: sectors,
-		Limit:   limit,
+		AgentID:    t.agentID,
+		SessionKey: t.session,
+		Sectors:    sectors,
+		Limit:      limit,
 	})
 	if err != nil {
 		return nil, err
@@ -152,9 +154,16 @@ func (t *MemoryTool) search(ctx context.Context, req *MemoryToolRequest) (*Memor
 
 	return &MemoryToolResponse{
 		Success: true,
-		Message: fmt.Sprintf("Found %d results for: %s", len(entries), req.Query),
+		Message: searchSummaryMessage(len(entries), req.Query),
 		Results: entries,
 	}, nil
+}
+
+func searchSummaryMessage(count int, query string) string {
+	if count == 0 {
+		return fmt.Sprintf("No results found for: %s", query)
+	}
+	return fmt.Sprintf("Found %d results for: %s", count, query)
 }
 
 func (t *MemoryTool) read(ctx context.Context, req *MemoryToolRequest) (*MemoryToolResponse, error) {

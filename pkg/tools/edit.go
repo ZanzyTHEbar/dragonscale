@@ -27,7 +27,7 @@ func (t *EditFileTool) Name() string {
 }
 
 func (t *EditFileTool) Description() string {
-	return "Edit a file by replacing old_text with new_text. The old_text must exist exactly in the file."
+	return "Edit a file by replacing old_text with new_text. The old_text must exist exactly once in the file. Example: {\"path\":\"edit_target.txt\",\"old_text\":\"world\",\"new_text\":\"dragonscale\"}."
 }
 
 func (t *EditFileTool) Parameters() map[string]interface{} {
@@ -115,7 +115,7 @@ func (t *AppendFileTool) Name() string {
 }
 
 func (t *AppendFileTool) Description() string {
-	return "Append content to the end of a file"
+	return "Append content to the end of a file. Example: {\"path\":\"append_test.txt\",\"content\":\"line two\\n\"}."
 }
 
 func (t *AppendFileTool) Parameters() map[string]interface{} {

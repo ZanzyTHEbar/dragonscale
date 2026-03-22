@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/ZanzyTHEbar/dragonscale/pkg/bus"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/config"
@@ -49,7 +50,11 @@ func createToolRegistry(workspace string, restrict bool, cfg *config.Config, msg
 	registry.Register(tools.NewAppendFileTool(workspace, restrict))
 
 	// Shell execution
-	registry.Register(tools.NewExecTool(workspace, restrict))
+	execTool := tools.NewExecTool(workspace, restrict)
+	if os.Getenv("DRAGONSCALE_EVAL_CONFIG") != "" || os.Getenv("DRAGONSCALE_EVAL_RUNTIME") != "" {
+		execTool.SetTimeout(8 * time.Second)
+	}
+	registry.Register(execTool)
 
 	if searchTool := tools.NewWebSearchTool(tools.WebSearchToolOptions{
 		BraveAPIKey:          cfg.Tools.Web.Brave.APIKey,

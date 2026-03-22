@@ -91,14 +91,14 @@ func (q *Queries) GetCompletedTasks(ctx context.Context, arg GetCompletedTasksPa
 }
 
 const GetHighTokenSessions = `-- name: GetHighTokenSessions :many
-SELECT
-    conversation_id as session_id,
+SELECT conversation_id as session_id,
     agent_id,
     SUM(COALESCE(tokens_used, 0)) as total_tokens,
     COUNT(*) as task_count
 FROM task_completions
 WHERE created_at > strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-24 hours')
-GROUP BY conversation_id, agent_id
+GROUP BY conversation_id,
+    agent_id
 HAVING SUM(COALESCE(tokens_used, 0)) > ?1
 ORDER BY total_tokens DESC
 LIMIT ?2
@@ -118,14 +118,14 @@ type GetHighTokenSessionsRow struct {
 
 // Get sessions with high token usage grouped by conversation/agent
 //
-//	SELECT
-//	    conversation_id as session_id,
+//	SELECT conversation_id as session_id,
 //	    agent_id,
 //	    SUM(COALESCE(tokens_used, 0)) as total_tokens,
 //	    COUNT(*) as task_count
 //	FROM task_completions
 //	WHERE created_at > strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-24 hours')
-//	GROUP BY conversation_id, agent_id
+//	GROUP BY conversation_id,
+//	    agent_id
 //	HAVING SUM(COALESCE(tokens_used, 0)) > ?1
 //	ORDER BY total_tokens DESC
 //	LIMIT ?2
@@ -319,7 +319,6 @@ func (q *Queries) GetRetrievedMemories(ctx context.Context, arg GetRetrievedMemo
 }
 
 const GetTaskBaseline = `-- name: GetTaskBaseline :one
-
 SELECT agent_id,
     count,
     mean_tokens,
@@ -682,9 +681,14 @@ func (q *Queries) StoreTaskCompletion(ctx context.Context, arg StoreTaskCompleti
 
 const StoreTaskRetrieval = `-- name: StoreTaskRetrieval :exec
 INSERT INTO task_retrievals (id, task_id, memory_id, similarity)
-VALUES (?1, ?2, ?3, ?4)
-ON CONFLICT (task_id, memory_id) DO UPDATE SET
-    similarity = excluded.similarity
+VALUES (
+        ?1,
+        ?2,
+        ?3,
+        ?4
+    ) ON CONFLICT (task_id, memory_id) DO
+UPDATE
+SET similarity = excluded.similarity
 `
 
 type StoreTaskRetrievalParams struct {
@@ -697,9 +701,14 @@ type StoreTaskRetrievalParams struct {
 // Store a memory retrieval record for a task
 //
 //	INSERT INTO task_retrievals (id, task_id, memory_id, similarity)
-//	VALUES (?1, ?2, ?3, ?4)
-//	ON CONFLICT (task_id, memory_id) DO UPDATE SET
-//	    similarity = excluded.similarity
+//	VALUES (
+//	        ?1,
+//	        ?2,
+//	        ?3,
+//	        ?4
+//	    ) ON CONFLICT (task_id, memory_id) DO
+//	UPDATE
+//	SET similarity = excluded.similarity
 func (q *Queries) StoreTaskRetrieval(ctx context.Context, arg StoreTaskRetrievalParams) error {
 	_, err := q.db.ExecContext(ctx, StoreTaskRetrieval,
 		arg.ID,
@@ -792,8 +801,7 @@ VALUES (
         ?7,
         ?8,
         datetime('now')
-    )
-ON CONFLICT (agent_id) DO
+    ) ON CONFLICT (agent_id) DO
 UPDATE
 SET count = excluded.count,
     mean_tokens = excluded.mean_tokens,
@@ -839,8 +847,7 @@ type UpdateTaskBaselineParams struct {
 //	        ?7,
 //	        ?8,
 //	        datetime('now')
-//	    )
-//	ON CONFLICT (agent_id) DO
+//	    ) ON CONFLICT (agent_id) DO
 //	UPDATE
 //	SET count = excluded.count,
 //	    mean_tokens = excluded.mean_tokens,

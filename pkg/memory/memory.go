@@ -293,8 +293,11 @@ type AuditEntry struct {
 	SessionKey string
 	Action     string // "tool_call", "memory_write", "doc_update", "state_change"
 	Target     string // tool name, doc name, key name
+	ToolCallID string
 	Input      string
 	Output     string
+	Success    bool
+	ErrorMsg   string
 	DurationMS int
 	CreatedAt  time.Time
 }

@@ -16,23 +16,6 @@ import (
 
 const defaultToolMaxConcurrency = 4
 
-type ctxStepIndexKey struct{}
-
-func WithStepIndex(ctx context.Context, stepIndex int) context.Context {
-	return context.WithValue(ctx, ctxStepIndexKey{}, stepIndex)
-}
-
-func StepIndexFromCtx(ctx context.Context) int {
-	v := ctx.Value(ctxStepIndexKey{})
-	if v == nil {
-		return 0
-	}
-	if i, ok := v.(int); ok {
-		return i
-	}
-	return 0
-}
-
 // OffloadingToolRuntime wraps a base ToolRuntime and applies tool result
 // offloading policy:
 //   - Always offload full results to KV delegate.
@@ -78,7 +61,7 @@ func (r OffloadingToolRuntime) Execute(ctx context.Context, tools []fantasy.Agen
 		chunkChars = 2_000
 	}
 
-	stepIndex := StepIndexFromCtx(ctx)
+	stepIndex := fantasy.StepIndexFromCtx(ctx)
 
 	results, err := r.Base.Execute(ctx, tools, toolCalls, nil)
 	if err != nil {

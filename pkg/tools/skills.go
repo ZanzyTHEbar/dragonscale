@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"sync"
 
@@ -33,7 +34,7 @@ func (t *SkillSearchTool) getGraph() *skills.SkillGraph {
 func (t *SkillSearchTool) Name() string { return "skill_search" }
 
 func (t *SkillSearchTool) Description() string {
-	return "Search available skills by keyword. Returns matching skill names, descriptions, tags, and domains without loading full content. Use this to discover relevant skills before reading them."
+	return "Search available skills by keyword. Returns matching skill names, descriptions, tags, and domains without loading full content. Use this directly for skill discovery instead of tool_search."
 }
 
 func (t *SkillSearchTool) Parameters() map[string]interface{} {
@@ -96,7 +97,7 @@ func NewSkillReadTool(loader *skills.SkillsLoader) *SkillReadTool {
 func (t *SkillReadTool) Name() string { return "skill_read" }
 
 func (t *SkillReadTool) Description() string {
-	return "Load the full content of a specific skill by name. Use skill_search first to find relevant skill names, then read the ones you need."
+	return "Load the full content of a specific skill by name. Use skill_search first to find relevant skill names, then call skill_read with {\"name\":\"skill-name\"}."
 }
 
 func (t *SkillReadTool) Parameters() map[string]interface{} {
@@ -113,17 +114,98 @@ func (t *SkillReadTool) Parameters() map[string]interface{} {
 }
 
 func (t *SkillReadTool) Execute(_ context.Context, args map[string]interface{}) *ToolResult {
-	name, _ := args["name"].(string)
+	name := firstNonEmptyString(args, "name", "skill_name", "skill", "path", "query", "title")
+	if name == "" && len(args) == 1 {
+		for _, raw := range args {
+			if s, ok := raw.(string); ok {
+				name = s
+				break
+			}
+		}
+	}
 	if name == "" {
 		return ErrorResult("name is required")
 	}
 
+	name = t.normalizeSkillName(name)
 	content, ok := t.loader.LoadSkill(name)
 	if !ok {
 		return ErrorResult(fmt.Sprintf("skill '%s' not found", name))
 	}
 
 	return SilentResult(fmt.Sprintf("# Skill: %s\n\n%s", name, content))
+}
+
+func (t *SkillReadTool) normalizeSkillName(raw string) string {
+	name := strings.TrimSpace(raw)
+	name = strings.Trim(name, "\"'` \t\r\n:{}")
+	if name == "" {
+		return name
+	}
+
+	if _, ok := t.loader.LoadSkill(name); ok {
+		return name
+	}
+
+	cleaned := filepath.ToSlash(name)
+	cleaned = strings.TrimSuffix(cleaned, "/SKILL.md")
+	cleaned = strings.TrimSuffix(cleaned, "SKILL.md")
+	cleaned = strings.Trim(cleaned, "/")
+	if cleaned != "" {
+		if _, ok := t.loader.LoadSkill(cleaned); ok {
+			return cleaned
+		}
+	}
+
+	parts := strings.Split(cleaned, "/")
+	for i := len(parts) - 1; i >= 0; i-- {
+		part := strings.TrimSpace(parts[i])
+		part = strings.Trim(part, "\"'`")
+		if part == "" || strings.EqualFold(part, "SKILL.md") {
+			continue
+		}
+		if _, ok := t.loader.LoadSkill(part); ok {
+			return part
+		}
+	}
+
+	lower := strings.ToLower(cleaned)
+	for _, info := range t.loader.ListSkills() {
+		if strings.Contains(lower, strings.ToLower(info.Name)) {
+			return info.Name
+		}
+	}
+
+	var partialMatches []string
+	for _, info := range t.loader.ListSkills() {
+		haystack := strings.ToLower(info.Name + " " + info.Description + " " + info.Domain + " " + strings.Join(info.Tags, " "))
+		if lower != "" && strings.Contains(haystack, lower) {
+			partialMatches = append(partialMatches, info.Name)
+		}
+	}
+	if len(partialMatches) == 1 {
+		return partialMatches[0]
+	}
+
+	return name
+}
+
+func firstNonEmptyString(args map[string]interface{}, keys ...string) string {
+	for _, key := range keys {
+		raw, ok := args[key]
+		if !ok {
+			continue
+		}
+		s, ok := raw.(string)
+		if !ok {
+			continue
+		}
+		s = strings.TrimSpace(s)
+		if s != "" {
+			return s
+		}
+	}
+	return ""
 }
 
 // SkillTraverseTool follows wikilink chains from a skill node.

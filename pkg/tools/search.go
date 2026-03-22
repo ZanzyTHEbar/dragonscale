@@ -38,7 +38,7 @@ func (t *ToolSearchTool) SetFocusContext(delegate KVStore, sessionKeyFn func() s
 func (t *ToolSearchTool) Name() string { return "tool_search" }
 
 func (t *ToolSearchTool) Description() string {
-	return "Search for available tools and skills by keyword. Returns names, descriptions, parameter schemas, and kind (tool or skill). Discovered tools become directly callable in your next step — no need to use tool_call. For skills, use skill_read to load full content."
+	return "Search for available tools by keyword when you do not already know the exact tool name. Returns tool names, descriptions, parameter schemas, and kind metadata. Discovered tools become directly callable in your next step — no need to use tool_call. Do NOT use tool_search for skill discovery; use skill_search instead."
 }
 
 func (t *ToolSearchTool) Parameters() map[string]interface{} {

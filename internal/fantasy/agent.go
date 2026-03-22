@@ -5,10 +5,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	jsonv2 "github.com/go-json-experiment/json"
 	"maps"
 	"slices"
 	"sync"
+
+	jsonv2 "github.com/go-json-experiment/json"
 
 	"charm.land/fantasy/schema"
 )
@@ -392,6 +393,7 @@ func (a *agent) Generate(ctx context.Context, opts AgentCall) (*AgentResult, err
 	fsm.Fire(ctx, ReActTriggerStart)
 
 	for {
+		stepIdx = len(steps)
 		stepInputMessages := append(initialPrompt, responseMessages...)
 		stepModel := a.settings.model
 		stepSystemPrompt := a.settings.systemPrompt
@@ -493,10 +495,11 @@ func (a *agent) Generate(ctx context.Context, opts AgentCall) (*AgentResult, err
 		fsm.Fire(ctx, ReActTriggerToolsValidated)
 
 		var toolResults []ToolResultContent
+		stepCtx := WithStepIndex(ctx, len(steps))
 		if a.settings.toolRuntime != nil {
-			toolResults, err = a.settings.toolRuntime.Execute(ctx, stepTools, stepToolCalls, nil)
+			toolResults, err = a.settings.toolRuntime.Execute(stepCtx, stepTools, stepToolCalls, nil)
 		} else {
-			toolResults, err = a.executeTools(ctx, stepTools, stepToolCalls, nil)
+			toolResults, err = a.executeTools(stepCtx, stepTools, stepToolCalls, nil)
 		}
 		fsm.Fire(ctx, ReActTriggerToolsExecuted)
 
@@ -536,7 +539,6 @@ func (a *agent) Generate(ctx context.Context, opts AgentCall) (*AgentResult, err
 			Messages: currentStepMessages,
 		}
 		steps = append(steps, stepResult)
-		stepIdx = len(steps) - 1
 
 		for _, obs := range a.settings.stepObservers {
 			obs.OnReActStep(ctx, len(steps)-1, stepResult)
@@ -816,6 +818,7 @@ func (a *agent) Stream(ctx context.Context, opts AgentStreamCall) (*AgentResult,
 	}
 
 	for stepNumber := 0; ; stepNumber++ {
+		streamStepIdx = len(steps)
 		stepInputMessages := append(initialPrompt, responseMessages...)
 		stepModel := a.settings.model
 		stepSystemPrompt := a.settings.systemPrompt
@@ -931,7 +934,6 @@ func (a *agent) Stream(ctx context.Context, opts AgentStreamCall) (*AgentResult,
 		streamFSM.Fire(ctx, ReActTriggerToolsExecuted)
 
 		steps = append(steps, result.StepResult)
-		streamStepIdx = len(steps) - 1
 		totalUsage = addUsage(totalUsage, result.StepResult.Usage)
 
 		for _, obs := range a.settings.stepObservers {
@@ -1229,6 +1231,7 @@ func (a *agent) processStepStream(ctx context.Context, stream StreamResponse, op
 	activeReasoningContent := make(map[string]reasoningContent)
 
 	useRuntimeBatch := a.settings.toolRuntime != nil
+	stepCtx := WithStepIndex(ctx, len(steps))
 
 	// Set up concurrent tool execution (used only when no ToolRuntime is set)
 	type toolExecutionRequest struct {
@@ -1261,7 +1264,7 @@ func (a *agent) processStepStream(ctx context.Context, stream StreamResponse, op
 					parallelSem <- struct{}{}
 					toolExecutionWg.Go(func() {
 						defer func() { <-parallelSem }()
-						result, isCriticalError := a.executeSingleTool(ctx, toolMap, req.toolCall, opts.OnToolResult)
+						result, isCriticalError := a.executeSingleTool(stepCtx, toolMap, req.toolCall, opts.OnToolResult)
 						toolStateMu.Lock()
 						toolResults = append(toolResults, result)
 						if isCriticalError && toolExecutionErr == nil {
@@ -1273,7 +1276,7 @@ func (a *agent) processStepStream(ctx context.Context, stream StreamResponse, op
 					})
 				} else {
 					sequentialMu.Lock()
-					result, isCriticalError := a.executeSingleTool(ctx, toolMap, req.toolCall, opts.OnToolResult)
+					result, isCriticalError := a.executeSingleTool(stepCtx, toolMap, req.toolCall, opts.OnToolResult)
 					toolStateMu.Lock()
 					toolResults = append(toolResults, result)
 					if isCriticalError && toolExecutionErr == nil {
@@ -1487,7 +1490,7 @@ func (a *agent) processStepStream(ctx context.Context, stream StreamResponse, op
 	if useRuntimeBatch {
 		if len(stepToolCalls) > 0 {
 			var err error
-			toolResults, err = a.settings.toolRuntime.Execute(ctx, stepTools, stepToolCalls, opts.OnToolResult)
+			toolResults, err = a.settings.toolRuntime.Execute(stepCtx, stepTools, stepToolCalls, opts.OnToolResult)
 			if err != nil {
 				return stepExecutionResult{}, err
 			}

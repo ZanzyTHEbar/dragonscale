@@ -30,14 +30,15 @@ type AuditAnalysisStore interface {
 
 // AuditEntry represents a single audit log entry for analysis.
 type AuditEntry struct {
-	ID        string
-	Timestamp time.Time
-	ToolName  string
-	ToolInput string
-	Success   bool
-	ErrorMsg  string
-	SessionID string
-	AgentID   string
+	ID         string
+	Timestamp  time.Time
+	ToolName   string
+	ToolCallID string
+	ToolInput  string
+	Success    bool
+	ErrorMsg   string
+	SessionID  string
+	AgentID    string
 }
 
 // ToolSequence represents a tool call in a session sequence.

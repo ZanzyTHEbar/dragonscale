@@ -257,6 +257,47 @@ func TestSearch_KeywordOnly(t *testing.T) {
 	assert.Contains(t, results[0].Content, "generics")
 }
 
+func TestSearch_KeywordOnlySkipsVectorWhenWeightZero(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+
+	del, err := delegate.NewLibSQLInMemory()
+	require.NoError(t, err)
+	require.NoError(t, del.Init(ctx))
+
+	emb := &countingEmbedder{dims: 768}
+	store := New(del, NewMarkdownChunker(MarkdownChunkerConfig{
+		ChunkSize:    200,
+		ChunkOverlap: 40,
+	}), emb, Config{
+		ContextWindowTokens:    10000,
+		OffloadThresholdTokens: 100,
+		DefaultHalfLifeHours:   168,
+	})
+	store.SetAgentID("agent-1")
+	t.Cleanup(func() { store.Close() })
+
+	require.NoError(t, store.StoreRecall(ctx, &memory.RecallItem{
+		AgentID:    "agent-1",
+		SessionKey: "s1",
+		Role:       "user",
+		Sector:     memory.SectorSemantic,
+		Importance: 0.9,
+		Content:    "Go generics were introduced in Go 1.18",
+	}))
+
+	results, err := store.Search(ctx, "generics", memory.SearchOptions{
+		AgentID:       "agent-1",
+		Limit:         10,
+		KeywordWeight: 1.0,
+		VectorWeight:  0.0,
+	})
+	require.NoError(t, err)
+	assert.NotEmpty(t, results)
+	assert.Zero(t, emb.embedCalls.Load(), "keyword-only search should not invoke vector embedding")
+	assert.Zero(t, emb.batchCalls.Load(), "keyword-only search should not invoke batch embeddings")
+}
+
 func TestSearch_HybridWithEmbeddings(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()

@@ -2,6 +2,7 @@ package delegate
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -13,14 +14,20 @@ import (
 )
 
 func makeAuditEntry(agentID, sessionKey, action, target string) *memory.AuditEntry {
+	toolCallID := ""
+	if strings.HasPrefix(action, "tool") {
+		toolCallID = "call-" + target
+	}
 	return &memory.AuditEntry{
 		ID:         ids.New(),
 		AgentID:    agentID,
 		SessionKey: sessionKey,
 		Action:     action,
 		Target:     target,
+		ToolCallID: toolCallID,
 		Input:      `{"arg":"val"}`,
 		Output:     `{"result":"ok"}`,
+		Success:    true,
 		DurationMS: 42,
 	}
 }
@@ -64,6 +71,86 @@ func TestLibSQLDelegate_InsertAuditEntry(t *testing.T) {
 			assert.Empty(t, cmp.Diff(1, count))
 		})
 	}
+}
+
+func TestLibSQLDelegate_ListAuditEntries_PreservesOutcomeMetadata(t *testing.T) {
+	t.Parallel()
+
+	d := newTestDelegate(t)
+	ctx := t.Context()
+	entry := &memory.AuditEntry{
+		ID:         ids.New(),
+		AgentID:    "a1",
+		SessionKey: "sess-1",
+		Action:     "tool_error",
+		Target:     "exec",
+		ToolCallID: "call-exec",
+		Input:      `{"command":"rm -rf /tmp/test"}`,
+		Output:     "permission denied",
+		Success:    false,
+		ErrorMsg:   "permission denied",
+		DurationMS: 9,
+	}
+
+	require.NoError(t, d.InsertAuditEntry(ctx, entry))
+
+	entries, err := d.ListAuditEntries(ctx, "a1", 10)
+	require.NoError(t, err)
+	require.Len(t, entries, 1)
+	assert.Equal(t, "call-exec", entries[0].ToolCallID)
+	assert.False(t, entries[0].Success)
+	assert.Equal(t, "permission denied", entries[0].ErrorMsg)
+}
+
+func TestLibSQLDelegate_GetRecentAuditEntries_HandlesMixedLegacyAndExplicitRows(t *testing.T) {
+	t.Parallel()
+
+	d := newTestDelegate(t)
+	ctx := t.Context()
+	now := time.Now().UTC()
+
+	_, err := d.db.ExecContext(ctx, `
+		INSERT INTO agent_audit_log (
+			id, agent_id, session_key, action, target, input, output, duration_ms, created_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, ids.New(), "a1", "sess-legacy", "tool_call", "legacy_read", `{"path":"legacy.txt"}`, `{"status":"ok"}`, 4, now)
+	require.NoError(t, err)
+
+	explicit := &memory.AuditEntry{
+		ID:         ids.New(),
+		AgentID:    "a1",
+		SessionKey: "sess-explicit",
+		Action:     "tool_call",
+		Target:     "explicit_write",
+		ToolCallID: "call-explicit-write",
+		Input:      `{"path":"new.txt"}`,
+		Output:     "write denied",
+		Success:    false,
+		ErrorMsg:   "write denied",
+		DurationMS: 7,
+	}
+	require.NoError(t, d.InsertAuditEntry(ctx, explicit))
+
+	entries, err := d.GetRecentAuditEntries(ctx, now.Add(-time.Minute))
+	require.NoError(t, err)
+	require.Len(t, entries, 2)
+
+	byTool := make(map[string]AuditEntry, len(entries))
+	for _, entry := range entries {
+		byTool[entry.ToolName] = entry
+	}
+
+	legacy, ok := byTool["legacy_read"]
+	require.True(t, ok, "legacy row missing")
+	assert.True(t, legacy.Success)
+	assert.Equal(t, "", legacy.ErrorMsg)
+
+	explicitEntry, ok := byTool["explicit_write"]
+	require.True(t, ok, "explicit row missing")
+	assert.False(t, explicitEntry.Success)
+	assert.Equal(t, "write denied", explicitEntry.ErrorMsg)
+	assert.Equal(t, "call-explicit-write", explicitEntry.ToolCallID)
+	assert.Equal(t, `{"path":"new.txt"}`, explicitEntry.ToolInput)
 }
 
 func TestLibSQLDelegate_ListAuditEntries(t *testing.T) {

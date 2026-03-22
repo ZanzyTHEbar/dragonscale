@@ -336,23 +336,31 @@ func (m *MemoryStore) Search(ctx context.Context, query string, opts memory.Sear
 	var baselineSets [][]memory.SearchResult
 	var baselineWeights []float64
 
-	// 1. Keyword search (via delegate)
 	kwWeight := opts.KeywordWeight
-	if kwWeight <= 0 {
+	vecWeight := opts.VectorWeight
+	if kwWeight == 0 && vecWeight == 0 {
 		kwWeight = 1.0
+		vecWeight = 0.8
 	}
-	kwResults, err := m.keywordSearch(ctx, query, opts, limit*2) // fetch extra for fusion
-	if err == nil && len(kwResults) > 0 {
-		baselineSets = append(baselineSets, kwResults)
-		baselineWeights = append(baselineWeights, kwWeight)
+	if kwWeight < 0 {
+		kwWeight = 0
+	}
+
+	if vecWeight < 0 {
+		vecWeight = 0
+	}
+
+	// 1. Keyword search (via delegate)
+	if kwWeight > 0 {
+		kwResults, err := m.keywordSearch(ctx, query, opts, limit*2) // fetch extra for fusion
+		if err == nil && len(kwResults) > 0 {
+			baselineSets = append(baselineSets, kwResults)
+			baselineWeights = append(baselineWeights, kwWeight)
+		}
 	}
 
 	// 2. Vector search (if embedder available)
-	vecWeight := opts.VectorWeight
-	if vecWeight <= 0 {
-		vecWeight = 0.8
-	}
-	if m.embedder != nil {
+	if vecWeight > 0 && m.embedder != nil {
 		vecResults, err := m.vectorSearch(ctx, query, opts, limit*2)
 		if err == nil && len(vecResults) > 0 {
 			baselineSets = append(baselineSets, vecResults)
@@ -481,11 +489,10 @@ func (m *MemoryStore) hybridProjectionSearch(ctx context.Context, query string, 
 
 	// Working-context view
 	wc, err := m.delegate.GetWorkingContext(ctx, m.agentID, opts.SessionKey)
-	if err == nil && wc != nil && strings.TrimSpace(wc.Content) != "" {
-		score := 0.4
-		if queryLower != "" && strings.Contains(strings.ToLower(wc.Content), queryLower) {
-			score = 0.95
-		}
+	if err == nil && wc != nil && strings.TrimSpace(wc.Content) != "" &&
+		queryLower != "" &&
+		strings.Contains(strings.ToLower(wc.Content), queryLower) &&
+		!looksLikeMemorySearchPromptEcho(wc.Content, query) {
 		content := wc.Content
 		if len(content) > 1200 {
 			content = content[:1200] + "..."
@@ -494,7 +501,7 @@ func (m *MemoryStore) hybridProjectionSearch(ctx context.Context, query string, 
 			ID:      ids.New(),
 			Content: content,
 			Source:  "working-context:" + opts.SessionKey,
-			Score:   score,
+			Score:   0.95,
 			Sector:  memory.SectorReflective,
 		})
 	}
@@ -515,6 +522,9 @@ func (m *MemoryStore) hybridProjectionSearch(ctx context.Context, query string, 
 			if err == nil {
 				for _, node := range nodes {
 					if queryLower != "" && !strings.Contains(strings.ToLower(node.Summary), queryLower) {
+						continue
+					}
+					if looksLikeMemorySearchPromptEcho(node.Summary, query) {
 						continue
 					}
 					score := 0.55 + (0.1 * float64(node.Level))
@@ -608,7 +618,10 @@ func (m *MemoryStore) keywordSearch(ctx context.Context, query string, opts memo
 	if m.delegate.HasFTS() {
 		items, err := m.delegate.SearchRecallByFTS(ctx, query, opts.AgentID, limit)
 		if err == nil && len(items) > 0 {
-			return recallItemsToResults(items), nil
+			items = filterSearchPromptEchoItems(items, query)
+			if len(items) > 0 {
+				return recallItemsToResults(items), nil
+			}
 		}
 	}
 
@@ -617,6 +630,7 @@ func (m *MemoryStore) keywordSearch(ctx context.Context, query string, opts memo
 	if err != nil {
 		return nil, err
 	}
+	items = filterSearchPromptEchoItems(items, query)
 	return recallItemsToResults(items), nil
 }
 
@@ -738,6 +752,60 @@ func recallItemsToResults(items []*memory.RecallItem) []memory.SearchResult {
 		}
 	}
 	return results
+}
+
+func filterSearchPromptEchoItems(items []*memory.RecallItem, query string) []*memory.RecallItem {
+	if len(items) == 0 {
+		return nil
+	}
+
+	filtered := items[:0]
+	for _, item := range items {
+		if shouldSuppressSearchPromptEcho(item, query) {
+			continue
+		}
+		filtered = append(filtered, item)
+	}
+	return filtered
+}
+
+func shouldSuppressSearchPromptEcho(item *memory.RecallItem, query string) bool {
+	if item == nil {
+		return false
+	}
+	if item.Role != "user" {
+		return false
+	}
+	if !strings.Contains(strings.ToLower(item.Tags), "session-message") {
+		return false
+	}
+	return looksLikeMemorySearchPromptEcho(item.Content, query)
+}
+
+func looksLikeMemorySearchPromptEcho(content, query string) bool {
+	lowerContent := strings.ToLower(strings.TrimSpace(content))
+	lowerQuery := strings.ToLower(strings.TrimSpace(query))
+	if lowerContent == "" || lowerQuery == "" {
+		return false
+	}
+	if !strings.Contains(lowerContent, lowerQuery) {
+		return false
+	}
+
+	for _, needle := range []string{
+		"search your memory",
+		"search my memory",
+		"look in your memory",
+		"look through your memory",
+		"what do you remember",
+		"tell me what you find",
+		"tell me what you remember",
+	} {
+		if strings.Contains(lowerContent, needle) {
+			return true
+		}
+	}
+	return false
 }
 
 // --- Summaries ---

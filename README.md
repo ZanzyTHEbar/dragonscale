@@ -118,15 +118,15 @@ flowchart TB
 
 | Decision | Rationale |
 |----------|-----------|
-| **Isolated Tool Runtime** | All tool calls route through a `SecureBus` that enforces capability manifests, injects secrets, scans output for leaks, and writes audit logs. The LLM never sees raw secrets. See [ADR-001](docs/adr/001-isolated-tool-runtime.md). |
+| **Isolated Tool Runtime** | All tool calls route through a `SecureBus` that enforces capability manifests, injects secrets, scans output for leaks, and writes audit logs. The LLM never sees raw secrets. Layer 1-2 are live today; daemon/WASM isolation remains optional roadmap work. See [ADR-001](docs/adr/001-isolated-tool-runtime.md). |
 | **DAG executor** | LLMCompiler-style parallel tool dispatch. The planner builds a dependency DAG in a single inference pass; the executor dispatches independent nodes concurrently. Joiner synthesizes results. Replanning on failure. Falls back to ReAct for simple single-tool cases. |
 | **Vendored Fantasy SDK** | `charm.land/fantasy` vendored into `internal/fantasy/` via `go.mod` replace directive. Enables direct modification for streaming hooks, tool call repair, and progressive disclosure. |
-| **MemGPT + Observational Memory** | Working context (hot), recall items (warm), archival chunks (cold, embedded + indexed), plus observational memory (compressed conversation history with priority-tagged observations and temporal reasoning). DAG-based context budget compression manages token allocation across tiers. |
+| **MemGPT + Projection Kernel** | Working context (hot), recall items (warm), archival chunks (cold, embedded + indexed), observational memory, immutable messages, DAG snapshots, runtime checkpoints, and an active-context projection builder that assembles the live turn context. Semantic ContextTree scoring and RLM reduction now participate in the hot path. |
 | **Progressive tool disclosure** | Agent sees only `tool_search` and `tool_call` meta-tools. Discovers actual tools on demand via fuzzy search. Cuts system prompt tokens for large registries. |
 | **libSQL over modernc/sqlite** | Native F32_BLOB for vector storage, `libsql_vector_idx` for ANN search, FTS5 for full-text. Single database, no external vector DB dependency. |
 | **BLOB primary keys** | 16-byte UUIDv7 stored as BLOB. Compact, byte-comparable, monotonically sortable by creation time. |
-| **XChaCha20-Poly1305 vault** | Secrets encrypted at rest with AES-256-GCM or XChaCha20-Poly1305. Master key from OS keyring, env var, or file. Schnorr ZKP for daemon-mode authentication. |
-| **Goose migrations** | Schema managed by `pressly/goose/v3`. 10 versioned migrations covering core schema, FTS5, vector indexes, KV store, documents, audit log, conversations, runtime state, jobs, and conversation graphs. |
+| **XChaCha20-Poly1305 vault** | Secrets encrypted at rest with AES-256-GCM or XChaCha20-Poly1305. Master key from OS keyring, env var, or file. Schnorr ZKP remains planned for daemon-mode authentication. |
+| **Goose migrations** | Schema managed by `pressly/goose/v3`. 17 versioned migrations currently cover core schema, FTS5, vector indexes, KV store, documents, audit log outcomes, conversations, runtime state, DAG/checkpoint data, map operators, memory edges, soft delete, immutable messages, and RL/task-completion tables. |
 | **FlatBuffers command protocol** | Zero-copy serialized `ToolRequest`/`ToolResponse` for the ITR command vocabulary. Same binary format across in-process channels, Unix sockets (daemon mode), and wazero WASM host calls. |
 
 ## Project Layout
@@ -220,7 +220,6 @@ Edit `~/.dragonscale/config.json`:
     }
   },
   "tools": {
-    "progressive_disclosure": true,
     "web": {
       "duckduckgo": { "enabled": true, "max_results": 5 }
     }
@@ -422,7 +421,7 @@ API key links: [OpenRouter](https://openrouter.ai/keys) · [Anthropic](https://c
 
 ## Memory System
 
-DragonScale implements a multi-tier memory system combining MemGPT-style tiered storage with observational memory compression:
+DragonScale implements a multi-tier memory system combining MemGPT-style storage with immutable history, DAG snapshots, semantic context selection, and active-context projection:
 
 | Tier | Purpose | Storage | Search |
 |------|---------|---------|--------|
@@ -430,11 +429,11 @@ DragonScale implements a multi-tier memory system combining MemGPT-style tiered 
 | **Recall Memory** | Session-scoped conversation items | Rows with metadata + timestamps | FTS5 + BM25 |
 | **Archival Memory** | Long-term knowledge, chunked + embedded | F32_BLOB embeddings + FTS5 index | Vector ANN + FTS5 fusion (RRF) |
 | **Observational Memory** | Compressed conversation history | Priority-tagged observations with 3-date model | Prefix-cacheable block |
-| **DAG Compression** | Hierarchical context summaries | Tree nodes with lossless pointers to originals | Budget-allocated traversal |
+| **DAG Snapshots** | Persistent hierarchical summaries + recovery | Snapshot/node/edge tables with lossless refs | Projection tier + DAG tools |
 
-The agent interacts with memory through a unified `memory` tool. Large tool results are automatically offloaded to archival memory. Retrieval uses Reciprocal Rank Fusion (RRF) to combine vector similarity and full-text relevance, with recency decay and metadata pre-filtering.
+The agent interacts with memory through a unified `memory` tool. Large tool results are automatically offloaded to archival memory. Retrieval uses Reciprocal Rank Fusion (RRF) to combine vector similarity and full-text relevance, with recency decay and metadata pre-filtering. Turn assembly now flows through `ActiveContextProjection`, which can combine recent immutable history, semantic ContextTree-selected recall, DAG projection segments, and RLM-reduced long-context slices before prompt rendering.
 
-Schema is managed by Goose with 10 versioned migrations.
+Schema is managed by Goose with 17 versioned migrations.
 
 ## CLI Reference
 
@@ -468,7 +467,7 @@ The SecureBus mediates all tool execution. Tools declare capabilities via the `C
 
 The pipeline: capability check → secret injection → tool execution → leak scanning → audit log.
 
-See [ADR-001](docs/adr/001-isolated-tool-runtime.md) for the full design including DAG executor convergence, RLM integration, and the FlatBuffers command protocol.
+See [ADR-001](docs/adr/001-isolated-tool-runtime.md) for the layered design, current rollout status, and the FlatBuffers command protocol.
 
 ## Development
 
@@ -549,6 +548,9 @@ A promptfoo-based evaluation harness lives in `eval/`:
 ```bash
 cd eval && go run ./cmd/eval-runner
 ```
+
+`make eval` auto-builds `eval/bin/eval-runner` when it is missing.
+`make eval-compare` builds the comparison binary for `main` in a temporary git worktree so the current checkout is never stashed or switched underneath the user.
 
 ### Syncing Upstream
 

@@ -187,6 +187,7 @@ type Querier interface {
 	//  WHERE agent_id = ?1
 	//      AND session_key = ?2
 	//      AND tags = 'session-message'
+	//      AND suppressed_at IS NULL
 	CountSessionMessages(ctx context.Context, arg CountSessionMessagesParams) (int64, error)
 	//CreateAgentCheckpoint
 	//
@@ -506,14 +507,14 @@ type Querier interface {
 	GetDocument(ctx context.Context, arg GetDocumentParams) (AgentDocument, error)
 	// Get sessions with high token usage grouped by conversation/agent
 	//
-	//  SELECT
-	//      conversation_id as session_id,
+	//  SELECT conversation_id as session_id,
 	//      agent_id,
 	//      SUM(COALESCE(tokens_used, 0)) as total_tokens,
 	//      COUNT(*) as task_count
 	//  FROM task_completions
 	//  WHERE created_at > strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-24 hours')
-	//  GROUP BY conversation_id, agent_id
+	//  GROUP BY conversation_id,
+	//      agent_id
 	//  HAVING SUM(COALESCE(tokens_used, 0)) > ?1
 	//  ORDER BY total_tokens DESC
 	//  LIMIT ?2
@@ -550,6 +551,14 @@ type Querier interface {
 	//      AND key = ?2
 	//  LIMIT 1
 	GetKV(ctx context.Context, arg GetKVParams) (AgentKv, error)
+	//GetLatestAgentConversationByTitle
+	//
+	//  SELECT id, title, created_at, updated_at
+	//  FROM agent_conversations
+	//  WHERE title = ?
+	//  ORDER BY created_at DESC
+	//  LIMIT 1
+	GetLatestAgentConversationByTitle(ctx context.Context, arg GetLatestAgentConversationByTitleParams) (AgentConversation, error)
 	//GetLatestAgentRunByConversationID
 	//
 	//  SELECT id, conversation_id, status, metadata_json, created_at, updated_at
@@ -711,7 +720,6 @@ type Querier interface {
 	// Task baseline queries for per-agent performance statistics
 	// Get the baseline statistics for an agent
 	//
-	//
 	//  SELECT agent_id,
 	//      count,
 	//      mean_tokens,
@@ -792,8 +800,11 @@ type Querier interface {
 	//          session_key,
 	//          action,
 	//          target,
+	//          tool_call_id,
 	//          input,
 	//          output,
+	//          success,
+	//          error_msg,
 	//          duration_ms,
 	//          created_at
 	//      )
@@ -806,6 +817,9 @@ type Querier interface {
 	//          ?6,
 	//          ?7,
 	//          ?8,
+	//          ?9,
+	//          ?10,
+	//          ?11,
 	//          strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
 	//      )
 	//  RETURNING id,
@@ -813,8 +827,11 @@ type Querier interface {
 	//      session_key,
 	//      action,
 	//      target,
+	//      tool_call_id,
 	//      input,
 	//      output,
+	//      success,
+	//      error_msg,
 	//      duration_ms,
 	//      created_at
 	InsertAuditEntry(ctx context.Context, arg InsertAuditEntryParams) (AgentAuditLog, error)
@@ -1338,8 +1355,11 @@ type Querier interface {
 	//      session_key,
 	//      action,
 	//      target,
+	//      tool_call_id,
 	//      input,
 	//      output,
+	//      success,
+	//      error_msg,
 	//      duration_ms,
 	//      created_at
 	//  FROM agent_audit_log
@@ -1354,8 +1374,11 @@ type Querier interface {
 	//      session_key,
 	//      action,
 	//      target,
+	//      tool_call_id,
 	//      input,
 	//      output,
+	//      success,
+	//      error_msg,
 	//      duration_ms,
 	//      created_at
 	//  FROM agent_audit_log
@@ -1371,8 +1394,11 @@ type Querier interface {
 	//      session_key,
 	//      action,
 	//      target,
+	//      tool_call_id,
 	//      input,
 	//      output,
+	//      success,
+	//      error_msg,
 	//      duration_ms,
 	//      created_at
 	//  FROM agent_audit_log
@@ -1388,8 +1414,11 @@ type Querier interface {
 	//      session_key,
 	//      action,
 	//      target,
+	//      tool_call_id,
 	//      input,
 	//      output,
+	//      success,
+	//      error_msg,
 	//      duration_ms,
 	//      created_at
 	//  FROM agent_audit_log
@@ -1403,13 +1432,17 @@ type Querier interface {
 	//      session_key,
 	//      action,
 	//      target,
+	//      tool_call_id,
 	//      input,
 	//      output,
+	//      success,
+	//      error_msg,
 	//      duration_ms,
 	//      created_at
 	//  FROM agent_audit_log
 	//  WHERE julianday(created_at) > julianday(?1)
-	//  ORDER BY created_at ASC, id ASC
+	//  ORDER BY created_at ASC,
+	//      id ASC
 	//  LIMIT ?3 OFFSET ?2
 	ListAuditEntriesGlobalSincePaged(ctx context.Context, arg ListAuditEntriesGlobalSincePagedParams) ([]AgentAuditLog, error)
 	//ListDAGEdgesBySnapshotID
@@ -1682,6 +1715,7 @@ type Querier interface {
 	//  WHERE agent_id = ?1
 	//      AND session_key = ?2
 	//      AND tags = 'session-message'
+	//      AND suppressed_at IS NULL
 	//      AND (
 	//          role = ?3
 	//          OR ?3 = ''
@@ -1707,6 +1741,7 @@ type Querier interface {
 	//  WHERE agent_id = ?1
 	//      AND session_key = ?2
 	//      AND tags = 'session-message'
+	//      AND suppressed_at IS NULL
 	//      AND (
 	//          role = ?3
 	//          OR ?3 = ''
@@ -1889,9 +1924,14 @@ type Querier interface {
 	// Store a memory retrieval record for a task
 	//
 	//  INSERT INTO task_retrievals (id, task_id, memory_id, similarity)
-	//  VALUES (?1, ?2, ?3, ?4)
-	//  ON CONFLICT (task_id, memory_id) DO UPDATE SET
-	//      similarity = excluded.similarity
+	//  VALUES (
+	//          ?1,
+	//          ?2,
+	//          ?3,
+	//          ?4
+	//      ) ON CONFLICT (task_id, memory_id) DO
+	//  UPDATE
+	//  SET similarity = excluded.similarity
 	StoreTaskRetrieval(ctx context.Context, arg StoreTaskRetrievalParams) error
 	//UpdateAgentConversationTitle
 	//
@@ -1991,8 +2031,7 @@ type Querier interface {
 	//          ?7,
 	//          ?8,
 	//          datetime('now')
-	//      )
-	//  ON CONFLICT (agent_id) DO
+	//      ) ON CONFLICT (agent_id) DO
 	//  UPDATE
 	//  SET count = excluded.count,
 	//      mean_tokens = excluded.mean_tokens,

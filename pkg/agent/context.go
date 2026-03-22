@@ -31,6 +31,7 @@ type ContextBuilder struct {
 	knowledgeBlock   string                // Pre-rendered knowledge block from Focus completions
 	contextTreeBlock string                // Pre-rendered Context-Tree selected history
 	contextWindow    int                   // Max tokens for context window (0 = no limit)
+	sessionKeyFn     func() string         // Active session resolver for session-scoped prompt sections
 
 	cacheMu         sync.Mutex
 	skillsCache     string
@@ -108,6 +109,10 @@ func (cb *ContextBuilder) SetContextWindow(tokens int) {
 	cb.contextWindow = tokens
 }
 
+func (cb *ContextBuilder) SetSessionResolver(sessionKeyFn func() string) {
+	cb.sessionKeyFn = sessionKeyFn
+}
+
 func (cb *ContextBuilder) getIdentity() string {
 	now := time.Now().Format("2006-01-02 15:04 (Monday)")
 	workspacePath, _ := filepath.Abs(filepath.Join(cb.workspace))
@@ -128,7 +133,7 @@ You are dragonscale, a helpful AI assistant.
 
 ## Workspace
 Your workspace is at: %s
-- Skills: %s/skills/{skill-name}/SKILL.md
+- Skills are loaded through skill_search / skill_read. Do NOT infer SKILL.md paths or read skills via read_file.
 
 %s
 
@@ -144,8 +149,25 @@ Your workspace is at: %s
 
 5. **Completion discipline** - For actionable requests, execute the required tools before your final answer. Do NOT end with only intent statements like "I'll do that" or "let me do that."
 
-6. **Context Management** - You MUST consolidate your context to stay effective during long tasks. Use start_focus at the beginning of any investigation or multi-step task. After 10-15 tool calls, call complete_focus with a summary of what you learned and accomplished. This compresses your working context and persists knowledge for future reference. Failing to consolidate will degrade your performance as context grows.`,
-		now, runtime, workspacePath, workspacePath, toolsSection)
+6. **Plans vs actions** - If the user only wants a plan, schedule, explanation, summary, or workflow, answer directly without tools unless they explicitly ask you to persist, modify, search, or execute something.
+
+7. **Direct tool routing** - When the task clearly maps to a tool, call that tool directly instead of using tool_search or tool_call first.
+   - Skills: use skill_search to discover skills, then skill_read to load one by name. Do NOT use tool_search for skill discovery.
+   - Files: use read_file, write_file, edit_file, append_file, and list_dir directly. Do NOT use shell redirection for normal file edits.
+   - If the task says replace, edit, patch, or update existing text, prefer edit_file over write_file.
+   - If the task says append or add to the end of a file, prefer append_file over write_file or exec.
+   - Shell: use exec with the raw command only, e.g. {"command":"uname -s"}. Keep working_dir separate; never mix paths or commentary into command.
+   - Commitments: use memory to capture/store commitments, deadlines, decisions, and follow-ups. Use obligation only when the user wants an actual tracked reminder lifecycle.
+
+8. **Exact argument discipline** - Use the tool's exact parameter names. Examples:
+   - edit_file => {"path":"edit_target.txt","old_text":"world","new_text":"dragonscale"}
+   - append_file => {"path":"append_test.txt","content":"line two\n"}
+   - skill_read => {"name":"eval-test-skill"}
+
+9. **Stop when verified** - After the requested change is completed and a verification read/result confirms success, stop calling tools and answer the user. Do NOT repeat the same write/edit/read cycle.
+
+10. **Context Management** - You MUST consolidate your context to stay effective during long tasks. Use start_focus at the beginning of any investigation or multi-step task. After 10-15 tool calls, call complete_focus with a summary of what you learned and accomplished. This compresses your working context and persists knowledge for future reference. Failing to consolidate will degrade your performance as context grows.`,
+		now, runtime, workspacePath, toolsSection)
 }
 
 func (cb *ContextBuilder) buildToolsSection() string {
@@ -177,6 +199,10 @@ type contextSection struct {
 }
 
 func (cb *ContextBuilder) BuildSystemPrompt() string {
+	return cb.BuildSystemPromptWithBudget(cb.tokenBudgetTokens())
+}
+
+func (cb *ContextBuilder) BuildSystemPromptWithBudget(budgetTokens int) string {
 
 	// Collect sections in priority order
 	sections := []contextSection{}
@@ -234,7 +260,6 @@ Do NOT assume skill content — always load before applying.
 	// token budget proportional to its priority weight. Surplus from small
 	// sections redistributes to higher-priority ones. Sections that still
 	// exceed their allocation are truncated rather than dropped entirely.
-	budgetTokens := cb.tokenBudgetTokens()
 	totalTokens := 0
 	sectionTokens := make([]int, len(sections))
 	for i, s := range sections {
@@ -265,6 +290,57 @@ Do NOT assume skill content — always load before applying.
 		})
 
 	return prompt
+}
+
+func (cb *ContextBuilder) RenderProjection(projection *memory.ActiveContextProjection, channel, chatID string) string {
+	if projection == nil {
+		return cb.BuildSystemPrompt()
+	}
+
+	sections := make([]string, 0, len(projection.Segments)+1)
+	for _, seg := range projection.Segments {
+		if strings.TrimSpace(seg.Text) == "" {
+			continue
+		}
+
+		switch seg.Kind {
+		case memory.ProjectionSegmentSystem:
+			sections = append(sections, seg.Text)
+		case memory.ProjectionSegmentDAG:
+			sections = append(sections, "## Compressed Session Context\n\n"+seg.Text)
+		case memory.ProjectionSegmentRecall:
+			sections = append(sections, "## Recall Memory\n\n"+seg.Text)
+		case memory.ProjectionSegmentArchival:
+			sections = append(sections, "## Archival Memory\n\n"+seg.Text)
+		}
+	}
+
+	if channel != "" && chatID != "" {
+		sections = append(sections, fmt.Sprintf("## Current Session\nChannel: %s\nChat ID: %s", channel, chatID))
+	}
+
+	systemPrompt := strings.Join(sections, "\n\n---\n\n")
+	if systemPrompt == "" {
+		systemPrompt = cb.BuildSystemPrompt()
+	}
+
+	logger.DebugCF("agent", "System prompt built",
+		map[string]interface{}{
+			"total_chars":   len(systemPrompt),
+			"total_lines":   strings.Count(systemPrompt, "\n") + 1,
+			"section_count": strings.Count(systemPrompt, "\n\n---\n\n") + 1,
+		})
+
+	preview := systemPrompt
+	if len(preview) > 500 {
+		preview = preview[:500] + "... (truncated)"
+	}
+	logger.DebugCF("agent", "System prompt preview",
+		map[string]interface{}{
+			"preview": preview,
+		})
+
+	return systemPrompt
 }
 
 // tokenBudgetTokens returns the maximum token count for the system prompt,
@@ -444,8 +520,15 @@ func (cb *ContextBuilder) buildWorkingContextSection() string {
 
 	var parts []string
 
+	sessionKey := "default"
+	if cb.sessionKeyFn != nil {
+		if resolved := strings.TrimSpace(cb.sessionKeyFn()); resolved != "" {
+			sessionKey = resolved
+		}
+	}
+
 	// Inject working context (hot tier)
-	wc, err := cb.memoryStore.GetWorkingContext(ctx, pkg.NAME, "default")
+	wc, err := cb.memoryStore.GetWorkingContext(ctx, pkg.NAME, sessionKey)
 	if err == nil && wc != "" {
 		parts = append(parts, "## Working Context\n\n"+wc)
 	}

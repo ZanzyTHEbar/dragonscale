@@ -53,6 +53,7 @@ FROM recall_items
 WHERE agent_id = ?1
     AND session_key = ?2
     AND tags = 'session-message'
+    AND suppressed_at IS NULL
 `
 
 type CountSessionMessagesParams struct {
@@ -67,6 +68,7 @@ type CountSessionMessagesParams struct {
 //	WHERE agent_id = ?1
 //	    AND session_key = ?2
 //	    AND tags = 'session-message'
+//	    AND suppressed_at IS NULL
 func (q *Queries) CountSessionMessages(ctx context.Context, arg CountSessionMessagesParams) (int64, error) {
 	row := q.db.QueryRowContext(ctx, CountSessionMessages, arg.AgentID, arg.SessionKey)
 	var count int64
@@ -769,6 +771,7 @@ FROM recall_items
 WHERE agent_id = ?1
     AND session_key = ?2
     AND tags = 'session-message'
+    AND suppressed_at IS NULL
     AND (
         role = ?3
         OR ?3 = ''
@@ -817,6 +820,7 @@ type ListSessionMessagesRow struct {
 //	WHERE agent_id = ?1
 //	    AND session_key = ?2
 //	    AND tags = 'session-message'
+//	    AND suppressed_at IS NULL
 //	    AND (
 //	        role = ?3
 //	        OR ?3 = ''
@@ -881,6 +885,7 @@ FROM recall_items
 WHERE agent_id = ?1
     AND session_key = ?2
     AND tags = 'session-message'
+    AND suppressed_at IS NULL
     AND (
         role = ?3
         OR ?3 = ''
@@ -930,6 +935,7 @@ type ListSessionMessagesPagedRow struct {
 //	WHERE agent_id = ?1
 //	    AND session_key = ?2
 //	    AND tags = 'session-message'
+//	    AND suppressed_at IS NULL
 //	    AND (
 //	        role = ?3
 //	        OR ?3 = ''

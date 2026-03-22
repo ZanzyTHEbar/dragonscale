@@ -132,7 +132,7 @@ func (t *ReadFileTool) Name() string {
 }
 
 func (t *ReadFileTool) Description() string {
-	return "Read the contents of a file"
+	return "Read the contents of a regular workspace file. Use this to verify file state after writes or edits. For skills, use skill_read instead of read_file."
 }
 
 func (t *ReadFileTool) Parameters() map[string]interface{} {
@@ -188,7 +188,7 @@ func (t *WriteFileTool) Name() string {
 }
 
 func (t *WriteFileTool) Description() string {
-	return "Write content to a file"
+	return "Create or fully overwrite a file with new content. Use edit_file for targeted replacements and append_file for adding content to the end."
 }
 
 func (t *WriteFileTool) Parameters() map[string]interface{} {

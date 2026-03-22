@@ -12,6 +12,8 @@ npm install -g promptfoo
 make eval
 ```
 
+`make eval` auto-builds `eval/bin/eval-runner` when it is missing.
+
 To show richer promptfoo output with progress bars (when supported), run:
 
 ```bash
@@ -125,8 +127,12 @@ Create a new YAML file in `eval/cases/` following this pattern:
     - type: javascript
       value: |
         const trace = JSON.parse(output);
-        // Return { pass: bool, score: 0-1, reason: string }
-        return { pass: true, score: 1.0, reason: 'explanation' };
+        const usedTool = trace.metrics.tool_call_count > 0;
+        return {
+          pass: usedTool,
+          score: usedTool ? 1.0 : 0.0,
+          reason: usedTool ? 'tool call observed' : 'expected at least one tool call'
+        };
 ```
 
 For generated long-context suites:
@@ -137,7 +143,9 @@ python eval/scripts/generate_long_context_cases.py --count 12 --seed 20260221
 
 ## A/B Comparison
 
-`make eval-compare` builds both your current branch and main, then runs the identical test suite against both. Results show a side-by-side comparison matrix with per-test scores.
+`make eval-compare` builds both your current branch and `main`, then runs the identical test suite against both. Results show a side-by-side comparison matrix with per-test scores.
+
+The comparison flow uses a temporary git worktree for `main`, so the active checkout is never stashed or branch-switched underneath the user.
 
 ## Environment Variables
 

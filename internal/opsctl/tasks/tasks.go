@@ -301,9 +301,9 @@ func NewRegistry(_ string) []app.Task {
 		NewCommandTask("eval", "Run the eval suite", evalRunSpecs, nil, nil),
 		NewCommandTask("eval-fixtures", "Prepare eval fixture workspace", evalFixturesSpecs, nil, nil),
 		NewCommandTask("eval-view", "Open the promptfoo results viewer", evalViewSpecs, nil, nil),
-		NewShellTask("eval-clean", "Cleanup eval artifacts", simpleScript("rm -rf eval/results eval/bin"), nil),
-		NewShellTask("eval-compare", "Run A/B comparison of current branch vs main", simpleScript("cd eval && DEVCONTAINER_EXEC= EVAL_NPM_CMD=\"npx --yes\" ./scripts/compare.sh --repeat 3"), nil),
-		NewShellTask("eval-test", "Run Go-native component evals", staticGoScript("-v ./eval/go_evals/..."), nil),
+		NewShellTask("eval-clean", "Cleanup eval artifacts", evalCleanScript, nil),
+		NewShellTask("eval-compare", "Run A/B comparison of current branch vs main", evalCompareScript, nil),
+		NewShellTask("eval-test", "Run Go-native component evals", evalTestScript, nil),
 	}
 	return tasks
 }
@@ -711,14 +711,15 @@ func evalBuildSpecs(c *app.Context) []runner.CommandSpec {
 		version, commit, buildTime, goVersion,
 	)
 	return []runner.CommandSpec{
-		{Name: goBinary, Args: []string{"generate", "./..."}},
-		{Name: "mkdir", Args: []string{"-p", "eval/bin"}},
+		{Name: goBinary, Args: []string{"generate", "./..."}, Dir: evalTaskRoot(c)},
+		{Name: "mkdir", Args: []string{"-p", "eval/bin"}, Dir: evalTaskRoot(c)},
 		{
 			Name: goBinary,
 			Args: append(
 				append(append([]string{"build"}, goFlags...), "-ldflags", ldFlags),
 				"-o", filepath.Join("eval", "bin", "eval-runner"), "./eval/cmd/eval-runner",
 			),
+			Dir: evalTaskRoot(c),
 		},
 	}
 }
@@ -727,29 +728,31 @@ func evalRunSpecs(c *app.Context) []runner.CommandSpec {
 	cfgPath := cEnv(c, "DRAGONSCALE_EVAL_CONFIG", "./configs/default.json")
 	baseCfg := cEnv(c, "DRAGONSCALE_EVAL_BASE_CONFIG", "")
 	debug := cEnv(c, "DRAGONSCALE_EVAL_DEBUG", "") != ""
-	promptfooArgs := strings.Fields(cEnv(c, "DRAGONSCALE_PROMPTFOO_ARGS", "--no-cache --no-progress-bar"))
+	promptfooArgs := strings.Fields(cEnv(c, "DRAGONSCALE_PROMPTFOO_ARGS", "--no-cache --no-progress-bar -j 1"))
 	if len(promptfooArgs) == 0 {
-		promptfooArgs = []string{"--no-cache", "--no-progress-bar"}
+		promptfooArgs = []string{"--no-cache", "--no-progress-bar", "-j", "1"}
 	}
 
-	var specs []runner.CommandSpec
+	specs := append([]runner.CommandSpec{}, maybeEvalBuildSpecs(c)...)
 	if debug && strings.TrimSpace(baseCfg) != "" {
 		specs = append(specs, runner.CommandSpec{
 			Name: "echo",
 			Args: []string{fmt.Sprintf("DRAGONSCALE_EVAL_BASE_CONFIG=%s", baseCfg)},
+			Dir:  evalTaskRoot(c),
 		})
 	}
 	if debug {
 		specs = append(specs, runner.CommandSpec{
 			Name: "echo",
 			Args: []string{fmt.Sprintf("DRAGONSCALE_EVAL_CONFIG=%s", cfgPath)},
+			Dir:  evalTaskRoot(c),
 		})
 	}
 	args := append([]string{"--yes", "promptfoo", "eval", "--config", "promptfooconfig.yaml"}, promptfooArgs...)
 	specs = append(specs, runner.CommandSpec{
 		Name: "npx",
 		Args: args,
-		Dir:  filepath.Join(c.Root, "eval"),
+		Dir:  evalWorkspaceDir(c),
 		Env:  []string{fmt.Sprintf("DRAGONSCALE_EVAL_CONFIG=%s", cfgPath)},
 	})
 	return specs
@@ -774,16 +777,17 @@ func evalFixturesSpecs(c *app.Context) []runner.CommandSpec {
 	sourceFixture := filepath.Join("eval", "fixtures", "sample_data.txt")
 
 	specs := []runner.CommandSpec{
-		{Name: "mkdir", Args: []string{"-p", sandbox}},
-		{Name: "rm", Args: append([]string{"-f"}, files...)},
-		{Name: "rm", Args: []string{"-rf", project}},
-		{Name: "mkdir", Args: []string{"-p", skills}},
-		{Name: "bash", Args: []string{"-lc", fmt.Sprintf("printf '%%s\\n%%s\\n' \"dragonscale eval fixture — hello from the eval harness\" \"This is line two of the fixture file.\" > %q", fixture)}},
-		{Name: "cp", Args: []string{"-f", sourceFixture, shared}},
+		{Name: "mkdir", Args: []string{"-p", sandbox}, Dir: evalTaskRoot(c)},
+		{Name: "rm", Args: append([]string{"-f"}, files...), Dir: evalTaskRoot(c)},
+		{Name: "rm", Args: []string{"-rf", project}, Dir: evalTaskRoot(c)},
+		{Name: "mkdir", Args: []string{"-p", skills}, Dir: evalTaskRoot(c)},
+		{Name: "bash", Args: []string{"-lc", fmt.Sprintf("printf '%%s\\n%%s\\n' \"dragonscale eval fixture — hello from the eval harness\" \"This is line two of the fixture file.\" > %q", fixture)}, Dir: evalTaskRoot(c)},
+		{Name: "cp", Args: []string{"-f", sourceFixture, shared}, Dir: evalTaskRoot(c)},
 	}
 	specs = append(specs, runner.CommandSpec{
 		Name: "bash",
 		Args: []string{"-lc", "if [ -d eval/fixtures/skills ]; then cp -rf eval/fixtures/skills/. " + strconv.Quote(skills) + "; fi"},
+		Dir:  evalTaskRoot(c),
 	})
 	return specs
 }
@@ -793,7 +797,7 @@ func evalViewSpecs(c *app.Context) []runner.CommandSpec {
 		{
 			Name: "npx",
 			Args: []string{"--yes", "promptfoo", "view"},
-			Dir:  filepath.Join(c.Root, "eval"),
+			Dir:  evalWorkspaceDir(c),
 		},
 	}
 }
@@ -804,4 +808,46 @@ func outputOrDefault(command string) string {
 		return "dev"
 	}
 	return strings.TrimSpace(string(output))
+}
+
+func evalTaskRoot(c *app.Context) string {
+	if c != nil && strings.TrimSpace(c.Root) != "" {
+		return c.Root
+	}
+	if wd, err := os.Getwd(); err == nil {
+		return wd
+	}
+	return "."
+}
+
+func evalWorkspaceDir(c *app.Context) string {
+	return filepath.Join(evalTaskRoot(c), "eval")
+}
+
+func evalRunnerBinaryPath(c *app.Context) string {
+	return filepath.Join(evalWorkspaceDir(c), "bin", "eval-runner")
+}
+
+func hasEvalSourceTree(c *app.Context) bool {
+	_, err := os.Stat(filepath.Join(evalWorkspaceDir(c), "cmd", "eval-runner", "main.go"))
+	return err == nil
+}
+
+func maybeEvalBuildSpecs(c *app.Context) []runner.CommandSpec {
+	if !hasEvalSourceTree(c) {
+		return nil
+	}
+	return evalBuildSpecs(c)
+}
+
+func evalCompareScript(c *app.Context) string {
+	return "cd " + shellSingleQuote(evalWorkspaceDir(c)) + " && DEVCONTAINER_EXEC= EVAL_NPM_CMD=\"npx --yes\" ./scripts/compare.sh --repeat 3\n"
+}
+
+func evalTestScript(c *app.Context) string {
+	return "cd " + shellSingleQuote(evalTaskRoot(c)) + " && $GO test -v ./eval/go_evals/...\n"
+}
+
+func evalCleanScript(c *app.Context) string {
+	return "rm -rf " + shellSingleQuote(filepath.Join(evalWorkspaceDir(c), "results")) + " " + shellSingleQuote(filepath.Join(evalWorkspaceDir(c), "bin")) + "\n"
 }

@@ -58,6 +58,7 @@ func MakeUnifiedRunLoopFunc(al *AgentLoop) tools.RunLoopFunc {
 			Base:       baseRuntime,
 			Bus:        al.secureBus,
 			SessionKey: sessionKey,
+			UserPrompt: userPrompt,
 			StateStore: al.stateStore,
 			RunID:      runID,
 		}

@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -148,7 +149,7 @@ func (t *ExecTool) Name() string {
 }
 
 func (t *ExecTool) Description() string {
-	return "Execute a shell command and return its output. Use with caution."
+	return "Execute a shell command and return its output. Pass only the raw command string in command, for example {\"command\":\"uname -s\"}. Keep working_dir separate. Do not use exec for normal file create/edit/append tasks when write_file, edit_file, or append_file fits."
 }
 
 func (t *ExecTool) Parameters() map[string]interface{} {
@@ -185,6 +186,7 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]interface{}) *To
 	if !ok {
 		return ErrorResult("command is required")
 	}
+	command = normalizeShellCommand(command)
 
 	if len(command) > maxCommandLength {
 		return ErrorResult(fmt.Sprintf("command too long: %d bytes (max %d)", len(command), maxCommandLength))
@@ -192,6 +194,12 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]interface{}) *To
 
 	if strings.TrimSpace(command) == "" {
 		return ErrorResult("command cannot be empty")
+	}
+	if strings.TrimSpace(command) == ":" {
+		return ErrorResult("command cannot be a shell no-op placeholder")
+	}
+	if guard := predictableLongRunningCommand(command, t.timeout); guard != "" {
+		return ErrorResult(guard)
 	}
 
 	cwd := t.workingDir
@@ -461,4 +469,29 @@ func (t *ExecTool) SetAllowPatterns(patterns []string) error {
 		t.allowPatterns = append(t.allowPatterns, re)
 	}
 	return nil
+}
+
+func normalizeShellCommand(command string) string {
+	cmd := strings.TrimSpace(command)
+	cmd = strings.TrimLeft(cmd, " \t\r\n}")
+	return strings.TrimSpace(cmd)
+}
+
+func predictableLongRunningCommand(command string, timeout time.Duration) string {
+	fields := strings.Fields(command)
+	if len(fields) != 2 || fields[0] != "sleep" {
+		return ""
+	}
+
+	seconds, err := strconv.Atoi(fields[1])
+	if err != nil || seconds < 0 {
+		return ""
+	}
+
+	requested := time.Duration(seconds) * time.Second
+	if requested <= timeout {
+		return ""
+	}
+
+	return fmt.Sprintf("command denied: requested sleep %ds exceeds timeout budget of %ds", seconds, int(timeout/time.Second))
 }

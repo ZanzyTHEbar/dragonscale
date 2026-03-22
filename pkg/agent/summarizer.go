@@ -2,9 +2,9 @@ package agent
 
 import (
 	"context"
+	"crypto/sha1"
 	"encoding/json"
 	"fmt"
-	"sort"
 	"strings"
 	"time"
 
@@ -102,6 +102,7 @@ func (al *AgentLoop) persistEmergencyProvenance(ctx context.Context, prov Emerge
 		Action:     "emergency_compression",
 		Target:     fmt.Sprintf("cycle_%d", prov.Cycle),
 		Input:      string(input),
+		Success:    true,
 	}
 	aCtx, cancel := context.WithTimeout(ctx, time.Second)
 	defer cancel()
@@ -504,9 +505,12 @@ func (al *AgentLoop) sessionsToMessagePairs(sessionKey string) []observation.Mes
 
 // contextTreeCacheEntry caches rendered query-selected history blocks per session.
 type contextTreeCacheEntry struct {
-	msgCount int
-	query    string
-	rendered string
+	msgCount      int
+	query         string
+	rendered      string
+	accessCounts  map[string]int
+	prevSelection map[string]float64
+	selectedKeys  []string
 }
 
 // applyContextTreeSelection selects relevant historical context via query-adaptive
@@ -540,46 +544,205 @@ func (al *AgentLoop) applyContextTreeSelection(ctx context.Context, sessionKey, 
 	}
 
 	cacheHit := false
+	priorEntry := contextTreeCacheEntry{}
 	if cached, ok := al.contextTreeCache.Load(sessionKey); ok {
-		entry := cached.(contextTreeCacheEntry)
-		if entry.msgCount == len(compressible) && entry.query == query {
-			al.contextBuilder.SetContextTreeBlock(entry.rendered)
+		priorEntry = cached.(contextTreeCacheEntry)
+		if priorEntry.msgCount == len(compressible) && priorEntry.query == query {
+			cacheHit = true
+			al.contextBuilder.SetContextTreeBlock(priorEntry.rendered)
+			if len(priorEntry.selectedKeys) > 0 {
+				updated := contextTreeCacheEntry{
+					msgCount:      priorEntry.msgCount,
+					query:         priorEntry.query,
+					rendered:      priorEntry.rendered,
+					accessCounts:  cloneContextTreeAccessCounts(priorEntry.accessCounts),
+					prevSelection: cloneContextTreeSelection(priorEntry.prevSelection),
+					selectedKeys:  append([]string(nil), priorEntry.selectedKeys...),
+				}
+				for _, key := range updated.selectedKeys {
+					updated.accessCounts[key]++
+				}
+				al.contextTreeCache.Store(sessionKey, updated)
+			}
 			return tail
 		}
 	}
 
 	tree := contexttree.NewContextTree(contexttree.DefaultScoringConfig())
 	rootID := tree.Root.ID
-	for _, m := range compressible {
-		tree.AddNode(rootID, contextNodeTypeForRole(m.Role), m.Content, nil, contexttree.ExtractTerms(m.Content))
-	}
 
-	queryTerms := contexttree.ExtractTerms(query)
+	queryText := strings.TrimSpace(query)
+	if queryText == "" && len(tail) > 0 {
+		queryText = strings.TrimSpace(tail[len(tail)-1].Content)
+	}
+	queryTerms := contexttree.ExtractTerms(queryText)
 	if len(queryTerms) == 0 && len(tail) > 0 {
 		queryTerms = contexttree.ExtractTerms(tail[len(tail)-1].Content)
 	}
 
-	scores := tree.ScoreAll(nil, queryTerms)
-	nodes := make([]*contexttree.ContextNode, 0, len(tree.NodeIndex)-1)
-	for id, node := range tree.NodeIndex {
-		if node.Type == contexttree.NodeTypeRoot {
-			continue
+	var (
+		queryEmbedding []float32
+		nodeEmbeddings []memory.Embedding
+	)
+	if al.memoryStore != nil && al.memoryStore.Embedder() != nil {
+		embedder := al.memoryStore.Embedder()
+		if queryText != "" {
+			if embedded, err := embedder.Embed(ctx, queryText); err == nil {
+				queryEmbedding = embedded
+			} else {
+				logger.WarnCF("agent", "Context-Tree query embedding failed",
+					map[string]interface{}{"error": err.Error(), "session": sessionKey})
+			}
 		}
-		node.TotalScore = scores[id]
-		nodes = append(nodes, node)
+
+		texts := make([]string, 0, len(compressible))
+		for _, m := range compressible {
+			texts = append(texts, m.Content)
+		}
+		if len(texts) > 0 {
+			if embedded, err := embedder.EmbedBatch(ctx, texts); err == nil {
+				nodeEmbeddings = embedded
+			} else {
+				logger.WarnCF("agent", "Context-Tree batch embedding failed",
+					map[string]interface{}{"error": err.Error(), "session": sessionKey, "messages": len(texts)})
+			}
+		}
 	}
 
-	sort.Slice(nodes, func(i, j int) bool {
-		if nodes[i].TotalScore == nodes[j].TotalScore {
-			return nodes[i].CreatedAt.After(nodes[j].CreatedAt)
+	stableKeys := make(map[string]*contexttree.ContextNode, len(compressible))
+	nodeStableKeys := make(map[ids.UUID]string, len(compressible))
+	for idx, m := range compressible {
+		var embedding []float32
+		if idx < len(nodeEmbeddings) {
+			embedding = nodeEmbeddings[idx]
 		}
-		return nodes[i].TotalScore > nodes[j].TotalScore
-	})
+		stableKey := contextTreeStableKey(idx, m)
+		node := tree.AddNode(rootID, contextNodeTypeForRole(m.Role), m.Content, embedding, contexttree.ExtractTerms(m.Content))
+		if priorCount := priorEntry.accessCounts[stableKey]; priorCount > 1 {
+			node.AccessCount = priorCount
+		}
+		stableKeys[stableKey] = node
+		nodeStableKeys[node.ID] = stableKey
+	}
 
 	selectionBudget := budget.DAGSummaries
 	if selectionBudget <= 0 {
 		selectionBudget = 512
 	}
+
+	prevSelection := make(map[ids.UUID]float64, len(priorEntry.prevSelection))
+	for stableKey, score := range priorEntry.prevSelection {
+		if node, ok := stableKeys[stableKey]; ok {
+			prevSelection[node.ID] = score
+		}
+	}
+
+	budgetCount := contextTreeSelectionBudgetCount(compressible, selectionBudget)
+	stickySelected := tree.SelectNodesWithHysteresis(queryEmbedding, queryTerms, budgetCount, prevSelection)
+	sampledSelected := tree.PruneWithTemperature(queryEmbedding, queryTerms, budgetCount)
+	selected := mergeContextTreeSelections(stickySelected, sampledSelected)
+	selected = fitContextTreeSelectionToTokenBudget(selected, selectionBudget)
+
+	usedTokens := 0
+	for _, node := range selected {
+		tree.RecordAccess(node.ID)
+		usedTokens += observation.EstimateTokens(node.Content)
+	}
+
+	rendered := renderContextTreeSelection(selected)
+	al.contextBuilder.SetContextTreeBlock(rendered)
+
+	nextEntry := contextTreeCacheEntry{
+		msgCount:      len(compressible),
+		query:         query,
+		rendered:      rendered,
+		accessCounts:  cloneContextTreeAccessCounts(priorEntry.accessCounts),
+		prevSelection: make(map[string]float64, len(selected)),
+		selectedKeys:  make([]string, 0, len(selected)),
+	}
+	for _, node := range selected {
+		stableKey, ok := nodeStableKeys[node.ID]
+		if !ok {
+			continue
+		}
+		nextEntry.selectedKeys = append(nextEntry.selectedKeys, stableKey)
+		nextEntry.prevSelection[stableKey] = node.TotalScore
+		nextEntry.accessCounts[stableKey] = node.AccessCount
+	}
+	al.contextTreeCache.Store(sessionKey, nextEntry)
+
+	logger.DebugCF("agent", "Context-Tree selection applied", map[string]interface{}{
+		"total_msgs":        len(history),
+		"compressed_msgs":   len(compressible),
+		"tail_msgs":         len(tail),
+		"selected_nodes":    len(selected),
+		"selected_tokens":   usedTokens,
+		"cache_hit":         cacheHit,
+		"semantic_enabled":  len(queryEmbedding) > 0 && len(nodeEmbeddings) == len(compressible),
+		"sticky_candidates": len(stickySelected),
+		"sampled_nodes":     len(sampledSelected),
+	})
+
+	return tail
+}
+
+func contextTreeStableKey(index int, msg messages.Message) string {
+	sum := sha1.Sum([]byte(msg.Role + "\x00" + msg.Content))
+	return fmt.Sprintf("%06d:%s:%x", index, msg.Role, sum[:6])
+}
+
+func contextTreeSelectionBudgetCount(history []messages.Message, tokenBudget int) int {
+	if len(history) == 0 {
+		return 0
+	}
+	if tokenBudget <= 0 {
+		return len(history)
+	}
+
+	totalTokens := 0
+	for _, msg := range history {
+		totalTokens += observation.EstimateTokens(msg.Content)
+	}
+	avgTokens := 64
+	if totalTokens > 0 {
+		avgTokens = max(32, totalTokens/len(history))
+	}
+
+	count := tokenBudget / avgTokens
+	if count < 1 {
+		count = 1
+	}
+	if count > len(history) {
+		count = len(history)
+	}
+	return count
+}
+
+func mergeContextTreeSelections(sticky, sampled []*contexttree.ContextNode) []*contexttree.ContextNode {
+	seen := make(map[ids.UUID]struct{}, len(sticky)+len(sampled))
+	merged := make([]*contexttree.ContextNode, 0, len(sticky)+len(sampled))
+
+	for _, group := range [][]*contexttree.ContextNode{sticky, sampled} {
+		for _, node := range group {
+			if node == nil {
+				continue
+			}
+			if _, ok := seen[node.ID]; ok {
+				continue
+			}
+			seen[node.ID] = struct{}{}
+			merged = append(merged, node)
+		}
+	}
+
+	return merged
+}
+
+func fitContextTreeSelectionToTokenBudget(nodes []*contexttree.ContextNode, budget int) []*contexttree.ContextNode {
+	if budget <= 0 || len(nodes) == 0 {
+		return nil
+	}
+
 	selected := make([]*contexttree.ContextNode, 0, len(nodes))
 	usedTokens := 0
 	for _, node := range nodes {
@@ -587,27 +750,40 @@ func (al *AgentLoop) applyContextTreeSelection(ctx context.Context, sessionKey, 
 		if nodeTokens == 0 {
 			continue
 		}
-		if usedTokens+nodeTokens > selectionBudget {
+		if usedTokens+nodeTokens > budget {
 			continue
 		}
 		selected = append(selected, node)
 		usedTokens += nodeTokens
 	}
 
-	rendered := renderContextTreeSelection(selected)
-	al.contextBuilder.SetContextTreeBlock(rendered)
-	al.contextTreeCache.Store(sessionKey, contextTreeCacheEntry{msgCount: len(compressible), query: query, rendered: rendered})
+	if len(selected) == 0 && len(nodes) > 0 {
+		return []*contexttree.ContextNode{nodes[0]}
+	}
 
-	logger.DebugCF("agent", "Context-Tree selection applied", map[string]interface{}{
-		"total_msgs":      len(history),
-		"compressed_msgs": len(compressible),
-		"tail_msgs":       len(tail),
-		"selected_nodes":  len(selected),
-		"selected_tokens": usedTokens,
-		"cache_hit":       cacheHit,
-	})
+	return selected
+}
 
-	return tail
+func cloneContextTreeAccessCounts(src map[string]int) map[string]int {
+	if len(src) == 0 {
+		return make(map[string]int)
+	}
+	dst := make(map[string]int, len(src))
+	for key, value := range src {
+		dst[key] = value
+	}
+	return dst
+}
+
+func cloneContextTreeSelection(src map[string]float64) map[string]float64 {
+	if len(src) == 0 {
+		return make(map[string]float64)
+	}
+	dst := make(map[string]float64, len(src))
+	for key, value := range src {
+		dst[key] = value
+	}
+	return dst
 }
 
 func contextNodeTypeForRole(role string) contexttree.NodeType {

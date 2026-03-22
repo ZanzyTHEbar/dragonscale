@@ -207,7 +207,7 @@ func TestEvalRunSpecsPreservesEvalConfig(t *testing.T) {
 	require.Equal(t, "npx", specs[1].Name)
 	require.Contains(t, strings.Join(specs[1].Env, " "), "DRAGONSCALE_EVAL_CONFIG=./configs/override.json")
 	require.NotContains(t, strings.Join(specs[1].Env, " "), "DRAGONSCALE_EVAL_CONFIG=./configs/default.json")
-	require.Contains(t, strings.Join(specs[1].Args, " "), "--yes promptfoo eval --config promptfooconfig.yaml --no-cache --no-progress-bar")
+	require.Contains(t, strings.Join(specs[1].Args, " "), "--yes promptfoo eval --config promptfooconfig.yaml --no-cache --no-progress-bar -j 1")
 
 	compareScript, err := os.ReadFile(filepath.Clean(filepath.Join("..", "..", "..", "eval", "scripts", "compare.sh")))
 	require.NoError(t, err)
@@ -216,6 +216,8 @@ func TestEvalRunSpecsPreservesEvalConfig(t *testing.T) {
 	require.Contains(t, content, "trap cleanup_compare_config EXIT INT TERM")
 	require.Contains(t, content, "DRAGONSCALE_EVAL_CONFIG: \"${EVAL_CONFIG}\"")
 	require.NotContains(t, content, "DRAGONSCALE_EVAL_HOST_HOME: \"/host_home\"")
+	require.Contains(t, content, "PROMPTFOO_ARGS=\"${DRAGONSCALE_PROMPTFOO_ARGS:---no-cache --no-progress-bar -j 1}\"")
+	require.Contains(t, content, "git -C \"$PROJECT_ROOT\" worktree add --force --detach")
 	require.Contains(t, content, "TEMP_CONFIG")
 }
 
@@ -235,7 +237,7 @@ func TestEvalRunSpecsUsesBaseConfigWhenSetAndDebugEnabled(t *testing.T) {
 	require.Equal(t, "echo", specs[1].Name)
 	require.Equal(t, []string{"DRAGONSCALE_EVAL_CONFIG=./configs/default.json"}, specs[1].Args)
 	require.Equal(t, "npx", specs[2].Name)
-	require.Equal(t, []string{"--yes", "promptfoo", "eval", "--config", "promptfooconfig.yaml", "--no-cache", "--no-progress-bar"}, specs[2].Args)
+	require.Equal(t, []string{"--yes", "promptfoo", "eval", "--config", "promptfooconfig.yaml", "--no-cache", "--no-progress-bar", "-j", "1"}, specs[2].Args)
 }
 
 func TestEvalRunSpecsUsesPromptfooArgsOverride(t *testing.T) {
@@ -284,7 +286,8 @@ func TestEvalCompareTaskDisablesNestedDevcontainerExecution(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, fake.Calls, 1)
 	script := strings.Join(fake.Calls[0].Args, " ")
-	require.Contains(t, script, "cd eval && DEVCONTAINER_EXEC= EVAL_NPM_CMD=\"npx --yes\" ./scripts/compare.sh --repeat 3")
+	require.Contains(t, script, evalWorkspaceDir(ctx))
+	require.Contains(t, script, "DEVCONTAINER_EXEC= EVAL_NPM_CMD=\"npx --yes\" ./scripts/compare.sh --repeat 3")
 	joinedEnv := strings.Join(fake.Calls[0].Env, " ")
 	require.Contains(t, joinedEnv, "DEVCONTAINER_EXEC=npx --yes @devcontainers/cli exec --workspace-folder \"$PWD\" --")
 
@@ -293,6 +296,8 @@ func TestEvalCompareTaskDisablesNestedDevcontainerExecution(t *testing.T) {
 	content := string(compareScript)
 	require.Contains(t, content, "export DEVCONTAINER_EXEC=\"\"")
 	require.Contains(t, content, "make DEVCONTAINER_EXEC= eval-build")
+	require.Contains(t, content, "git -C \"$PROJECT_ROOT\" worktree add --force --detach")
+	require.Contains(t, content, "git -C \"$PROJECT_ROOT\" worktree remove --force")
 }
 
 func TestEvalCompareTaskPassesBaseConfigEnvToRunner(t *testing.T) {
@@ -448,6 +453,67 @@ func TestEvalViewTaskRunsInEvalDirectory(t *testing.T) {
 	require.Equal(t, filepath.Join(ctx.Root, "eval"), fake.Calls[0].Dir)
 	require.Equal(t, "npx", fake.Calls[0].Name)
 	require.Equal(t, []string{"--yes", "promptfoo", "view"}, fake.Calls[0].Args)
+}
+
+func TestEvalRunSpecsPrependsBuildWhenRunnerMissingAndSourceTreeExists(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(root, "eval", "cmd", "eval-runner"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "eval", "cmd", "eval-runner", "main.go"), []byte("package main\nfunc main() {}\n"), 0o644))
+
+	specs := evalRunSpecs(&app.Context{Root: root})
+	require.GreaterOrEqual(t, len(specs), 4)
+	require.Equal(t, "go", specs[0].Name)
+	require.Equal(t, []string{"generate", "./..."}, specs[0].Args)
+	require.Equal(t, root, specs[0].Dir)
+	require.Equal(t, "npx", specs[len(specs)-1].Name)
+	require.Equal(t, filepath.Join(root, "eval"), specs[len(specs)-1].Dir)
+}
+
+func TestEvalRunSpecsPrependsBuildWhenRunnerAlreadyExists(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(root, "eval", "cmd", "eval-runner"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "eval", "cmd", "eval-runner", "main.go"), []byte("package main\nfunc main() {}\n"), 0o644))
+	require.NoError(t, os.MkdirAll(filepath.Join(root, "eval", "bin"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "eval", "bin", "eval-runner"), []byte("stale-binary"), 0o755))
+
+	specs := evalRunSpecs(&app.Context{Root: root})
+	require.GreaterOrEqual(t, len(specs), 4)
+	require.Equal(t, "go", specs[0].Name)
+	require.Equal(t, []string{"generate", "./..."}, specs[0].Args)
+	require.Equal(t, root, specs[0].Dir)
+	require.Equal(t, "npx", specs[len(specs)-1].Name)
+}
+
+func TestEvalTasksUseRepoRootPathsWhenCwdIsNested(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	nested := filepath.Join(root, "pkg", "agent")
+	require.NoError(t, os.MkdirAll(nested, 0o755))
+	ctx := &app.Context{
+		Root: root,
+		Cwd:  nested,
+	}
+	fake := &runner.FakeRunner{Result: runner.CommandResult{ExitCode: 0}}
+
+	evalView := findTaskByName(t, NewRegistry(ctx.Root), "eval-view")
+	_, err := evalView.Run(context.Background(), fake, ctx)
+	require.NoError(t, err)
+	require.Len(t, fake.Calls, 1)
+	require.Equal(t, filepath.Join(root, "eval"), fake.Calls[0].Dir)
+
+	fake.Calls = nil
+	evalCompare := findTaskByName(t, NewRegistry(ctx.Root), "eval-compare")
+	_, err = evalCompare.Run(context.Background(), fake, ctx)
+	require.NoError(t, err)
+	require.Len(t, fake.Calls, 1)
+	compareCmd := strings.Join(fake.Calls[0].Args, " ")
+	require.Contains(t, compareCmd, filepath.Join(root, "eval"))
+	require.Contains(t, compareCmd, "DEVCONTAINER_EXEC= EVAL_NPM_CMD=\"npx --yes\" ./scripts/compare.sh --repeat 3")
 }
 
 func TestEvalFixturesTaskCreatesFixtureCommands(t *testing.T) {

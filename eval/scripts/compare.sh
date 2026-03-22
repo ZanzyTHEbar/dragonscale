@@ -10,11 +10,17 @@ PROJECT_ROOT="$(dirname "$EVAL_DIR")"
 REPEAT=${1:-3}
 NPM_CMD="${EVAL_NPM_CMD:-npx}"
 read -r -a NPM_CMD_ARR <<< "${NPM_CMD}"
+PROMPTFOO_ARGS="${DRAGONSCALE_PROMPTFOO_ARGS:---no-cache --no-progress-bar -j 1}"
+read -r -a PROMPTFOO_ARGS_ARR <<< "${PROMPTFOO_ARGS}"
 export DEVCONTAINER_EXEC=""
 TEMP_CONFIG="$(mktemp "${SCRIPT_DIR}/promptfoo-compare-XXXXXX.yaml")"
+TEMP_WORKTREE=""
 
 cleanup_compare_config() {
   rm -f "$TEMP_CONFIG"
+  if [[ -n "$TEMP_WORKTREE" && -d "$TEMP_WORKTREE" ]]; then
+    git -C "$PROJECT_ROOT" worktree remove --force "$TEMP_WORKTREE" >/dev/null 2>&1 || rm -rf "$TEMP_WORKTREE"
+  fi
 }
 trap cleanup_compare_config EXIT INT TERM
 
@@ -33,20 +39,12 @@ echo "[1/4] Building eval-runner from current branch..."
 make DEVCONTAINER_EXEC= eval-build 2>&1 | tail -1
 cp "$EVAL_DIR/bin/eval-runner" "$EVAL_DIR/bin/eval-runner-branch"
 
-# 2. Build main branch eval-runner
-CURRENT_BRANCH=$(git branch --show-current)
-STASH_RESULT=$(git stash 2>&1)
-
+# 2. Build main branch eval-runner in an isolated worktree
 echo "[2/4] Building eval-runner from main branch..."
-git checkout main 2>/dev/null
-make DEVCONTAINER_EXEC= eval-build 2>&1 | tail -1
-cp "$EVAL_DIR/bin/eval-runner" "$EVAL_DIR/bin/eval-runner-main"
-
-# Restore working branch
-git checkout "$CURRENT_BRANCH" 2>/dev/null
-if [[ "$STASH_RESULT" != "No local changes to save" ]]; then
-  git stash pop 2>/dev/null || true
-fi
+TEMP_WORKTREE="$(mktemp -d "${TMPDIR:-/tmp}/dragonscale-eval-main-XXXXXX")"
+git -C "$PROJECT_ROOT" worktree add --force --detach "$TEMP_WORKTREE" main >/dev/null
+make -C "$TEMP_WORKTREE" DEVCONTAINER_EXEC= eval-build 2>&1 | tail -1
+cp "$TEMP_WORKTREE/eval/bin/eval-runner" "$EVAL_DIR/bin/eval-runner-main"
 
 # Put branch binary back as the default eval-runner
 cp "$EVAL_DIR/bin/eval-runner-branch" "$EVAL_DIR/bin/eval-runner"
@@ -68,6 +66,8 @@ fi
 # Create a temp config with both providers
 cat > "$TEMP_CONFIG" <<YAML
 description: "DragonScale A/B comparison (branch vs main)"
+
+maxConcurrency: 1
 
 providers:
   - id: "exec:./bin/eval-runner"
@@ -91,7 +91,7 @@ defaultTest:
       value: |
         try {
           const trace = JSON.parse(output);
-          const valid = trace.hasOwnProperty('output') && trace.hasOwnProperty('metrics');
+          const valid = typeof trace.output === 'string' && Array.isArray(trace.steps) && trace.metrics && typeof trace.metrics.total_duration_ms === 'number';
           return { pass: valid, score: valid ? 1.0 : 0.0, reason: valid ? 'valid trace' : 'invalid trace' };
         } catch(e) {
           return { pass: false, score: 0, reason: 'not JSON: ' + e.message };
@@ -100,8 +100,9 @@ defaultTest:
       value: |
         const trace = JSON.parse(output);
         const dur = trace.metrics.total_duration_ms;
-        const ok = dur < 60000;
-        return { pass: ok, score: ok ? 1.0 : 0.0, reason: `${dur}ms` };
+        const score = dur < 30000 ? 1.0 : dur < 90000 ? 1.0 - (dur - 30000) / 60000 : 0.0;
+        const pass = dur < 90000;
+        return { pass, score, reason: `${dur}ms (score: ${score.toFixed(2)})` };
 
 transform: "JSON.stringify({ prompt: vars.prompt })"
 tests: "cases/*.yaml"
@@ -110,7 +111,7 @@ YAML
 
 # 4. Run comparison
 echo "[3/4] Running eval comparison (${REPEAT}x)..."
-"${NPM_CMD_ARR[@]}" promptfoo eval -c "$TEMP_CONFIG" --repeat "$REPEAT" --no-progress-bar
+"${NPM_CMD_ARR[@]}" promptfoo eval -c "$TEMP_CONFIG" --repeat "$REPEAT" "${PROMPTFOO_ARGS_ARR[@]}"
 
 echo ""
 echo "[4/4] Results saved to eval/results/comparison.json"

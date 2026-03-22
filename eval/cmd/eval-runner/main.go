@@ -19,6 +19,7 @@ import (
 
 func main() {
 	logger.SetLevel(logger.ERROR)
+	_ = os.Setenv("DRAGONSCALE_EVAL_RUNTIME", "1")
 
 	prompt, err := resolvePrompt()
 	if err != nil {
@@ -51,6 +52,7 @@ func emptyPromptTrace(prompt string) *instrumentation.Trace {
 	}
 	return &instrumentation.Trace{
 		Output: "No prompt provided. Please provide a message.",
+		Steps:  []instrumentation.TraceStep{},
 		Metrics: instrumentation.Metrics{
 			TotalDurationMs: 0,
 		},
@@ -58,7 +60,24 @@ func emptyPromptTrace(prompt string) *instrumentation.Trace {
 }
 
 func resolveEvalConfig() (*config.Config, error) {
-	return dragonruntime.LoadEvalConfig(evalRunnerTimeout())
+	cfg, err := dragonruntime.LoadEvalConfig(evalRunnerTimeout())
+	if err != nil {
+		return nil, err
+	}
+	stabilizeEvalConfig(cfg)
+	return cfg, nil
+}
+
+func stabilizeEvalConfig(cfg *config.Config) {
+	if cfg == nil {
+		return
+	}
+	if cfg.Agents.Defaults.Temperature != 0 {
+		cfg.Agents.Defaults.Temperature = 0
+	}
+	if cfg.Agents.Defaults.MaxToolIterations <= 0 || cfg.Agents.Defaults.MaxToolIterations > 8 {
+		cfg.Agents.Defaults.MaxToolIterations = 8
+	}
 }
 
 func readPrompt() (string, error) {
