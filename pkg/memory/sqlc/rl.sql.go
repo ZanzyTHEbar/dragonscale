@@ -27,14 +27,14 @@ SELECT id,
     created_at
 FROM task_completions
 WHERE agent_id = ?1
-    AND created_at > ?2
-    AND completed = 1
+	AND unixepoch(created_at) > unixepoch(?2)
+	AND completed = 1
 ORDER BY created_at ASC
 `
 
 type GetCompletedTasksParams struct {
-	AgentID string    `db:"agent_id" json:"agent_id"`
-	Since   time.Time `db:"since" json:"since"`
+	AgentID string      `db:"agent_id" json:"agent_id"`
+	Since   interface{} `db:"since" json:"since"`
 }
 
 // Get tasks completed since the given time for RL processing
@@ -52,8 +52,8 @@ type GetCompletedTasksParams struct {
 //	    created_at
 //	FROM task_completions
 //	WHERE agent_id = ?1
-//	    AND created_at > ?2
-//	    AND completed = 1
+//		AND unixepoch(created_at) > unixepoch(?2)
+//		AND completed = 1
 //	ORDER BY created_at ASC
 func (q *Queries) GetCompletedTasks(ctx context.Context, arg GetCompletedTasksParams) ([]TaskCompletion, error) {
 	rows, err := q.db.QueryContext(ctx, GetCompletedTasks, arg.AgentID, arg.Since)
@@ -398,19 +398,19 @@ func (q *Queries) IncrementTaskRetrievalCount(ctx context.Context, arg Increment
 const ListActiveAgents = `-- name: ListActiveAgents :many
 SELECT DISTINCT agent_id
 FROM task_completions
-WHERE created_at > ?1
+WHERE unixepoch(created_at) > unixepoch(?1)
 ORDER BY agent_id
 `
 
 type ListActiveAgentsParams struct {
-	Since time.Time `db:"since" json:"since"`
+	Since interface{} `db:"since" json:"since"`
 }
 
 // Get all unique agent IDs that have completed tasks (for multi-agent processing)
 //
 //	SELECT DISTINCT agent_id
 //	FROM task_completions
-//	WHERE created_at > ?1
+//	WHERE unixepoch(created_at) > unixepoch(?1)
 //	ORDER BY agent_id
 func (q *Queries) ListActiveAgents(ctx context.Context, arg ListActiveAgentsParams) ([]string, error) {
 	rows, err := q.db.QueryContext(ctx, ListActiveAgents, arg.Since)

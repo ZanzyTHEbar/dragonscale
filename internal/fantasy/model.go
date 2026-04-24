@@ -33,14 +33,15 @@ type ResponseContent []Content
 
 // Text returns the text content of the response.
 func (r ResponseContent) Text() string {
+	var builder strings.Builder
 	for _, c := range r {
 		if c.GetType() == ContentTypeText {
 			if textContent, ok := AsContentType[TextContent](c); ok {
-				return textContent.Text
+				builder.WriteString(textContent.Text)
 			}
 		}
 	}
-	return ""
+	return builder.String()
 }
 
 // Reasoning returns all reasoning content parts.

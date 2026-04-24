@@ -30,21 +30,47 @@ func MakeUnifiedRunLoopFunc(al *AgentLoop) tools.RunLoopFunc {
 			return nil, fmt.Errorf("unified runtime dependencies are not initialized")
 		}
 
-		baseSession := fmt.Sprintf("%s:%s", channel, chatID)
-		if v := al.activeSessionKey.Load(); v != nil {
-			if active, ok := v.(string); ok && strings.TrimSpace(active) != "" {
-				baseSession = active
-			}
+		baseSession := strings.TrimSpace(tools.SessionKeyFromContext(ctx))
+		if baseSession == "" {
+			baseSession = strings.TrimSpace(tools.DelegationSessionKeyFromContext(ctx))
+		}
+		if baseSession == "" {
+			baseSession = fmt.Sprintf("%s:%s", channel, chatID)
 		}
 		if strings.TrimSpace(baseSession) == "" {
 			baseSession = "subagent:default"
 		}
 		sessionKey := fmt.Sprintf("%s::subagent::%s", baseSession, ids.New().String()[:8])
+		ctx = tools.WithSessionKey(withToolSessionKey(ctx, sessionKey), sessionKey)
 
 		conversationID, runID, err := al.prepareRuntimeState(ctx, sessionKey)
 		if err != nil {
 			return nil, err
 		}
+		opts := processOptions{
+			SessionKey:     sessionKey,
+			Channel:        channel,
+			ChatID:         chatID,
+			UserMessage:    userPrompt,
+			ConversationID: conversationID,
+			RunID:          runID,
+		}
+		metrics := agentRunMetrics{}
+		defer func() {
+			if err != nil {
+				al.persistFailedRun(ctx, opts, err)
+				if endErr := al.endTask(ctx, conversationID, runID, TaskCompletion{
+					TaskID:      sessionKey,
+					Description: userPrompt,
+					Completed:   false,
+				}); endErr != nil {
+					logger.WarnCF("toolloop", "Failed to record failed subagent task completion", map[string]any{"error": endErr.Error(), "session": sessionKey})
+				}
+				_ = al.sessions.Save(sessionKey)
+				return
+			}
+			al.persistRunCheckpoint(ctx, opts, metrics)
+		}()
 
 		baseRuntime := OffloadingToolRuntime{
 			Base:           fantasy.DAGToolRuntime{MaxConcurrency: defaultToolMaxConcurrency},
@@ -54,18 +80,22 @@ func MakeUnifiedRunLoopFunc(al *AgentLoop) tools.RunLoopFunc {
 			RunID:          runID,
 			ThresholdChars: al.offloadThresholdChars,
 		}
-		toolRuntime := SecureBusToolRuntime{
-			Base:       baseRuntime,
-			Bus:        al.secureBus,
-			SessionKey: sessionKey,
-			UserPrompt: userPrompt,
-			StateStore: al.stateStore,
-			RunID:      runID,
-		}
 
 		extraTools := make([]fantasy.AgentTool, 0, 1)
 		if al.toolResultSearch != nil {
 			extraTools = append(extraTools, al.toolResultSearch)
+		}
+
+		toolRuntime := SecureBusToolRuntime{
+			Offloader:    baseRuntime,
+			FantasyTools: fantasyToolMap(extraTools, al.tools),
+			Bus:          al.secureBus,
+			SessionKey:   sessionKey,
+			Channel:      channel,
+			ChatID:       chatID,
+			UserPrompt:   userPrompt,
+			StateStore:   al.stateStore,
+			RunID:        runID,
 		}
 
 		al.sessions.AddMessage(sessionKey, "user", userPrompt)
@@ -73,8 +103,16 @@ func MakeUnifiedRunLoopFunc(al *AgentLoop) tools.RunLoopFunc {
 		if err != nil {
 			return nil, err
 		}
+		metrics.StepCount = result.Iterations
 		al.sessions.AddMessage(sessionKey, "assistant", result.Content)
 		al.sessions.Save(sessionKey)
+		if endErr := al.endTask(ctx, conversationID, runID, TaskCompletion{
+			TaskID:      sessionKey,
+			Description: userPrompt,
+			Completed:   true,
+		}); endErr != nil {
+			logger.WarnCF("toolloop", "Failed to record subagent task completion", map[string]any{"error": endErr.Error(), "session": sessionKey})
+		}
 		al.maybeSummarize(ctx, sessionKey, channel, chatID)
 		return result, nil
 	}

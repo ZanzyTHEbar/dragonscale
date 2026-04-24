@@ -14,7 +14,7 @@ This ADR mixes shipped kernel behavior with the longer-range secure execution ro
 
 - Layer 1-2 SecureBus mediation is active for tool execution.
 - FlatBuffers command vocabulary is live for the internal command surface.
-- Capability enforcement, secret injection, leak scanning, and audit logging are on the hot path.
+- Recursion-depth policy validation, `arg:` secret injection, leak scanning, and audit logging are on the hot path.
 - Dependency-aware parallel tool execution is active through the DAG tool runtime.
 - `pkg/rlm` is now wired into active-context assembly as a reducer for oversized DAG / recall / archival projection segments.
 
@@ -26,8 +26,7 @@ This ADR mixes shipped kernel behavior with the longer-range secure execution ro
 
 ## Context
 
-DragonScale tools execute in-process with the agent loop. The `Vault`   (XChaCha20-Poly1305) exists for encrypting secrets at rest, but there is no pipeline for injecting those secrets into tool execution. The `Redactor` scans for sensitive patterns, but only in log paths — not on tool output before it reaches the LLM. There is no privilege boundary
-between the LLM-facing agent code and the tool execution path.
+DragonScale tools execute in-process with the agent loop. The `Vault` (XChaCha20-Poly1305) encrypts secrets at rest, the SecureBus performs `arg:` secret injection for declared secret refs, and the redaction path scans LLM-facing tool output before it reaches the agent loop. The stronger privilege-boundary roadmap in this ADR still matters because broader network/filesystem policy enforcement, daemon separation, and WASM isolation are not yet fully shipped.
 
 A compromised tool — via prompt injection, malicious skill, or supply chain attack — has the same memory-space access as the agent itself. This is the same class of vulnerability that led to the OpenClaw token exfiltration incident (Feb 2026), where malicious skills on ClawHub could read API keys from the host environment and exfiltrate them through tool output.
 
@@ -217,34 +216,23 @@ This schema serves four purposes: (1) zero-copy reads eliminate serialization ov
 
 ### Layer 3: Secret Store + Keyring Integration
 
-The `SecretStore` maps logical secret names to encrypted ciphertext, persisted to a local file (`~/.dragonscale/secrets.enc`). The `Vault` handles encryption/decryption.
+The `SecretStore` maps logical secret names to encrypted ciphertext, persisted today to `~/.dragonscale/secrets.json`. The `Vault` handles encryption/decryption.
 
-The master key for the `Vault` is sourced from one of three backends, selected at
-onboarding:
+Current shipped master-key behavior is env-backed (`DRAGONSCALE_MASTER_KEY`) with an in-memory fallback for contexts that do not need persisted secret access. Richer OS-keyring, passphrase, or file-backed key management remains planned work.
 
-| Backend       | Platform     | Mechanism                                    |
-|---------------|--------------|----------------------------------------------|
-| OS Keyring    | Linux/macOS  | libsecret (GNOME), kwallet (KDE), Keychain   |
-| Passphrase    | Any          | Argon2id KDF from user passphrase            |
-| File          | Embedded     | Raw key file with restricted permissions      |
-
-Keyring support is gated behind a build tag (`!embedded`) to avoid pulling in CGO or D-Bus dependencies on constrained platforms.
-
-**CLI surface**:
+**Current CLI surface**:
 
 ```
-dragonscale secret add <name>       # interactive prompt for value
+dragonscale secret add <name>       # reads the value from stdin / prompt input
 dragonscale secret list             # names only, no values
 dragonscale secret delete <name>
-dragonscale secret export           # encrypted backup
-dragonscale secret import <file>    # restore from backup
 ```
 
-The `onboard` command is extended to include master key setup as part of the interactive wizard.
+`secret export` / `secret import` and richer onboarding-backed key setup remain planned work.
 
 ### Layer 4: Daemon Mode + ZKP Authentication
 
-For non-embedded deployments (desktop, server), the SecureBus can optionally run in a separate privileged daemon process. The agent loop connects as an unprivileged client over a Unix domain socket.
+For non-embedded deployments (desktop, server), the SecureBus can optionally run in a separate daemon process over a Unix domain socket. Today that daemon surface exists as a standalone operational mode; the main `agent` / `gateway` runtime still executes against the in-process SecureBus path.
 
 ```
 ┌──────────────────┐         Unix Socket         ┌──────────────────┐

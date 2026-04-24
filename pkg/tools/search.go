@@ -149,7 +149,7 @@ func (t *ToolSearchTool) focusTerms(ctx context.Context) []string {
 		return nil
 	}
 
-	sessionKey := t.sessionKeyFn()
+	sessionKey := ResolveSessionKey(ctx, t.sessionKeyFn)
 	if strings.TrimSpace(sessionKey) == "" {
 		return nil
 	}

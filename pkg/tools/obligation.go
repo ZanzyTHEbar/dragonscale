@@ -79,19 +79,47 @@ func (t *ObligationTool) Parameters() map[string]interface{} {
 			},
 			"title": map[string]interface{}{
 				"type":        "string",
-				"description": "Title for create action.",
+				"description": "Title for create action. Alias: content.",
+			},
+			"content": map[string]interface{}{
+				"type":        "string",
+				"description": "Alias for title when creating an obligation.",
 			},
 			"details": map[string]interface{}{
 				"type":        "string",
-				"description": "Optional details for create action.",
+				"description": "Optional details for create action. Aliases: notes, description.",
+			},
+			"notes": map[string]interface{}{
+				"type":        "string",
+				"description": "Alias for details when creating an obligation.",
+			},
+			"description": map[string]interface{}{
+				"type":        "string",
+				"description": "Alias for details when creating an obligation.",
 			},
 			"scheduled_at": map[string]interface{}{
 				"type":        "string",
-				"description": "Optional RFC3339 schedule time.",
+				"description": "Optional schedule time. Accepts RFC3339 and naive YYYY-MM-DDTHH:MM:SS. Aliases: remind_at, reminder_at.",
+			},
+			"remind_at": map[string]interface{}{
+				"type":        "string",
+				"description": "Alias for scheduled_at when creating an obligation.",
+			},
+			"reminder_at": map[string]interface{}{
+				"type":        "string",
+				"description": "Alias for scheduled_at when creating an obligation.",
 			},
 			"due_at": map[string]interface{}{
 				"type":        "string",
-				"description": "Optional RFC3339 due time.",
+				"description": "Optional due time. Accepts RFC3339 and naive YYYY-MM-DDTHH:MM:SS. Aliases: due_date, deadline_at.",
+			},
+			"due_date": map[string]interface{}{
+				"type":        "string",
+				"description": "Alias for due_at when creating an obligation.",
+			},
+			"deadline_at": map[string]interface{}{
+				"type":        "string",
+				"description": "Alias for due_at when creating an obligation.",
 			},
 			"state": map[string]interface{}{
 				"type":        "string",
@@ -132,7 +160,7 @@ func (t *ObligationTool) Execute(ctx context.Context, args map[string]interface{
 }
 
 func (t *ObligationTool) create(ctx context.Context, args map[string]interface{}) *ToolResult {
-	title, _ := args["title"].(string)
+	title := obligationFirstNonEmptyString(args, "title", "content")
 	if strings.TrimSpace(title) == "" {
 		return ErrorResult("title is required for create").WithError(fmt.Errorf("title is required"))
 	}
@@ -140,24 +168,24 @@ func (t *ObligationTool) create(ctx context.Context, args map[string]interface{}
 	rec := &ObligationRecord{
 		ID:        ids.New().String(),
 		Title:     title,
-		Details:   stringOr(args["details"]),
+		Details:   obligationFirstNonEmptyString(args, "details", "notes", "description"),
 		State:     ObligationStateCreated,
 		CreatedAt: now,
 		UpdatedAt: now,
 	}
 
-	if scheduledAtRaw := stringOr(args["scheduled_at"]); scheduledAtRaw != "" {
-		ts, err := time.Parse(time.RFC3339, scheduledAtRaw)
+	if scheduledAtRaw := obligationFirstNonEmptyString(args, "scheduled_at", "remind_at", "reminder_at"); scheduledAtRaw != "" {
+		ts, err := parseObligationTimestamp(scheduledAtRaw)
 		if err != nil {
-			return ErrorResult("scheduled_at must be RFC3339").WithError(err)
+			return ErrorResult("scheduled_at must be RFC3339 or YYYY-MM-DDTHH:MM:SS").WithError(err)
 		}
 		rec.ScheduledAt = ts.UTC()
 		rec.State = ObligationStateScheduled
 	}
-	if dueAtRaw := stringOr(args["due_at"]); dueAtRaw != "" {
-		ts, err := time.Parse(time.RFC3339, dueAtRaw)
+	if dueAtRaw := obligationFirstNonEmptyString(args, "due_at", "due_date", "deadline_at"); dueAtRaw != "" {
+		ts, err := parseObligationTimestamp(dueAtRaw)
 		if err != nil {
-			return ErrorResult("due_at must be RFC3339").WithError(err)
+			return ErrorResult("due_at must be RFC3339 or YYYY-MM-DDTHH:MM:SS").WithError(err)
 		}
 		rec.DueAt = ts.UTC()
 		if rec.State == ObligationStateCreated {
@@ -436,4 +464,21 @@ func obligationSuccess(rec *ObligationRecord) *ToolResult {
 func stringOr(v interface{}) string {
 	s, _ := v.(string)
 	return s
+}
+
+func obligationFirstNonEmptyString(args map[string]interface{}, keys ...string) string {
+	for _, key := range keys {
+		if value := strings.TrimSpace(stringOr(args[key])); value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func parseObligationTimestamp(raw string) (time.Time, error) {
+	ts, err := time.Parse(time.RFC3339, raw)
+	if err == nil {
+		return ts, nil
+	}
+	return time.Parse("2006-01-02T15:04:05", raw)
 }

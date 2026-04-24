@@ -107,10 +107,11 @@ func (t *CronTool) Execute(ctx context.Context, args map[string]interface{}) *To
 	if !ok {
 		return ErrorResult("action is required")
 	}
+	channel, chatID := ResolveExecutionTarget(ctx, t.channel, t.chatID)
 
 	switch action {
 	case "add":
-		return t.addJob(args)
+		return t.addJob(channel, chatID, args)
 	case "list":
 		return t.listJobs()
 	case "remove":
@@ -124,12 +125,7 @@ func (t *CronTool) Execute(ctx context.Context, args map[string]interface{}) *To
 	}
 }
 
-func (t *CronTool) addJob(args map[string]interface{}) *ToolResult {
-	t.mu.RLock()
-	channel := t.channel
-	chatID := t.chatID
-	t.mu.RUnlock()
-
+func (t *CronTool) addJob(channel, chatID string, args map[string]interface{}) *ToolResult {
 	if channel == "" || chatID == "" {
 		return ErrorResult("no session context (channel/chat_id not set). Use this tool in an active conversation.")
 	}

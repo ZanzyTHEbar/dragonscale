@@ -83,9 +83,9 @@ flowchart TB
 
     subgraph Security["Security"]
         VLT[Vault XChaCha20] --> SS[SecretStore]
-        SS --> KR[Keyring / Env / File]
+        SS --> KR[Env key / planned keyring-file]
         RED[Redactor] --> SB
-        ZKP[Schnorr ZKP] -.-> SOCK[Daemon Socket]
+        ZKP[Planned ZKP] -.-> SOCK[Daemon Socket]
     end
 
     subgraph Bus["Message Bus"]
@@ -118,16 +118,16 @@ flowchart TB
 
 | Decision | Rationale |
 |----------|-----------|
-| **Isolated Tool Runtime** | All tool calls route through a `SecureBus` that enforces capability manifests, injects secrets, scans output for leaks, and writes audit logs. The LLM never sees raw secrets. Layer 1-2 are live today; daemon/WASM isolation remains optional roadmap work. See [ADR-001](docs/adr/001-isolated-tool-runtime.md). |
+| **Isolated Tool Runtime** | All tool calls route through a `SecureBus` that mediates execution, applies recursion-depth policy, performs `arg:` secret injection, scans LLM-facing output for leaks, and writes audit logs. Broader network/filesystem capability enforcement plus daemon/WASM isolation remain follow-on work. See [ADR-001](docs/adr/001-isolated-tool-runtime.md). |
 | **DAG executor** | LLMCompiler-style parallel tool dispatch. The planner builds a dependency DAG in a single inference pass; the executor dispatches independent nodes concurrently. Joiner synthesizes results. Replanning on failure. Falls back to ReAct for simple single-tool cases. |
 | **Vendored Fantasy SDK** | `charm.land/fantasy` vendored into `internal/fantasy/` via `go.mod` replace directive. Enables direct modification for streaming hooks, tool call repair, and progressive disclosure. |
 | **MemGPT + Projection Kernel** | Working context (hot), recall items (warm), archival chunks (cold, embedded + indexed), observational memory, immutable messages, DAG snapshots, runtime checkpoints, and an active-context projection builder that assembles the live turn context. Semantic ContextTree scoring and RLM reduction now participate in the hot path. |
-| **Progressive tool disclosure** | Agent sees only `tool_search` and `tool_call` meta-tools. Discovers actual tools on demand via fuzzy search. Cuts system prompt tokens for large registries. |
+| **Progressive tool disclosure** | Gateway tools stay visible, and the agent gets a small query-aware direct toolset for the current request. Wider discovery still flows through `tool_search` / `tool_call` and dynamic promotion, which keeps prompt size down without hiding obvious direct actions. |
 | **libSQL over modernc/sqlite** | Native F32_BLOB for vector storage, `libsql_vector_idx` for ANN search, FTS5 for full-text. Single database, no external vector DB dependency. |
 | **BLOB primary keys** | 16-byte UUIDv7 stored as BLOB. Compact, byte-comparable, monotonically sortable by creation time. |
-| **XChaCha20-Poly1305 vault** | Secrets encrypted at rest with AES-256-GCM or XChaCha20-Poly1305. Master key from OS keyring, env var, or file. Schnorr ZKP remains planned for daemon-mode authentication. |
+| **XChaCha20-Poly1305 vault** | Secrets are encrypted at rest with XChaCha20-Poly1305. The current user-facing master-key flow is env-backed via `DRAGONSCALE_MASTER_KEY`; richer keyring/file-backed flows remain roadmap work. |
 | **Goose migrations** | Schema managed by `pressly/goose/v3`. 17 versioned migrations currently cover core schema, FTS5, vector indexes, KV store, documents, audit log outcomes, conversations, runtime state, DAG/checkpoint data, map operators, memory edges, soft delete, immutable messages, and RL/task-completion tables. |
-| **FlatBuffers command protocol** | Zero-copy serialized `ToolRequest`/`ToolResponse` for the ITR command vocabulary. Same binary format across in-process channels, Unix sockets (daemon mode), and wazero WASM host calls. |
+| **FlatBuffers command protocol** | Zero-copy serialized `ToolRequest`/`ToolResponse` for the ITR command vocabulary. The binary format is live on the in-process command path today and is designed to extend to socket/WASM transports as those optional surfaces mature. |
 
 ## Project Layout
 
@@ -160,7 +160,7 @@ pkg/
 ├── memory/                # Memory system
 │   ├── dag/               # DAG-based context budget compression
 │   ├── delegate/          # libSQL storage backend (FTS5, vector, capabilities)
-│   ├── migrations/        # Goose versioned schema migrations (001–010)
+│   ├── migrations/        # Goose versioned schema migrations (001–017)
 │   ├── observation/       # Observational memory (observer, reflector, store)
 │   ├── sqlc/              # sqlc config + generated code
 │   └── store/             # MemoryStore, retrieval, chunking, scoring, queuing
@@ -174,7 +174,7 @@ pkg/
 ├── tools/                 # Tool registry, meta-tools, built-in tools, CapableTool
 ├── voice/                 # Groq Whisper voice transcription
 └── worker/                # Background job worker
-skills/                    # Built-in skills (weather, tmux, summarize, github, hardware)
+cmd/dragonscale/workspace/skills/ # Embedded builtin skills packaged with the CLI
 config/                    # Example configuration files
 ```
 
@@ -250,7 +250,8 @@ docker compose logs -f dragonscale-gateway
 
 ## Secret Management
 
-DragonScale encrypts secrets at rest with XChaCha20-Poly1305. The master key is sourced from an environment variable, OS keyring, or file.
+DragonScale encrypts secrets at rest with XChaCha20-Poly1305 and stores them in `~/.dragonscale/secrets.json`.
+Today the supported operator flow is env-backed: `dragonscale secret init` prints a hex key, and secret operations expect `DRAGONSCALE_MASTER_KEY` to be set.
 
 ```bash
 dragonscale secret init           # Generate a master key
@@ -260,17 +261,17 @@ dragonscale secret delete <name>  # Remove a secret
 ```
 
 > [!WARNING]
-> This is a security-sensitive operation. The master key is used to encrypt and decrypt secrets. If you lose it, you will not be able to decrypt secrets.
-> You should should NEVER store the master key in a file or environment variable if possible.
+> This is a security-sensitive operation. The master key is used to encrypt and decrypt secrets. If you lose it, you will not be able to decrypt existing secrets.
+> Treat the printed key like a root credential: do not commit it, paste it into logs, or leave it in shell history.
 
 
 Set the master key: `export DRAGONSCALE_MASTER_KEY=<hex>`
 
-Tools declare which secrets they need via `CapableTool.Capabilities()`. The SecureBus injects secrets into tool execution context at runtime — the LLM never sees them. Tool output is scanned for leaked patterns before it reaches the agent loop.
+Tools declare which secrets they need via `CapableTool.Capabilities()`. The SecureBus centrally supports `arg:` secret injection today, and it scans LLM-facing tool output for leaked patterns before results reach the agent loop. `env:` / `header:` injection modes remain tool-specific follow-up work.
 
 ## Daemon Mode
 
-For non-embedded deployments, the SecureBus can run in a separate privileged daemon process. The agent connects as an unprivileged client over a Unix domain socket.
+DragonScale can start a standalone SecureBus daemon over a Unix domain socket for operator workflows, but the main `agent` / `gateway` runtime still uses in-process SecureBus today. Treat daemon mode as an optional deployment surface; socket-client integration and ZKP auth remain follow-on work.
 
 ```bash
 dragonscale daemon start          # Start daemon (foreground, Ctrl+C to stop)

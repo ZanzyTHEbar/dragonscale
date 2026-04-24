@@ -16,7 +16,7 @@ func TestWebTool_WebFetch_Success(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("<html><body><h1>Test Page</h1><p>Content here</p></body></html>"))
+		w.Write([]byte("<html><head><title>Test Page</title></head><body><h1>Test Page</h1><p>Content here</p></body></html>"))
 	}))
 	defer server.Close()
 
@@ -41,6 +41,14 @@ func TestWebTool_WebFetch_Success(t *testing.T) {
 	// ForLLM should contain summary
 	if !strings.Contains(result.ForLLM, "bytes") && !strings.Contains(result.ForLLM, "extractor") {
 		t.Errorf("Expected ForLLM to contain summary, got: %s", result.ForLLM)
+	}
+
+	if !strings.Contains(result.ForLLM, "Title: Test Page") {
+		t.Errorf("Expected ForLLM to contain extracted title, got: %s", result.ForLLM)
+	}
+
+	if !strings.Contains(result.ForLLM, "Content here") {
+		t.Errorf("Expected ForLLM to contain fetched content, got: %s", result.ForLLM)
 	}
 }
 
@@ -216,7 +224,7 @@ func TestWebTool_WebFetch_HTMLExtraction(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`<html><body><script>alert('test');</script><style>body{color:red;}</style><h1>Title</h1><p>Content</p></body></html>`))
+		w.Write([]byte(`<html><head><title>Title</title></head><body><script>alert('test');</script><style>body{color:red;}</style><h1>Title</h1><p>Content</p></body></html>`))
 	}))
 	defer server.Close()
 
@@ -236,6 +244,10 @@ func TestWebTool_WebFetch_HTMLExtraction(t *testing.T) {
 	// ForUser should contain extracted text (without script/style tags)
 	if !strings.Contains(result.ForUser, "Title") && !strings.Contains(result.ForUser, "Content") {
 		t.Errorf("Expected ForUser to contain extracted text, got: %s", result.ForUser)
+	}
+
+	if !strings.Contains(result.ForLLM, "Title: Title") {
+		t.Errorf("Expected ForLLM to contain extracted title, got: %s", result.ForLLM)
 	}
 
 	// Should NOT contain script or style tags

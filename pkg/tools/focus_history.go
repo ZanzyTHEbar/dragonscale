@@ -50,7 +50,7 @@ func (t *FocusHistoryTool) Parameters() map[string]interface{} {
 func (t *FocusHistoryTool) Execute(ctx context.Context, args map[string]interface{}) *ToolResult {
 	sessionKey := ""
 	if t.sessionKey != nil {
-		sessionKey = t.sessionKey()
+		sessionKey = ResolveSessionKey(ctx, t.sessionKey)
 	}
 	if strings.TrimSpace(sessionKey) == "" {
 		return ErrorResult("no active session")

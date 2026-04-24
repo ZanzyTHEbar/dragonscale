@@ -1,11 +1,106 @@
 package agent
 
 import (
+	"context"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	fantasy "charm.land/fantasy"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/ids"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/memory/delegate"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/memory/sqlc"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/security/securebus"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/tools"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
+
+type secureBusTestDB struct {
+	delegate *delegate.LibSQLDelegate
+}
+
+func newSecureBusTestDB(t *testing.T) *secureBusTestDB {
+	t.Helper()
+	d, err := delegate.NewLibSQLInMemory()
+	require.NoError(t, err)
+	require.NoError(t, d.Init(t.Context()))
+	t.Cleanup(func() { _ = d.Close() })
+	return &secureBusTestDB{delegate: d}
+}
+
+func newSecureBusConversation(t *testing.T, q *sqlc.Queries) ids.UUID {
+	t.Helper()
+	id := ids.New()
+	title := "securebus-test-conv"
+	_, err := q.CreateAgentConversation(t.Context(), sqlc.CreateAgentConversationParams{
+		ID:    id,
+		Title: &title,
+	})
+	require.NoError(t, err)
+	return id
+}
+
+type countingTool struct {
+	calls atomic.Int32
+	text  string
+	err   bool
+}
+
+func (t *countingTool) Name() string        { return "echo" }
+func (t *countingTool) Description() string { return "echo" }
+func (t *countingTool) Parameters() map[string]interface{} {
+	return map[string]interface{}{"type": "object", "properties": map[string]interface{}{}}
+}
+func (t *countingTool) Execute(_ context.Context, args map[string]interface{}) *tools.ToolResult {
+	t.calls.Add(1)
+	text, _ := args["text"].(string)
+	if t.text != "" {
+		text = t.text
+	}
+	return &tools.ToolResult{ForLLM: text, IsError: t.err}
+}
+
+func makeSecureBusRuntimeFixture(t *testing.T, tool tools.Tool, policy securebus.PolicyConfig) (SecureBusToolRuntime, *sqlc.Queries, KVDelegate, ids.UUID) {
+	t.Helper()
+	db := newSecureBusTestDB(t)
+	q := db.delegate.Queries()
+	convID := newSecureBusConversation(t, q)
+	stateStore := NewStateStore(q)
+	run, err := stateStore.CreateRun(t.Context(), convID)
+	require.NoError(t, err)
+
+	kv := NewDelegateKV(db.delegate, "securebus-runtime-test")
+	capLookup := func(name string) (tools.ToolCapabilities, bool) {
+		if name != tool.Name() {
+			return tools.ZeroCapabilities(), false
+		}
+		return tools.ExtractCapabilities(tool), true
+	}
+	executor := func(ctx context.Context, name string, args map[string]interface{}) *tools.ToolResult {
+		if name != tool.Name() {
+			return &tools.ToolResult{ForLLM: "tool not found", IsError: true}
+		}
+		return tool.Execute(ctx, args)
+	}
+	bus := securebus.New(securebus.BusConfig{Policy: policy, Workers: 1}, nil, capLookup, executor)
+	t.Cleanup(bus.Close)
+
+	return SecureBusToolRuntime{
+		Offloader: OffloadingToolRuntime{
+			KV:             kv,
+			Queries:        q,
+			ConversationID: convID,
+			RunID:          run.ID,
+			ThresholdChars: 4_000,
+			ChunkChars:     2_000,
+		},
+		Bus:        bus,
+		SessionKey: "securebus-test-session",
+		StateStore: stateStore,
+		RunID:      run.ID,
+	}, q, kv, run.ID
+}
 
 func TestRepairToolCallInputRepairsDirectExecPlaceholder(t *testing.T) {
 	t.Parallel()
@@ -130,4 +225,140 @@ func TestSanitizePolicyErrorRedactsPolicyViolations(t *testing.T) {
 	if got != "policy violation: filesystem access denied" {
 		t.Fatalf("expected redacted policy text, got %q", got)
 	}
+}
+
+func TestSecureBusToolRuntime_ExecutesToolExactlyOnce(t *testing.T) {
+	t.Parallel()
+
+	tool := &countingTool{}
+	runtime, _, _, _ := makeSecureBusRuntimeFixture(t, tool, securebus.DefaultPolicyConfig())
+
+	results, err := runtime.Execute(
+		fantasy.WithStepIndex(t.Context(), 0),
+		nil,
+		[]fantasy.ToolCallContent{{ToolCallID: "call-1", ToolName: "echo", Input: `{"text":"hello"}`}},
+		nil,
+	)
+	require.NoError(t, err)
+	require.Len(t, results, 1)
+	assert.Equal(t, int32(1), tool.calls.Load())
+	assert.Equal(t, "hello", results[0].Result.(fantasy.ToolResultOutputContentText).Text)
+}
+
+func TestSecureBusToolRuntime_ExecutesEachToolCallOnce(t *testing.T) {
+	t.Parallel()
+
+	tool := &countingTool{}
+	runtime, _, _, _ := makeSecureBusRuntimeFixture(t, tool, securebus.DefaultPolicyConfig())
+
+	results, err := runtime.Execute(
+		fantasy.WithStepIndex(t.Context(), 0),
+		nil,
+		[]fantasy.ToolCallContent{
+			{ToolCallID: "call-1", ToolName: "echo", Input: `{"text":"one"}`},
+			{ToolCallID: "call-2", ToolName: "echo", Input: `{"text":"two"}`},
+		},
+		nil,
+	)
+	require.NoError(t, err)
+	require.Len(t, results, 2)
+	assert.Equal(t, int32(2), tool.calls.Load())
+	assert.Equal(t, "one", results[0].Result.(fantasy.ToolResultOutputContentText).Text)
+	assert.Equal(t, "two", results[1].Result.(fantasy.ToolResultOutputContentText).Text)
+}
+
+func TestSecureBusToolRuntime_LeakRedactionIsPersisted(t *testing.T) {
+	t.Parallel()
+
+	secret := "AKIAIOSFODNN7EXAMPLE"
+	tool := &countingTool{text: "result: " + secret}
+	runtime, q, kv, runID := makeSecureBusRuntimeFixture(t, tool, securebus.DefaultPolicyConfig())
+
+	results, err := runtime.Execute(
+		fantasy.WithStepIndex(t.Context(), 0),
+		nil,
+		[]fantasy.ToolCallContent{{ToolCallID: "call-1", ToolName: "echo", Input: `{"text":"ignored"}`}},
+		nil,
+	)
+	require.NoError(t, err)
+	require.Len(t, results, 1)
+	assert.Equal(t, int32(1), tool.calls.Load())
+
+	textResult, ok := results[0].Result.(fantasy.ToolResultOutputContentText)
+	require.True(t, ok)
+	assert.NotContains(t, textResult.Text, secret)
+
+	rows, err := q.ListAgentToolResultsByRunID(t.Context(), sqlc.ListAgentToolResultsByRunIDParams{RunID: runID, Lim: 10})
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	require.NotNil(t, rows[0].Preview)
+	assert.NotContains(t, *rows[0].Preview, secret)
+
+	persisted, err := kv.Get(t.Context(), rows[0].FullKey)
+	require.NoError(t, err)
+	assert.NotContains(t, string(persisted), secret)
+}
+
+func TestSecureBusToolRuntime_PersistsToolExecutionErrorResult(t *testing.T) {
+	t.Parallel()
+
+	tool := &countingTool{text: "boom", err: true}
+	runtime, q, kv, runID := makeSecureBusRuntimeFixture(t, tool, securebus.DefaultPolicyConfig())
+
+	results, err := runtime.Execute(
+		fantasy.WithStepIndex(t.Context(), 2),
+		nil,
+		[]fantasy.ToolCallContent{{ToolCallID: "call-1", ToolName: "echo", Input: `{"text":"hello"}`}},
+		nil,
+	)
+	require.NoError(t, err)
+	require.Len(t, results, 1)
+	assert.Equal(t, int32(1), tool.calls.Load())
+
+	errorResult, ok := results[0].Result.(fantasy.ToolResultOutputContentError)
+	require.True(t, ok)
+	assert.Equal(t, "tool execution denied", errorResult.Error.Error())
+
+	rows, err := q.ListAgentToolResultsByRunID(t.Context(), sqlc.ListAgentToolResultsByRunIDParams{RunID: runID, Lim: 10})
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	require.NotNil(t, rows[0].Preview)
+	assert.Contains(t, *rows[0].Preview, "tool execution denied")
+
+	persisted, err := kv.Get(t.Context(), rows[0].FullKey)
+	require.NoError(t, err)
+	assert.Contains(t, string(persisted), `"type":"error"`)
+	assert.Contains(t, string(persisted), "tool execution denied")
+}
+
+func TestSecureBusToolRuntime_PersistsInvalidArgsErrorResult(t *testing.T) {
+	t.Parallel()
+
+	tool := &countingTool{}
+	runtime, q, kv, runID := makeSecureBusRuntimeFixture(t, tool, securebus.DefaultPolicyConfig())
+
+	results, err := runtime.Execute(
+		fantasy.WithStepIndex(t.Context(), 0),
+		nil,
+		[]fantasy.ToolCallContent{{ToolCallID: "call-1", ToolName: "echo", Input: `{"text":`}},
+		nil,
+	)
+	require.NoError(t, err)
+	require.Len(t, results, 1)
+
+	errorResult, ok := results[0].Result.(fantasy.ToolResultOutputContentError)
+	require.True(t, ok)
+	assert.Contains(t, errorResult.Error.Error(), "policy violation")
+	assert.Equal(t, int32(0), tool.calls.Load())
+
+	rows, err := q.ListAgentToolResultsByRunID(t.Context(), sqlc.ListAgentToolResultsByRunIDParams{RunID: runID, Lim: 10})
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	require.NotNil(t, rows[0].Preview)
+	assert.Contains(t, *rows[0].Preview, "policy violation")
+
+	persisted, err := kv.Get(t.Context(), rows[0].FullKey)
+	require.NoError(t, err)
+	assert.Contains(t, string(persisted), `"type":"error"`)
+	assert.Contains(t, string(persisted), "policy violation")
 }

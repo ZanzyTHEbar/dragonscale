@@ -24,6 +24,7 @@ func (al *AgentLoop) endTask(ctx context.Context, conversationID, runID ids.UUID
 	if al.memDelegate == nil {
 		return nil
 	}
+	ctx = context.WithoutCancel(ctx)
 
 	// Store self-report scores if the delegate implements RLStore
 	if rlStore, ok := al.memDelegate.(interface {

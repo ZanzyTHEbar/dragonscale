@@ -90,26 +90,19 @@ func (a *DragonToolAdapter) Run(ctx context.Context, call fantasy.ToolCall) (fan
 		return fantasy.NewTextErrorResponse(fmt.Sprintf("invalid arguments: %v", err)), nil
 	}
 
-	// 2. Set context for ContextualTool implementations.
-	if ct, ok := a.inner.(tools.ContextualTool); ok {
-		ct.SetContext(a.channel, a.chatID)
-	}
-
-	// 3. Wire async callback for AsyncTool implementations.
-	if at, ok := a.inner.(tools.AsyncTool); ok {
-		at.SetCallback(func(_ context.Context, result *tools.ToolResult) {
-			if result != nil && result.ForUser != "" && !result.Silent && a.bus != nil {
-				a.bus.PublishOutbound(bus.OutboundMessage{
-					Channel: a.channel,
-					ChatID:  a.chatID,
-					Content: result.ForUser,
-				})
-			}
-		})
-	}
+	execCtx := tools.WithExecutionTarget(ctx, a.channel, a.chatID)
+	execCtx = tools.WithAsyncCallback(execCtx, func(_ context.Context, result *tools.ToolResult) {
+		if result != nil && result.ForUser != "" && !result.Silent && a.bus != nil {
+			a.bus.PublishOutbound(bus.OutboundMessage{
+				Channel: a.channel,
+				ChatID:  a.chatID,
+				Content: result.ForUser,
+			})
+		}
+	})
 
 	// 4. Execute the DragonScale tool.
-	result := a.inner.Execute(ctx, args)
+	result := a.inner.Execute(execCtx, args)
 	if result == nil {
 		return fantasy.NewTextErrorResponse("tool returned nil result"), nil
 	}

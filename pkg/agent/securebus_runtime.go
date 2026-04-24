@@ -12,26 +12,36 @@ import (
 	"github.com/ZanzyTHEbar/dragonscale/pkg/itr"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/logger"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/security/securebus"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/tools"
 )
 
 // SecureBusToolRuntime is a fantasy.ToolRuntime that routes every tool call
-// through the SecureBus before (and after) passing it to the underlying runtime.
+// through the SecureBus, then persists the final post-policy result through the
+// offloading runtime.
 //
 // Pipeline per tool call:
 //  1. Serialize tool call args → ToolRequest
 //  2. bus.Execute() → capability check, secret injection, output scan, audit
 //  3. If bus returns a policy error, short-circuit with that error result
-//  4. Otherwise delegate to Base runtime for actual execution
-//  5. If bus detected a leak, replace Base output with the redacted version
+//  4. Persist the final result through the offloading runtime
 type SecureBusToolRuntime struct {
-	// Base is the underlying runtime and is required.
-	Base fantasy.ToolRuntime
+	// Offloader persists tool results and applies large-result truncation.
+	Offloader OffloadingToolRuntime
+
+	// FantasyTools allows execution of agent-only fantasy tools that are not part
+	// of the raw registry/securebus path.
+	FantasyTools map[string]fantasy.AgentTool
 
 	// Bus is required.
 	Bus *securebus.Bus
 
 	// SessionKey is forwarded to bus requests for audit tracing.
 	SessionKey string
+
+	// Channel and ChatID restore the registry execution context that contextual
+	// and async tools expect on the main runtime path.
+	Channel string
+	ChatID  string
 
 	// UserPrompt allows lightweight repair of placeholder tool arguments when
 	// the user provided an explicit literal value in the request.
@@ -45,7 +55,7 @@ type SecureBusToolRuntime struct {
 // Execute implements fantasy.ToolRuntime.
 func (r SecureBusToolRuntime) Execute(
 	ctx context.Context,
-	tools []fantasy.AgentTool,
+	_ []fantasy.AgentTool,
 	toolCalls []fantasy.ToolCallContent,
 	onResult func(fantasy.ToolResultContent) error,
 ) ([]fantasy.ToolResultContent, error) {
@@ -55,44 +65,74 @@ func (r SecureBusToolRuntime) Execute(
 	if r.Bus == nil {
 		return nil, fmt.Errorf("secure bus runtime requires bus")
 	}
-	if r.Base == nil {
-		return nil, fmt.Errorf("secure bus runtime requires base runtime")
+	if r.Offloader.KV == nil {
+		return nil, fmt.Errorf("secure bus runtime requires offloader")
 	}
 
 	results := make([]fantasy.ToolResultContent, 0, len(toolCalls))
 	stepIndex := fantasy.StepIndexFromCtx(ctx)
 
-	type deferredState struct {
-		step     int
-		state    string
-		snapshot map[string]any
-	}
-	var pendingStates []deferredState
+	var finalState *runtimeStepState
+	defer func() {
+		if finalState != nil {
+			r.recordRunState(context.WithoutCancel(ctx), finalState.step, finalState.state, finalState.snapshot)
+		}
+	}()
 
 	for i, tc := range toolCalls {
 		tc = repairToolCallInput(tc, r.UserPrompt)
 		step := stepIndex
-		pendingStates = append(pendingStates, deferredState{step, "tool_call", map[string]any{
+		execCtx := tools.WithExecutionTarget(ctx, r.Channel, r.ChatID)
+		finalState = &runtimeStepState{step: step, state: "tool_call", snapshot: map[string]any{
 			"tool_name":       tc.ToolName,
 			"tool_call_index": i,
-		}})
+		}}
+
+		if ft, ok := r.FantasyTools[tc.ToolName]; ok {
+			tr, err := executeFantasyTool(ctx, ft, tc)
+			if err != nil {
+				return results, err
+			}
+			persisted, err := r.Offloader.PersistResults(fantasy.WithStepIndex(ctx, step), step, []fantasy.ToolCallContent{tc}, []fantasy.ToolResultContent{tr})
+			if err != nil {
+				return results, err
+			}
+			for _, pr := range persisted {
+				results = append(results, pr)
+				finalState = &runtimeStepState{step: step, state: "tool_result", snapshot: map[string]any{
+					"tool_name":       tc.ToolName,
+					"tool_call_index": i,
+				}}
+				if onResult != nil {
+					if err := onResult(pr); err != nil {
+						return results, err
+					}
+				}
+			}
+			continue
+		}
 
 		reqID := ids.New().String()
 		req := itr.NewToolExecRequest(reqID, r.SessionKey, tc.ToolCallID, tc.ToolName, tc.Input)
-		busResp := r.Bus.Execute(ctx, req)
+		busResp := r.Bus.Execute(execCtx, req)
 
 		if busResp.IsError {
 			sanitized := sanitizePolicyError(busResp.Result)
-			tr := fantasy.ToolResultContent{
+			result := fantasy.ToolResultContent{
 				ToolCallID: tc.ToolCallID,
 				ToolName:   tc.ToolName,
 				Result:     fantasy.ToolResultOutputContentError{Error: errors.New(sanitized)},
 			}
-			pendingStates = append(pendingStates, deferredState{step, "tool_call_error", map[string]any{
+			persisted, err := r.Offloader.PersistResults(fantasy.WithStepIndex(ctx, step), step, []fantasy.ToolCallContent{tc}, []fantasy.ToolResultContent{result})
+			if err != nil {
+				return results, err
+			}
+			tr := persisted[0]
+			finalState = &runtimeStepState{step: step, state: "tool_call_error", snapshot: map[string]any{
 				"tool_name":  tc.ToolName,
 				"error":      busResp.Result,
 				"error_safe": sanitized,
-			}})
+			}}
 			results = append(results, tr)
 			if onResult != nil {
 				if err := onResult(tr); err != nil {
@@ -102,21 +142,22 @@ func (r SecureBusToolRuntime) Execute(
 			continue
 		}
 
-		// Execute via Base runtime for the single tool call.
-		baseResults, err := r.Base.Execute(fantasy.WithStepIndex(ctx, stepIndex), tools, []fantasy.ToolCallContent{tc}, nil)
+		result := fantasy.ToolResultContent{
+			ToolCallID: tc.ToolCallID,
+			ToolName:   tc.ToolName,
+			Result:     fantasy.ToolResultOutputContentText{Text: busResp.Result},
+		}
+		persisted, err := r.Offloader.PersistResults(fantasy.WithStepIndex(ctx, step), step, []fantasy.ToolCallContent{tc}, []fantasy.ToolResultContent{result})
 		if err != nil {
 			return results, err
 		}
 
-		for _, br := range baseResults {
-			if busResp.LeakDetected {
-				br = overrideResultText(br, busResp.Result)
-			}
+		for _, br := range persisted {
 			results = append(results, br)
-			pendingStates = append(pendingStates, deferredState{step, "tool_result", map[string]any{
+			finalState = &runtimeStepState{step: step, state: "tool_result", snapshot: map[string]any{
 				"tool_name":       tc.ToolName,
 				"tool_call_index": i,
-			}})
+			}}
 			if onResult != nil {
 				if err := onResult(br); err != nil {
 					return results, err
@@ -125,12 +166,13 @@ func (r SecureBusToolRuntime) Execute(
 		}
 	}
 
-	// Flush all buffered state writes in one pass
-	for _, ps := range pendingStates {
-		r.recordRunState(ctx, ps.step, ps.state, ps.snapshot)
-	}
-
 	return results, nil
+}
+
+type runtimeStepState struct {
+	step     int
+	state    string
+	snapshot map[string]any
 }
 
 func (r SecureBusToolRuntime) recordRunState(ctx context.Context, stepIndex int, state string, snapshot map[string]any) {
@@ -180,15 +222,6 @@ func sanitizePolicyError(raw string) string {
 	default:
 		return "tool execution denied"
 	}
-}
-
-// overrideResultText replaces the text output of a ToolResultContent with
-// the redacted version produced by the SecureBus.
-func overrideResultText(tr fantasy.ToolResultContent, text string) fantasy.ToolResultContent {
-	if _, ok := tr.Result.(fantasy.ToolResultOutputContentText); ok {
-		tr.Result = fantasy.ToolResultOutputContentText{Text: text}
-	}
-	return tr
 }
 
 func repairToolCallInput(tc fantasy.ToolCallContent, userPrompt string) fantasy.ToolCallContent {
@@ -244,6 +277,66 @@ func repairToolCallInput(tc fantasy.ToolCallContent, userPrompt string) fantasy.
 	}
 
 	return tc
+}
+
+func executeFantasyTool(ctx context.Context, tool fantasy.AgentTool, toolCall fantasy.ToolCallContent) (fantasy.ToolResultContent, error) {
+	result := fantasy.ToolResultContent{
+		ToolCallID:       toolCall.ToolCallID,
+		ToolName:         toolCall.ToolName,
+		ProviderExecuted: false,
+	}
+
+	response, err := tool.Run(ctx, fantasy.ToolCall{
+		ID:    toolCall.ToolCallID,
+		Name:  toolCall.ToolName,
+		Input: toolCall.Input,
+	})
+	if err != nil {
+		return result, err
+	}
+
+	result.ClientMetadata = response.Metadata
+	if response.IsError {
+		result.Result = fantasy.ToolResultOutputContentError{Error: errors.New(response.Content)}
+		return result, nil
+	}
+
+	switch response.Type {
+	case "image", "media":
+		result.Result = fantasy.ToolResultOutputContentMedia{
+			Data:      string(response.Data),
+			MediaType: response.MediaType,
+			Text:      response.Content,
+		}
+	default:
+		result.Result = fantasy.ToolResultOutputContentText{Text: response.Content}
+	}
+
+	return result, nil
+}
+
+func fantasyToolMap(toolsList []fantasy.AgentTool, registry *tools.ToolRegistry) map[string]fantasy.AgentTool {
+	if len(toolsList) == 0 {
+		return nil
+	}
+
+	fallback := make(map[string]fantasy.AgentTool)
+	for _, tool := range toolsList {
+		if tool == nil {
+			continue
+		}
+		name := tool.Info().Name
+		if registry != nil {
+			if _, ok := registry.Get(name); ok {
+				continue
+			}
+		}
+		fallback[name] = tool
+	}
+	if len(fallback) == 0 {
+		return nil
+	}
+	return fallback
 }
 
 func repairDirectArg(input, field, replacement string) (string, bool) {

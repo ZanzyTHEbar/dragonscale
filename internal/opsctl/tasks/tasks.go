@@ -281,8 +281,8 @@ func NewRegistry(_ string) []app.Task {
 		NewShellTask("fmt", "Format Go code", staticGoScript("fmt ./..."), nil),
 		NewCommandTask("lint", "Run all linting checks", lintSpecs, nil, nil),
 		NewShellTask("hooks", "Install git hooks", hooksScript, nil),
-		NewShellTask("deps", "Download dependencies", staticGoScript("mod download && mod verify"), nil),
-		NewShellTask("update-deps", "Update dependencies", staticGoScript("get -u ./... && mod tidy"), nil),
+		NewShellTask("deps", "Download dependencies", staticGoScript("mod download && $GO mod verify"), nil),
+		NewShellTask("update-deps", "Update dependencies", staticGoScript("get -u ./... && $GO mod tidy"), nil),
 		NewShellTask("sqlc-check", "Verify sqlc generation is idempotent", sqlcCheckScript, nil),
 		NewShellTask("flatc-check", "Verify flatc generation is idempotent", flatcCheckScript, nil),
 		NewShellTask("sqlc-vet", "Run sqlc vet rules", sqlcVetScript, nil),
@@ -734,6 +734,9 @@ func evalRunSpecs(c *app.Context) []runner.CommandSpec {
 	}
 
 	specs := append([]runner.CommandSpec{}, maybeEvalBuildSpecs(c)...)
+	if hasEvalSourceTree(c) {
+		specs = append(specs, evalFixturesSpecs(c)...)
+	}
 	if debug && strings.TrimSpace(baseCfg) != "" {
 		specs = append(specs, runner.CommandSpec{
 			Name: "echo",

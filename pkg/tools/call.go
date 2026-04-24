@@ -124,7 +124,8 @@ func (t *ToolCallTool) Execute(ctx context.Context, args map[string]interface{})
 		}
 	}
 
-	return t.registry.ExecuteWithContext(ctx, toolName, toolArgs, t.channel, t.chatID, nil)
+	channel, chatID := ResolveExecutionTarget(ctx, t.channel, t.chatID)
+	return t.registry.ExecuteWithContext(ctx, toolName, toolArgs, channel, chatID, AsyncCallbackFromContext(ctx))
 }
 
 // schemaHintError returns an error result that includes the tool's expected

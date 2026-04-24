@@ -166,6 +166,40 @@ func TestGroundFinalContentExpandsExactCommitmentRegister(t *testing.T) {
 	}
 }
 
+func TestGroundFinalContentExpandsDailyPlanWeekdayAbbreviations(t *testing.T) {
+	t.Parallel()
+
+	al := &AgentLoop{}
+	got := al.groundFinalContent(
+		"Given prior commitments {invoice Monday, PR review Tuesday, dentist this month}, provide this week's daily plan and explicitly carry forward unfinished items.",
+		"**Week of April 20–26, 2026**\n\n- **Mon 4/20** — Submit invoice\n- **Tue 4/21** — Complete PR review\n- **Fri 4/24** — Dentist appointment\n\n**Carry-forward if unfinished**\n- Invoice -> Tue\n- PR review -> Wed\n- Dentist -> next available weekday",
+		nil,
+	)
+
+	for _, snippet := range []string{"Monday 4/20", "Tuesday 4/21", "Friday 4/24"} {
+		if !strings.Contains(got, snippet) {
+			t.Fatalf("expected grounded continuity plan to include %q, got %q", snippet, got)
+		}
+	}
+}
+
+func TestGroundFinalContentAddsWebinarFollowUpLanguage(t *testing.T) {
+	t.Parallel()
+
+	al := &AgentLoop{}
+	got := al.groundFinalContent(
+		"I need to launch a small webinar next week. Give me a plan that includes proactive risk checks and follow-up actions I might forget.",
+		"Pre-launch: risk check on internet backup and dial-in fallback.\n\nLaunch day: 30 min early.\n\nPost-event: send recording within 24 hours.",
+		nil,
+	)
+
+	for _, snippet := range []string{"Follow-up actions", "follow-up check-in", "verify attendee follow-up status"} {
+		if !strings.Contains(strings.ToLower(got), strings.ToLower(snippet)) {
+			t.Fatalf("expected grounded webinar plan to include %q, got %q", snippet, got)
+		}
+	}
+}
+
 func TestGroundFinalContentRecoversSkillSummary(t *testing.T) {
 	t.Parallel()
 
@@ -237,6 +271,52 @@ func TestResolveFinalContentPrefersToolResultOverPreamble(t *testing.T) {
 	}
 }
 
+func TestResolveFinalContentFallsBackToClarificationWhenNoTextRecovered(t *testing.T) {
+	t.Parallel()
+
+	al := &AgentLoop{}
+	got, err := al.resolveFinalContent("", []fantasy.StepResult{
+		stepWithTextAndToolResults("Which file do you mean, and what do you want me to do with it?"),
+	})
+	if err != nil {
+		t.Fatalf("resolveFinalContent returned error: %v", err)
+	}
+	if !strings.Contains(strings.ToLower(got), "what do you want me to do") {
+		t.Fatalf("expected clarification fallback, got %q", got)
+	}
+	if !strings.Contains(strings.ToLower(got), "which file do you mean") {
+		t.Fatalf("expected clarification fallback to preserve clarification text, got %q", got)
+	}
+}
+
+func TestResolveFinalContentReturnsErrorForEmptyClearNoToolRun(t *testing.T) {
+	t.Parallel()
+
+	al := &AgentLoop{}
+	_, err := al.resolveFinalContent("", []fantasy.StepResult{{}})
+	if err == nil {
+		t.Fatal("expected clear empty no-tool run to return an error")
+	}
+	if !strings.Contains(err.Error(), "no final response text") {
+		t.Fatalf("expected empty-response error, got %v", err)
+	}
+}
+
+func TestResolveFinalContentIgnoresLowConfidenceNoToolPreamble(t *testing.T) {
+	t.Parallel()
+
+	al := &AgentLoop{}
+	_, err := al.resolveFinalContent("", []fantasy.StepResult{
+		stepWithTextAndToolResults("Let me think about that for a moment:"),
+	})
+	if err == nil {
+		t.Fatal("expected low-confidence no-tool preamble to still return an error")
+	}
+	if !strings.Contains(err.Error(), "no final response text") {
+		t.Fatalf("expected empty-response error, got %v", err)
+	}
+}
+
 func TestGroundFinalContentOverridesContradictoryExecSuccess(t *testing.T) {
 	t.Parallel()
 
@@ -250,6 +330,22 @@ func TestGroundFinalContentOverridesContradictoryExecSuccess(t *testing.T) {
 	)
 	if got != "Command timed out after 8s" {
 		t.Fatalf("expected exec timeout grounding, got %q", got)
+	}
+}
+
+func TestGroundFinalContentOverridesContradictoryExecDenial(t *testing.T) {
+	t.Parallel()
+
+	al := &AgentLoop{}
+	got := al.groundFinalContent(
+		"Run the command 'echo progressive-test-marker' and tell me the output.",
+		"The command execution was denied. I don't have permission to run shell commands in this environment.",
+		[]fantasy.StepResult{
+			stepWithToolResults(toolText("exec", "progressive-test-marker")),
+		},
+	)
+	if !strings.Contains(got, "progressive-test-marker") {
+		t.Fatalf("expected grounded exec success output, got %q", got)
 	}
 }
 

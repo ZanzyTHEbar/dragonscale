@@ -122,7 +122,7 @@ func (b *DefaultActiveContextBuilder) BuildTurnContext(ctx context.Context, req 
 		summary = strings.TrimSpace(b.sessions.GetSummary(req.ProjectionRequest.SessionKey))
 	}
 
-	systemSegments := b.buildSystemSegments(req.ProjectionRequest.SessionKey, summary, budget.System)
+	systemSegments := b.buildSystemSegments(req.ProjectionRequest.SessionKey, req.CurrentMessage, summary, budget.System)
 	projection.Segments = append(projection.Segments, systemSegments...)
 
 	var immutableHistory []*memory.ImmutableMessage
@@ -153,14 +153,14 @@ func (b *DefaultActiveContextBuilder) BuildTurnContext(ctx context.Context, req 
 	}, nil
 }
 
-func (b *DefaultActiveContextBuilder) buildSystemSegments(sessionKey, summary string, budget int) []memory.ProjectionSegment {
+func (b *DefaultActiveContextBuilder) buildSystemSegments(sessionKey, currentMessage, summary string, budget int) []memory.ProjectionSegment {
 	if b.contextBuilder == nil || budget <= 0 {
 		return nil
 	}
 
 	candidates := make([]memory.ProjectionSegment, 0, 2)
 
-	systemPrompt := strings.TrimSpace(b.contextBuilder.BuildSystemPromptWithBudget(0))
+	systemPrompt := strings.TrimSpace(b.contextBuilder.BuildSystemPromptForTurn(sessionKey, currentMessage, 0))
 	if systemPrompt != "" {
 		candidates = append(candidates, memory.ProjectionSegment{
 			Kind:   memory.ProjectionSegmentSystem,

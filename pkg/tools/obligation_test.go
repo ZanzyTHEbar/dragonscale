@@ -46,6 +46,56 @@ func TestObligationTool_CreateAndList(t *testing.T) {
 	assert.GreaterOrEqual(t, payload.Count, 1)
 }
 
+func TestObligationTool_CreateAcceptsEvalStyleAliases(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	del, err := delegate.NewLibSQLInMemory()
+	require.NoError(t, err)
+	require.NoError(t, del.Init(ctx))
+	defer del.Close()
+
+	tool := NewObligationTool(del, "test-agent")
+	create := tool.Execute(ctx, map[string]interface{}{
+		"action":      "create",
+		"content":     "Submit tax documents",
+		"details":     "Critical financial deadline",
+		"remind_at":   "2026-03-10T09:00:00",
+		"due_date":    "2026-03-15T23:59:00",
+		"description": "backup description should be ignored when details present",
+	})
+	require.NotNil(t, create)
+	require.False(t, create.IsError, create.ForLLM)
+
+	var rec ObligationRecord
+	require.NoError(t, jsonv2.Unmarshal([]byte(create.ForLLM), &rec))
+	assert.Equal(t, "Submit tax documents", rec.Title)
+	assert.Equal(t, "Critical financial deadline", rec.Details)
+	assert.Empty(t, cmp.Diff(ObligationStateScheduled, rec.State))
+	assert.Equal(t, time.Date(2026, 3, 10, 9, 0, 0, 0, time.UTC), rec.ScheduledAt)
+	assert.Equal(t, time.Date(2026, 3, 15, 23, 59, 0, 0, time.UTC), rec.DueAt)
+}
+
+func TestObligationTool_ParametersDescribeCreateAliases(t *testing.T) {
+	t.Parallel()
+
+	tool := NewObligationTool(nil, "test-agent")
+	params := tool.Parameters()
+	properties, ok := params["properties"].(map[string]interface{})
+	require.True(t, ok)
+
+	for _, key := range []string{"content", "notes", "description", "remind_at", "reminder_at", "due_date", "deadline_at"} {
+		_, ok := properties[key]
+		assert.True(t, ok, "expected parameters to include alias field %q", key)
+	}
+
+	titleDesc := properties["title"].(map[string]interface{})["description"].(string)
+	assert.Contains(t, titleDesc, "Alias: content")
+	dueDesc := properties["due_at"].(map[string]interface{})["description"].(string)
+	assert.Contains(t, dueDesc, "due_date")
+	scheduledDesc := properties["scheduled_at"].(map[string]interface{})["description"].(string)
+	assert.Contains(t, scheduledDesc, "remind_at")
+}
+
 func TestObligationTool_StateMachineAndEvidence(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()

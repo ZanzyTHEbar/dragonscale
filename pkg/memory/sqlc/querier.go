@@ -448,8 +448,8 @@ type Querier interface {
 	//      created_at
 	//  FROM task_completions
 	//  WHERE agent_id = ?1
-	//      AND created_at > ?2
-	//      AND completed = 1
+	//  	AND unixepoch(created_at) > unixepoch(?2)
+	//  	AND completed = 1
 	//  ORDER BY created_at ASC
 	GetCompletedTasks(ctx context.Context, arg GetCompletedTasksParams) ([]TaskCompletion, error)
 	//GetDAGNodeBySnapshotAndNodeID
@@ -1154,7 +1154,7 @@ type Querier interface {
 	//
 	//  SELECT DISTINCT agent_id
 	//  FROM task_completions
-	//  WHERE created_at > ?1
+	//  WHERE unixepoch(created_at) > unixepoch(?1)
 	//  ORDER BY agent_id
 	ListActiveAgents(ctx context.Context, arg ListActiveAgentsParams) ([]string, error)
 	//ListAgentCheckpointsByConversationID
