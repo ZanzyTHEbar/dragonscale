@@ -165,6 +165,46 @@ func TestEditTool_EditFile_OutsideAllowedDir(t *testing.T) {
 	}
 }
 
+func TestEditTool_EditFile_SymlinkInsideWorkspace(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+	target := filepath.Join(tmpDir, "target.txt")
+	link := filepath.Join(tmpDir, "link.txt")
+	if err := os.WriteFile(target, []byte("Hello World"), 0644); err != nil {
+		t.Fatalf("failed to write target file: %v", err)
+	}
+	if err := os.Symlink(target, link); err != nil {
+		t.Skipf("symlink not supported in this environment: %v", err)
+	}
+
+	tool := NewEditFileTool(tmpDir, true)
+	result := tool.Execute(t.Context(), map[string]interface{}{
+		"path":     link,
+		"old_text": "World",
+		"new_text": "DragonScale",
+	})
+
+	if result.IsError {
+		t.Fatalf("expected symlink edit to succeed, got: %s", result.ForLLM)
+	}
+
+	content, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatalf("failed to read target file: %v", err)
+	}
+	if string(content) != "Hello DragonScale" {
+		t.Fatalf("expected target content to be updated, got: %s", string(content))
+	}
+
+	info, err := os.Lstat(link)
+	if err != nil {
+		t.Fatalf("failed to stat symlink: %v", err)
+	}
+	if info.Mode()&os.ModeSymlink == 0 {
+		t.Fatal("expected link path to remain a symlink")
+	}
+}
+
 // TestEditTool_EditFile_MissingPath verifies error handling for missing path
 func TestEditTool_EditFile_MissingPath(t *testing.T) {
 	t.Parallel()
@@ -261,6 +301,45 @@ func TestEditTool_AppendFile_Success(t *testing.T) {
 	}
 	if !strings.Contains(contentStr, "Appended content") {
 		t.Errorf("Expected appended content, got: %s", contentStr)
+	}
+}
+
+func TestEditTool_AppendFile_SymlinkInsideWorkspace(t *testing.T) {
+	t.Parallel()
+	tmpDir := t.TempDir()
+	target := filepath.Join(tmpDir, "target.txt")
+	link := filepath.Join(tmpDir, "link.txt")
+	if err := os.WriteFile(target, []byte("Initial content"), 0644); err != nil {
+		t.Fatalf("failed to write target file: %v", err)
+	}
+	if err := os.Symlink(target, link); err != nil {
+		t.Skipf("symlink not supported in this environment: %v", err)
+	}
+
+	tool := NewAppendFileTool(tmpDir, true)
+	result := tool.Execute(t.Context(), map[string]interface{}{
+		"path":    link,
+		"content": "\nAppended content",
+	})
+
+	if result.IsError {
+		t.Fatalf("expected symlink append to succeed, got: %s", result.ForLLM)
+	}
+
+	content, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatalf("failed to read target file: %v", err)
+	}
+	if string(content) != "Initial content\nAppended content" {
+		t.Fatalf("expected target content to be appended, got: %s", string(content))
+	}
+
+	info, err := os.Lstat(link)
+	if err != nil {
+		t.Fatalf("failed to stat symlink: %v", err)
+	}
+	if info.Mode()&os.ModeSymlink == 0 {
+		t.Fatal("expected link path to remain a symlink")
 	}
 }
 

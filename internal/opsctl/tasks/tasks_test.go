@@ -497,6 +497,30 @@ func TestEvalTaskBuildsPromptfooCommandWithDefaultConfig(t *testing.T) {
 	require.Contains(t, strings.Join(fake.Calls[1].Args, " "), "--no-progress-bar")
 }
 
+func TestEvalTestTaskBypassesDevcontainerWrapperWhenDisabled(t *testing.T) {
+	t.Parallel()
+
+	ctx := &app.Context{
+		Root: t.TempDir(),
+		ExtraEnv: map[string]string{
+			"DEVCONTAINER_EXEC":         "npx --yes @devcontainers/cli exec --workspace-folder \"$PWD\" --",
+			"SKIP_DEVCONTAINER_WRAPPER": "1",
+		},
+	}
+	fake := &runner.FakeRunner{Result: runner.CommandResult{ExitCode: 0}}
+
+	task := findTaskByName(t, NewRegistry(ctx.Root), "eval-test")
+	_, err := task.Run(context.Background(), fake, ctx)
+	require.NoError(t, err)
+	require.Len(t, fake.Calls, 1)
+	require.Equal(t, "bash", fake.Calls[0].Name)
+	joinedArgs := strings.Join(fake.Calls[0].Args, " ")
+	require.Contains(t, joinedArgs, "$GO test -v ./eval/go_evals/...")
+	require.NotContains(t, joinedArgs, "@devcontainers/cli")
+	joinedEnv := strings.Join(fake.Calls[0].Env, " ")
+	require.Contains(t, joinedEnv, "DEVCONTAINER_EXEC=npx --yes @devcontainers/cli exec --workspace-folder \"$PWD\" --")
+}
+
 func TestEvalViewTaskRunsInEvalDirectory(t *testing.T) {
 	ctx := &app.Context{
 		Root: t.TempDir(),

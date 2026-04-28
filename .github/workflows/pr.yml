@@ -108,9 +108,50 @@ jobs:
       - name: Run go test with race detector
         run: go test -race -coverprofile=coverage.txt -covermode=atomic ./...
 
-      - name: Print coverage summary
+      - name: Write coverage summary
         if: always()
-        run: go tool cover -func=coverage.txt | tail -1
+        shell: bash
+        run: |
+          if [ -f coverage.txt ]; then
+            go tool cover -func=coverage.txt | tee coverage-summary.txt
+          fi
+
+      - name: Upload coverage artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr-coverage-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            coverage.txt
+            coverage-summary.txt
+          if-no-files-found: warn
+
+  eval-proof:
+    runs-on: ubuntu-latest
+    needs: [fmt-check, flatc-check]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Run eval smoke proof
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p eval/results
+          SKIP_DEVCONTAINER_WRAPPER=1 make DEVCONTAINER_EXEC= eval-test 2>&1 | tee eval/results/eval-test.log
+
+      - name: Upload eval smoke artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-smoke-${{ github.run_id }}-${{ github.run_attempt }}
+          path: eval/results/eval-test.log
+          if-no-files-found: error
 
   integration-test:
     runs-on: ubuntu-latest

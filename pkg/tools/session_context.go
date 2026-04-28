@@ -9,6 +9,7 @@ import (
 type ctxSessionKey struct{}
 type ctxExecutionTarget struct{}
 type ctxAsyncCallback struct{}
+type ctxInjectedArgKeys struct{}
 type ctxMessageSendTracker struct{}
 
 type executionTarget struct {
@@ -93,6 +94,38 @@ func WithAsyncCallback(ctx context.Context, cb AsyncCallback) context.Context {
 // attached via WithAsyncCallback.
 func AsyncCallbackFromContext(ctx context.Context) AsyncCallback {
 	v, _ := ctx.Value(ctxAsyncCallback{}).(AsyncCallback)
+	return v
+}
+
+// WithInjectedArgKeys annotates the execution context with argument keys that
+// were injected by trusted runtime infrastructure, such as SecureBus secret
+// delivery. Validation ignores these keys when they are not part of the
+// user-facing parameter schema.
+func WithInjectedArgKeys(ctx context.Context, keys ...string) context.Context {
+	if len(keys) == 0 {
+		return ctx
+	}
+	merged := make(map[string]struct{})
+	for key := range InjectedArgKeysFromContext(ctx) {
+		merged[key] = struct{}{}
+	}
+	for _, key := range keys {
+		key = strings.TrimSpace(key)
+		if key == "" {
+			continue
+		}
+		merged[key] = struct{}{}
+	}
+	if len(merged) == 0 {
+		return ctx
+	}
+	return context.WithValue(ctx, ctxInjectedArgKeys{}, merged)
+}
+
+// InjectedArgKeysFromContext returns the trusted argument keys previously
+// attached via WithInjectedArgKeys.
+func InjectedArgKeysFromContext(ctx context.Context) map[string]struct{} {
+	v, _ := ctx.Value(ctxInjectedArgKeys{}).(map[string]struct{})
 	return v
 }
 

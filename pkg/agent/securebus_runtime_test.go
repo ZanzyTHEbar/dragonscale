@@ -2,12 +2,17 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	fantasy "charm.land/fantasy"
+	"github.com/ZanzyTHEbar/dragonscale/pkg"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/ids"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/itr"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/memory"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/memory/delegate"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/memory/sqlc"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/security/securebus"
@@ -71,6 +76,14 @@ func makeSecureBusRuntimeFixture(t *testing.T, tool tools.Tool, policy securebus
 	require.NoError(t, err)
 
 	kv := NewDelegateKV(db.delegate, "securebus-runtime-test")
+	auditCh := make(chan *memory.AuditEntry, 16)
+	auditDone := make(chan struct{})
+	al := &AgentLoop{memDelegate: db.delegate, auditChan: auditCh, auditDone: auditDone}
+	go al.auditWorker(t.Context(), auditCh, auditDone)
+	t.Cleanup(func() {
+		close(auditCh)
+		<-auditDone
+	})
 	capLookup := func(name string) (tools.ToolCapabilities, bool) {
 		if name != tool.Name() {
 			return tools.ZeroCapabilities(), false
@@ -83,7 +96,8 @@ func makeSecureBusRuntimeFixture(t *testing.T, tool tools.Tool, policy securebus
 		}
 		return tool.Execute(ctx, args)
 	}
-	bus := securebus.New(securebus.BusConfig{Policy: policy, Workers: 1}, nil, capLookup, executor)
+	auditSink := newSecureBusAuditSink(al.enqueueAuditEntry)
+	bus := securebus.New(securebus.BusConfig{Policy: policy, Workers: 1}, nil, capLookup, executor, auditSink)
 	t.Cleanup(bus.Close)
 
 	return SecureBusToolRuntime{
@@ -100,6 +114,33 @@ func makeSecureBusRuntimeFixture(t *testing.T, tool tools.Tool, policy securebus
 		StateStore: stateStore,
 		RunID:      run.ID,
 	}, q, kv, run.ID
+}
+
+func listAuditEntriesBySession(t *testing.T, q *sqlc.Queries, sessionKey string) []sqlc.AgentAuditLog {
+	t.Helper()
+	rows, err := q.ListAuditEntriesBySession(t.Context(), sqlc.ListAuditEntriesBySessionParams{
+		AgentID:    pkg.NAME,
+		SessionKey: sessionKey,
+		Lim:        32,
+	})
+	require.NoError(t, err)
+	return rows
+}
+
+func waitForSecureBusAuditEvent(t *testing.T, q *sqlc.Queries, sessionKey, action, toolCallID string) sqlc.AgentAuditLog {
+	t.Helper()
+	var matched sqlc.AgentAuditLog
+	require.Eventually(t, func() bool {
+		rows := listAuditEntriesBySession(t, q, sessionKey)
+		for _, row := range rows {
+			if row.Action == action && row.ToolCallID == toolCallID {
+				matched = row
+				return true
+			}
+		}
+		return false
+	}, 2*time.Second, 50*time.Millisecond)
+	return matched
 }
 
 func TestRepairToolCallInputRepairsDirectExecPlaceholder(t *testing.T) {
@@ -361,4 +402,131 @@ func TestSecureBusToolRuntime_PersistsInvalidArgsErrorResult(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, string(persisted), `"type":"error"`)
 	assert.Contains(t, string(persisted), "policy violation")
+}
+
+func TestSecureBusToolRuntime_PersistsBusNativeAuditEvent(t *testing.T) {
+	t.Parallel()
+
+	tool := &countingTool{}
+	runtime, q, _, _ := makeSecureBusRuntimeFixture(t, tool, securebus.DefaultPolicyConfig())
+
+	_, err := runtime.Execute(
+		fantasy.WithStepIndex(t.Context(), 0),
+		nil,
+		[]fantasy.ToolCallContent{{ToolCallID: "call-1", ToolName: "echo", Input: `{"text":"hello"}`}},
+		nil,
+	)
+	require.NoError(t, err)
+
+	row := waitForSecureBusAuditEvent(t, q, runtime.SessionKey, "securebus_tool_exec", "call-1")
+	require.Equal(t, "echo", row.Target)
+	require.NotNil(t, row.Output)
+	var payload securebus.AuditEvent
+	require.NoError(t, json.Unmarshal([]byte(*row.Output), &payload))
+	assert.Equal(t, string(itr.CmdToolExec), payload.CommandType)
+	assert.Equal(t, "echo", payload.ToolName)
+	assert.Equal(t, "call-1", payload.ToolCallID)
+	assert.NotEmpty(t, payload.RequestID)
+	require.NotNil(t, row.DurationMs)
+	assert.GreaterOrEqual(t, *row.DurationMs, int64(0))
+	assert.True(t, row.Success)
+}
+
+func TestSecureBusToolRuntime_PersistsBusNativePolicyViolationAuditEvent(t *testing.T) {
+	t.Parallel()
+
+	tool := &countingTool{}
+	runtime, q, _, _ := makeSecureBusRuntimeFixture(t, tool, securebus.DefaultPolicyConfig())
+	req := itr.NewToolExecRequest("req-policy", runtime.SessionKey, "call-policy", "echo", `{}`)
+	req.Depth = 255
+
+	resp := runtime.Bus.Execute(t.Context(), req)
+	assert.True(t, resp.IsError)
+
+	row := waitForSecureBusAuditEvent(t, q, runtime.SessionKey, "securebus_tool_exec_policy_violation", "call-policy")
+	assert.Equal(t, "echo", row.Target)
+	assert.False(t, row.Success)
+	assert.Contains(t, row.ErrorMsg, "recursion depth")
+	require.NotNil(t, row.Output)
+	var payload securebus.AuditEvent
+	require.NoError(t, json.Unmarshal([]byte(*row.Output), &payload))
+	assert.True(t, payload.IsError)
+	assert.NotEmpty(t, payload.PolicyViolation)
+	assert.Equal(t, "echo", payload.ToolName)
+}
+
+func TestSecureBusToolRuntime_PersistsBusNativeToolErrorAuditEvent(t *testing.T) {
+	t.Parallel()
+
+	tool := &countingTool{text: "boom", err: true}
+	runtime, q, _, _ := makeSecureBusRuntimeFixture(t, tool, securebus.DefaultPolicyConfig())
+
+	_, err := runtime.Execute(
+		fantasy.WithStepIndex(t.Context(), 0),
+		nil,
+		[]fantasy.ToolCallContent{{ToolCallID: "call-error", ToolName: "echo", Input: `{"text":"hello"}`}},
+		nil,
+	)
+	require.NoError(t, err)
+
+	row := waitForSecureBusAuditEvent(t, q, runtime.SessionKey, "securebus_tool_exec_error", "call-error")
+	assert.Equal(t, "echo", row.Target)
+	assert.False(t, row.Success)
+	assert.Equal(t, "boom", row.ErrorMsg)
+	require.NotNil(t, row.Output)
+	var payload securebus.AuditEvent
+	require.NoError(t, json.Unmarshal([]byte(*row.Output), &payload))
+	assert.True(t, payload.IsError)
+	assert.Equal(t, "boom", payload.ExecutionError)
+	assert.Equal(t, "", payload.PolicyViolation)
+	assert.False(t, payload.LeakDetected)
+}
+
+func TestSecureBusToolRuntime_PersistsBusNativeLeakAuditEvent(t *testing.T) {
+	t.Parallel()
+
+	tool := &countingTool{text: "result: AKIAIOSFODNN7EXAMPLE"}
+	runtime, q, _, _ := makeSecureBusRuntimeFixture(t, tool, securebus.DefaultPolicyConfig())
+
+	_, err := runtime.Execute(
+		fantasy.WithStepIndex(t.Context(), 0),
+		nil,
+		[]fantasy.ToolCallContent{{ToolCallID: "call-leak", ToolName: "echo", Input: `{"text":"hello"}`}},
+		nil,
+	)
+	require.NoError(t, err)
+
+	row := waitForSecureBusAuditEvent(t, q, runtime.SessionKey, "securebus_tool_exec_leak", "call-leak")
+	assert.Equal(t, "echo", row.Target)
+	assert.True(t, row.Success)
+	require.NotNil(t, row.Output)
+	var payload securebus.AuditEvent
+	require.NoError(t, json.Unmarshal([]byte(*row.Output), &payload))
+	assert.True(t, payload.LeakDetected)
+	assert.False(t, payload.IsError)
+}
+
+func TestSecureBusAuditSink_WriteReturnsErrorWhenEnqueueFails(t *testing.T) {
+	t.Parallel()
+
+	var captured *memory.AuditEntry
+	sink := newSecureBusAuditSink(func(entry *memory.AuditEntry) bool {
+		captured = entry
+		return false
+	})
+	require.NotNil(t, sink)
+
+	err := sink.Write(securebus.AuditEvent{
+		RequestID:   "req-drop",
+		SessionKey:  "sink-session",
+		ToolCallID:  "call-drop",
+		ToolName:    "echo",
+		CommandType: string(itr.CmdToolExec),
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "securebus audit enqueue failed")
+	require.NotNil(t, captured)
+	assert.Equal(t, "securebus_tool_exec", captured.Action)
+	assert.Equal(t, "echo", captured.Target)
+	assert.Equal(t, "call-drop", captured.ToolCallID)
 }

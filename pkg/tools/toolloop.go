@@ -25,8 +25,12 @@ type ToolLoopConfig struct {
 
 // ToolLoopResult contains the result of running the tool loop.
 type ToolLoopResult struct {
-	Content    string
-	Iterations int
+	Content     string
+	Iterations  int
+	Steps       []fantasy.StepResult
+	ToolCalls   int
+	Errors      int
+	TotalTokens int
 }
 
 // ErrRunLoopNotConfigured indicates that the unified loop runner was not

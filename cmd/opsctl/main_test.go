@@ -136,11 +136,27 @@ func TestRunHelpIncludesGlobalOutputFlags(t *testing.T) {
 	require.Contains(t, out.String(), "--timeout")
 }
 
+func TestRunHelpIncludesSkipDevcontainerWrapperEnv(t *testing.T) {
+	out := &bytes.Buffer{}
+	errOut := &bytes.Buffer{}
+	code := run([]string{"--help"}, out, errOut)
+	require.Equal(t, 0, code)
+	require.Equal(t, "", errOut.String())
+	require.Contains(t, out.String(), "SKIP_DEVCONTAINER_WRAPPER")
+}
+
 func TestDefaultRunEnvKeysIncludesPromptfooArgs(t *testing.T) {
 	t.Parallel()
 
 	keys := defaultRunEnvKeys()
 	require.Contains(t, keys, "DRAGONSCALE_PROMPTFOO_ARGS")
+}
+
+func TestDefaultRunEnvKeysIncludesSkipDevcontainerWrapper(t *testing.T) {
+	t.Parallel()
+
+	keys := defaultRunEnvKeys()
+	require.Contains(t, keys, "SKIP_DEVCONTAINER_WRAPPER")
 }
 
 func TestMakefilePhonyTargetsAreAvailableInOpsctl(t *testing.T) {
@@ -174,6 +190,15 @@ func TestMakeEvalBuildForwardsEnvToOpsctl(t *testing.T) {
 	})
 	require.Contains(t, output, "cmd:--no-color --format raw eval-build")
 	require.Contains(t, output, "eval-config:/tmp/eval/config.json")
+}
+
+func TestMakeEvalTestHostModeClearsDevcontainerExec(t *testing.T) {
+	output := runMakeTargetWithFakeOpsctl(t, "eval-test", map[string]string{
+		"DEVCONTAINER_EXEC":         "",
+		"SKIP_DEVCONTAINER_WRAPPER": "1",
+	})
+	require.Contains(t, output, "cmd:--no-color --format raw eval-test")
+	require.NotContains(t, output, "@devcontainers/cli")
 }
 
 func parseMakefilePhonyTargets(t *testing.T) []string {

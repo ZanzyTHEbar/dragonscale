@@ -91,12 +91,15 @@ func collectAgentRunMetrics(result *fantasy.AgentResult) agentRunMetrics {
 	if result == nil {
 		return agentRunMetrics{}
 	}
+	return collectAgentRunStepMetrics(result.Steps, int(result.TotalUsage.TotalTokens))
+}
 
+func collectAgentRunStepMetrics(steps []fantasy.StepResult, totalTokens int) agentRunMetrics {
 	metrics := agentRunMetrics{
-		StepCount:   len(result.Steps),
-		TotalTokens: int(result.TotalUsage.TotalTokens),
+		StepCount:   len(steps),
+		TotalTokens: totalTokens,
 	}
-	for _, step := range result.Steps {
+	for _, step := range steps {
 		metrics.ToolCalls += len(step.Content.ToolCalls())
 		for _, tr := range step.Content.ToolResults() {
 			if errResult, ok := tr.Result.(fantasy.ToolResultOutputContentError); ok && errResult.Error != nil {
@@ -106,6 +109,53 @@ func collectAgentRunMetrics(result *fantasy.AgentResult) agentRunMetrics {
 	}
 
 	return metrics
+}
+
+func (al *AgentLoop) transitionObserver(runID ids.UUID) fantasy.ReActTransitionObserverFunc {
+	return fantasy.ReActTransitionObserverFunc(func(observerCtx context.Context, t fantasy.ReActTransition) {
+		if al == nil || al.stateStore == nil || runID.IsZero() {
+			return
+		}
+		if _, err := al.stateStore.AddTransition(context.WithoutCancel(observerCtx), runID, t); err != nil {
+			logger.WarnCF("agent", "Failed to persist ReAct transition",
+				map[string]interface{}{
+					"error":      err.Error(),
+					"run_id":     runID.String(),
+					"from":       string(t.From),
+					"to":         string(t.To),
+					"trigger":    string(t.Trigger),
+					"step_index": t.StepIndex,
+				})
+		}
+	})
+}
+
+func (al *AgentLoop) replayAgentSteps(ctx context.Context, sessionKey string, steps []fantasy.StepResult) {
+	for _, step := range steps {
+		stepMsgs := dragonfantasy.StepToMessages(step)
+		for _, m := range stepMsgs {
+			al.sessions.AddFullMessage(sessionKey, m)
+		}
+		al.auditStep(ctx, step, sessionKey)
+	}
+}
+
+func (al *AgentLoop) ensureFinalAssistantMessage(sessionKey, finalContent string) {
+	if al == nil || al.sessions == nil {
+		return
+	}
+	trimmed := strings.TrimSpace(finalContent)
+	if strings.TrimSpace(sessionKey) == "" || trimmed == "" {
+		return
+	}
+	history := al.sessions.GetHistory(sessionKey)
+	if len(history) > 0 {
+		last := history[len(history)-1]
+		if last.Role == "assistant" && last.ToolCallID == "" && len(last.ToolCalls) == 0 && strings.TrimSpace(last.Content) == trimmed {
+			return
+		}
+	}
+	al.sessions.AddMessage(sessionKey, "assistant", trimmed)
 }
 
 func (al *AgentLoop) prepareRuntimeState(ctx context.Context, sessionKey string) (ids.UUID, ids.UUID, error) {
@@ -903,29 +953,13 @@ func (al *AgentLoop) createFantasyAgent(ctx context.Context, opts processOptions
 		StateStore:   al.stateStore,
 		RunID:        runID,
 	}
-	transitionObserver := fantasy.ReActTransitionObserverFunc(func(observerCtx context.Context, t fantasy.ReActTransition) {
-		if al.stateStore == nil || runID.IsZero() {
-			return
-		}
-		if _, err := al.stateStore.AddTransition(context.WithoutCancel(observerCtx), runID, t); err != nil {
-			logger.WarnCF("agent", "Failed to persist ReAct transition",
-				map[string]interface{}{
-					"error":      err.Error(),
-					"run_id":     runID.String(),
-					"from":       string(t.From),
-					"to":         string(t.To),
-					"trigger":    string(t.Trigger),
-					"step_index": t.StepIndex,
-				})
-		}
-	})
 
 	agentOpts := []fantasy.AgentOption{
 		fantasy.WithTools(adaptedTools...),
 		fantasy.WithStopConditions(fantasy.StepCountIs(al.maxIterations)),
 		fantasy.WithPrepareStep(prepareStep),
 		fantasy.WithToolRuntime(toolRuntime),
-		fantasy.WithTransitionObserver(transitionObserver),
+		fantasy.WithTransitionObserver(al.transitionObserver(runID)),
 	}
 	if systemPrompt != "" {
 		agentOpts = append(agentOpts, fantasy.WithSystemPrompt(systemPrompt))
@@ -937,6 +971,8 @@ func (al *AgentLoop) createFantasyAgent(ctx context.Context, opts processOptions
 // postProcess handles the common finalization after Generate or Stream:
 // extract final text, save session, summarize, observe, optionally send response.
 func (al *AgentLoop) postProcess(ctx context.Context, opts processOptions, finalContent string, metrics agentRunMetrics) string {
+	al.ensureFinalAssistantMessage(opts.SessionKey, finalContent)
+
 	// Snapshot BEFORE summarization can truncate history, preventing
 	// observation manager from seeing an incomplete view.
 	tail := al.sessionsToMessagePairs(opts.SessionKey)
@@ -1801,13 +1837,7 @@ func (al *AgentLoop) runAgentLoop(ctx context.Context, opts processOptions) (fin
 		return "", fmt.Errorf("agent Generate failed: %w", err)
 	}
 
-	for _, step := range result.Steps {
-		stepMsgs := dragonfantasy.StepToMessages(step)
-		for _, m := range stepMsgs {
-			al.sessions.AddFullMessage(opts.SessionKey, m)
-		}
-		al.auditStep(ctx, step, opts.SessionKey)
-	}
+	al.replayAgentSteps(ctx, opts.SessionKey, result.Steps)
 
 	finalContent, err = al.resolveFinalContent(result.Response.Content.Text(), result.Steps)
 	if err != nil {
@@ -1850,11 +1880,7 @@ func (al *AgentLoop) runStreaming(ctx context.Context, opts processOptions, ac a
 		},
 
 		OnStepFinish: func(step fantasy.StepResult) error {
-			stepMsgs := dragonfantasy.StepToMessages(step)
-			for _, m := range stepMsgs {
-				al.sessions.AddFullMessage(opts.SessionKey, m)
-			}
-			al.auditStep(ctx, step, opts.SessionKey)
+			al.replayAgentSteps(ctx, opts.SessionKey, []fantasy.StepResult{step})
 			return nil
 		},
 

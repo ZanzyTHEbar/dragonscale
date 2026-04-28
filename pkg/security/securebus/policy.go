@@ -9,6 +9,48 @@ import (
 	"github.com/ZanzyTHEbar/dragonscale/pkg/tools"
 )
 
+func globstarMatch(pattern, name string) bool {
+	if matched, _ := filepath.Match(pattern, name); matched {
+		return true
+	}
+
+	if !strings.Contains(pattern, "**") {
+		return false
+	}
+
+	segments := strings.Split(filepath.Clean(pattern), string(filepath.Separator))
+	paths := strings.Split(filepath.Clean(name), string(filepath.Separator))
+	return globstarMatchSegments(segments, paths)
+}
+
+func globstarMatchSegments(patternSegments, pathSegments []string) bool {
+	if len(patternSegments) == 0 {
+		return len(pathSegments) == 0
+	}
+
+	if patternSegments[0] == "**" {
+		if globstarMatchSegments(patternSegments[1:], pathSegments) {
+			return true
+		}
+		for i := 0; i < len(pathSegments); i++ {
+			if globstarMatchSegments(patternSegments[1:], pathSegments[i+1:]) {
+				return true
+			}
+		}
+		return false
+	}
+
+	if len(pathSegments) == 0 {
+		return false
+	}
+
+	matched, err := filepath.Match(patternSegments[0], pathSegments[0])
+	if err != nil || !matched {
+		return false
+	}
+	return globstarMatchSegments(patternSegments[1:], pathSegments[1:])
+}
+
 // PolicyConfig controls global enforcement settings for the SecureBus.
 type PolicyConfig struct {
 	// MaxRecursionDepth limits how deep RLM sub-calls may nest.
@@ -91,8 +133,7 @@ func (pe *PolicyEngine) ValidateNetwork(targetURL string, rules []tools.Endpoint
 
 	// Must match at least one permit rule.
 	for _, rule := range rules {
-		matched, _ := filepath.Match(rule.Pattern, targetURL)
-		if matched {
+		if globstarMatch(rule.Pattern, targetURL) {
 			return nil
 		}
 	}
@@ -111,14 +152,14 @@ func (pe *PolicyEngine) ValidateFilesystem(targetPath, mode string, rules []tool
 	checkPath := targetPath
 	if pe.cfg.AllowedWorkspace != "" {
 		rel, err := filepath.Rel(pe.cfg.AllowedWorkspace, targetPath)
-		if err == nil && !strings.HasPrefix(rel, "..") {
-			checkPath = rel
+		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			return fmt.Errorf("filesystem access denied: %q is outside allowed workspace %q", targetPath, pe.cfg.AllowedWorkspace)
 		}
+		checkPath = rel
 	}
 
 	for _, rule := range rules {
-		matched, _ := filepath.Match(rule.Pattern, checkPath)
-		if !matched {
+		if !globstarMatch(rule.Pattern, checkPath) {
 			continue
 		}
 		// Check mode compatibility.

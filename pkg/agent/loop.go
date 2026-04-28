@@ -612,7 +612,8 @@ func (al *AgentLoop) SetupSecureBus(ss *security.SecretStore, cfg securebus.BusC
 		}
 		return al.tools.ExecuteWithContext(ctx, name, args, channel, chatID, asyncCallback)
 	}
-	b := securebus.New(cfg, ss, capLookup, executor)
+	auditSink := newSecureBusAuditSink(al.enqueueAuditEntry)
+	b := securebus.New(cfg, ss, capLookup, executor, auditSink)
 	al.secureBus = b
 	return b
 }

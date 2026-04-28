@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"fmt"
+	"sort"
 	"sync"
 	"time"
 
@@ -90,7 +91,7 @@ func (r *ToolRegistry) ExecuteWithContext(ctx context.Context, name string, args
 	logger.InfoCF("tool", "Tool execution started",
 		map[string]interface{}{
 			"tool": name,
-			"args": args,
+			"args": summarizeToolArgs(args),
 		})
 	ctx = WithExecutionTarget(ctx, channel, chatID)
 	ctx = WithAsyncCallback(ctx, asyncCallback)
@@ -102,6 +103,15 @@ func (r *ToolRegistry) ExecuteWithContext(ctx context.Context, name string, args
 				"tool": name,
 			})
 		return ErrorResult(fmt.Sprintf("tool %q not found", name)).WithError(fmt.Errorf("tool not found"))
+	}
+
+	if err := validateToolArgsInContext(ctx, name, tool.Parameters(), args); err != nil {
+		logger.WarnCF("tool", "Tool argument validation failed",
+			map[string]interface{}{
+				"tool":  name,
+				"error": err.Error(),
+			})
+		return ErrorResult(err.Error()).WithError(err)
 	}
 
 	// Backward-compatible bridge for tools that still implement the legacy hook
@@ -141,6 +151,21 @@ func (r *ToolRegistry) ExecuteWithContext(ctx context.Context, name string, args
 	}
 
 	return result
+}
+
+func summarizeToolArgs(args map[string]interface{}) map[string]interface{} {
+	if len(args) == 0 {
+		return map[string]interface{}{"count": 0, "keys": []string{}}
+	}
+	keys := make([]string, 0, len(args))
+	for key := range args {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return map[string]interface{}{
+		"count": len(keys),
+		"keys":  keys,
+	}
 }
 
 func (r *ToolRegistry) GetDefinitions() []map[string]interface{} {

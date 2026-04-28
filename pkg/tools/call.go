@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
@@ -53,8 +54,7 @@ func (t *ToolCallTool) Parameters() map[string]interface{} {
 				"description": "Name of the tool to execute (from tool_search results).",
 			},
 			"arguments": map[string]interface{}{
-				"type":        "object",
-				"description": "Arguments to pass to the tool, as a JSON object matching the tool's parameter schema.",
+				"description": "Arguments to pass to the tool. Provide either a JSON object or a JSON string object matching the tool's parameter schema.",
 			},
 		},
 		"required": []string{"tool_name"},
@@ -106,13 +106,6 @@ func (t *ToolCallTool) Execute(ctx context.Context, args map[string]interface{})
 		return ErrorResult(fmt.Sprintf("too many arguments: %d (max 50)", len(toolArgs)))
 	}
 
-	// Pre-flight: check required parameters before dispatch
-	if schema := tool.Parameters(); schema != nil {
-		if missing := t.checkRequired(schema, toolArgs); len(missing) > 0 {
-			return t.schemaHintError(tool, fmt.Sprintf("missing required arguments: %s", strings.Join(missing, ", ")))
-		}
-	}
-
 	// If the target tool declares resources, load them before dispatch.
 	if rp, ok := tool.(ResourceProvider); ok {
 		resources, err := rp.LoadResources(ctx)
@@ -125,7 +118,12 @@ func (t *ToolCallTool) Execute(ctx context.Context, args map[string]interface{})
 	}
 
 	channel, chatID := ResolveExecutionTarget(ctx, t.channel, t.chatID)
-	return t.registry.ExecuteWithContext(ctx, toolName, toolArgs, channel, chatID, AsyncCallbackFromContext(ctx))
+	result := t.registry.ExecuteWithContext(ctx, toolName, toolArgs, channel, chatID, AsyncCallbackFromContext(ctx))
+	var validationErr *toolArgValidationError
+	if result != nil && result.IsError && errors.As(result.Err, &validationErr) {
+		return t.schemaHintError(tool, validationErr.cause.Error()).WithError(result.Err)
+	}
+	return result
 }
 
 // schemaHintError returns an error result that includes the tool's expected
@@ -140,42 +138,13 @@ func (t *ToolCallTool) schemaHintError(tool Tool, msg string) *ToolResult {
 			hint += string(schemaJSON)
 		}
 	}
-	if req := t.extractRequired(schema); len(req) > 0 {
+	if req := extractRequiredFields(schema); len(req) > 0 {
 		hint += fmt.Sprintf("\nRequired: %s", strings.Join(req, ", "))
 	}
 
 	hint += "\n\nNote: discovered tools are directly callable — you do not need tool_call for tools returned by tool_search."
 	return ErrorResult(hint)
 }
-
-// checkRequired returns any required parameters that are missing from the args.
-func (t *ToolCallTool) checkRequired(schema, args map[string]interface{}) []string {
-	required := t.extractRequired(schema)
-	var missing []string
-	for _, key := range required {
-		if _, ok := args[key]; !ok {
-			missing = append(missing, key)
-		}
-	}
-	return missing
-}
-
-func (t *ToolCallTool) extractRequired(schema map[string]interface{}) []string {
-	switch r := schema["required"].(type) {
-	case []string:
-		return r
-	case []interface{}:
-		out := make([]string, 0, len(r))
-		for _, v := range r {
-			if s, ok := v.(string); ok {
-				out = append(out, s)
-			}
-		}
-		return out
-	}
-	return nil
-}
-
 func (t *ToolCallTool) normalizeToolName(raw string) string {
 	name := strings.TrimSpace(raw)
 	if name == "" {

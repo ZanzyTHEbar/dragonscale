@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	fantasy "charm.land/fantasy"
 	"github.com/ZanzyTHEbar/dragonscale/pkg"
@@ -69,7 +70,6 @@ func MakeUnifiedRunLoopFunc(al *AgentLoop) tools.RunLoopFunc {
 				_ = al.sessions.Save(sessionKey)
 				return
 			}
-			al.persistRunCheckpoint(ctx, opts, metrics)
 		}()
 
 		baseRuntime := OffloadingToolRuntime{
@@ -99,17 +99,28 @@ func MakeUnifiedRunLoopFunc(al *AgentLoop) tools.RunLoopFunc {
 		}
 
 		al.sessions.AddMessage(sessionKey, "user", userPrompt)
-		result, err := runToolLoopWithRuntime(ctx, config, systemPrompt, userPrompt, channel, chatID, al.memoryStore, sessionKey, toolRuntime, extraTools)
+		result, err := runToolLoopWithRuntime(ctx, config, systemPrompt, userPrompt, channel, chatID, al.memoryStore, sessionKey, toolRuntime, extraTools, al.transitionObserver(runID))
 		if err != nil {
 			return nil, err
 		}
-		metrics.StepCount = result.Iterations
-		al.sessions.AddMessage(sessionKey, "assistant", result.Content)
+		metrics = collectAgentRunStepMetrics(result.Steps, result.TotalTokens)
+		al.replayAgentSteps(ctx, sessionKey, result.Steps)
+		finalContent, err := al.resolveFinalContent(result.Content, result.Steps)
+		if err != nil {
+			return nil, err
+		}
+		result.Content = al.groundFinalContent(userPrompt, finalContent, result.Steps)
+		al.ensureFinalAssistantMessage(sessionKey, result.Content)
+		al.persistRunCheckpoint(ctx, opts, metrics)
 		al.sessions.Save(sessionKey)
 		if endErr := al.endTask(ctx, conversationID, runID, TaskCompletion{
 			TaskID:      sessionKey,
 			Description: userPrompt,
+			TokensUsed:  metrics.TotalTokens,
+			ToolCalls:   metrics.ToolCalls,
+			Errors:      metrics.Errors,
 			Completed:   true,
+			CreatedAt:   time.Now().UTC(),
 		}); endErr != nil {
 			logger.WarnCF("toolloop", "Failed to record subagent task completion", map[string]any{"error": endErr.Error(), "session": sessionKey})
 		}
@@ -126,6 +137,7 @@ func runToolLoopWithRuntime(
 	sessionKey string,
 	toolRuntime fantasy.ToolRuntime,
 	extraTools []fantasy.AgentTool,
+	transitionObserver fantasy.ReActTransitionObserverFunc,
 ) (*tools.ToolLoopResult, error) {
 	if toolRuntime == nil {
 		return nil, fmt.Errorf("tool runtime is required")
@@ -149,6 +161,9 @@ func runToolLoopWithRuntime(
 		fantasy.WithTools(adaptedTools...),
 		fantasy.WithStopConditions(fantasy.StepCountIs(config.MaxIterations)),
 		fantasy.WithToolRuntime(toolRuntime),
+	}
+	if transitionObserver != nil {
+		agentOpts = append(agentOpts, fantasy.WithTransitionObserver(transitionObserver))
 	}
 	if config.Tools != nil {
 		prepareStep := func(ctx context.Context, _ fantasy.PrepareStepFunctionOptions) (context.Context, fantasy.PrepareStepResult, error) {
@@ -193,6 +208,7 @@ func runToolLoopWithRuntime(
 		return nil, fmt.Errorf("agent Generate failed: %w", err)
 	}
 
+	metrics := collectAgentRunStepMetrics(result.Steps, int(result.TotalUsage.TotalTokens))
 	finalContent := result.Response.Content.Text()
 	stepCount := len(result.Steps)
 
@@ -203,7 +219,11 @@ func runToolLoopWithRuntime(
 		})
 
 	return &tools.ToolLoopResult{
-		Content:    finalContent,
-		Iterations: stepCount,
+		Content:     finalContent,
+		Iterations:  stepCount,
+		Steps:       result.Steps,
+		ToolCalls:   metrics.ToolCalls,
+		Errors:      metrics.Errors,
+		TotalTokens: metrics.TotalTokens,
 	}, nil
 }

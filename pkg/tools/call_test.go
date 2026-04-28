@@ -418,7 +418,13 @@ type echoTool struct{}
 func (e *echoTool) Name() string        { return "echo" }
 func (e *echoTool) Description() string { return "Echo a message" }
 func (e *echoTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{}
+	return map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"msg": map[string]interface{}{"type": "string"},
+		},
+		"required": []string{"msg"},
+	}
 }
 func (e *echoTool) Execute(_ context.Context, args map[string]interface{}) *ToolResult {
 	msg, _ := args["msg"].(string)
@@ -455,7 +461,13 @@ type callbackCaptureTool struct {
 func (c *callbackCaptureTool) Name() string        { return "spawn" }
 func (c *callbackCaptureTool) Description() string { return "captures async callback propagation" }
 func (c *callbackCaptureTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{"type": "object", "properties": map[string]interface{}{}}
+	return map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"task": map[string]interface{}{"type": "string"},
+		},
+		"required": []string{"task"},
+	}
 }
 func (c *callbackCaptureTool) Execute(ctx context.Context, _ map[string]interface{}) *ToolResult {
 	c.lastChannel, c.lastChatID = ExecutionTargetFromContext(ctx)
