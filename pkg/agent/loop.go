@@ -348,9 +348,9 @@ func NewAgentLoop(ctx context.Context, cfg *config.Config, msgBus *bus.MessageBu
 	contextBuilder.SetSessionResolver(sessionKeyFn)
 	memTool.SetSessionResolver(sessionKeyFn)
 	subagentMemTool.SetSessionResolver(sessionKeyFn)
-	focusInvalidate := func() {
-		if sk := sessionKeyFn(); sk != "" {
-			al.focusDirty.Store(sk, struct{}{})
+	focusInvalidate := func(sessionKey string) {
+		if sessionKey != "" {
+			al.focusDirty.Store(sessionKey, struct{}{})
 		}
 	}
 	startFocus := tools.NewStartFocusTool(memDelegate, sessionsManager, sessionKeyFn)
@@ -459,9 +459,11 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 			}
 
 			al.inflight.Add(1)
+			roundTracker := tools.NewMessageSendTracker()
+			roundCtx := tools.WithMessageSendTracker(ctx, roundTracker)
 			response, err := func() (string, error) {
 				defer al.inflight.Done()
-				return al.processMessage(ctx, msg)
+				return al.processMessage(roundCtx, msg)
 			}()
 			if err != nil {
 				response = fmt.Sprintf("Error processing message: %v", err)
@@ -470,12 +472,7 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 			if response != "" {
 				// Check if the message tool already sent a response during this round.
 				// If so, skip publishing to avoid duplicate messages to the user.
-				alreadySent := false
-				if tool, ok := al.tools.Get("message"); ok {
-					if mt, ok := tool.(*tools.MessageTool); ok {
-						alreadySent = mt.HasSentInRound()
-					}
-				}
+				alreadySent := roundTracker.Sent()
 
 				if !alreadySent {
 					outMsg := bus.OutboundMessage{
@@ -596,9 +593,27 @@ func (al *AgentLoop) SetupSecureBus(ss *security.SecretStore, cfg securebus.BusC
 		return tools.ExtractCapabilities(t), true
 	}
 	executor := func(ctx context.Context, name string, args map[string]interface{}) *tools.ToolResult {
-		return al.tools.Execute(ctx, name, args)
+		if sessionKey := toolSessionKeyFromContext(ctx); sessionKey != "" {
+			ctx = tools.WithSessionKey(ctx, sessionKey)
+		}
+		channel, chatID := tools.ExecutionTargetFromContext(ctx)
+		var asyncCallback tools.AsyncCallback
+		if al.bus != nil && channel != "" && chatID != "" {
+			asyncCallback = func(_ context.Context, result *tools.ToolResult) {
+				if result == nil || result.ForUser == "" || result.Silent {
+					return
+				}
+				al.bus.PublishOutbound(bus.OutboundMessage{
+					Channel: channel,
+					ChatID:  chatID,
+					Content: result.ForUser,
+				})
+			}
+		}
+		return al.tools.ExecuteWithContext(ctx, name, args, channel, chatID, asyncCallback)
 	}
-	b := securebus.New(cfg, ss, capLookup, executor)
+	auditSink := newSecureBusAuditSink(al.enqueueAuditEntry)
+	b := securebus.New(cfg, ss, capLookup, executor, auditSink)
 	al.secureBus = b
 	return b
 }

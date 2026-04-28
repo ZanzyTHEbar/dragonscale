@@ -167,6 +167,7 @@ func (a *App) formatTaskHelp() []string {
 	lines = append(lines, "  DRAGONSCALE_EVAL_HOST_HOME")
 	lines = append(lines, "  DRAGONSCALE_EVAL_BASE_CONFIG")
 	lines = append(lines, "  DRAGONSCALE_EVAL_CONFIG")
+	lines = append(lines, "  SKIP_DEVCONTAINER_WRAPPER")
 	lines = append(lines, "  DEVCONTAINER_EXEC")
 	lines = append(lines, "  DRAGONSCALE_EVAL_DEBUG")
 	return lines

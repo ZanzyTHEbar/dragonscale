@@ -1249,6 +1249,9 @@ func (d *LibSQLDelegate) GetRecentAuditEntries(ctx context.Context, since time.T
 	const pageSize int64 = 1000
 	offset := int64(0)
 	entries := make([]AuditEntry, 0, pageSize)
+	secureBusByCall := make(map[string]AuditEntry)
+	pendingLegacyByCall := make(map[string]AuditEntry)
+	pendingOrder := make([]string, 0, pageSize)
 
 	for {
 		rows, err := d.queries.ListAuditEntriesGlobalSincePaged(ctx, memsqlc.ListAuditEntriesGlobalSincePagedParams{
@@ -1266,8 +1269,11 @@ func (d *LibSQLDelegate) GetRecentAuditEntries(ctx context.Context, since time.T
 		for _, row := range rows {
 			lowerAction := strings.ToLower(strings.TrimSpace(row.Action))
 			toolName := strings.TrimSpace(row.Action)
+			isSecureBus := strings.HasPrefix(lowerAction, "securebus_")
+			isLegacyToolAudit := strings.HasPrefix(lowerAction, "tool_")
 			switch {
 			case strings.HasPrefix(lowerAction, "tool_"),
+				strings.HasPrefix(lowerAction, "securebus_"),
 				strings.HasPrefix(lowerAction, "memory_"),
 				strings.HasPrefix(lowerAction, "doc_"),
 				strings.HasPrefix(lowerAction, "state_"),
@@ -1292,7 +1298,29 @@ func (d *LibSQLDelegate) GetRecentAuditEntries(ctx context.Context, since time.T
 			if row.Input != nil {
 				entry.ToolInput = *row.Input
 			}
-			entries = append(entries, entry)
+
+			callKey := auditEntryDedupKey(row.AgentID, row.SessionKey, row.ToolCallID)
+			switch {
+			case isSecureBus && callKey != "":
+				if legacy, ok := pendingLegacyByCall[callKey]; ok {
+					entry = mergeAuditEntries(entry, legacy)
+					delete(pendingLegacyByCall, callKey)
+				}
+				secureBusByCall[callKey] = entry
+				entries = append(entries, entry)
+			case isLegacyToolAudit && callKey != "":
+				if secureBusEntry, seen := secureBusByCall[callKey]; seen {
+					mergeAuditEntriesIntoSlice(entries, callKey, mergeAuditEntries(secureBusEntry, entry))
+					secureBusByCall[callKey] = mergeAuditEntries(secureBusEntry, entry)
+					continue
+				}
+				if _, exists := pendingLegacyByCall[callKey]; !exists {
+					pendingOrder = append(pendingOrder, callKey)
+				}
+				pendingLegacyByCall[callKey] = entry
+			default:
+				entries = append(entries, entry)
+			}
 		}
 
 		if len(rows) < int(pageSize) {
@@ -1301,7 +1329,51 @@ func (d *LibSQLDelegate) GetRecentAuditEntries(ctx context.Context, since time.T
 		offset += int64(len(rows))
 	}
 
+	for _, callKey := range pendingOrder {
+		entry, ok := pendingLegacyByCall[callKey]
+		if !ok {
+			continue
+		}
+		entries = append(entries, entry)
+	}
+
 	return entries, nil
+}
+
+func auditEntryDedupKey(agentID, sessionKey, toolCallID string) string {
+	agentID = strings.TrimSpace(agentID)
+	sessionKey = strings.TrimSpace(sessionKey)
+	toolCallID = strings.TrimSpace(toolCallID)
+	if agentID == "" || sessionKey == "" || toolCallID == "" {
+		return ""
+	}
+	return agentID + "\x00" + sessionKey + "\x00" + toolCallID
+}
+
+func mergeAuditEntries(preferred, fallback AuditEntry) AuditEntry {
+	merged := preferred
+	if strings.TrimSpace(merged.ToolName) == "" {
+		merged.ToolName = fallback.ToolName
+	}
+	if strings.TrimSpace(merged.ToolInput) == "" {
+		merged.ToolInput = fallback.ToolInput
+	}
+	if strings.TrimSpace(merged.ErrorMsg) == "" {
+		merged.ErrorMsg = fallback.ErrorMsg
+	}
+	if !merged.Success && merged.ErrorMsg == "" {
+		merged.ErrorMsg = fallback.ErrorMsg
+	}
+	return merged
+}
+
+func mergeAuditEntriesIntoSlice(entries []AuditEntry, callKey string, merged AuditEntry) {
+	for i := range entries {
+		if auditEntryDedupKey(entries[i].AgentID, entries[i].SessionID, entries[i].ToolCallID) == callKey {
+			entries[i] = merged
+			return
+		}
+	}
 }
 
 // StoreDetectedPattern stores a detected pattern as a recall item.

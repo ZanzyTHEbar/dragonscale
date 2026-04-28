@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"fmt"
+	"sort"
 	"sync"
 	"time"
 
@@ -83,15 +84,17 @@ func (r *ToolRegistry) Execute(ctx context.Context, name string, args map[string
 	return r.ExecuteWithContext(ctx, name, args, "", "", nil)
 }
 
-// ExecuteWithContext executes a tool with channel/chatID context and optional async callback.
-// If the tool implements AsyncTool and a non-nil callback is provided,
-// the callback will be set on the tool before execution.
+// ExecuteWithContext executes a tool with channel/chatID context and optional
+// async callback. Per-call execution metadata is carried in the context so
+// singleton tool instances are not mutated on the hot path.
 func (r *ToolRegistry) ExecuteWithContext(ctx context.Context, name string, args map[string]interface{}, channel, chatID string, asyncCallback AsyncCallback) *ToolResult {
 	logger.InfoCF("tool", "Tool execution started",
 		map[string]interface{}{
 			"tool": name,
-			"args": args,
+			"args": summarizeToolArgs(args),
 		})
+	ctx = WithExecutionTarget(ctx, channel, chatID)
+	ctx = WithAsyncCallback(ctx, asyncCallback)
 
 	tool, ok := r.Get(name)
 	if !ok {
@@ -102,18 +105,22 @@ func (r *ToolRegistry) ExecuteWithContext(ctx context.Context, name string, args
 		return ErrorResult(fmt.Sprintf("tool %q not found", name)).WithError(fmt.Errorf("tool not found"))
 	}
 
-	// If tool implements ContextualTool, set context
+	if err := validateToolArgsInContext(ctx, name, tool.Parameters(), args); err != nil {
+		logger.WarnCF("tool", "Tool argument validation failed",
+			map[string]interface{}{
+				"tool":  name,
+				"error": err.Error(),
+			})
+		return ErrorResult(err.Error()).WithError(err)
+	}
+
+	// Backward-compatible bridge for tools that still implement the legacy hook
+	// interfaces instead of reading execution metadata from context directly.
 	if contextualTool, ok := tool.(ContextualTool); ok && channel != "" && chatID != "" {
 		contextualTool.SetContext(channel, chatID)
 	}
-
-	// If tool implements AsyncTool and callback is provided, set callback
-	if asyncTool, ok := tool.(AsyncTool); ok && asyncCallback != nil {
+	if asyncTool, ok := tool.(AsyncTool); ok {
 		asyncTool.SetCallback(asyncCallback)
-		logger.DebugCF("tool", "Async callback injected",
-			map[string]interface{}{
-				"tool": name,
-			})
 	}
 
 	start := time.Now()
@@ -144,6 +151,21 @@ func (r *ToolRegistry) ExecuteWithContext(ctx context.Context, name string, args
 	}
 
 	return result
+}
+
+func summarizeToolArgs(args map[string]interface{}) map[string]interface{} {
+	if len(args) == 0 {
+		return map[string]interface{}{"count": 0, "keys": []string{}}
+	}
+	keys := make([]string, 0, len(args))
+	for key := range args {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return map[string]interface{}{
+		"count": len(keys),
+		"keys":  keys,
+	}
 }
 
 func (r *ToolRegistry) GetDefinitions() []map[string]interface{} {

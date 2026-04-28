@@ -12,6 +12,7 @@ import (
 	"github.com/ZanzyTHEbar/dragonscale/pkg/bus"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/config"
 	memsqlc "github.com/ZanzyTHEbar/dragonscale/pkg/memory/sqlc"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/tools"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -159,6 +160,83 @@ func (m *sameStepMultiToolModel) Provider() string { return "mock" }
 
 func (m *sameStepMultiToolModel) Model() string { return "same-step-multi-tool-model" }
 
+type failingModel struct{}
+
+func (m *failingModel) Generate(_ context.Context, _ fantasy.Call) (*fantasy.Response, error) {
+	return nil, fmt.Errorf("synthetic generate failure")
+}
+
+func (m *failingModel) Stream(_ context.Context, _ fantasy.Call) (fantasy.StreamResponse, error) {
+	return nil, fmt.Errorf("synthetic stream failure")
+}
+
+func (m *failingModel) GenerateObject(_ context.Context, _ fantasy.ObjectCall) (*fantasy.ObjectResponse, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+
+func (m *failingModel) StreamObject(_ context.Context, _ fantasy.ObjectCall) (fantasy.ObjectStreamResponse, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+
+func (m *failingModel) Provider() string { return "mock" }
+
+func (m *failingModel) Model() string { return "failing-model" }
+
+type emptyFinalAfterToolModel struct{}
+
+func (m *emptyFinalAfterToolModel) Generate(_ context.Context, call fantasy.Call) (*fantasy.Response, error) {
+	if countPromptToolResults(call.Prompt) == 0 {
+		return &fantasy.Response{
+			Content: fantasy.ResponseContent{
+				fantasy.ToolCallContent{ToolCallID: "call-1", ToolName: "echo", Input: `{"text":"recovered final"}`},
+			},
+			FinishReason: fantasy.FinishReasonToolCalls,
+			Usage:        fantasy.Usage{InputTokens: 4, OutputTokens: 3, TotalTokens: 7},
+		}, nil
+	}
+	return &fantasy.Response{
+		Content:      fantasy.ResponseContent{},
+		FinishReason: fantasy.FinishReasonStop,
+		Usage:        fantasy.Usage{InputTokens: 4, OutputTokens: 1, TotalTokens: 5},
+	}, nil
+}
+
+func (m *emptyFinalAfterToolModel) Stream(ctx context.Context, call fantasy.Call) (fantasy.StreamResponse, error) {
+	resp, err := m.Generate(ctx, call)
+	if err != nil {
+		return nil, err
+	}
+	return func(yield func(fantasy.StreamPart) bool) {
+		if len(resp.Content.ToolCalls()) > 0 {
+			for _, tc := range resp.Content.ToolCalls() {
+				if !yield(fantasy.StreamPart{
+					Type:          fantasy.StreamPartTypeToolCall,
+					ID:            tc.ToolCallID,
+					ToolCallName:  tc.ToolName,
+					ToolCallInput: tc.Input,
+				}) {
+					return
+				}
+			}
+			yield(fantasy.StreamPart{Type: fantasy.StreamPartTypeFinish, FinishReason: fantasy.FinishReasonToolCalls, Usage: resp.Usage})
+			return
+		}
+		yield(fantasy.StreamPart{Type: fantasy.StreamPartTypeFinish, FinishReason: fantasy.FinishReasonStop, Usage: resp.Usage})
+	}, nil
+}
+
+func (m *emptyFinalAfterToolModel) GenerateObject(_ context.Context, _ fantasy.ObjectCall) (*fantasy.ObjectResponse, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+
+func (m *emptyFinalAfterToolModel) StreamObject(_ context.Context, _ fantasy.ObjectCall) (fantasy.ObjectStreamResponse, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+
+func (m *emptyFinalAfterToolModel) Provider() string { return "mock" }
+
+func (m *emptyFinalAfterToolModel) Model() string { return "empty-final-after-tool-model" }
+
 func countPromptToolResults(prompt []fantasy.Message) int {
 	count := 0
 	for _, msg := range prompt {
@@ -172,6 +250,19 @@ func countPromptToolResults(prompt []fantasy.Message) int {
 }
 
 func uniqueTransitionSteps(rows []memsqlc.AgentStateTransition) []int64 {
+	seen := make(map[int64]struct{})
+	steps := make([]int64, 0, len(rows))
+	for _, row := range rows {
+		if _, ok := seen[row.StepIndex]; ok {
+			continue
+		}
+		seen[row.StepIndex] = struct{}{}
+		steps = append(steps, row.StepIndex)
+	}
+	return steps
+}
+
+func uniqueRunStateSteps(rows []memsqlc.AgentRunState) []int64 {
 	seen := make(map[int64]struct{})
 	steps := make([]int64, 0, len(rows))
 	for _, row := range rows {
@@ -249,6 +340,14 @@ func TestIntegration_RuntimeBookkeeping_PersistsTransitionsAndMetrics(t *testing
 	require.Len(t, toolResults, 2)
 	assert.Equal(t, int64(0), toolResults[0].StepIndex)
 	assert.Equal(t, int64(1), toolResults[1].StepIndex)
+
+	runStates, err := al.queries.ListAgentRunStatesByRunID(ctx, memsqlc.ListAgentRunStatesByRunIDParams{
+		RunID: completion.RunID,
+		Lim:   16,
+	})
+	require.NoError(t, err)
+	require.Len(t, runStates, 3)
+	assert.Equal(t, []int64{0, 1, 3}, uniqueRunStateSteps(runStates))
 }
 
 func TestIntegration_RuntimeBookkeeping_UsesAgentStepForMultipleToolCalls(t *testing.T) {
@@ -308,4 +407,459 @@ func TestIntegration_RuntimeBookkeeping_UsesAgentStepForMultipleToolCalls(t *tes
 	require.Len(t, toolResults, 2)
 	assert.Equal(t, int64(0), toolResults[0].StepIndex)
 	assert.Equal(t, int64(0), toolResults[1].StepIndex)
+
+	runStates, err := al.queries.ListAgentRunStatesByRunID(ctx, memsqlc.ListAgentRunStatesByRunIDParams{
+		RunID: completion.RunID,
+		Lim:   16,
+	})
+	require.NoError(t, err)
+	require.Len(t, runStates, 2)
+	assert.Equal(t, []int64{0, 2}, uniqueRunStateSteps(runStates))
+}
+
+func TestIntegration_RuntimeBookkeeping_FailedRunIsTerminalized(t *testing.T) {
+	t.Parallel()
+
+	tmpDir, err := os.MkdirTemp("", "agent-runtime-failed-run-*")
+	require.NoError(t, err)
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Sandbox:           tmpDir,
+				Model:             "failing-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	al := mustNewAgentLoop(t, cfg, msgBus, &failingModel{})
+
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+
+	msg := bus.InboundMessage{
+		Channel:    "test",
+		SenderID:   "user1",
+		ChatID:     "chat1",
+		Content:    "trigger failure",
+		SessionKey: "runtime-bookkeeping-failed",
+	}
+
+	_, err = al.processMessage(ctx, msg)
+	require.Error(t, err)
+
+	convID, ok := al.conversationIDs.Load(msg.SessionKey)
+	require.True(t, ok)
+	run, err := al.queries.GetLatestAgentRunByConversationID(ctx, memsqlc.GetLatestAgentRunByConversationIDParams{
+		ConversationID: convID,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "failed", run.Status)
+	assert.Contains(t, string(run.MetadataJson), "synthetic generate failure")
+	assert.Contains(t, string(run.MetadataJson), `"reason":"failed"`)
+}
+
+func TestIntegration_RuntimeBookkeeping_SubagentRunIsTerminalized(t *testing.T) {
+	t.Parallel()
+
+	tmpDir, err := os.MkdirTemp("", "agent-runtime-subagent-run-*")
+	require.NoError(t, err)
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Sandbox:           tmpDir,
+				Model:             "mock-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	al := mustNewAgentLoop(t, cfg, msgBus, newMockLanguageModel("subagent final response"))
+
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+
+	runLoop := MakeUnifiedRunLoopFunc(al)
+	result, err := runLoop(ctx, tools.ToolLoopConfig{Model: newMockLanguageModel("subagent final response"), MaxIterations: 3}, "", "subagent task", "test", "chat1")
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.Equal(t, "subagent final response", result.Content)
+
+	conversations, err := al.queries.ListAgentConversations(ctx, memsqlc.ListAgentConversationsParams{Limit: 10})
+	require.NoError(t, err)
+	require.Len(t, conversations, 1)
+
+	latestRun, err := al.queries.GetLatestAgentRunByConversationID(ctx, memsqlc.GetLatestAgentRunByConversationIDParams{
+		ConversationID: conversations[0].ID,
+	})
+	require.NoError(t, err)
+	require.False(t, latestRun.ID.IsZero())
+	assert.Equal(t, "completed", latestRun.Status)
+}
+
+func TestIntegration_RuntimeBookkeeping_SubagentFailedRunIsTerminalized(t *testing.T) {
+	t.Parallel()
+
+	tmpDir, err := os.MkdirTemp("", "agent-runtime-subagent-failed-*")
+	require.NoError(t, err)
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Sandbox:           tmpDir,
+				Model:             "failing-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	al := mustNewAgentLoop(t, cfg, msgBus, &failingModel{})
+
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+
+	runLoop := MakeUnifiedRunLoopFunc(al)
+	_, err = runLoop(ctx, tools.ToolLoopConfig{Model: &failingModel{}, MaxIterations: 3}, "", "subagent failing task", "test", "chat1")
+	require.Error(t, err)
+
+	conversations, err := al.queries.ListAgentConversations(ctx, memsqlc.ListAgentConversationsParams{Limit: 10})
+	require.NoError(t, err)
+	require.Len(t, conversations, 1)
+
+	latestRun, err := al.queries.GetLatestAgentRunByConversationID(ctx, memsqlc.GetLatestAgentRunByConversationIDParams{
+		ConversationID: conversations[0].ID,
+	})
+	require.NoError(t, err)
+	require.False(t, latestRun.ID.IsZero())
+	assert.Equal(t, "failed", latestRun.Status)
+	assert.Contains(t, string(latestRun.MetadataJson), "synthetic generate failure")
+}
+
+func TestIntegration_RuntimeBookkeeping_SubagentUsesDelegatedParentSession(t *testing.T) {
+	t.Parallel()
+
+	tmpDir, err := os.MkdirTemp("", "agent-runtime-subagent-session-*")
+	require.NoError(t, err)
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Sandbox:           tmpDir,
+				Model:             "mock-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	al := mustNewAgentLoop(t, cfg, msgBus, newMockLanguageModel("subagent final response"))
+
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+
+	runLoop := MakeUnifiedRunLoopFunc(al)
+	parentCtx := tools.WithSessionKey(ctx, "parent-session")
+	_, err = runLoop(parentCtx, tools.ToolLoopConfig{Model: newMockLanguageModel("subagent final response"), MaxIterations: 3}, "", "subagent task", "test", "chat1")
+	require.NoError(t, err)
+
+	conversations, err := al.queries.ListAgentConversations(ctx, memsqlc.ListAgentConversationsParams{Limit: 10})
+	require.NoError(t, err)
+	require.Len(t, conversations, 1)
+	require.NotNil(t, conversations[0].Title)
+	assert.Contains(t, *conversations[0].Title, "parent-session::subagent::")
+}
+
+func TestIntegration_RuntimeBookkeeping_SubagentPersistsTransitionsAndMetrics(t *testing.T) {
+	t.Parallel()
+
+	tmpDir, err := os.MkdirTemp("", "agent-runtime-subagent-bookkeeping-*")
+	require.NoError(t, err)
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Sandbox:           tmpDir,
+				Model:             "multi-tool-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	al := mustNewAgentLoop(t, cfg, msgBus, &multiToolCallingModel{})
+	al.RegisterTool(&echoTool{})
+
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+
+	since := time.Now().Add(-time.Second)
+	runLoop := MakeUnifiedRunLoopFunc(al)
+	result, err := runLoop(ctx, tools.ToolLoopConfig{Model: &multiToolCallingModel{}, Tools: al.tools, Bus: msgBus, MaxIterations: 10}, "", "Use the echo tool twice", "test", "chat1")
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.Equal(t, "Final response after two tools", result.Content)
+	assert.Equal(t, 2, result.ToolCalls)
+
+	completions, err := al.queries.GetCompletedTasks(ctx, memsqlc.GetCompletedTasksParams{
+		AgentID: pkgroot.NAME,
+		Since:   since,
+	})
+	require.NoError(t, err)
+	require.NotEmpty(t, completions)
+
+	completion := completions[len(completions)-1]
+	require.NotNil(t, completion.ToolCalls)
+	assert.Equal(t, int64(2), *completion.ToolCalls)
+	require.NotNil(t, completion.Errors)
+	assert.Equal(t, int64(0), *completion.Errors)
+
+	transitions, err := al.queries.ListAgentStateTransitionsByRunID(ctx, memsqlc.ListAgentStateTransitionsByRunIDParams{
+		RunID: completion.RunID,
+		Lim:   128,
+	})
+	require.NoError(t, err)
+	assert.NotEmpty(t, transitions)
+	assert.Equal(t, []int64{0, 1, 2}, uniqueTransitionSteps(transitions))
+
+	toolResults, err := al.queries.ListAgentToolResultsByRunID(ctx, memsqlc.ListAgentToolResultsByRunIDParams{
+		RunID: completion.RunID,
+		Lim:   16,
+	})
+	require.NoError(t, err)
+	require.Len(t, toolResults, 2)
+	assert.Equal(t, int64(0), toolResults[0].StepIndex)
+	assert.Equal(t, int64(1), toolResults[1].StepIndex)
+
+	runStates, err := al.queries.ListAgentRunStatesByRunID(ctx, memsqlc.ListAgentRunStatesByRunIDParams{
+		RunID: completion.RunID,
+		Lim:   16,
+	})
+	require.NoError(t, err)
+	require.Len(t, runStates, 3)
+	assert.Equal(t, []int64{0, 1, 3}, uniqueRunStateSteps(runStates))
+}
+
+func TestIntegration_RuntimeBookkeeping_SubagentUsesAgentStepForMultipleToolCalls(t *testing.T) {
+	t.Parallel()
+
+	tmpDir, err := os.MkdirTemp("", "agent-runtime-subagent-multicall-*")
+	require.NoError(t, err)
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Sandbox:           tmpDir,
+				Model:             "same-step-multi-tool-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	al := mustNewAgentLoop(t, cfg, msgBus, &sameStepMultiToolModel{})
+	al.RegisterTool(&echoTool{})
+
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+
+	since := time.Now().Add(-time.Second)
+	runLoop := MakeUnifiedRunLoopFunc(al)
+	result, err := runLoop(ctx, tools.ToolLoopConfig{Model: &sameStepMultiToolModel{}, Tools: al.tools, Bus: msgBus, MaxIterations: 10}, "", "Use two echo tool calls in one step", "test", "chat1")
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.Equal(t, "Final response after parallel tools", result.Content)
+	assert.Equal(t, 2, result.ToolCalls)
+
+	completions, err := al.queries.GetCompletedTasks(ctx, memsqlc.GetCompletedTasksParams{
+		AgentID: pkgroot.NAME,
+		Since:   since,
+	})
+	require.NoError(t, err)
+	require.NotEmpty(t, completions)
+
+	completion := completions[len(completions)-1]
+	require.NotNil(t, completion.ToolCalls)
+	assert.Equal(t, int64(2), *completion.ToolCalls)
+
+	toolResults, err := al.queries.ListAgentToolResultsByRunID(ctx, memsqlc.ListAgentToolResultsByRunIDParams{
+		RunID: completion.RunID,
+		Lim:   16,
+	})
+	require.NoError(t, err)
+	require.Len(t, toolResults, 2)
+	assert.Equal(t, int64(0), toolResults[0].StepIndex)
+	assert.Equal(t, int64(0), toolResults[1].StepIndex)
+
+	runStates, err := al.queries.ListAgentRunStatesByRunID(ctx, memsqlc.ListAgentRunStatesByRunIDParams{
+		RunID: completion.RunID,
+		Lim:   16,
+	})
+	require.NoError(t, err)
+	require.Len(t, runStates, 2)
+	assert.Equal(t, []int64{0, 2}, uniqueRunStateSteps(runStates))
+}
+
+func TestIntegration_RuntimeBookkeeping_SubagentRecoversFinalContent(t *testing.T) {
+	t.Parallel()
+
+	tmpDir, err := os.MkdirTemp("", "agent-runtime-subagent-recovery-*")
+	require.NoError(t, err)
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Sandbox:           tmpDir,
+				Model:             "empty-final-after-tool-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	al := mustNewAgentLoop(t, cfg, msgBus, &emptyFinalAfterToolModel{})
+	al.RegisterTool(&echoTool{})
+
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+
+	runLoop := MakeUnifiedRunLoopFunc(al)
+	result, err := runLoop(ctx, tools.ToolLoopConfig{Model: &emptyFinalAfterToolModel{}, Tools: al.tools, Bus: msgBus, MaxIterations: 10}, "", "Recover the final content from the tool result", "test", "chat1")
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.Equal(t, "Echo: recovered final", result.Content)
+}
+
+func TestIntegration_RuntimeBookkeeping_SubagentPersistsAuditEntries(t *testing.T) {
+	t.Parallel()
+
+	tmpDir, err := os.MkdirTemp("", "agent-runtime-subagent-audit-*")
+	require.NoError(t, err)
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Sandbox:           tmpDir,
+				Model:             "multi-tool-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	al := mustNewAgentLoop(t, cfg, msgBus, &multiToolCallingModel{})
+	al.RegisterTool(&echoTool{})
+
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+
+	runLoop := MakeUnifiedRunLoopFunc(al)
+	result, err := runLoop(ctx, tools.ToolLoopConfig{Model: &multiToolCallingModel{}, Tools: al.tools, Bus: msgBus, MaxIterations: 10}, "", "Use the echo tool twice", "test", "chat1")
+	require.NoError(t, err)
+	require.NotNil(t, result)
+
+	conversations, err := al.queries.ListAgentConversations(ctx, memsqlc.ListAgentConversationsParams{Limit: 10})
+	require.NoError(t, err)
+	require.Len(t, conversations, 1)
+	require.NotNil(t, conversations[0].Title)
+
+	require.Eventually(t, func() bool {
+		rows, err := al.queries.ListAuditEntriesBySession(ctx, memsqlc.ListAuditEntriesBySessionParams{
+			AgentID:    pkgroot.NAME,
+			SessionKey: *conversations[0].Title,
+			Lim:        16,
+		})
+		if err != nil || len(rows) < 2 {
+			return false
+		}
+		sawFirst := false
+		sawSecond := false
+		for _, row := range rows {
+			if row.Action != "tool_success" || row.Target != "echo" || row.Output == nil {
+				continue
+			}
+			switch *row.Output {
+			case "Echo: one":
+				sawFirst = true
+			case "Echo: two":
+				sawSecond = true
+			}
+		}
+		return sawFirst && sawSecond
+	}, 2*time.Second, 50*time.Millisecond)
+}
+
+func TestIntegration_RuntimeBookkeeping_DirectRunPersistsAuditEntries(t *testing.T) {
+	t.Parallel()
+
+	tmpDir, err := os.MkdirTemp("", "agent-runtime-direct-audit-*")
+	require.NoError(t, err)
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Sandbox:           tmpDir,
+				Model:             "multi-tool-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+
+	msgBus := bus.NewMessageBus()
+	al := mustNewAgentLoop(t, cfg, msgBus, &multiToolCallingModel{})
+	al.RegisterTool(&echoTool{})
+
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+
+	response, err := al.ProcessDirectWithChannel(ctx, "Use the echo tool twice", "direct-audit-session", "test", "chat1")
+	require.NoError(t, err)
+	assert.Contains(t, response, "Final response after two tools")
+
+	require.Eventually(t, func() bool {
+		rows, err := al.queries.ListAuditEntriesBySession(ctx, memsqlc.ListAuditEntriesBySessionParams{
+			AgentID:    pkgroot.NAME,
+			SessionKey: "direct-audit-session",
+			Lim:        16,
+		})
+		if err != nil || len(rows) < 2 {
+			return false
+		}
+		sawFirst := false
+		sawSecond := false
+		for _, row := range rows {
+			if row.Action != "tool_success" || row.Target != "echo" || row.Output == nil {
+				continue
+			}
+			switch *row.Output {
+			case "Echo: one":
+				sawFirst = true
+			case "Echo: two":
+				sawSecond = true
+			}
+		}
+		return sawFirst && sawSecond
+	}, 2*time.Second, 50*time.Millisecond)
 }

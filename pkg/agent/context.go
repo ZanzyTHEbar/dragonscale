@@ -114,12 +114,16 @@ func (cb *ContextBuilder) SetSessionResolver(sessionKeyFn func() string) {
 }
 
 func (cb *ContextBuilder) getIdentity() string {
+	return cb.getIdentityForQuery("")
+}
+
+func (cb *ContextBuilder) getIdentityForQuery(query string) string {
 	now := time.Now().Format("2006-01-02 15:04 (Monday)")
 	workspacePath, _ := filepath.Abs(filepath.Join(cb.workspace))
 	runtime := fmt.Sprintf("%s %s, Go %s", runtime.GOOS, runtime.GOARCH, runtime.Version())
 
 	// Build tools section dynamically
-	toolsSection := cb.buildToolsSection()
+	toolsSection := cb.buildToolsSection(query)
 
 	return fmt.Sprintf(`# dragonscale 🦞
 
@@ -170,12 +174,26 @@ Your workspace is at: %s
 		now, runtime, workspacePath, toolsSection)
 }
 
-func (cb *ContextBuilder) buildToolsSection() string {
+func (cb *ContextBuilder) buildToolsSection(query string) string {
 	if cb.tools == nil {
 		return ""
 	}
 
-	summaries := cb.tools.GetSummaries()
+	var summaries []string
+	trimmedQuery := strings.TrimSpace(query)
+	if trimmedQuery == "" {
+		summaries = cb.tools.GetSummaries()
+	} else if !isPlanningOnlyPrompt(trimmedQuery) {
+		names := initialPromptToolNames(cb.tools, trimmedQuery)
+		summaries = make([]string, 0, len(names))
+		for _, name := range names {
+			tool, ok := cb.tools.Get(name)
+			if !ok {
+				continue
+			}
+			summaries = append(summaries, fmt.Sprintf("- `%s` - %s", tool.Name(), tool.Description()))
+		}
+	}
 	if len(summaries) == 0 {
 		return ""
 	}
@@ -199,16 +217,24 @@ type contextSection struct {
 }
 
 func (cb *ContextBuilder) BuildSystemPrompt() string {
-	return cb.BuildSystemPromptWithBudget(cb.tokenBudgetTokens())
+	return cb.BuildSystemPromptForTurn("", "", cb.tokenBudgetTokens())
 }
 
 func (cb *ContextBuilder) BuildSystemPromptWithBudget(budgetTokens int) string {
+	return cb.BuildSystemPromptForTurn("", "", budgetTokens)
+}
+
+func (cb *ContextBuilder) BuildSystemPromptForSession(sessionKey string, budgetTokens int) string {
+	return cb.BuildSystemPromptForTurn(sessionKey, "", budgetTokens)
+}
+
+func (cb *ContextBuilder) BuildSystemPromptForTurn(sessionKey, query string, budgetTokens int) string {
 
 	// Collect sections in priority order
 	sections := []contextSection{}
 
 	// P0: Core identity (always included)
-	sections = append(sections, contextSection{"identity", cb.getIdentity(), 0})
+	sections = append(sections, contextSection{"identity", cb.getIdentityForQuery(query), 0})
 
 	// P1: Bootstrap files (user identity) — cached with TTL
 	if bc := cb.cachedBootstrapFiles(); bc != "" {
@@ -231,7 +257,7 @@ Do NOT assume skill content — always load before applying.
 
 	// P3: Working context (hot tier — highly dynamic, high value)
 	if cb.memoryStore != nil {
-		if wc := cb.buildWorkingContextSection(); wc != "" {
+		if wc := cb.buildWorkingContextSection(sessionKey); wc != "" {
 			sections = append(sections, contextSection{"working_context", wc, 3})
 		}
 	}
@@ -509,7 +535,7 @@ func (cb *ContextBuilder) LoadBootstrapFiles() string {
 
 // buildWorkingContextSection returns the working context section for the system prompt.
 // It includes the hot-tier working context buffer and memory usage instructions.
-func (cb *ContextBuilder) buildWorkingContextSection() string {
+func (cb *ContextBuilder) buildWorkingContextSection(sessionKey string) string {
 	if cb.memoryStore == nil {
 		return ""
 	}
@@ -520,15 +546,18 @@ func (cb *ContextBuilder) buildWorkingContextSection() string {
 
 	var parts []string
 
-	sessionKey := "default"
-	if cb.sessionKeyFn != nil {
+	resolvedSessionKey := strings.TrimSpace(sessionKey)
+	if resolvedSessionKey == "" && cb.sessionKeyFn != nil {
 		if resolved := strings.TrimSpace(cb.sessionKeyFn()); resolved != "" {
-			sessionKey = resolved
+			resolvedSessionKey = resolved
 		}
+	}
+	if resolvedSessionKey == "" {
+		resolvedSessionKey = "default"
 	}
 
 	// Inject working context (hot tier)
-	wc, err := cb.memoryStore.GetWorkingContext(ctx, pkg.NAME, sessionKey)
+	wc, err := cb.memoryStore.GetWorkingContext(ctx, pkg.NAME, resolvedSessionKey)
 	if err == nil && wc != "" {
 		parts = append(parts, "## Working Context\n\n"+wc)
 	}
@@ -552,10 +581,10 @@ Store important user preferences, key decisions, and facts you want to remember 
 	return strings.Join(parts, "\n\n")
 }
 
-func (cb *ContextBuilder) BuildMessages(history []messages.Message, summary string, currentMessage string, media []string, channel, chatID string) []messages.Message {
+func (cb *ContextBuilder) BuildMessages(sessionKey string, history []messages.Message, summary string, currentMessage string, media []string, channel, chatID string) []messages.Message {
 	msgs := []messages.Message{}
 
-	systemPrompt := cb.BuildSystemPrompt()
+	systemPrompt := cb.BuildSystemPromptForTurn(sessionKey, currentMessage, cb.tokenBudgetTokens())
 
 	// Add Current Session info if provided
 	if channel != "" && chatID != "" {

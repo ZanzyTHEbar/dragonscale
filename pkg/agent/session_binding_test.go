@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -11,6 +12,7 @@ import (
 	"github.com/ZanzyTHEbar/dragonscale/pkg/bus"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/config"
 	memstore "github.com/ZanzyTHEbar/dragonscale/pkg/memory/store"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/tools"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -108,4 +110,32 @@ func invokeMemoryAction(t *testing.T, tool *MemGPTTool, args map[string]interfac
 	require.NoError(t, jsonv2.Unmarshal([]byte(result.ForLLM), &response))
 	require.True(t, response.Success)
 	return response
+}
+
+func TestMemGPTTool_PrefersContextSessionOverActiveSession(t *testing.T) {
+	t.Parallel()
+
+	al := newSessionBoundAgentLoop(t)
+	toolAny, ok := al.tools.Get("memory")
+	require.True(t, ok)
+	memTool, ok := toolAny.(*MemGPTTool)
+	require.True(t, ok)
+
+	al.activeSessionKey.Store("session-b")
+	ctx := tools.WithSessionKey(context.Background(), "session-a")
+	writeA := memTool.Execute(ctx, map[string]interface{}{
+		"action":  "write",
+		"content": "context-bound memory",
+		"tier":    "recall",
+		"sector":  "semantic",
+	})
+	require.False(t, writeA.IsError)
+
+	sessionAItems, err := al.memDelegate.ListRecallItems(t.Context(), pkgroot.NAME, "session-a", 10, 0)
+	require.NoError(t, err)
+	sessionBItems, err := al.memDelegate.ListRecallItems(t.Context(), pkgroot.NAME, "session-b", 10, 0)
+	require.NoError(t, err)
+	require.NotEmpty(t, sessionAItems)
+	assert.Equal(t, "context-bound memory", sessionAItems[0].Content)
+	assert.Empty(t, sessionBItems)
 }

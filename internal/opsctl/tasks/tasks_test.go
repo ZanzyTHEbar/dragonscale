@@ -191,6 +191,64 @@ func TestBuildAllTaskRejectsNonLinuxTarget(t *testing.T) {
 	require.Len(t, fake.Calls, 0)
 }
 
+func TestDepsTaskPrefixesEachGoCommand(t *testing.T) {
+	t.Parallel()
+
+	ctx := &app.Context{
+		Root: t.TempDir(),
+		ExtraEnv: map[string]string{
+			"SKIP_DEVCONTAINER_WRAPPER": "1",
+		},
+	}
+	fake := &runner.FakeRunner{Result: runner.CommandResult{ExitCode: 0}}
+
+	var deps app.Task
+	for _, task := range NewRegistry(ctx.Root) {
+		if task.Name() == "deps" {
+			deps = task
+			break
+		}
+	}
+	require.NotNil(t, deps)
+
+	_, err := deps.Run(context.Background(), fake, ctx)
+	require.NoError(t, err)
+	require.Len(t, fake.Calls, 1)
+
+	script := strings.Join(fake.Calls[0].Args, " ")
+	require.Contains(t, script, "$GO mod download && $GO mod verify")
+	require.NotContains(t, script, "$GO mod download && mod verify")
+}
+
+func TestUpdateDepsTaskPrefixesEachGoCommand(t *testing.T) {
+	t.Parallel()
+
+	ctx := &app.Context{
+		Root: t.TempDir(),
+		ExtraEnv: map[string]string{
+			"SKIP_DEVCONTAINER_WRAPPER": "1",
+		},
+	}
+	fake := &runner.FakeRunner{Result: runner.CommandResult{ExitCode: 0}}
+
+	var updateDeps app.Task
+	for _, task := range NewRegistry(ctx.Root) {
+		if task.Name() == "update-deps" {
+			updateDeps = task
+			break
+		}
+	}
+	require.NotNil(t, updateDeps)
+
+	_, err := updateDeps.Run(context.Background(), fake, ctx)
+	require.NoError(t, err)
+	require.Len(t, fake.Calls, 1)
+
+	script := strings.Join(fake.Calls[0].Args, " ")
+	require.Contains(t, script, "$GO get -u ./... && $GO mod tidy")
+	require.NotContains(t, script, "$GO get -u ./... && mod tidy")
+}
+
 func TestEvalRunSpecsPreservesEvalConfig(t *testing.T) {
 	t.Parallel()
 
@@ -439,6 +497,30 @@ func TestEvalTaskBuildsPromptfooCommandWithDefaultConfig(t *testing.T) {
 	require.Contains(t, strings.Join(fake.Calls[1].Args, " "), "--no-progress-bar")
 }
 
+func TestEvalTestTaskBypassesDevcontainerWrapperWhenDisabled(t *testing.T) {
+	t.Parallel()
+
+	ctx := &app.Context{
+		Root: t.TempDir(),
+		ExtraEnv: map[string]string{
+			"DEVCONTAINER_EXEC":         "npx --yes @devcontainers/cli exec --workspace-folder \"$PWD\" --",
+			"SKIP_DEVCONTAINER_WRAPPER": "1",
+		},
+	}
+	fake := &runner.FakeRunner{Result: runner.CommandResult{ExitCode: 0}}
+
+	task := findTaskByName(t, NewRegistry(ctx.Root), "eval-test")
+	_, err := task.Run(context.Background(), fake, ctx)
+	require.NoError(t, err)
+	require.Len(t, fake.Calls, 1)
+	require.Equal(t, "bash", fake.Calls[0].Name)
+	joinedArgs := strings.Join(fake.Calls[0].Args, " ")
+	require.Contains(t, joinedArgs, "$GO test -v ./eval/go_evals/...")
+	require.NotContains(t, joinedArgs, "@devcontainers/cli")
+	joinedEnv := strings.Join(fake.Calls[0].Env, " ")
+	require.Contains(t, joinedEnv, "DEVCONTAINER_EXEC=npx --yes @devcontainers/cli exec --workspace-folder \"$PWD\" --")
+}
+
 func TestEvalViewTaskRunsInEvalDirectory(t *testing.T) {
 	ctx := &app.Context{
 		Root: t.TempDir(),
@@ -461,12 +543,17 @@ func TestEvalRunSpecsPrependsBuildWhenRunnerMissingAndSourceTreeExists(t *testin
 	root := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(root, "eval", "cmd", "eval-runner"), 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(root, "eval", "cmd", "eval-runner", "main.go"), []byte("package main\nfunc main() {}\n"), 0o644))
+	require.NoError(t, os.MkdirAll(filepath.Join(root, "eval", "fixtures", "skills"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "eval", "fixtures", "sample_data.txt"), []byte("fixture"), 0o644))
 
 	specs := evalRunSpecs(&app.Context{Root: root})
-	require.GreaterOrEqual(t, len(specs), 4)
+	require.GreaterOrEqual(t, len(specs), 10)
 	require.Equal(t, "go", specs[0].Name)
 	require.Equal(t, []string{"generate", "./..."}, specs[0].Args)
 	require.Equal(t, root, specs[0].Dir)
+	require.Equal(t, "mkdir", specs[3].Name)
+	require.Equal(t, "rm", specs[4].Name)
+	require.Equal(t, "cp", specs[8].Name)
 	require.Equal(t, "npx", specs[len(specs)-1].Name)
 	require.Equal(t, filepath.Join(root, "eval"), specs[len(specs)-1].Dir)
 }
@@ -479,13 +566,37 @@ func TestEvalRunSpecsPrependsBuildWhenRunnerAlreadyExists(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(root, "eval", "cmd", "eval-runner", "main.go"), []byte("package main\nfunc main() {}\n"), 0o644))
 	require.NoError(t, os.MkdirAll(filepath.Join(root, "eval", "bin"), 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(root, "eval", "bin", "eval-runner"), []byte("stale-binary"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(root, "eval", "fixtures", "skills"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "eval", "fixtures", "sample_data.txt"), []byte("fixture"), 0o644))
 
 	specs := evalRunSpecs(&app.Context{Root: root})
-	require.GreaterOrEqual(t, len(specs), 4)
+	require.GreaterOrEqual(t, len(specs), 10)
 	require.Equal(t, "go", specs[0].Name)
 	require.Equal(t, []string{"generate", "./..."}, specs[0].Args)
 	require.Equal(t, root, specs[0].Dir)
 	require.Equal(t, "npx", specs[len(specs)-1].Name)
+}
+
+func TestEvalRunSpecsPrependsFixturesWhenSourceTreeExists(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(root, "eval", "cmd", "eval-runner"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "eval", "cmd", "eval-runner", "main.go"), []byte("package main\nfunc main() {}\n"), 0o644))
+	require.NoError(t, os.MkdirAll(filepath.Join(root, "eval", "fixtures", "skills"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "eval", "fixtures", "sample_data.txt"), []byte("fixture"), 0o644))
+
+	specs := evalRunSpecs(&app.Context{Root: root})
+	require.GreaterOrEqual(t, len(specs), 10)
+	require.Equal(t, "mkdir", specs[3].Name)
+	require.Equal(t, []string{"-p", filepath.Join(homeDir(), ".local", "share", "dragonscale", "sandbox")}, specs[3].Args)
+	require.Equal(t, "rm", specs[4].Name)
+	require.Equal(t, "bash", specs[7].Name)
+	require.Equal(t, "cp", specs[8].Name)
+	require.Equal(t, "bash", specs[9].Name)
+	require.Equal(t, "npx", specs[len(specs)-1].Name)
+	joinedArgs := strings.Join(specs[len(specs)-1].Args, " ")
+	require.Contains(t, joinedArgs, "promptfoo eval --config promptfooconfig.yaml")
 }
 
 func TestEvalTasksUseRepoRootPathsWhenCwdIsNested(t *testing.T) {

@@ -92,6 +92,7 @@ func (t *AgenticMapTool) Execute(ctx context.Context, args map[string]interface{
 	if t.manager == nil && t.runtime == nil {
 		return ErrorResult("agentic_map manager is not configured").WithError(fmt.Errorf("agentic_map manager is nil"))
 	}
+	originChannel, originChatID := ResolveExecutionTarget(ctx, t.originChannel, t.originChatID)
 
 	items, usedJSONL, err := parseMapBoundaryItems(args)
 	if err != nil {
@@ -142,8 +143,8 @@ func (t *AgenticMapTool) Execute(ctx context.Context, args map[string]interface{
 			MaxRetries:     uint16(maxRetries),
 			DelegatedScope: delegatedScope,
 			KeptWork:       keptWork,
-			OriginChannel:  t.originChannel,
-			OriginChatID:   t.originChatID,
+			OriginChannel:  originChannel,
+			OriginChatID:   originChatID,
 		}, items, idempotencyKey)
 		if err != nil {
 			return ErrorResult(fmt.Sprintf("failed to enqueue agentic_map run: %v", err)).WithError(err)
@@ -189,7 +190,7 @@ func (t *AgenticMapTool) Execute(ctx context.Context, args map[string]interface{
 	}
 
 	subTool := NewSubagentTool(t.manager)
-	subTool.SetContext(t.originChannel, t.originChatID)
+	subTool.SetContext(originChannel, originChatID)
 
 	type itemResult struct {
 		Index    int    `json:"index"`

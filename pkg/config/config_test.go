@@ -91,7 +91,7 @@ func TestDefaultConfig_Gateway(t *testing.T) {
 	t.Parallel()
 	cfg := DefaultConfig()
 
-	if cfg.Gateway.Host != "0.0.0.0" {
+	if cfg.Gateway.Host != "127.0.0.1" {
 		t.Error("Gateway host should have default value")
 	}
 	if cfg.Gateway.Port == 0 {
@@ -223,7 +223,7 @@ func TestConfig_Complete(t *testing.T) {
 	if cfg.Agents.Defaults.MaxToolIterations == 0 {
 		t.Error("MaxToolIterations should not be zero")
 	}
-	if cfg.Gateway.Host != "0.0.0.0" {
+	if cfg.Gateway.Host != "127.0.0.1" {
 		t.Error("Gateway host should have default value")
 	}
 	if cfg.Gateway.Port == 0 {
@@ -372,5 +372,22 @@ func TestLoadConfig_OpenAIWebSearchCanBeDisabled(t *testing.T) {
 	}
 	if cfg.Providers.OpenAI.WebSearch {
 		t.Fatal("OpenAI codex web search should be false when disabled in config file")
+	}
+}
+
+func TestLoadConfig_GatewayHostEnvOverride(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.json")
+	if err := os.WriteFile(configPath, []byte(`{"gateway":{"host":"0.0.0.0"}}`), 0o600); err != nil {
+		t.Fatalf("WriteFile() error: %v", err)
+	}
+	t.Setenv("DRAGONSCALE_GATEWAY_HOST", "0.0.0.0")
+
+	cfg, err := LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error: %v", err)
+	}
+	if cfg.Gateway.Host != "0.0.0.0" {
+		t.Fatalf("expected env override host 0.0.0.0, got %q", cfg.Gateway.Host)
 	}
 }

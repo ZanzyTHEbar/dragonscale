@@ -26,11 +26,14 @@ To keep compact/no-progress output (current default), run:
 make eval DRAGONSCALE_PROMPTFOO_ARGS="--no-cache --no-progress-bar"
 ```
 
-`make eval`, `make eval-test`, `make eval-compare`, and `make eval-fixtures` run inside the devcontainer when `npx` is available, keeping command execution aligned with the container build environment.
+`make eval`, `make eval-test`, `make eval-compare`, and `make eval-fixtures` auto-run inside the devcontainer when the wrapper is enabled and Docker/devcontainer support is detected, keeping command execution aligned with the container build environment.
 
-Set `DEVCONTAINER_EXEC=` to force host execution for these targets.
+Set both `SKIP_DEVCONTAINER_WRAPPER=1` and `DEVCONTAINER_EXEC=` at the `make` invocation to force host execution for these targets.
 
 ```bash
+# Force host execution instead of the devcontainer wrapper
+SKIP_DEVCONTAINER_WRAPPER=1 make DEVCONTAINER_EXEC= eval-test
+
 # View results in browser
 make eval-view
 
@@ -40,6 +43,25 @@ make eval-test
 # A/B comparison (current branch vs main)
 make eval-compare
 ```
+
+## CI Verification
+
+PR CI now runs the Go-native eval suite as the low-flake smoke proof job.
+
+- PR workflow job: `eval-proof`
+- CI smoke command: `SKIP_DEVCONTAINER_WRAPPER=1 make DEVCONTAINER_EXEC= eval-test`
+- Eval-smoke artifact uploaded by `eval-proof`:
+  - `eval/results/eval-test.log`
+- Coverage artifacts uploaded separately by the `test` job:
+  - `coverage.txt`
+  - `coverage-summary.txt`
+
+The full promptfoo harness remains a richer local/manual verification surface for now:
+
+- Local/manual: `make eval`
+- Local/manual comparison: `make eval-compare`
+
+This keeps the PR proof deterministic while preserving the larger promptfoo suite for deeper branch verification.
 
 ## Runtime Invariants
 

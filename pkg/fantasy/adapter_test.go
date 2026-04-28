@@ -78,7 +78,11 @@ func (t *mockContextualTool) Description() string { return "Contextual tool" }
 func (t *mockContextualTool) Parameters() map[string]interface{} {
 	return map[string]interface{}{"type": "object", "properties": map[string]interface{}{}}
 }
-func (t *mockContextualTool) Execute(_ context.Context, _ map[string]interface{}) *tools.ToolResult {
+func (t *mockContextualTool) Execute(ctx context.Context, _ map[string]interface{}) *tools.ToolResult {
+	if channel, chatID := tools.ExecutionTargetFromContext(ctx); channel != "" || chatID != "" {
+		t.channel = channel
+		t.chatID = chatID
+	}
 	return &tools.ToolResult{
 		ForLLM: "channel=" + t.channel + " chat=" + t.chatID,
 		Silent: true,

@@ -110,3 +110,39 @@ func TestPolicyValidateFilesystemModeMismatch(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "does not match")
 }
+
+func TestPolicyValidateFilesystemGlobstarAllowed(t *testing.T) {
+	t.Parallel()
+	pe := NewPolicyEngine(PolicyConfig{AllowedWorkspace: "/workspace"})
+	rules := []tools.PathRule{{Pattern: "**", Mode: "rw"}}
+
+	assert.NoError(t, pe.ValidateFilesystem("/workspace/src/pkg/main.go", "r", rules))
+	assert.NoError(t, pe.ValidateFilesystem("/workspace/src/pkg/main.go", "w", rules))
+}
+
+func TestPolicyValidateFilesystemGlobstarDeniedOutsideWorkspace(t *testing.T) {
+	t.Parallel()
+	pe := NewPolicyEngine(PolicyConfig{AllowedWorkspace: "/workspace"})
+	rules := []tools.PathRule{{Pattern: "**", Mode: "rw"}}
+
+	err := pe.ValidateFilesystem("/etc/passwd", "r", rules)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "outside allowed workspace")
+}
+
+func TestPolicyValidateFilesystemAllowsDotDotPrefixedChild(t *testing.T) {
+	t.Parallel()
+	pe := NewPolicyEngine(PolicyConfig{AllowedWorkspace: "/workspace"})
+	rules := []tools.PathRule{{Pattern: "**", Mode: "rw"}}
+
+	assert.NoError(t, pe.ValidateFilesystem("/workspace/..cache/config.json", "r", rules))
+}
+
+func TestPolicyValidateNetworkGlobstarAllowed(t *testing.T) {
+	t.Parallel()
+	pe := NewPolicyEngine(DefaultPolicyConfig())
+	rules := []tools.EndpointRule{{Pattern: "https://**"}}
+
+	assert.NoError(t, pe.ValidateNetwork("https://api.github.com/repos", rules))
+	assert.NoError(t, pe.ValidateNetwork("https://example.com/deep/path", rules))
+}

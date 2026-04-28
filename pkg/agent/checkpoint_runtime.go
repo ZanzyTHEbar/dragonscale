@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -34,6 +35,7 @@ func (al *AgentLoop) persistRunCheckpoint(ctx context.Context, opts processOptio
 	if opts.ConversationID.IsZero() || opts.RunID.IsZero() {
 		return
 	}
+	persistCtx := context.WithoutCancel(ctx)
 
 	history := al.sessions.GetHistory(opts.SessionKey)
 	snapshot := conversations.NewCheckpointSnapshot(
@@ -55,7 +57,7 @@ func (al *AgentLoop) persistRunCheckpoint(ctx context.Context, opts processOptio
 		"errors":          metrics.Errors,
 	}
 
-	runState, err := al.stateStore.AddRunState(ctx, opts.RunID, metrics.StepCount, fantasy.ReActStateDone, snapshot)
+	runState, err := al.stateStore.AddRunState(persistCtx, opts.RunID, metrics.StepCount, fantasy.ReActStateDone, snapshot)
 	if err != nil {
 		logger.WarnCF("agent", "Failed to persist checkpointable run snapshot", map[string]any{
 			"session_key": opts.SessionKey,
@@ -68,7 +70,7 @@ func (al *AgentLoop) persistRunCheckpoint(ctx context.Context, opts processOptio
 		meta["run_state_id"] = runState.ID.String()
 
 		checkpointStore := NewCheckpointStore(al.queries)
-		if _, err := checkpointStore.CreateCheckpoint(ctx, opts.ConversationID, checkpointName, runState.ID, meta); err != nil {
+		if _, err := checkpointStore.CreateCheckpoint(persistCtx, opts.ConversationID, checkpointName, runState.ID, meta); err != nil {
 			logger.WarnCF("agent", "Failed to create runtime checkpoint", map[string]any{
 				"session_key": opts.SessionKey,
 				"run_id":      opts.RunID.String(),
@@ -78,13 +80,50 @@ func (al *AgentLoop) persistRunCheckpoint(ctx context.Context, opts processOptio
 		}
 	}
 
-	if _, err := al.stateStore.UpdateRunStatus(ctx, opts.RunID, "completed", meta); err != nil {
+	if _, err := al.stateStore.UpdateRunStatus(persistCtx, opts.RunID, "completed", meta); err != nil {
 		logger.WarnCF("agent", "Failed to update run completion status", map[string]any{
 			"session_key": opts.SessionKey,
 			"run_id":      opts.RunID.String(),
 			"error":       err.Error(),
 		})
 	}
+}
+
+func (al *AgentLoop) persistFailedRun(ctx context.Context, opts processOptions, reason error) {
+	if al == nil || al.stateStore == nil || opts.RunID.IsZero() {
+		return
+	}
+	persistCtx := context.WithoutCancel(ctx)
+	meta := map[string]any{
+		"session_key": opts.SessionKey,
+	}
+	if !opts.ConversationID.IsZero() {
+		meta["conversation_id"] = opts.ConversationID.String()
+	}
+	if reason != nil {
+		meta["error"] = reason.Error()
+		meta["reason"] = classifyRunFailure(reason)
+	}
+	if _, err := al.stateStore.UpdateRunStatus(persistCtx, opts.RunID, "failed", meta); err != nil {
+		logger.WarnCF("agent", "Failed to update run failure status", map[string]any{
+			"session_key": opts.SessionKey,
+			"run_id":      opts.RunID.String(),
+			"error":       err.Error(),
+		})
+	}
+}
+
+func classifyRunFailure(err error) string {
+	if err == nil {
+		return "failed"
+	}
+	if errors.Is(err, context.Canceled) {
+		return "canceled"
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return "deadline_exceeded"
+	}
+	return "failed"
 }
 
 func (al *AgentLoop) RestoreSessionFromCheckpoint(ctx context.Context, sessionKey, checkpointName string) error {
@@ -112,6 +151,9 @@ func (al *AgentLoop) RestoreSessionFromCheckpoint(ctx context.Context, sessionKe
 		return err
 	}
 	al.conversationIDs.Store(sessionKey, conversationID)
+	if err := al.persistConversationBinding(ctx, sessionKey, conversationID); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -154,6 +196,9 @@ func (al *AgentLoop) ForkSessionFromCheckpoint(ctx context.Context, sourceSessio
 		return ids.UUID{}, err
 	}
 	al.conversationIDs.Store(forkSessionKey, conv.ID)
+	if err := al.persistConversationBinding(ctx, forkSessionKey, conv.ID); err != nil {
+		return ids.UUID{}, err
+	}
 	return conv.ID, nil
 }
 
@@ -168,12 +213,23 @@ func (al *AgentLoop) lookupConversationIDForSession(ctx context.Context, session
 	if cached, ok := al.conversationIDs.Load(sessionKey); ok {
 		return cached, nil
 	}
+	if boundID, err := al.loadBoundConversationID(ctx, sessionKey); err == nil && !boundID.IsZero() {
+		if _, err := al.queries.GetAgentConversation(ctx, memsqlc.GetAgentConversationParams{ID: boundID}); err == nil {
+			al.conversationIDs.Store(sessionKey, boundID)
+			return boundID, nil
+		}
+	} else if err != nil {
+		return ids.UUID{}, fmt.Errorf("lookup conversation binding for session %q: %w", sessionKey, err)
+	}
 
 	conv, err := al.queries.GetLatestAgentConversationByTitle(ctx, memsqlc.GetLatestAgentConversationByTitleParams{Title: &sessionKey})
 	if err != nil {
 		return ids.UUID{}, fmt.Errorf("lookup conversation for session %q: %w", sessionKey, err)
 	}
 	al.conversationIDs.Store(sessionKey, conv.ID)
+	if err := al.persistConversationBinding(ctx, sessionKey, conv.ID); err != nil {
+		return ids.UUID{}, fmt.Errorf("persist conversation binding for session %q: %w", sessionKey, err)
+	}
 	return conv.ID, nil
 }
 

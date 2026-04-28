@@ -171,8 +171,8 @@ SELECT id,
     created_at
 FROM task_completions
 WHERE agent_id = sqlc.arg(agent_id)
-    AND created_at > sqlc.arg(since)
-    AND completed = 1
+	AND unixepoch(created_at) > unixepoch(sqlc.arg(since))
+	AND completed = 1
 ORDER BY created_at ASC;
 -- name: StoreTaskRetrieval :exec
 -- Store a memory retrieval record for a task
@@ -197,7 +197,7 @@ WHERE tr.task_id = sqlc.arg(task_id);
 -- Get all unique agent IDs that have completed tasks (for multi-agent processing)
 SELECT DISTINCT agent_id
 FROM task_completions
-WHERE created_at > sqlc.arg(since)
+WHERE unixepoch(created_at) > unixepoch(sqlc.arg(since))
 ORDER BY agent_id;
 -- name: GetHighTokenSessions :many
 -- Get sessions with high token usage grouped by conversation/agent

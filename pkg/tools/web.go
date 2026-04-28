@@ -18,6 +18,8 @@ const (
 	userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 )
 
+var htmlTitleRE = regexp.MustCompile(`(?is)<title[^>]*>(.*?)</title>`)
+
 type SearchProvider interface {
 	Search(ctx context.Context, query string, count int) (string, error)
 }
@@ -467,6 +469,9 @@ func (t *WebFetchTool) Execute(ctx context.Context, args map[string]interface{})
 
 	var text, extractor string
 
+	isHTML := strings.Contains(contentType, "text/html") || len(body) > 0 &&
+		(strings.HasPrefix(string(body), "<!DOCTYPE") || strings.HasPrefix(strings.ToLower(string(body)), "<html"))
+
 	if strings.Contains(contentType, "application/json") {
 		var jsonData interface{}
 		if err := jsonv2.Unmarshal(body, &jsonData); err == nil {
@@ -477,8 +482,7 @@ func (t *WebFetchTool) Execute(ctx context.Context, args map[string]interface{})
 			text = string(body)
 			extractor = "raw"
 		}
-	} else if strings.Contains(contentType, "text/html") || len(body) > 0 &&
-		(strings.HasPrefix(string(body), "<!DOCTYPE") || strings.HasPrefix(strings.ToLower(string(body)), "<html")) {
+	} else if isHTML {
 		text = t.extractText(string(body))
 		extractor = "text"
 	} else {
@@ -501,11 +505,38 @@ func (t *WebFetchTool) Execute(ctx context.Context, args map[string]interface{})
 	}
 
 	resultJSON, _ := jsonv2.Marshal(result, jsontext.WithIndent("  "))
+	llmContent := formatWebFetchLLMContent(urlStr, resp.StatusCode, extractor, truncated, text, isHTML, string(body))
 
 	return &ToolResult{
-		ForLLM:  fmt.Sprintf("Fetched %d bytes from %s (extractor: %s, truncated: %v)", len(text), urlStr, extractor, truncated),
+		ForLLM:  llmContent,
 		ForUser: string(resultJSON),
 	}
+}
+
+func formatWebFetchLLMContent(urlStr string, status int, extractor string, truncated bool, text string, isHTML bool, rawHTML string) string {
+	sections := []string{fmt.Sprintf("Fetched %s (status %d, extractor: %s, truncated: %v)", urlStr, status, extractor, truncated)}
+
+	if isHTML {
+		if title := extractHTMLTitle(rawHTML); title != "" {
+			sections = append(sections, "Title: "+title)
+		}
+	}
+
+	if trimmed := strings.TrimSpace(text); trimmed != "" {
+		sections = append(sections, "Content:\n"+trimmed)
+	}
+
+	return strings.Join(sections, "\n\n")
+}
+
+func extractHTMLTitle(htmlContent string) string {
+	m := htmlTitleRE.FindStringSubmatch(htmlContent)
+	if len(m) < 2 {
+		return ""
+	}
+	title := stripTags(m[1])
+	title = strings.Join(strings.Fields(title), " ")
+	return strings.TrimSpace(title)
 }
 
 func (t *WebFetchTool) extractText(htmlContent string) string {
@@ -514,7 +545,7 @@ func (t *WebFetchTool) extractText(htmlContent string) string {
 	re = regexp.MustCompile(`<style[\s\S]*?</style>`)
 	result = re.ReplaceAllLiteralString(result, "")
 	re = regexp.MustCompile(`<[^>]+>`)
-	result = re.ReplaceAllLiteralString(result, "")
+	result = re.ReplaceAllLiteralString(result, " ")
 
 	result = strings.TrimSpace(result)
 

@@ -47,6 +47,25 @@ func (e *echoTool) Execute(_ context.Context, args map[string]interface{}) *tool
 	return &tools.ToolResult{ForLLM: v}
 }
 
+type echoValidatedTool struct{}
+
+func (e *echoValidatedTool) Name() string        { return "echo_validated" }
+func (e *echoValidatedTool) Description() string { return "echo with validated args" }
+func (e *echoValidatedTool) Parameters() map[string]interface{} {
+	return map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"label": map[string]interface{}{"type": "string"},
+		},
+		"required": []string{"label"},
+	}
+}
+func (e *echoValidatedTool) Execute(_ context.Context, args map[string]interface{}) *tools.ToolResult {
+	label, _ := args["label"].(string)
+	input, _ := args["input"].(string)
+	return &tools.ToolResult{ForLLM: label + ":" + input}
+}
+
 func makeArgsJSON(kv map[string]interface{}) string {
 	if kv == nil {
 		return "{}"
@@ -135,6 +154,31 @@ func TestBus_LeakDetection(t *testing.T) {
 
 	leakEvents := bus.AuditLog().LeakEvents()
 	assert.Len(t, leakEvents, 1)
+	assert.NotContains(t, leakEvents[0].ExecutionError, apiKey)
+}
+
+func TestBus_LeakDetection_RedactsAuditInputAndError(t *testing.T) {
+	t.Parallel()
+
+	apiKey := "AKIAIOSFODNN7EXAMPLE"
+	tool := &staticTool{name: "leaky_error", result: "failed with " + apiKey, isErr: true}
+	bus := makeBus(t, map[string]tools.Tool{"leaky_error": tool}, nil)
+	defer bus.Close()
+
+	req := itr.NewToolExecRequest("req-leak-error", "sess", "tc-leak-error", "leaky_error", makeArgsJSON(map[string]interface{}{
+		"token": apiKey,
+	}))
+	resp := bus.Execute(t.Context(), req)
+
+	assert.True(t, resp.IsError)
+	assert.True(t, resp.LeakDetected)
+	assert.NotContains(t, resp.Result, apiKey)
+
+	events := bus.AuditLog().Events()
+	require.Len(t, events, 1)
+	assert.NotContains(t, events[0].ToolInput, apiKey)
+	assert.NotContains(t, events[0].ExecutionError, apiKey)
+	assert.True(t, events[0].LeakDetected)
 }
 
 func TestBus_SecretInjection_ArgVariant(t *testing.T) {
@@ -189,6 +233,50 @@ func TestBus_SecretInjection_ArgVariant(t *testing.T) {
 
 	assert.False(t, resp.IsError)
 	assert.Empty(t, cmp.Diff("supersecret", resp.Result), "injected secret should appear in tool output")
+
+	events := bus.AuditLog().Events()
+	require.Len(t, events, 1)
+	assert.Contains(t, events[0].SecretsAccessed, "my_token")
+}
+
+func TestBus_SecretInjection_ArgVariant_WithRegistryValidation(t *testing.T) {
+	t.Parallel(
+	// SecureBus injects an arg before dispatch; registry validation must allow it.
+	)
+
+	registry := tools.NewToolRegistry()
+	registry.Register(&echoValidatedTool{})
+
+	key, _ := security.GenerateKey()
+	keyring := security.NewNoopKeyring(key)
+	ss, err := security.NewSecretStore(t.TempDir()+"/secrets.json", keyring)
+	require.NoError(t, err)
+	require.NoError(t, ss.Set("my_token", []byte("supersecret")))
+
+	capLookup := func(name string) (tools.ToolCapabilities, bool) {
+		if name == "echo_validated" {
+			return tools.ToolCapabilities{
+				Secrets: []tools.SecretRef{
+					{Name: "my_token", InjectAs: "arg:input", Required: true},
+				},
+			}, true
+		}
+		return tools.ZeroCapabilities(), false
+	}
+	executor := func(ctx context.Context, name string, args map[string]interface{}) *tools.ToolResult {
+		return registry.ExecuteWithContext(ctx, name, args, "", "", nil)
+	}
+
+	bus := securebus.New(securebus.DefaultBusConfig(), ss, capLookup, executor)
+	defer bus.Close()
+
+	req := itr.NewToolExecRequest("req-5b", "sess", "tc-5b", "echo_validated", makeArgsJSON(map[string]interface{}{
+		"label": "hello",
+	}))
+	resp := bus.Execute(t.Context(), req)
+
+	assert.False(t, resp.IsError)
+	assert.Empty(t, cmp.Diff("hello:supersecret", resp.Result))
 
 	events := bus.AuditLog().Events()
 	require.Len(t, events, 1)

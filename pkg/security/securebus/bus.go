@@ -177,6 +177,7 @@ func (b *Bus) dispatch(ctx context.Context, req itr.ToolRequest) itr.ToolRespons
 	te, ok := req.Payload.(itr.ToolExec)
 	if !ok {
 		event.IsError = true
+		event.ExecutionError = "internal: payload is not ToolExec"
 		event.DurationMS = time.Since(start).Milliseconds()
 		if err := b.audit.Append(event); err != nil {
 			log.Printf("securebus: audit append failed: %v", err)
@@ -184,6 +185,7 @@ func (b *Bus) dispatch(ctx context.Context, req itr.ToolRequest) itr.ToolRespons
 		return itr.NewErrorResponse(req.ID, "internal: payload is not ToolExec")
 	}
 	event.ToolName = te.ToolName
+	event.ToolInput = sanitizeAuditField(b.redactor, te.ArgsJSON)
 
 	// 1. Capability lookup
 	caps, found := b.capLookup(te.ToolName)
@@ -207,6 +209,7 @@ func (b *Bus) dispatch(ctx context.Context, req itr.ToolRequest) itr.ToolRespons
 	if te.ArgsJSON != "" && te.ArgsJSON != "null" {
 		if err := jsonv2.Unmarshal([]byte(te.ArgsJSON), &args); err != nil {
 			event.IsError = true
+			event.ExecutionError = fmt.Sprintf("invalid args JSON: %v", err)
 			event.DurationMS = time.Since(start).Milliseconds()
 			if err := b.audit.Append(event); err != nil {
 				log.Printf("securebus: audit append failed: %v", err)
@@ -219,6 +222,7 @@ func (b *Bus) dispatch(ctx context.Context, req itr.ToolRequest) itr.ToolRespons
 	injectedSecrets, err := b.injectSecrets(ctx, caps.Secrets, args)
 	if err != nil {
 		event.IsError = true
+		event.ExecutionError = "secret injection failed: " + err.Error()
 		event.DurationMS = time.Since(start).Milliseconds()
 		if err := b.audit.Append(event); err != nil {
 			log.Printf("securebus: audit append failed: %v", err)
@@ -226,6 +230,7 @@ func (b *Bus) dispatch(ctx context.Context, req itr.ToolRequest) itr.ToolRespons
 		return itr.NewErrorResponse(req.ID, "secret injection failed: "+err.Error())
 	}
 	event.SecretsAccessed = injectedSecrets
+	ctx = tools.WithInjectedArgKeys(ctx, injectedArgKeys(caps.Secrets)...)
 
 	// 5. Execute
 	result := b.executor(ctx, te.ToolName, args)
@@ -240,11 +245,16 @@ func (b *Bus) dispatch(ctx context.Context, req itr.ToolRequest) itr.ToolRespons
 			redacted := b.redactor.Redact(resultText)
 			resp = itr.NewLeakResponse(req.ID, redacted, nil)
 			event.LeakDetected = true
+			event.ExecutionError = redacted
 		} else {
 			resp = itr.NewSuccessResponse(req.ID, resultText, 0)
+			event.ExecutionError = resultText
 		}
 		if result.IsError {
 			resp.IsError = true
+			event.ExecutionError = sanitizeAuditField(b.redactor, event.ExecutionError)
+		} else {
+			event.ExecutionError = ""
 		}
 	}
 
@@ -292,6 +302,32 @@ func injectArg(args map[string]interface{}, injectAs, value string) {
 	}
 	// "env:" and "header:" variants require tool cooperation; they are
 	// recorded in the capability manifest so auditing can trace what was accessed.
+}
+
+func injectedArgKeys(refs []tools.SecretRef) []string {
+	keys := make([]string, 0, len(refs))
+	for _, ref := range refs {
+		const argPrefix = "arg:"
+		if len(ref.InjectAs) <= len(argPrefix) || ref.InjectAs[:len(argPrefix)] != argPrefix {
+			continue
+		}
+		key := ref.InjectAs[len(argPrefix):]
+		if key == "" {
+			continue
+		}
+		keys = append(keys, key)
+	}
+	return keys
+}
+
+func sanitizeAuditField(redactor *security.Redactor, text string) string {
+	if redactor == nil || text == "" {
+		return text
+	}
+	if redactor.ContainsSensitive(text) {
+		return redactor.Redact(text)
+	}
+	return text
 }
 
 // SetToolSearch configures the tool search callback. Call this after

@@ -69,7 +69,9 @@ func TestAssembleContext_UsesActiveContextProjection(t *testing.T) {
 	assert.Contains(t, projectionKinds(ac.projection), memory.ProjectionSegmentSystem)
 	assert.Contains(t, projectionKinds(ac.projection), memory.ProjectionSegmentRecent)
 	assert.Contains(t, projectionKinds(ac.projection), memory.ProjectionSegmentTool)
-	assert.Contains(t, ac.systemPrompt, "You have access to the following tools")
+	assert.Contains(t, ac.systemPrompt, "Plans vs actions")
+	assert.Contains(t, ac.systemPrompt, "Direct tool routing")
+	assert.NotContains(t, ac.systemPrompt, "You have access to the following tools")
 }
 
 func TestActiveContextBuilder_IncludesPersistedDAGProjection(t *testing.T) {
@@ -148,6 +150,44 @@ func TestActiveContextBuilder_IncludesPersistedDAGProjection(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, built.Projection)
 	assert.Contains(t, projectionKinds(built.Projection), memory.ProjectionSegmentDAG)
+}
+
+func TestActiveContextBuilder_UsesTurnSpecificToolHintsInSystemSegment(t *testing.T) {
+	t.Parallel()
+
+	tmpDir, err := os.MkdirTemp("", "active-context-tools-*")
+	require.NoError(t, err)
+	defer os.RemoveAll(tmpDir)
+
+	cfg := config.DefaultConfig()
+	cfg.Agents.Defaults.Sandbox = tmpDir
+	cfg.Agents.Defaults.MaxTokens = 4096
+	cfg.Memory.DBPath = filepath.Join(tmpDir, "active-context-tools.db")
+
+	al := mustNewAgentLoop(t, cfg, bus.NewMessageBus(), newMockLanguageModel("ok"))
+	require.NotNil(t, al.activeContextBuilder)
+
+	built, err := al.activeContextBuilder.BuildTurnContext(t.Context(), TurnContextBuildRequest{
+		ProjectionRequest: memory.ProjectionRequest{
+			AgentID:    pkgroot.NAME,
+			SessionKey: "tool-hint-session",
+			MaxTokens:  4096,
+		},
+		CurrentMessage: "Capture these commitments and give me a reminder/follow-up plan with explicit timing.",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, built.Projection)
+
+	var systemText string
+	for _, seg := range built.Projection.Segments {
+		if seg.Kind == memory.ProjectionSegmentSystem && seg.Source == "runtime_system" {
+			systemText = seg.Text
+			break
+		}
+	}
+	require.NotEmpty(t, systemText)
+	assert.Contains(t, systemText, "`memory`")
+	assert.NotContains(t, systemText, "`obligation`")
 }
 
 func insertImmutableMessage(t *testing.T, al *AgentLoop, msg *memory.ImmutableMessage) {

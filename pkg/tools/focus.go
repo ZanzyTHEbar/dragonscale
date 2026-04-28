@@ -140,7 +140,7 @@ type StartFocusTool struct {
 	delegate   KVStore
 	sessions   *session.SessionManager
 	sessionKey func() string
-	OnChange   func() // called after focus state changes; used for cache invalidation
+	OnChange   func(sessionKey string) // called after focus state changes; used for cache invalidation
 }
 
 func NewStartFocusTool(delegate KVStore, sessions *session.SessionManager, sessionKeyFn func() string) *StartFocusTool {
@@ -203,7 +203,7 @@ func (t *StartFocusTool) Execute(ctx context.Context, args map[string]interface{
 		return ErrorResult(fmt.Sprintf("deadline %v", err))
 	}
 
-	sk := t.sessionKey()
+	sk := ResolveSessionKey(ctx, t.sessionKey)
 	if sk == "" {
 		return ErrorResult("no active session")
 	}
@@ -244,7 +244,7 @@ func (t *StartFocusTool) Execute(ctx context.Context, args map[string]interface{
 	}
 
 	if t.OnChange != nil {
-		t.OnChange()
+		t.OnChange(sk)
 	}
 
 	return SilentResult(fmt.Sprintf("Focus started on: %s\n%sCheckpoint at message %d. Explore freely, then call complete_focus when done.", topic, goalLine, state.CheckpointIndex))
@@ -255,7 +255,7 @@ type CompleteFocusTool struct {
 	delegate   KVStore
 	sessions   *session.SessionManager
 	sessionKey func() string
-	OnChange   func() // called after focus state + knowledge changes; used for cache invalidation
+	OnChange   func(sessionKey string) // called after focus state + knowledge changes; used for cache invalidation
 }
 
 func NewCompleteFocusTool(delegate KVStore, sessions *session.SessionManager, sessionKeyFn func() string) *CompleteFocusTool {
@@ -306,7 +306,7 @@ func (t *CompleteFocusTool) Execute(ctx context.Context, args map[string]interfa
 		return ErrorResult("summary is required")
 	}
 
-	sk := t.sessionKey()
+	sk := ResolveSessionKey(ctx, t.sessionKey)
 	if sk == "" {
 		return ErrorResult("no active session")
 	}
@@ -374,7 +374,7 @@ func (t *CompleteFocusTool) Execute(ctx context.Context, args map[string]interfa
 		})
 
 	if t.OnChange != nil {
-		t.OnChange()
+		t.OnChange(sk)
 	}
 
 	return SilentResult(fmt.Sprintf(

@@ -262,8 +262,8 @@ flowchart LR
     - [ ] With this we can push all completed agent work to a "review" queue for human review and approval before being sent off
       - [ ] Example: 
         - [ ] emails, sms, any work where we want to ensure consistency, order, etc.
-- [ ] Add performance metrics to the eval harness
-  - [ ] Raw metrics of tool calls, LLM calls, token counts, duration, etc
+- [ ] Add richer performance metrics to the eval harness
+  - [x] Raw metrics of tool calls, LLM calls, token counts, duration, etc
   - [ ] Per-test scores
   - [ ] Side-by-side comparison matrix
   - [ ] Compare to other agent runtimes
@@ -287,9 +287,9 @@ flowchart LR
     - [ ] spi
     - [ ] pwm
     - [ ] etc
-- [ ] Migrate to Cobra CLI framework
-  - [ ] Use command-palette pattern for subcommands
-  - [ ] keep cli commands as pure cli that calls into the application
+- [x] Migrate to Cobra CLI framework
+  - [x] Use command-palette pattern for subcommands
+  - [x] keep cli commands as pure cli that calls into the application
 - [ ] Migrate to errbuilder-go (ZanzyTHEbar)
 - [ ] Migrate to assert-lib (ZanzyTHEbar)
 - [ ] Implement SubAgent Profiles
@@ -324,7 +324,9 @@ flowchart LR
   - [x] RLM baseline: production context reduction over oversized projection segments
   - [ ] Full recursive DAG expansion and deeper memory-controller orchestration
   - [ ] ReAct/DAG routing: automatic mode selection (`ModeReAct | ModeDAG | ModeAuto`)
-  - [ ] Layer 3: SecretStore + keyring-based secret management
+  - [~] Layer 3: SecretStore + keyring-based secret management
+    - [x] Env-backed encrypted secret store with XChaCha20-Poly1305 vault
+    - [ ] OS keyring / richer backend support
   - [ ] Layer 4: Daemon mode + Schnorr ZKP authentication
   - [ ] Layer 5: wazero WASM isolates (pure Go, no CGO), `CodeExec` command variant
 - [ ] Plug-in tool support: `pkg/tools/registry.go` — add `Search(query) []ToolInfo` for ToolSearch

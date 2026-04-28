@@ -153,6 +153,181 @@ func TestLibSQLDelegate_GetRecentAuditEntries_HandlesMixedLegacyAndExplicitRows(
 	assert.Equal(t, `{"path":"new.txt"}`, explicitEntry.ToolInput)
 }
 
+func TestLibSQLDelegate_GetRecentAuditEntries_PrefersSecureBusRowsOverLegacyToolRows(t *testing.T) {
+	t.Parallel()
+
+	d := newTestDelegate(t)
+	ctx := t.Context()
+	now := time.Now().UTC()
+	toolCallID := "call-echo"
+	sessionKey := "sess-securebus"
+
+	legacy := &memory.AuditEntry{
+		ID:         ids.New(),
+		AgentID:    "a1",
+		SessionKey: sessionKey,
+		Action:     "tool_success",
+		Target:     "echo",
+		ToolCallID: toolCallID,
+		Input:      `{"text":"hello"}`,
+		Output:     "Echo: hello",
+		Success:    true,
+		CreatedAt:  now,
+	}
+	require.NoError(t, d.InsertAuditEntry(ctx, legacy))
+
+	securebusRow := &memory.AuditEntry{
+		ID:         ids.New(),
+		AgentID:    "a1",
+		SessionKey: sessionKey,
+		Action:     "securebus_tool_exec",
+		Target:     "echo",
+		ToolCallID: toolCallID,
+		Output:     `{"command_type":"tool_exec","tool_name":"echo"}`,
+		Success:    true,
+		CreatedAt:  now.Add(time.Millisecond),
+	}
+	require.NoError(t, d.InsertAuditEntry(ctx, securebusRow))
+
+	entries, err := d.GetRecentAuditEntries(ctx, now.Add(-time.Minute))
+	require.NoError(t, err)
+	require.Len(t, entries, 1)
+	assert.Equal(t, "echo", entries[0].ToolName)
+	assert.Equal(t, toolCallID, entries[0].ToolCallID)
+	assert.Equal(t, sessionKey, entries[0].SessionID)
+	assert.Equal(t, `{"text":"hello"}`, entries[0].ToolInput)
+	assert.True(t, entries[0].Success)
+}
+
+func TestLibSQLDelegate_GetRecentAuditEntries_PrefersSecureBusRowsButBackfillsLegacyErrorMetadata(t *testing.T) {
+	t.Parallel()
+
+	d := newTestDelegate(t)
+	ctx := t.Context()
+	now := time.Now().UTC()
+	toolCallID := "call-fail"
+	sessionKey := "sess-securebus-error"
+
+	legacy := &memory.AuditEntry{
+		ID:         ids.New(),
+		AgentID:    "a1",
+		SessionKey: sessionKey,
+		Action:     "tool_error",
+		Target:     "echo",
+		ToolCallID: toolCallID,
+		Input:      `{"text":"boom"}`,
+		Output:     "tool execution denied",
+		Success:    false,
+		ErrorMsg:   "tool execution denied",
+		CreatedAt:  now,
+	}
+	require.NoError(t, d.InsertAuditEntry(ctx, legacy))
+
+	securebusRow := &memory.AuditEntry{
+		ID:         ids.New(),
+		AgentID:    "a1",
+		SessionKey: sessionKey,
+		Action:     "securebus_tool_exec_error",
+		Target:     "echo",
+		ToolCallID: toolCallID,
+		Output:     `{"command_type":"tool_exec","tool_name":"echo","is_error":true}`,
+		Success:    false,
+		CreatedAt:  now.Add(time.Millisecond),
+	}
+	require.NoError(t, d.InsertAuditEntry(ctx, securebusRow))
+
+	entries, err := d.GetRecentAuditEntries(ctx, now.Add(-time.Minute))
+	require.NoError(t, err)
+	require.Len(t, entries, 1)
+	assert.Equal(t, "echo", entries[0].ToolName)
+	assert.Equal(t, `{"text":"boom"}`, entries[0].ToolInput)
+	assert.False(t, entries[0].Success)
+	assert.Equal(t, "tool execution denied", entries[0].ErrorMsg)
+}
+
+func TestLibSQLDelegate_GetRecentAuditEntries_PreservesLegacyRowsWithoutSecureBusTwin(t *testing.T) {
+	t.Parallel()
+
+	d := newTestDelegate(t)
+	ctx := t.Context()
+	now := time.Now().UTC()
+
+	legacy := &memory.AuditEntry{
+		ID:         ids.New(),
+		AgentID:    "a1",
+		SessionKey: "sess-legacy-only",
+		Action:     "tool_error",
+		Target:     "write_file",
+		ToolCallID: "call-write",
+		Input:      `{"path":"x"}`,
+		Output:     "permission denied",
+		Success:    false,
+		ErrorMsg:   "permission denied",
+		CreatedAt:  now,
+	}
+	require.NoError(t, d.InsertAuditEntry(ctx, legacy))
+
+	entries, err := d.GetRecentAuditEntries(ctx, now.Add(-time.Minute))
+	require.NoError(t, err)
+	require.Len(t, entries, 1)
+	assert.Equal(t, "write_file", entries[0].ToolName)
+	assert.Equal(t, `{"path":"x"}`, entries[0].ToolInput)
+	assert.False(t, entries[0].Success)
+	assert.Equal(t, "permission denied", entries[0].ErrorMsg)
+}
+
+func TestLibSQLDelegate_GetRecentAuditEntries_DoesNotDedupAcrossAgents(t *testing.T) {
+	t.Parallel()
+
+	d := newTestDelegate(t)
+	ctx := t.Context()
+	now := time.Now().UTC()
+	toolCallID := "call-shared"
+	sessionKey := "sess-shared"
+
+	legacyAgentA := &memory.AuditEntry{
+		ID:         ids.New(),
+		AgentID:    "agent-a",
+		SessionKey: sessionKey,
+		Action:     "tool_success",
+		Target:     "echo",
+		ToolCallID: toolCallID,
+		Input:      `{"text":"from-a"}`,
+		Output:     "Echo: from-a",
+		Success:    true,
+		CreatedAt:  now,
+	}
+	require.NoError(t, d.InsertAuditEntry(ctx, legacyAgentA))
+
+	securebusAgentB := &memory.AuditEntry{
+		ID:         ids.New(),
+		AgentID:    "agent-b",
+		SessionKey: sessionKey,
+		Action:     "securebus_tool_exec",
+		Target:     "echo",
+		ToolCallID: toolCallID,
+		Output:     `{"command_type":"tool_exec","tool_name":"echo"}`,
+		Success:    true,
+		CreatedAt:  now.Add(time.Millisecond),
+	}
+	require.NoError(t, d.InsertAuditEntry(ctx, securebusAgentB))
+
+	entries, err := d.GetRecentAuditEntries(ctx, now.Add(-time.Minute))
+	require.NoError(t, err)
+	require.Len(t, entries, 2)
+
+	byAgent := make(map[string]AuditEntry, len(entries))
+	for _, entry := range entries {
+		byAgent[entry.AgentID] = entry
+	}
+	require.Contains(t, byAgent, "agent-a")
+	require.Contains(t, byAgent, "agent-b")
+	assert.Equal(t, `{"text":"from-a"}`, byAgent["agent-a"].ToolInput)
+	assert.Equal(t, "", byAgent["agent-b"].ToolInput)
+	assert.Equal(t, toolCallID, byAgent["agent-a"].ToolCallID)
+	assert.Equal(t, toolCallID, byAgent["agent-b"].ToolCallID)
+}
+
 func TestLibSQLDelegate_ListAuditEntries(t *testing.T) {
 	t.Parallel()
 	tests := []struct {

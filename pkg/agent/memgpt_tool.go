@@ -96,7 +96,7 @@ func (t *MemGPTTool) Execute(ctx context.Context, args map[string]interface{}) *
 		return tools.ErrorResult("invalid arguments: " + err.Error())
 	}
 
-	result, err := memstore.NewMemoryTool(t.store, t.agentID, t.currentSession()).Execute(ctx, string(input))
+	result, err := memstore.NewMemoryTool(t.store, t.agentID, t.currentSession(ctx)).Execute(ctx, string(input))
 	if err != nil {
 		return tools.ErrorResult("memory tool error: " + err.Error())
 	}
@@ -118,11 +118,9 @@ func (t *MemGPTTool) SetSessionResolver(sessionKeyFn func() string) {
 	t.sessionKeyFn = sessionKeyFn
 }
 
-func (t *MemGPTTool) currentSession() string {
-	if t.sessionKeyFn != nil {
-		if sessionKey := strings.TrimSpace(t.sessionKeyFn()); sessionKey != "" {
-			return sessionKey
-		}
+func (t *MemGPTTool) currentSession(ctx context.Context) string {
+	if sessionKey := tools.ResolveSessionKey(ctx, t.sessionKeyFn); sessionKey != "" {
+		return sessionKey
 	}
 	if strings.TrimSpace(t.session) != "" {
 		return t.session
