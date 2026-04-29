@@ -114,15 +114,6 @@ func (r *ToolRegistry) ExecuteWithContext(ctx context.Context, name string, args
 		return ErrorResult(err.Error()).WithError(err)
 	}
 
-	// Backward-compatible bridge for tools that still implement the legacy hook
-	// interfaces instead of reading execution metadata from context directly.
-	if contextualTool, ok := tool.(ContextualTool); ok && channel != "" && chatID != "" {
-		contextualTool.SetContext(channel, chatID)
-	}
-	if asyncTool, ok := tool.(AsyncTool); ok {
-		asyncTool.SetCallback(asyncCallback)
-	}
-
 	start := time.Now()
 	result := tool.Execute(ctx, args)
 	duration := time.Since(start)

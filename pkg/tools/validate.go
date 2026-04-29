@@ -115,10 +115,13 @@ func extractRequiredFields(schema map[string]interface{}) []string {
 func allowsAdditional(schema map[string]interface{}) bool {
 	v, ok := schema["additionalProperties"]
 	if !ok {
-		return false
+		return true
 	}
 	b, ok := v.(bool)
-	return ok && b
+	if !ok {
+		return true
+	}
+	return b
 }
 
 func checkType(key string, val interface{}, propSchema map[string]interface{}, allowedExtras map[string]struct{}) error {

@@ -53,7 +53,8 @@ func (e *echoValidatedTool) Name() string        { return "echo_validated" }
 func (e *echoValidatedTool) Description() string { return "echo with validated args" }
 func (e *echoValidatedTool) Parameters() map[string]interface{} {
 	return map[string]interface{}{
-		"type": "object",
+		"type":                 "object",
+		"additionalProperties": false,
 		"properties": map[string]interface{}{
 			"label": map[string]interface{}{"type": "string"},
 		},
@@ -281,6 +282,48 @@ func TestBus_SecretInjection_ArgVariant_WithRegistryValidation(t *testing.T) {
 	events := bus.AuditLog().Events()
 	require.Len(t, events, 1)
 	assert.Contains(t, events[0].SecretsAccessed, "my_token")
+}
+
+func TestBus_SecretInjection_OptionalArgVariant_DoesNotTrustMissingSecretKey(t *testing.T) {
+	t.Parallel()
+
+	registry := tools.NewToolRegistry()
+	registry.Register(&echoValidatedTool{})
+
+	key, _ := security.GenerateKey()
+	keyring := security.NewNoopKeyring(key)
+	ss, err := security.NewSecretStore(t.TempDir()+"/secrets.json", keyring)
+	require.NoError(t, err)
+
+	capLookup := func(name string) (tools.ToolCapabilities, bool) {
+		if name == "echo_validated" {
+			return tools.ToolCapabilities{
+				Secrets: []tools.SecretRef{
+					{Name: "optional_token", InjectAs: "arg:input", Required: false},
+				},
+			}, true
+		}
+		return tools.ZeroCapabilities(), false
+	}
+	executor := func(ctx context.Context, name string, args map[string]interface{}) *tools.ToolResult {
+		return registry.ExecuteWithContext(ctx, name, args, "", "", nil)
+	}
+
+	bus := securebus.New(securebus.DefaultBusConfig(), ss, capLookup, executor)
+	defer bus.Close()
+
+	req := itr.NewToolExecRequest("req-5c", "sess", "tc-5c", "echo_validated", makeArgsJSON(map[string]interface{}{
+		"label": "hello",
+		"input": "user-supplied",
+	}))
+	resp := bus.Execute(t.Context(), req)
+
+	assert.True(t, resp.IsError)
+	assert.Contains(t, resp.Result, `unexpected property "input"`)
+
+	events := bus.AuditLog().Events()
+	require.Len(t, events, 1)
+	assert.Empty(t, events[0].SecretsAccessed)
 }
 
 func TestBus_PolicyViolation_RecursionDepth(t *testing.T) {

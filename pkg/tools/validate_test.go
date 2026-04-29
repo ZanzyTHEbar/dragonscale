@@ -11,7 +11,8 @@ func TestValidateToolArgs(t *testing.T) {
 	t.Parallel()
 
 	schema := map[string]interface{}{
-		"type": "object",
+		"type":                 "object",
+		"additionalProperties": false,
 		"properties": map[string]interface{}{
 			"name": map[string]interface{}{"type": "string"},
 			"age":  map[string]interface{}{"type": "integer"},
@@ -63,6 +64,16 @@ func TestValidateToolArgs(t *testing.T) {
 			schema:  schema,
 			args:    map[string]interface{}{"name": "alice", "extra": true},
 			wantErr: "unexpected property \"extra\"",
+		},
+		{
+			name: "omitted additionalProperties allows extras",
+			schema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"name": map[string]interface{}{"type": "string"},
+				},
+			},
+			args: map[string]interface{}{"name": "alice", "extra": true},
 		},
 		{
 			name:   "nested object missing field",
@@ -190,7 +201,8 @@ func (t *injectedArgTool) Name() string        { return "injected_arg" }
 func (t *injectedArgTool) Description() string { return "Tool with injected args" }
 func (t *injectedArgTool) Parameters() map[string]interface{} {
 	return map[string]interface{}{
-		"type": "object",
+		"type":                 "object",
+		"additionalProperties": false,
 		"properties": map[string]interface{}{
 			"path": map[string]interface{}{"type": "string"},
 		},
@@ -207,10 +219,12 @@ func (t *nestedInjectedArgTool) Name() string        { return "nested_injected_a
 func (t *nestedInjectedArgTool) Description() string { return "Tool with nested schema" }
 func (t *nestedInjectedArgTool) Parameters() map[string]interface{} {
 	return map[string]interface{}{
-		"type": "object",
+		"type":                 "object",
+		"additionalProperties": false,
 		"properties": map[string]interface{}{
 			"payload": map[string]interface{}{
-				"type": "object",
+				"type":                 "object",
+				"additionalProperties": false,
 				"properties": map[string]interface{}{
 					"name": map[string]interface{}{"type": "string"},
 				},

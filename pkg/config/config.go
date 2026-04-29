@@ -512,15 +512,14 @@ func LoadConfig(path string) (*Config, error) {
 	cfg := DefaultConfig()
 
 	data, err := os.ReadFile(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return cfg, nil
-		}
+	if err != nil && !os.IsNotExist(err) {
 		return nil, err
 	}
 
-	if err := jsonv2.Unmarshal(data, cfg); err != nil {
-		return nil, err
+	if err == nil {
+		if err := jsonv2.Unmarshal(data, cfg); err != nil {
+			return nil, err
+		}
 	}
 
 	if err := env.Parse(cfg); err != nil {
@@ -575,12 +574,14 @@ func (c *Config) Validate() []string {
 		warnings = append(warnings, fmt.Sprintf("agents.defaults.continuity_retention.failure_keep_messages=%d: should be > 0", continuity.FailureKeepMessages))
 	}
 
-	if c.Gateway.Port < 0 || c.Gateway.Port > 65535 {
+	if c.Gateway.Port <= 0 || c.Gateway.Port > 65535 {
 		warnings = append(warnings, fmt.Sprintf("gateway.port=%d: must be in range 1-65535", c.Gateway.Port))
 	}
 
 	if c.Heartbeat.Interval < 0 {
 		warnings = append(warnings, fmt.Sprintf("heartbeat.interval=%d: must be >= 0", c.Heartbeat.Interval))
+	} else if c.Heartbeat.Interval > 0 && c.Heartbeat.Interval < 5 {
+		warnings = append(warnings, fmt.Sprintf("heartbeat.interval=%d: values between 1 and 4 are clamped to 5 minutes", c.Heartbeat.Interval))
 	}
 
 	// Memory config validation (memory is always enabled)

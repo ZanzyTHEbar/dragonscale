@@ -391,3 +391,39 @@ func TestLoadConfig_GatewayHostEnvOverride(t *testing.T) {
 		t.Fatalf("expected env override host 0.0.0.0, got %q", cfg.Gateway.Host)
 	}
 }
+
+func TestLoadConfig_GatewayHostEnvOverrideWithoutConfigFile(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "missing.json")
+	t.Setenv("DRAGONSCALE_GATEWAY_HOST", "0.0.0.0")
+
+	cfg, err := LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error: %v", err)
+	}
+	if cfg.Gateway.Host != "0.0.0.0" {
+		t.Fatalf("expected env-only override host 0.0.0.0, got %q", cfg.Gateway.Host)
+	}
+}
+
+func TestValidate_GatewayPortZeroWarns(t *testing.T) {
+	t.Parallel()
+	cfg := DefaultConfig()
+	cfg.Gateway.Port = 0
+
+	warnings := strings.Join(cfg.Validate(), "\n")
+	if !strings.Contains(warnings, "gateway.port=0") {
+		t.Fatalf("expected gateway port warning for zero, got: %s", warnings)
+	}
+}
+
+func TestValidate_HeartbeatIntervalBelowMinimumWarns(t *testing.T) {
+	t.Parallel()
+	cfg := DefaultConfig()
+	cfg.Heartbeat.Interval = 1
+
+	warnings := strings.Join(cfg.Validate(), "\n")
+	if !strings.Contains(warnings, "clamped to 5 minutes") {
+		t.Fatalf("expected heartbeat clamp warning, got: %s", warnings)
+	}
+}

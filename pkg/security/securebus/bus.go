@@ -219,7 +219,7 @@ func (b *Bus) dispatch(ctx context.Context, req itr.ToolRequest) itr.ToolRespons
 	}
 
 	// 4. Secret injection
-	injectedSecrets, err := b.injectSecrets(ctx, caps.Secrets, args)
+	injectedSecrets, injectedArgKeys, err := b.injectSecrets(ctx, caps.Secrets, args)
 	if err != nil {
 		event.IsError = true
 		event.ExecutionError = "secret injection failed: " + err.Error()
@@ -230,7 +230,7 @@ func (b *Bus) dispatch(ctx context.Context, req itr.ToolRequest) itr.ToolRespons
 		return itr.NewErrorResponse(req.ID, "secret injection failed: "+err.Error())
 	}
 	event.SecretsAccessed = injectedSecrets
-	ctx = tools.WithInjectedArgKeys(ctx, injectedArgKeys(caps.Secrets)...)
+	ctx = tools.WithInjectedArgKeys(ctx, injectedArgKeys...)
 
 	// 5. Execute
 	result := b.executor(ctx, te.ToolName, args)
@@ -267,57 +267,47 @@ func (b *Bus) dispatch(ctx context.Context, req itr.ToolRequest) itr.ToolRespons
 }
 
 // injectSecrets resolves required secrets and injects them into args.
-// Returns the names of secrets accessed. Skips missing optional secrets.
-func (b *Bus) injectSecrets(_ context.Context, refs []tools.SecretRef, args map[string]interface{}) ([]string, error) {
+// Returns the names of secrets accessed and the argument keys actually injected.
+// Skips missing optional secrets.
+func (b *Bus) injectSecrets(_ context.Context, refs []tools.SecretRef, args map[string]interface{}) ([]string, []string, error) {
 	if b.secrets == nil || len(refs) == 0 {
-		return nil, nil
+		return nil, nil, nil
 	}
 
 	var accessed []string
+	var injectedKeys []string
 	for _, ref := range refs {
 		val, err := b.secrets.Get(ref.Name)
 		if err != nil {
 			if err == security.ErrSecretNotFound && !ref.Required {
 				continue
 			}
-			return accessed, fmt.Errorf("secret %q: %w", ref.Name, err)
+			return accessed, injectedKeys, fmt.Errorf("secret %q: %w", ref.Name, err)
 		}
 		accessed = append(accessed, ref.Name)
-		injectArg(args, ref.InjectAs, string(val))
+		if key, ok := injectArg(args, ref.InjectAs, string(val)); ok {
+			injectedKeys = append(injectedKeys, key)
+		}
 	}
-	return accessed, nil
+	return accessed, injectedKeys, nil
 }
 
 // injectArg places the secret value into the args map according to the InjectAs spec.
 // Currently only "arg:<key>" injection is applied at the args level.
 // "env:*" and "header:*" injections are handled by the tool itself or HTTP client.
-func injectArg(args map[string]interface{}, injectAs, value string) {
+func injectArg(args map[string]interface{}, injectAs, value string) (string, bool) {
 	const argPrefix = "arg:"
 	if args == nil {
-		return
+		return "", false
 	}
 	if len(injectAs) > len(argPrefix) && injectAs[:len(argPrefix)] == argPrefix {
 		key := injectAs[len(argPrefix):]
 		args[key] = value
+		return key, true
 	}
 	// "env:" and "header:" variants require tool cooperation; they are
 	// recorded in the capability manifest so auditing can trace what was accessed.
-}
-
-func injectedArgKeys(refs []tools.SecretRef) []string {
-	keys := make([]string, 0, len(refs))
-	for _, ref := range refs {
-		const argPrefix = "arg:"
-		if len(ref.InjectAs) <= len(argPrefix) || ref.InjectAs[:len(argPrefix)] != argPrefix {
-			continue
-		}
-		key := ref.InjectAs[len(argPrefix):]
-		if key == "" {
-			continue
-		}
-		keys = append(keys, key)
-	}
-	return keys
+	return "", false
 }
 
 func sanitizeAuditField(redactor *security.Redactor, text string) string {

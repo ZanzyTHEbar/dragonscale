@@ -259,40 +259,6 @@ func TestToolCallTool_ForwardsAsyncCallbackAndExecutionTarget(t *testing.T) {
 	}
 }
 
-func TestToolCallTool_LegacyAsyncToolStillReceivesCallback(t *testing.T) {
-	t.Parallel()
-	r := NewToolRegistry()
-	legacyTool := &legacyAsyncCallbackTool{}
-	r.Register(legacyTool)
-	tc := NewToolCallTool(r)
-
-	callbackDone := make(chan *ToolResult, 1)
-	ctx := WithAsyncCallback(t.Context(), func(_ context.Context, result *ToolResult) {
-		callbackDone <- result
-	})
-
-	result := tc.Execute(ctx, map[string]interface{}{
-		"tool_name": "legacy_async",
-		"arguments": map[string]interface{}{},
-	})
-
-	if result.IsError {
-		t.Fatalf("unexpected error: %s", result.ForLLM)
-	}
-	if !result.Async {
-		t.Fatal("expected async result from legacy async tool")
-	}
-
-	select {
-	case callbackResult := <-callbackDone:
-		if callbackResult == nil || callbackResult.ForUser != "legacy completion" {
-			t.Fatalf("unexpected legacy callback result: %#v", callbackResult)
-		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("timed out waiting for legacy async callback")
-	}
-}
-
 func TestToolCallTool_ResourceProvider_LoadsResources(t *testing.T) {
 	t.Parallel()
 	r := NewToolRegistry()
@@ -475,21 +441,4 @@ func (c *callbackCaptureTool) Execute(ctx context.Context, _ map[string]interfac
 		callback(ctx, &ToolResult{ForLLM: "done", ForUser: fmt.Sprintf("async completion on %s:%s", c.lastChannel, c.lastChatID)})
 	}
 	return AsyncResult("spawned")
-}
-
-type legacyAsyncCallbackTool struct {
-	callback AsyncCallback
-}
-
-func (t *legacyAsyncCallbackTool) Name() string        { return "legacy_async" }
-func (t *legacyAsyncCallbackTool) Description() string { return "legacy async callback tool" }
-func (t *legacyAsyncCallbackTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{"type": "object", "properties": map[string]interface{}{}}
-}
-func (t *legacyAsyncCallbackTool) SetCallback(cb AsyncCallback) { t.callback = cb }
-func (t *legacyAsyncCallbackTool) Execute(ctx context.Context, _ map[string]interface{}) *ToolResult {
-	if t.callback != nil {
-		go t.callback(ctx, &ToolResult{ForLLM: "legacy completion", ForUser: "legacy completion"})
-	}
-	return AsyncResult("legacy started")
 }
