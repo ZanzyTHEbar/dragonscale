@@ -5,8 +5,6 @@ import (
 	"testing"
 
 	"charm.land/fantasy"
-	"github.com/google/go-cmp/cmp"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -46,22 +44,22 @@ func TestToPromptFunc_ReasoningContent(t *testing.T) {
 		// First message (user) - no reasoning
 		msg1 := messages[0].OfUser
 		require.NotNil(t, msg1)
-		assert.Empty(t, cmp.Diff("What is 2+2?", msg1.Content.OfString.Value))
+		require.Equal(t, "What is 2+2?", msg1.Content.OfString.Value)
 
 		// Second message (assistant) - with reasoning
 		msg2 := messages[1].OfAssistant
 		require.NotNil(t, msg2)
-		assert.Empty(t, cmp.Diff("The answer is 4.", msg2.Content.OfString.Value))
+		require.Equal(t, "The answer is 4.", msg2.Content.OfString.Value)
 		// Check reasoning_content in extra fields
 		extraFields := msg2.ExtraFields()
 		reasoningContent, hasReasoning := extraFields["reasoning_content"]
 		require.True(t, hasReasoning)
-		assert.Empty(t, cmp.Diff("Let me think... 2+2 equals 4.", reasoningContent))
+		require.Equal(t, "Let me think... 2+2 equals 4.", reasoningContent)
 
 		// Third message (user) - no reasoning
 		msg3 := messages[2].OfUser
 		require.NotNil(t, msg3)
-		assert.Empty(t, cmp.Diff("What about 3+3?", msg3.Content.OfString.Value))
+		require.Equal(t, "What about 3+3?", msg3.Content.OfString.Value)
 	})
 
 	t.Run("should handle assistant messages with only reasoning content", func(t *testing.T) {
@@ -91,7 +89,7 @@ func TestToPromptFunc_ReasoningContent(t *testing.T) {
 		// User message - unchanged
 		msg := messages[0].OfUser
 		require.NotNil(t, msg)
-		assert.Empty(t, cmp.Diff("Hello", msg.Content.OfString.Value))
+		require.Equal(t, "Hello", msg.Content.OfString.Value)
 	})
 
 	t.Run("should not add reasoning_content to messages without reasoning", func(t *testing.T) {
@@ -120,7 +118,7 @@ func TestToPromptFunc_ReasoningContent(t *testing.T) {
 		// Assistant message without reasoning
 		msg := messages[1].OfAssistant
 		require.NotNil(t, msg)
-		assert.Empty(t, cmp.Diff("Hi there!", msg.Content.OfString.Value))
+		require.Equal(t, "Hi there!", msg.Content.OfString.Value)
 		extraFields := msg.ExtraFields()
 		_, hasReasoning := extraFields["reasoning_content"]
 		require.False(t, hasReasoning)
@@ -152,12 +150,12 @@ func TestToPromptFunc_ReasoningContent(t *testing.T) {
 		// System message - unchanged
 		systemMsg := messages[0].OfSystem
 		require.NotNil(t, systemMsg)
-		assert.Empty(t, cmp.Diff("You are helpful.", systemMsg.Content.OfString.Value))
+		require.Equal(t, "You are helpful.", systemMsg.Content.OfString.Value)
 
 		// User message - unchanged
 		userMsg := messages[1].OfUser
 		require.NotNil(t, userMsg)
-		assert.Empty(t, cmp.Diff("Hello", userMsg.Content.OfString.Value))
+		require.Equal(t, "Hello", userMsg.Content.OfString.Value)
 	})
 
 	t.Run("should use last assistant TextPart only", func(t *testing.T) {
@@ -188,7 +186,7 @@ func TestToPromptFunc_ReasoningContent(t *testing.T) {
 		// Assistant message should use only the last TextPart (matching openai behavior)
 		assistantMsg := messages[1].OfAssistant
 		require.NotNil(t, assistantMsg)
-		assert.Empty(t, cmp.Diff("Third part.", assistantMsg.Content.OfString.Value))
+		require.Equal(t, "Third part.", assistantMsg.Content.OfString.Value)
 	})
 
 	t.Run("should include user messages with only unsupported attachments", func(t *testing.T) {
@@ -228,11 +226,11 @@ func TestToPromptFunc_ReasoningContent(t *testing.T) {
 
 		msg1 := messages[0].OfUser
 		require.NotNil(t, msg1)
-		assert.Empty(t, cmp.Diff("Hello", msg1.Content.OfString.Value))
+		require.Equal(t, "Hello", msg1.Content.OfString.Value)
 
 		msg2 := messages[1].OfUser
 		require.NotNil(t, msg2)
-		assert.Empty(t, cmp.Diff("After unsupported", msg2.Content.OfString.Value))
+		require.Equal(t, "After unsupported", msg2.Content.OfString.Value)
 	})
 
 	t.Run("should detect PDF file IDs using strings.HasPrefix", func(t *testing.T) {
@@ -266,7 +264,7 @@ func TestToPromptFunc_ReasoningContent(t *testing.T) {
 		// Second content part should be file with file_id
 		filePart := content[1].OfFile
 		require.NotNil(t, filePart)
-		assert.Empty(t, cmp.Diff("file-abc123xyz", filePart.File.FileID.Value))
+		require.Equal(t, "file-abc123xyz", filePart.File.FileID.Value)
 	})
 }
 
@@ -293,7 +291,7 @@ func TestToPromptFunc_DropsEmptyMessages(t *testing.T) {
 
 		require.Len(t, messages, 1, "should only have user message")
 		require.Len(t, warnings, 1)
-		assert.Empty(t, cmp.Diff(fantasy.CallWarningTypeOther, warnings[0].Type))
+		require.Equal(t, fantasy.CallWarningTypeOther, warnings[0].Type)
 		require.Contains(t, warnings[0].Message, "dropping empty assistant message")
 	})
 
@@ -347,6 +345,61 @@ func TestToPromptFunc_DropsEmptyMessages(t *testing.T) {
 
 		require.Len(t, messages, 2, "should have both user and assistant messages")
 		require.Empty(t, warnings)
+	})
+
+	t.Run("should add empty reasoning_content to tool call messages when thinking is enabled", func(t *testing.T) {
+		t.Parallel()
+
+		// When thinking is enabled (reasoning parts exist in history),
+		// tool call messages without their own reasoning must still include
+		// reasoning_content. Providers like Kimi require it.
+		prompt := fantasy.Prompt{
+			{
+				Role: fantasy.MessageRoleUser,
+				Content: []fantasy.MessagePart{
+					fantasy.TextPart{Text: "What is 2+2?"},
+				},
+			},
+			{
+				// First turn has reasoning
+				Role: fantasy.MessageRoleAssistant,
+				Content: []fantasy.MessagePart{
+					fantasy.ReasoningPart{Text: "Simple math."},
+					fantasy.TextPart{Text: "Four"},
+				},
+			},
+			{
+				Role: fantasy.MessageRoleUser,
+				Content: []fantasy.MessagePart{
+					fantasy.TextPart{Text: "Now try a tool call"},
+				},
+			},
+			{
+				// Tool call WITHOUT reasoning on this turn
+				Role: fantasy.MessageRoleAssistant,
+				Content: []fantasy.MessagePart{
+					fantasy.ToolCallPart{
+						ToolCallID: "call_1",
+						ToolName:   "execute",
+						Input:      `{"command":"echo 4"}`,
+					},
+				},
+			},
+		}
+
+		messages, warnings := ToPromptFunc(prompt, "", "")
+
+		require.Empty(t, warnings)
+		require.Len(t, messages, 4)
+
+		// Tool call message must have reasoning_content (empty) since
+		// thinking is enabled in this conversation
+		msg := messages[3].OfAssistant
+		require.NotNil(t, msg)
+		extraFields := msg.ExtraFields()
+		reasoningContent, hasReasoning := extraFields["reasoning_content"]
+		require.True(t, hasReasoning, "reasoning_content must be present on tool call messages when thinking is enabled")
+		require.Equal(t, "", reasoningContent)
 	})
 
 	t.Run("should drop user messages without visible content", func(t *testing.T) {

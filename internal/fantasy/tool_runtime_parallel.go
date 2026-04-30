@@ -2,16 +2,14 @@ package fantasy
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"sync"
 	"sync/atomic"
 )
 
-// ParallelToolRuntime executes tool calls concurrently when tools opt-in via
-// ToolInfo.Parallel.
-//
-// Ordering is preserved: results are returned in the same order as toolCalls.
-// Non-parallel-safe tools act as barriers and run sequentially.
+// ParallelToolRuntime executes tool calls concurrently when tools opt in via
+// ToolInfo.Parallel. Non-parallel-safe tools act as barriers.
 type ParallelToolRuntime struct {
 	// MaxConcurrency limits concurrent tool execution within a parallel batch.
 	// If <= 0, a safe default is used.
@@ -24,7 +22,7 @@ type ParallelToolRuntime struct {
 	Log ToolRuntimeLogFunc
 }
 
-func (r ParallelToolRuntime) Execute(ctx context.Context, tools []AgentTool, toolCalls []ToolCallContent, toolResultCallback func(result ToolResultContent) error) ([]ToolResultContent, error) {
+func (r ParallelToolRuntime) Execute(ctx context.Context, tools []AgentTool, execProviderTools []ExecutableProviderTool, toolCalls []ToolCallContent, toolResultCallback func(result ToolResultContent) error) ([]ToolResultContent, error) {
 	if len(toolCalls) == 0 {
 		return nil, nil
 	}
@@ -45,10 +43,13 @@ func (r ParallelToolRuntime) Execute(ctx context.Context, tools []AgentTool, too
 		maxConc = 4
 	}
 
-	// Quick tool lookup.
 	toolMap := make(map[string]AgentTool, len(tools))
 	for _, t := range tools {
 		toolMap[t.Info().Name] = t
+	}
+	execProviderToolMap := make(map[string]ExecutableProviderTool, len(execProviderTools))
+	for _, t := range execProviderTools {
+		execProviderToolMap[t.GetName()] = t
 	}
 
 	results := make([]ToolResultContent, len(toolCalls))
@@ -76,7 +77,7 @@ func (r ParallelToolRuntime) Execute(ctx context.Context, tools []AgentTool, too
 			barrierWaits++
 			emit()
 			logEvent(ToolRuntimeLogEvent{Event: "barrier_start", ToolCallID: toolCalls[i].ToolCallID, ToolName: toolCalls[i].ToolName})
-			res, critical := executeSingleTool(ctx, toolMap, toolCalls[i], toolResultCallback)
+			res, critical := executeSingleTool(ctx, toolMap, execProviderToolMap, toolCalls[i], toolResultCallback)
 			logEvent(ToolRuntimeLogEvent{Event: "barrier_finish", ToolCallID: toolCalls[i].ToolCallID, ToolName: toolCalls[i].ToolName})
 			results[i] = res
 			if critical {
@@ -89,7 +90,6 @@ func (r ParallelToolRuntime) Execute(ctx context.Context, tools []AgentTool, too
 			continue
 		}
 
-		// Collect a contiguous batch of parallel-safe tool calls.
 		start := i
 		for i < len(toolCalls) && isParallelSafe(toolCalls[i]) {
 			i++
@@ -119,14 +119,13 @@ func (r ParallelToolRuntime) Execute(ctx context.Context, tools []AgentTool, too
 					emit()
 				}()
 
-				res, critical := executeSingleTool(ctx, toolMap, tc, nil)
+				res, critical := executeSingleTool(ctx, toolMap, execProviderToolMap, tc, nil)
 				outcomes[localIndex] = outcome{res: res, critical: critical}
 				logEvent(ToolRuntimeLogEvent{Event: "finish", ToolCallID: tc.ToolCallID, ToolName: tc.ToolName})
 			}()
 		}
 		wg.Wait()
 
-		// Emit callback and copy results in deterministic order.
 		for bi := start; bi < end; bi++ {
 			o := outcomes[bi-start]
 			results[bi] = o.res
@@ -145,47 +144,44 @@ func (r ParallelToolRuntime) Execute(ctx context.Context, tools []AgentTool, too
 	return results, nil
 }
 
-// executeSingleTool executes a single tool call and returns the result.
-// This helper is shared by all tool runtimes (sequential, parallel, DAG).
-func executeSingleTool(ctx context.Context, toolMap map[string]AgentTool, toolCall ToolCallContent, toolResultCallback func(result ToolResultContent) error) (ToolResultContent, bool) {
+func executeSingleTool(ctx context.Context, toolMap map[string]AgentTool, execProviderToolMap map[string]ExecutableProviderTool, toolCall ToolCallContent, toolResultCallback func(result ToolResultContent) error) (ToolResultContent, bool) {
 	result := ToolResultContent{
 		ToolCallID:       toolCall.ToolCallID,
 		ToolName:         toolCall.ToolName,
 		ProviderExecuted: false,
 	}
 
-	// Skip invalid tool calls - create error result (not critical).
 	if toolCall.Invalid {
-		result.Result = ToolResultOutputContentError{
-			Error: toolCall.ValidationError,
-		}
+		result.Result = ToolResultOutputContentError{Error: toolCall.ValidationError}
 		if toolResultCallback != nil {
 			_ = toolResultCallback(result)
 		}
 		return result, false
 	}
 
-	tool, exists := toolMap[toolCall.ToolName]
-	if !exists {
-		result.Result = ToolResultOutputContentError{
-			Error: errors.New("Error: Tool not found: " + toolCall.ToolName),
-		}
+	var runTool func(context.Context, ToolCall) (ToolResponse, error)
+	if tool, ok := toolMap[toolCall.ToolName]; ok {
+		runTool = tool.Run
+	} else if tool, ok := execProviderToolMap[toolCall.ToolName]; ok {
+		runTool = tool.Run
+	}
+	if runTool == nil {
+		result.Result = ToolResultOutputContentError{Error: errors.New("tool not found: " + toolCall.ToolName)}
 		if toolResultCallback != nil {
 			_ = toolResultCallback(result)
 		}
 		return result, false
 	}
 
-	toolResult, err := tool.Run(ctx, ToolCall{
+	toolResult, err := runTool(ctx, ToolCall{
 		ID:    toolCall.ToolCallID,
 		Name:  toolCall.ToolName,
 		Input: toolCall.Input,
 	})
 	if err != nil {
-		result.Result = ToolResultOutputContentError{
-			Error: err,
-		}
+		result.Result = ToolResultOutputContentError{Error: err}
 		result.ClientMetadata = toolResult.Metadata
+		result.StopTurn = toolResult.StopTurn
 		if toolResultCallback != nil {
 			_ = toolResultCallback(result)
 		}
@@ -193,20 +189,17 @@ func executeSingleTool(ctx context.Context, toolMap map[string]AgentTool, toolCa
 	}
 
 	result.ClientMetadata = toolResult.Metadata
+	result.StopTurn = toolResult.StopTurn
 	if toolResult.IsError {
-		result.Result = ToolResultOutputContentError{
-			Error: errors.New(toolResult.Content),
-		}
+		result.Result = ToolResultOutputContentError{Error: errors.New(toolResult.Content)}
 	} else if toolResult.Type == "image" || toolResult.Type == "media" {
 		result.Result = ToolResultOutputContentMedia{
-			Data:      string(toolResult.Data),
+			Data:      base64.StdEncoding.EncodeToString(toolResult.Data),
 			MediaType: toolResult.MediaType,
 			Text:      toolResult.Content,
 		}
 	} else {
-		result.Result = ToolResultOutputContentText{
-			Text: toolResult.Content,
-		}
+		result.Result = ToolResultOutputContentText{Text: toolResult.Content}
 	}
 	if toolResultCallback != nil {
 		_ = toolResultCallback(result)

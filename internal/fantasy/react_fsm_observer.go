@@ -2,18 +2,16 @@ package fantasy
 
 import "context"
 
-// ReActTransitionObserver can observe transitions taken by the ReAct state machine.
-//
-// This is a generic hook intended for callers (like Budgetsmith) to persist or
-// debug agent execution without coupling the fantasy module to any particular
-// storage layer.
+// ReActTransitionObserver observes ReAct FSM transitions.
 type ReActTransitionObserver interface {
-	OnReActTransition(ctx context.Context, t ReActTransition)
+	OnReActTransition(ctx context.Context, transition ReActTransition)
 }
 
-// ReActTransitionObserverFunc is a functional adapter for ReActTransitionObserver.
-type ReActTransitionObserverFunc func(ctx context.Context, t ReActTransition)
+// ReActTransitionObserverFunc adapts a function to ReActTransitionObserver.
+type ReActTransitionObserverFunc func(ctx context.Context, transition ReActTransition)
 
-func (f ReActTransitionObserverFunc) OnReActTransition(ctx context.Context, t ReActTransition) {
-	f(ctx, t)
+func (f ReActTransitionObserverFunc) OnReActTransition(ctx context.Context, transition ReActTransition) {
+	if f != nil {
+		f(ctx, transition)
+	}
 }

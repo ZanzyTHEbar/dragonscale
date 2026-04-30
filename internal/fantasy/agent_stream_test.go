@@ -2,13 +2,12 @@ package fantasy
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"strings"
+	"sync"
 	"testing"
 
-	jsonv2 "github.com/go-json-experiment/json"
-	"github.com/google/go-cmp/cmp"
-
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -46,7 +45,7 @@ func (e *EchoTool) Run(ctx context.Context, params ToolCall) (ToolResponse, erro
 		Message string `json:"message"`
 	}
 
-	if err := jsonv2.Unmarshal([]byte(params.Input), &input); err != nil {
+	if err := json.Unmarshal([]byte(params.Input), &input); err != nil {
 		return NewTextErrorResponse("Invalid input: " + err.Error()), nil
 	}
 
@@ -114,7 +113,7 @@ func TestStreamingAgentCallbacks(t *testing.T) {
 	// Create agent
 	agent := NewAgent(mockModel)
 
-	ctx := t.Context()
+	ctx := context.Background()
 
 	// Create streaming call with all callbacks
 	streamCall := AgentStreamCall{
@@ -304,7 +303,7 @@ func TestStreamingAgentWithTools(t *testing.T) {
 		WithTools(&EchoTool{}),
 	)
 
-	ctx := t.Context()
+	ctx := context.Background()
 
 	// Track callback invocations
 	var toolInputStartCalled bool
@@ -318,30 +317,30 @@ func TestStreamingAgentWithTools(t *testing.T) {
 		Prompt: "Echo 'test'",
 		OnToolInputStart: func(id, toolName string) error {
 			toolInputStartCalled = true
-			assert.Empty(t, cmp.Diff("tool-1", id))
-			assert.Empty(t, cmp.Diff("echo", toolName))
+			require.Equal(t, "tool-1", id)
+			require.Equal(t, "echo", toolName)
 			return nil
 		},
 		OnToolInputDelta: func(id, delta string) error {
 			toolInputDeltaCalled = true
-			assert.Empty(t, cmp.Diff("tool-1", id))
+			require.Equal(t, "tool-1", id)
 			require.Contains(t, []string{`{"message"`, `: "test"}`}, delta)
 			return nil
 		},
 		OnToolInputEnd: func(id string) error {
 			toolInputEndCalled = true
-			assert.Empty(t, cmp.Diff("tool-1", id))
+			require.Equal(t, "tool-1", id)
 			return nil
 		},
 		OnToolCall: func(toolCall ToolCallContent) error {
 			toolCallCalled = true
-			assert.Empty(t, cmp.Diff("echo", toolCall.ToolName))
-			assert.Empty(t, cmp.Diff(`{"message": "test"}`, toolCall.Input))
+			require.Equal(t, "echo", toolCall.ToolName)
+			require.Equal(t, `{"message": "test"}`, toolCall.Input)
 			return nil
 		},
 		OnToolResult: func(result ToolResultContent) error {
 			toolResultCalled = true
-			assert.Empty(t, cmp.Diff("echo", result.ToolName))
+			require.Equal(t, "echo", result.ToolName)
 			return nil
 		},
 	}
@@ -356,17 +355,101 @@ func TestStreamingAgentWithTools(t *testing.T) {
 	require.True(t, toolInputEndCalled, "OnToolInputEnd should have been called")
 	require.True(t, toolCallCalled, "OnToolCall should have been called")
 	require.True(t, toolResultCalled, "OnToolResult should have been called")
-	assert.Empty(t, cmp.Diff(2, len(result.Steps))) // Two steps: tool call + final response
+	require.Equal(t, 2, len(result.Steps)) // Two steps: tool call + final response
 
 	// Check that tool was executed in first step
 	firstStep := result.Steps[0]
 	toolCalls := firstStep.Content.ToolCalls()
-	assert.Empty(t, cmp.Diff(1, len(toolCalls)))
-	assert.Empty(t, cmp.Diff("echo", toolCalls[0].ToolName))
+	require.Equal(t, 1, len(toolCalls))
+	require.Equal(t, "echo", toolCalls[0].ToolName)
 
 	toolResults := firstStep.Content.ToolResults()
-	assert.Empty(t, cmp.Diff(1, len(toolResults)))
-	assert.Empty(t, cmp.Diff("echo", toolResults[0].ToolName))
+	require.Equal(t, 1, len(toolResults))
+	require.Equal(t, "echo", toolResults[0].ToolName)
+}
+
+// TestStreamingAgentToolCallBeforeResult verifies that all OnToolCall callbacks
+// complete before any OnToolResult fires. This is the ordering guarantee
+// provided by buffering dispatches until the stream is fully consumed.
+func TestStreamingAgentToolCallBeforeResult(t *testing.T) {
+	t.Parallel()
+
+	stepCount := 0
+	mockModel := &mockLanguageModel{
+		streamFunc: func(ctx context.Context, call Call) (StreamResponse, error) {
+			stepCount++
+			return func(yield func(StreamPart) bool) {
+				if stepCount == 1 {
+					// Emit two tool calls in the same step.
+					for _, id := range []string{"tool-1", "tool-2"} {
+						if !yield(StreamPart{Type: StreamPartTypeToolInputStart, ID: id, ToolCallName: "echo"}) {
+							return
+						}
+						if !yield(StreamPart{Type: StreamPartTypeToolInputDelta, ID: id, Delta: `{"message": "` + id + `"}`}) {
+							return
+						}
+						if !yield(StreamPart{Type: StreamPartTypeToolInputEnd, ID: id}) {
+							return
+						}
+						if !yield(StreamPart{
+							Type:          StreamPartTypeToolCall,
+							ID:            id,
+							ToolCallName:  "echo",
+							ToolCallInput: `{"message": "` + id + `"}`,
+						}) {
+							return
+						}
+					}
+					yield(StreamPart{
+						Type:         StreamPartTypeFinish,
+						FinishReason: FinishReasonToolCalls,
+					})
+				} else {
+					yield(StreamPart{
+						Type:         StreamPartTypeFinish,
+						FinishReason: FinishReasonStop,
+					})
+				}
+			}, nil
+		},
+	}
+
+	agent := NewAgent(mockModel, WithTools(&EchoTool{}))
+
+	var mu sync.Mutex
+	var events []string
+
+	_, err := agent.Stream(context.Background(), AgentStreamCall{
+		Prompt: "echo twice",
+		OnToolCall: func(tc ToolCallContent) error {
+			mu.Lock()
+			events = append(events, "call:"+tc.ToolCallID)
+			mu.Unlock()
+			return nil
+		},
+		OnToolResult: func(tr ToolResultContent) error {
+			mu.Lock()
+			events = append(events, "result:"+tr.ToolCallID)
+			mu.Unlock()
+			return nil
+		},
+	})
+	require.NoError(t, err)
+
+	// Both OnToolCall events must appear before any OnToolResult event.
+	lastCallIdx := -1
+	firstResultIdx := len(events)
+	for i, e := range events {
+		if strings.HasPrefix(e, "call:") {
+			lastCallIdx = i
+		}
+		if strings.HasPrefix(e, "result:") && i < firstResultIdx {
+			firstResultIdx = i
+		}
+	}
+	require.Equal(t, 2, stepCount)
+	require.Less(t, lastCallIdx, firstResultIdx,
+		"all OnToolCall events must complete before the first OnToolResult; got %v", events)
 }
 
 // TestStreamingAgentTextDeltas tests text streaming (mirrors TS textStream tests)
@@ -402,7 +485,7 @@ func TestStreamingAgentTextDeltas(t *testing.T) {
 	}
 
 	agent := NewAgent(mockModel)
-	ctx := t.Context()
+	ctx := context.Background()
 
 	// Track text deltas
 	var textDeltas []string
@@ -419,12 +502,11 @@ func TestStreamingAgentTextDeltas(t *testing.T) {
 
 	result, err := agent.Stream(ctx, streamCall)
 	require.NoError(t, err)
-	assert.
 
-		// Verify text deltas match expected pattern
-		Empty(t, cmp.Diff([]string{"Hello", ", ", "world!"}, textDeltas))
-	assert.Empty(t, cmp.Diff("Hello, world!", result.Response.Content.Text()))
-	assert.Empty(t, cmp.Diff(int64(13), result.TotalUsage.TotalTokens))
+	// Verify text deltas match expected pattern
+	require.Equal(t, []string{"Hello", ", ", "world!"}, textDeltas)
+	require.Equal(t, "Hello, world!", result.Response.Content.Text())
+	require.Equal(t, int64(13), result.TotalUsage.TotalTokens)
 }
 
 // TestStreamingAgentReasoning tests reasoning content (mirrors TS reasoning tests)
@@ -465,7 +547,7 @@ func TestStreamingAgentReasoning(t *testing.T) {
 	}
 
 	agent := NewAgent(mockModel)
-	ctx := t.Context()
+	ctx := context.Background()
 
 	var reasoningDeltas []string
 	var textDeltas []string
@@ -484,13 +566,12 @@ func TestStreamingAgentReasoning(t *testing.T) {
 
 	result, err := agent.Stream(ctx, streamCall)
 	require.NoError(t, err)
-	assert.
 
-		// Verify reasoning and text are separate
-		Empty(t, cmp.Diff([]string{"I will open the conversation", " with witty banter."}, reasoningDeltas))
-	assert.Empty(t, cmp.Diff([]string{"Hi there!"}, textDeltas))
-	assert.Empty(t, cmp.Diff("Hi there!", result.Response.Content.Text()))
-	assert.Empty(t, cmp.Diff("I will open the conversation with witty banter.", result.Response.Content.ReasoningText()))
+	// Verify reasoning and text are separate
+	require.Equal(t, []string{"I will open the conversation", " with witty banter."}, reasoningDeltas)
+	require.Equal(t, []string{"Hi there!"}, textDeltas)
+	require.Equal(t, "Hi there!", result.Response.Content.Text())
+	require.Equal(t, "I will open the conversation with witty banter.", result.Response.Content.ReasoningText())
 }
 
 // TestStreamingAgentError tests error handling (mirrors TS error tests)
@@ -507,7 +588,7 @@ func TestStreamingAgentError(t *testing.T) {
 	}
 
 	agent := NewAgent(mockModel)
-	ctx := t.Context()
+	ctx := context.Background()
 
 	// Track error callbacks
 	var errorOccurred bool
@@ -573,7 +654,7 @@ func TestStreamingAgentSources(t *testing.T) {
 	}
 
 	agent := NewAgent(mockModel)
-	ctx := t.Context()
+	ctx := context.Background()
 
 	var sources []SourceContent
 
@@ -587,17 +668,96 @@ func TestStreamingAgentSources(t *testing.T) {
 
 	result, err := agent.Stream(ctx, streamCall)
 	require.NoError(t, err)
-	assert.
 
-		// Verify sources were captured
-		Empty(t, cmp.Diff(2, len(sources)))
-	assert.Empty(t, cmp.Diff(SourceTypeURL, sources[0].SourceType))
-	assert.Empty(t, cmp.Diff("https://example.com", sources[0].URL))
-	assert.Empty(t, cmp.Diff("Example", sources[0].Title))
-	assert.Empty(t, cmp.Diff(SourceTypeDocument, sources[1].SourceType))
-	assert.Empty(t, cmp.Diff("Document Example", sources[1].Title))
+	// Verify sources were captured
+	require.Equal(t, 2, len(sources))
+	require.Equal(t, SourceTypeURL, sources[0].SourceType)
+	require.Equal(t, "https://example.com", sources[0].URL)
+	require.Equal(t, "Example", sources[0].Title)
+	require.Equal(t, SourceTypeDocument, sources[1].SourceType)
+	require.Equal(t, "Document Example", sources[1].Title)
 
 	// Verify sources are in final result
 	resultSources := result.Response.Content.Sources()
-	assert.Empty(t, cmp.Diff(2, len(resultSources)))
+	require.Equal(t, 2, len(resultSources))
+}
+
+func TestStreamingAgent_StopTurn(t *testing.T) {
+	t.Parallel()
+
+	stepCount := 0
+	mockModel := &mockLanguageModel{
+		streamFunc: func(ctx context.Context, call Call) (StreamResponse, error) {
+			stepCount++
+			return func(yield func(StreamPart) bool) {
+				if stepCount == 1 {
+					if !yield(StreamPart{Type: StreamPartTypeToolInputStart, ID: "tool-1", ToolCallName: "blocked_tool"}) {
+						return
+					}
+					if !yield(StreamPart{Type: StreamPartTypeToolInputDelta, ID: "tool-1", Delta: `{"message"`}) {
+						return
+					}
+					if !yield(StreamPart{Type: StreamPartTypeToolInputDelta, ID: "tool-1", Delta: `: "test"}`}) {
+						return
+					}
+					if !yield(StreamPart{Type: StreamPartTypeToolInputEnd, ID: "tool-1"}) {
+						return
+					}
+					if !yield(StreamPart{
+						Type:          StreamPartTypeToolCall,
+						ID:            "tool-1",
+						ToolCallName:  "blocked_tool",
+						ToolCallInput: `{"message": "test"}`,
+					}) {
+						return
+					}
+					yield(StreamPart{
+						Type:         StreamPartTypeFinish,
+						Usage:        Usage{InputTokens: 10, OutputTokens: 5, TotalTokens: 15},
+						FinishReason: FinishReasonToolCalls,
+					})
+				} else {
+					// Should not be reached because StopTurn prevents a second step
+					t.Fatal("model should not be called a second time after StopTurn")
+				}
+			}, nil
+		},
+	}
+
+	type BlockedInput struct {
+		Message string `json:"message" description:"Message"`
+	}
+
+	blockedTool := NewAgentTool(
+		"blocked_tool",
+		"A tool that stops the turn",
+		func(ctx context.Context, input BlockedInput, _ ToolCall) (ToolResponse, error) {
+			resp := NewTextErrorResponse("permission denied")
+			resp.StopTurn = true
+			return resp, nil
+		},
+	)
+
+	agent := NewAgent(mockModel, WithTools(blockedTool))
+
+	result, err := agent.Stream(context.Background(), AgentStreamCall{
+		Prompt: "test stop turn",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, result)
+
+	// Only one step — StopTurn prevented the second model call.
+	require.Len(t, result.Steps, 1)
+	require.Equal(t, 1, stepCount)
+
+	// Tool result should be present with StopTurn=true.
+	toolResults := result.Steps[0].Content.ToolResults()
+	require.Len(t, toolResults, 1)
+	require.Equal(t, "blocked_tool", toolResults[0].ToolName)
+	require.True(t, toolResults[0].StopTurn)
+
+	// The final response also includes the stop-marked tool result.
+	responseResults := result.Response.Content.ToolResults()
+	require.Len(t, responseResults, 1)
+	require.True(t, responseResults[0].StopTurn)
 }

@@ -109,10 +109,11 @@ cmd_diff() {
 
     local tmp_upstream
     tmp_upstream="$(mktemp -d)"
-    trap "rm -rf '${tmp_upstream}'" EXIT
+    trap "chmod -R u+w '${tmp_upstream}' 2>/dev/null || true; rm -rf '${tmp_upstream}'" EXIT
 
     # Copy upstream to writable temp (module cache is read-only).
     cp -r "${upstream_dir}/." "${tmp_upstream}/"
+    chmod -R u+w "${tmp_upstream}"
 
     # Exclude non-source noise from the diff.
     local diff_opts=(
@@ -249,13 +250,17 @@ cmd_sync() {
 
     # 7. Tidy and validate
     log "Running go mod tidy ..."
+    (cd "${VENDOR_DIR}" && go mod tidy)
     (cd "${REPO_ROOT}" && go mod tidy)
 
     log "Building ..."
     (cd "${REPO_ROOT}" && go build ./...)
 
     log "Testing fantasy packages ..."
-    (cd "${REPO_ROOT}" && go test ./internal/fantasy/... ./pkg/fantasy/... 2>&1) || {
+    (cd "${VENDOR_DIR}" && go test ./... 2>&1) || {
+        warn "Some vendored Fantasy tests failed — review output above."
+    }
+    (cd "${REPO_ROOT}" && go test ./pkg/fantasy/... 2>&1) || {
         warn "Some tests failed — review output above."
     }
 
@@ -293,16 +298,28 @@ cmd_save_patch() {
 
     local patch_file="${PATCHES_DIR}/${next_num}-${name}.patch"
 
-    # Generate the diff, stripping the absolute paths to make it relative.
-    git diff --no-index -- "${pristine_dir}" "${VENDOR_DIR}" 2>/dev/null \
-        | sed "s|a${pristine_dir}/|a/|g; s|b${VENDOR_DIR}/|b/|g" \
-        > "${patch_file}" || true
+    # Generate the diff from a temp copy so the patch file does not include
+    # itself while it is being written. Patches are preserved separately by
+    # --sync, so they are not part of the local source delta.
+    local tmp_vendor tmp_patch
+    tmp_vendor="$(mktemp -d)"
+    tmp_patch="$(mktemp)"
+    cp -r "${VENDOR_DIR}/." "${tmp_vendor}/"
+    chmod -R u+w "${tmp_vendor}"
+    rm -rf "${tmp_vendor}/patches"
 
-    if [[ ! -s "$patch_file" ]]; then
-        rm -f "$patch_file"
+    git diff --no-index -- "${pristine_dir}" "${tmp_vendor}" 2>/dev/null \
+        | sed "s|a${pristine_dir}/|a/|g; s|b${pristine_dir}/|b/|g; s|a${tmp_vendor}/|a/|g; s|b${tmp_vendor}/|b/|g" \
+        > "${tmp_patch}" || true
+
+    if [[ ! -s "$tmp_patch" ]]; then
+        rm -rf "${tmp_vendor}" "${tmp_patch}"
         warn "No local modifications detected against pristine ${cur}."
         exit 0
     fi
+
+    mv "${tmp_patch}" "${patch_file}"
+    rm -rf "${tmp_vendor}"
 
     local stat
     stat="$(diffstat -s "$patch_file" 2>/dev/null || wc -l < "$patch_file")"

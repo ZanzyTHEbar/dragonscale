@@ -2,7 +2,7 @@
 package google
 
 import (
-	jsonv2 "github.com/go-json-experiment/json"
+	"encoding/json"
 
 	"charm.land/fantasy"
 )
@@ -17,24 +17,38 @@ const (
 func init() {
 	fantasy.RegisterProviderType(TypeProviderOptions, func(data []byte) (fantasy.ProviderOptionsData, error) {
 		var v ProviderOptions
-		if err := jsonv2.Unmarshal(data, &v); err != nil {
+		if err := json.Unmarshal(data, &v); err != nil {
 			return nil, err
 		}
 		return &v, nil
 	})
 	fantasy.RegisterProviderType(TypeReasoningMetadata, func(data []byte) (fantasy.ProviderOptionsData, error) {
 		var v ReasoningMetadata
-		if err := jsonv2.Unmarshal(data, &v); err != nil {
+		if err := json.Unmarshal(data, &v); err != nil {
 			return nil, err
 		}
 		return &v, nil
 	})
 }
 
+// ThinkingLevel controls the amount of thinking a model does.
+// Use this for Gemini 3+ models instead of ThinkingBudget.
+// Mutually exclusive with ThinkingBudget.
+type ThinkingLevel = string
+
+// Predefined thinking levels for the Google provider.
+const (
+	ThinkingLevelLow     ThinkingLevel = "LOW"
+	ThinkingLevelMedium  ThinkingLevel = "MEDIUM"
+	ThinkingLevelHigh    ThinkingLevel = "HIGH"
+	ThinkingLevelMinimal ThinkingLevel = "MINIMAL"
+)
+
 // ThinkingConfig represents thinking configuration for the Google provider.
 type ThinkingConfig struct {
-	ThinkingBudget  *int64 `json:"thinking_budget"`
-	IncludeThoughts *bool  `json:"include_thoughts"`
+	ThinkingBudget  *int64  `json:"thinking_budget,omitempty"`
+	IncludeThoughts *bool   `json:"include_thoughts,omitempty"`
+	ThinkingLevel   *string `json:"thinking_level,omitempty"`
 }
 
 // ReasoningMetadata represents reasoning metadata for the Google provider.

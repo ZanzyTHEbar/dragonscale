@@ -12,11 +12,7 @@ import (
 	jsonv2 "github.com/go-json-experiment/json"
 )
 
-// DAGToolRuntime executes tool calls according to an explicit dependency DAG.
-//
-// Dependencies are discovered via BuildToolDAG (using $tool.<id> references in
-// JSON tool inputs). Independent nodes may be executed concurrently, subject to
-// MaxConcurrency and tool parallel-safety.
+// DAGToolRuntime executes tool calls according to explicit $tool dependencies.
 type DAGToolRuntime struct {
 	MaxConcurrency int
 
@@ -27,7 +23,7 @@ type DAGToolRuntime struct {
 	Log ToolRuntimeLogFunc
 }
 
-func (r DAGToolRuntime) Execute(ctx context.Context, tools []AgentTool, toolCalls []ToolCallContent, toolResultCallback func(result ToolResultContent) error) ([]ToolResultContent, error) {
+func (r DAGToolRuntime) Execute(ctx context.Context, tools []AgentTool, execProviderTools []ExecutableProviderTool, toolCalls []ToolCallContent, toolResultCallback func(result ToolResultContent) error) ([]ToolResultContent, error) {
 	if len(toolCalls) == 0 {
 		return nil, nil
 	}
@@ -56,6 +52,10 @@ func (r DAGToolRuntime) Execute(ctx context.Context, tools []AgentTool, toolCall
 	toolMap := make(map[string]AgentTool, len(tools))
 	for _, t := range tools {
 		toolMap[t.Info().Name] = t
+	}
+	execProviderToolMap := make(map[string]ExecutableProviderTool, len(execProviderTools))
+	for _, t := range execProviderTools {
+		execProviderToolMap[t.GetName()] = t
 	}
 
 	idToIndex := make(map[string]int, len(toolCalls))
@@ -104,13 +104,8 @@ func (r DAGToolRuntime) Execute(ctx context.Context, tools []AgentTool, toolCall
 			return idToIndex[readyIDs[i]] < idToIndex[readyIDs[j]]
 		})
 
-		metrics(ToolRuntimeMetrics{
-			Queued:           remaining,
-			InFlightParallel: 0,
-			BarrierWaits:     barrierWaits,
-		})
+		metrics(ToolRuntimeMetrics{Queued: remaining, InFlightParallel: 0, BarrierWaits: barrierWaits})
 
-		// If any ready node is non-parallel-safe, execute the earliest one as a barrier.
 		barrierID := ""
 		for _, id := range readyIDs {
 			n := dag.Nodes[id]
@@ -127,7 +122,7 @@ func (r DAGToolRuntime) Execute(ctx context.Context, tools []AgentTool, toolCall
 			n := dag.Nodes[barrierID]
 			barrierWaits++
 			logEvent(ToolRuntimeLogEvent{Event: "barrier_start", ToolCallID: n.ToolCall.ToolCallID, ToolName: n.ToolCall.ToolName})
-			res, critical, execErr := executeDAGNode(ctx, toolMap, n.ToolCall, doneResults)
+			res, critical, execErr := executeDAGNode(ctx, toolMap, execProviderToolMap, n.ToolCall, doneResults)
 			if execErr != nil {
 				return nil, execErr
 			}
@@ -153,7 +148,6 @@ func (r DAGToolRuntime) Execute(ctx context.Context, tools []AgentTool, toolCall
 			continue
 		}
 
-		// Parallel wave: execute up to maxConc ready nodes concurrently.
 		if len(readyIDs) > maxConc {
 			readyIDs = readyIDs[:maxConc]
 		}
@@ -174,19 +168,13 @@ func (r DAGToolRuntime) Execute(ctx context.Context, tools []AgentTool, toolCall
 			go func() {
 				defer wg.Done()
 				logEvent(ToolRuntimeLogEvent{Event: "dispatch", ToolCallID: tc.ToolCallID, ToolName: tc.ToolName})
-				res, critical, execErr := executeDAGNode(ctx, toolMap, tc, doneResults)
-				outcomes[i] = outcome{
-					id:       id,
-					res:      res,
-					critical: critical,
-					execErr:  execErr,
-				}
+				res, critical, execErr := executeDAGNode(ctx, toolMap, execProviderToolMap, tc, doneResults)
+				outcomes[i] = outcome{id: id, res: res, critical: critical, execErr: execErr}
 				logEvent(ToolRuntimeLogEvent{Event: "finish", ToolCallID: tc.ToolCallID, ToolName: tc.ToolName})
 			}()
 		}
 		wg.Wait()
 
-		// Commit results in deterministic order, and abort on first critical error in that order.
 		for i := range outcomes {
 			o := outcomes[i]
 			if o.execErr != nil {
@@ -216,14 +204,14 @@ func (r DAGToolRuntime) Execute(ctx context.Context, tools []AgentTool, toolCall
 	return results, nil
 }
 
-func executeDAGNode(ctx context.Context, toolMap map[string]AgentTool, toolCall ToolCallContent, prior map[string]ToolResultContent) (ToolResultContent, bool, error) {
+func executeDAGNode(ctx context.Context, toolMap map[string]AgentTool, execProviderToolMap map[string]ExecutableProviderTool, toolCall ToolCallContent, prior map[string]ToolResultContent) (ToolResultContent, bool, error) {
 	resolvedInput, err := resolveToolRefsInInput(toolCall.Input, prior)
 	if err != nil {
 		return ToolResultContent{}, false, err
 	}
 	tc := toolCall
 	tc.Input = resolvedInput
-	res, critical := executeSingleTool(ctx, toolMap, tc, nil)
+	res, critical := executeSingleTool(ctx, toolMap, execProviderToolMap, tc, nil)
 	return res, critical, nil
 }
 
@@ -235,7 +223,6 @@ func resolveToolRefsInInput(input string, results map[string]ToolResultContent) 
 
 	var v any
 	if err := jsonv2.Unmarshal([]byte(input), &v); err != nil {
-		// Not JSON; nothing to resolve.
 		return input, nil
 	}
 
@@ -322,12 +309,10 @@ func resolveToolRefValue(ref string, results map[string]ToolResultContent) (any,
 		base = fmt.Sprint(r.Result)
 	}
 
-	// No path: substitute as string.
 	if len(parts) == 1 {
 		return base, nil
 	}
 
-	// Path resolution: interpret base as JSON and walk.
 	var cur any
 	if err := jsonv2.Unmarshal([]byte(base), &cur); err != nil {
 		return nil, fmt.Errorf("tool ref %q path requires JSON output, got non-JSON", ref)

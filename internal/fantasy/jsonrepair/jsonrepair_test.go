@@ -1,13 +1,13 @@
 package jsonrepair
 
 import (
+	"encoding/json"
 	"reflect"
 	"strings"
 	"testing"
 )
 
 func TestRepairJSON(t *testing.T) {
-	t.Parallel()
 	cases := []struct {
 		name  string
 		input string
@@ -80,7 +80,6 @@ func TestRepairJSON(t *testing.T) {
 }
 
 func TestRepairJSONMultipleTopLevel(t *testing.T) {
-	t.Parallel()
 	cases := []struct {
 		name  string
 		input string
@@ -127,7 +126,6 @@ func TestRepairJSONMultipleTopLevel(t *testing.T) {
 }
 
 func TestRepairJSONEnsureASCII(t *testing.T) {
-	t.Parallel()
 	got, err := RepairJSON("{'test_中国人_ascii':'统一码'}", WithEnsureASCII(false))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -139,7 +137,6 @@ func TestRepairJSONEnsureASCII(t *testing.T) {
 }
 
 func TestRepairJSONStreamStable(t *testing.T) {
-	t.Parallel()
 	cases := []struct {
 		name  string
 		input string
@@ -201,7 +198,6 @@ func TestRepairJSONStreamStable(t *testing.T) {
 }
 
 func TestLoads(t *testing.T) {
-	t.Parallel()
 	cases := []struct {
 		name  string
 		input string
@@ -231,7 +227,7 @@ func TestLoads(t *testing.T) {
 			input: "{\"name\": \"John\", \"age\": 30, \"city\": \"New York\"}",
 			want: map[string]any{
 				"name": "John",
-				"age":  numberValue{raw: "30"},
+				"age":  json.Number("30"),
 				"city": "New York",
 			},
 		},
@@ -239,10 +235,10 @@ func TestLoads(t *testing.T) {
 			name:  "array_numbers",
 			input: "[1, 2, 3, 4]",
 			want: []any{
-				numberValue{raw: "1"},
-				numberValue{raw: "2"},
-				numberValue{raw: "3"},
-				numberValue{raw: "4"},
+				json.Number("1"),
+				json.Number("2"),
+				json.Number("3"),
+				json.Number("4"),
 			},
 		},
 		{
@@ -278,7 +274,6 @@ func TestLoads(t *testing.T) {
 }
 
 func TestRepairJSONSkipJSONLoads(t *testing.T) {
-	t.Parallel()
 	cases := []struct {
 		name  string
 		input string
@@ -326,7 +321,6 @@ func TestRepairJSONSkipJSONLoads(t *testing.T) {
 }
 
 func TestRepairJSONWithLog(t *testing.T) {
-	t.Parallel()
 	cases := []struct {
 		name      string
 		input     string
@@ -375,7 +369,6 @@ func TestRepairJSONWithLog(t *testing.T) {
 }
 
 func TestRepairJSONStrict(t *testing.T) {
-	t.Parallel()
 	cases := []struct {
 		name    string
 		input   string
@@ -446,7 +439,6 @@ func TestRepairJSONStrict(t *testing.T) {
 }
 
 func TestParseArrayObjects(t *testing.T) {
-	t.Parallel()
 	cases := []struct {
 		name  string
 		input string
@@ -461,10 +453,10 @@ func TestParseArrayObjects(t *testing.T) {
 			name:  "numbers_array",
 			input: "[1, 2, 3, 4]",
 			want: []any{
-				numberValue{raw: "1"},
-				numberValue{raw: "2"},
-				numberValue{raw: "3"},
-				numberValue{raw: "4"},
+				json.Number("1"),
+				json.Number("2"),
+				json.Number("3"),
+				json.Number("4"),
 			},
 		},
 		{
@@ -488,7 +480,6 @@ func TestParseArrayObjects(t *testing.T) {
 }
 
 func TestParseArrayEdgeCases(t *testing.T) {
-	t.Parallel()
 	cases := []struct {
 		name  string
 		input string
@@ -630,7 +621,6 @@ func TestParseArrayEdgeCases(t *testing.T) {
 }
 
 func TestParseArrayMissingQuotes(t *testing.T) {
-	t.Parallel()
 	cases := []struct {
 		name  string
 		input string
@@ -667,7 +657,6 @@ func TestParseArrayMissingQuotes(t *testing.T) {
 }
 
 func TestParseComment(t *testing.T) {
-	t.Parallel()
 	cases := []struct {
 		name  string
 		input string
@@ -724,7 +713,6 @@ func TestParseComment(t *testing.T) {
 }
 
 func TestParseNumber(t *testing.T) {
-	t.Parallel()
 	cases := []struct {
 		name  string
 		input string
@@ -733,25 +721,25 @@ func TestParseNumber(t *testing.T) {
 		{
 			name:  "integer",
 			input: "1",
-			want:  numberValue{raw: "1"},
+			want:  json.Number("1"),
 		},
 		{
 			name:  "float",
 			input: "1.2",
-			want:  numberValue{raw: "1.2"},
+			want:  json.Number("1.2"),
 		},
 		{
 			name:  "underscored_integer",
 			input: "{\"value\": 82_461_110}",
 			want: map[string]any{
-				"value": numberValue{raw: "82461110"},
+				"value": json.Number("82461110"),
 			},
 		},
 		{
 			name:  "underscored_float",
 			input: "{\"value\": 1_234.5_6}",
 			want: map[string]any{
-				"value": numberValue{raw: "1234.56"},
+				"value": json.Number("1234.56"),
 			},
 		},
 	}
@@ -770,7 +758,6 @@ func TestParseNumber(t *testing.T) {
 }
 
 func TestParseNumberEdgeCases(t *testing.T) {
-	t.Parallel()
 	cases := []struct {
 		name  string
 		input string
@@ -877,7 +864,6 @@ func TestParseNumberEdgeCases(t *testing.T) {
 }
 
 func TestParseObjectObjects(t *testing.T) {
-	t.Parallel()
 	cases := []struct {
 		name  string
 		input string
@@ -893,7 +879,7 @@ func TestParseObjectObjects(t *testing.T) {
 			input: "{ \"key\": \"value\", \"key2\": 1, \"key3\": True }",
 			want: map[string]any{
 				"key":  "value",
-				"key2": numberValue{raw: "1"},
+				"key2": json.Number("1"),
 				"key3": true,
 			},
 		},
@@ -907,7 +893,7 @@ func TestParseObjectObjects(t *testing.T) {
 			input: "{ \"key\": value, \"key2\": 1 \"key3\": null }",
 			want: map[string]any{
 				"key":  "value",
-				"key2": numberValue{raw: "1"},
+				"key2": json.Number("1"),
 				"key3": nil,
 			},
 		},
@@ -927,7 +913,6 @@ func TestParseObjectObjects(t *testing.T) {
 }
 
 func TestParseObjectEdgeCases(t *testing.T) {
-	t.Parallel()
 	cases := []struct {
 		name  string
 		input string
@@ -1134,7 +1119,6 @@ func TestParseObjectEdgeCases(t *testing.T) {
 }
 
 func TestParseObjectMergeAtEnd(t *testing.T) {
-	t.Parallel()
 	cases := []struct {
 		name  string
 		input string
@@ -1196,7 +1180,6 @@ func TestParseObjectMergeAtEnd(t *testing.T) {
 }
 
 func TestParseStringBasics(t *testing.T) {
-	t.Parallel()
 	cases := []struct {
 		name  string
 		input string
@@ -1243,7 +1226,6 @@ func TestParseStringBasics(t *testing.T) {
 }
 
 func TestMissingAndMixedQuotes(t *testing.T) {
-	t.Parallel()
 	cases := []struct {
 		name  string
 		input string
@@ -1365,7 +1347,6 @@ func TestMissingAndMixedQuotes(t *testing.T) {
 }
 
 func TestEscaping(t *testing.T) {
-	t.Parallel()
 	cases := []struct {
 		name  string
 		input string
@@ -1436,7 +1417,6 @@ func TestEscaping(t *testing.T) {
 }
 
 func TestMarkdown(t *testing.T) {
-	t.Parallel()
 	cases := []struct {
 		name  string
 		input string
@@ -1473,7 +1453,6 @@ func TestMarkdown(t *testing.T) {
 }
 
 func TestLeadingTrailingCharacters(t *testing.T) {
-	t.Parallel()
 	cases := []struct {
 		name  string
 		input string
@@ -1515,7 +1494,6 @@ func TestLeadingTrailingCharacters(t *testing.T) {
 }
 
 func TestStringJSONLLMBlock(t *testing.T) {
-	t.Parallel()
 	cases := []struct {
 		name  string
 		input string
@@ -1557,7 +1535,6 @@ func TestStringJSONLLMBlock(t *testing.T) {
 }
 
 func TestParseBooleanOrNull(t *testing.T) {
-	t.Parallel()
 	loadCases := []struct {
 		name  string
 		input string

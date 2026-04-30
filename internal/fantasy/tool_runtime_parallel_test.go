@@ -2,12 +2,10 @@ package fantasy
 
 import (
 	"context"
-	"errors"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -48,110 +46,39 @@ func TestParallelToolRuntime_OrderAndCallbackDeterminism(t *testing.T) {
 		{ToolCallID: "c3", ToolName: "p", Input: `{"delay_ms":30,"value":"c"}`},
 	}
 
-	results, err := runtime.Execute(t.Context(), []AgentTool{tool}, toolCalls, cb)
+	results, err := runtime.Execute(t.Context(), []AgentTool{tool}, nil, toolCalls, cb)
 	require.NoError(t, err)
 	require.Len(t, results, 3)
-	assert.Empty(t, cmp.Diff("c1", results[0].ToolCallID))
-	assert.Empty(t, cmp.Diff("a", results[0].Result.(ToolResultOutputContentText).Text))
-	assert.Empty(t, cmp.Diff("c2", results[1].ToolCallID))
-	assert.Empty(t, cmp.Diff("b", results[1].Result.(ToolResultOutputContentText).Text))
-	assert.Empty(t, cmp.Diff("c3", results[2].ToolCallID))
-	assert.Empty(t, cmp.Diff("c", results[2].Result.(ToolResultOutputContentText).Text))
+	assert.Equal(t, "c1", results[0].ToolCallID)
+	assert.Equal(t, "a", results[0].Result.(ToolResultOutputContentText).Text)
+	assert.Equal(t, "c2", results[1].ToolCallID)
+	assert.Equal(t, "b", results[1].Result.(ToolResultOutputContentText).Text)
+	assert.Equal(t, "c3", results[2].ToolCallID)
+	assert.Equal(t, "c", results[2].Result.(ToolResultOutputContentText).Text)
 
 	cbMu.Lock()
-	assert.Empty(t, cmp.Diff([]string{"c1", "c2", "c3"}, cbOrder))
+	assert.Equal(t, []string{"c1", "c2", "c3"}, cbOrder)
 	cbMu.Unlock()
 }
 
-func TestParallelToolRuntime_BarrierForNonParallelTools(t *testing.T) {
+func TestParallelToolRuntime_ExecutableProviderTool(t *testing.T) {
 	t.Parallel()
 
-	parallel := NewParallelAgentTool("p", "parallel tool", func(_ context.Context, _ struct{}, call ToolCall) (ToolResponse, error) {
-		_ = call
-		return NewTextResponse("p"), nil
-	})
-	seq := NewAgentTool("s", "sequential tool", func(_ context.Context, _ struct{}, call ToolCall) (ToolResponse, error) {
-		_ = call
-		return NewTextResponse("s"), nil
-	})
-
-	runtime := ParallelToolRuntime{MaxConcurrency: 8}
-
-	var mu sync.Mutex
-	var order []string
-	cb := func(res ToolResultContent) error {
-		mu.Lock()
-		defer mu.Unlock()
-		order = append(order, res.ToolCallID)
-		return nil
-	}
-
-	toolCalls := []ToolCallContent{
-		{ToolCallID: "p1", ToolName: "p", Input: `{}`},
-		{ToolCallID: "p2", ToolName: "p", Input: `{}`},
-		{ToolCallID: "s1", ToolName: "s", Input: `{}`},
-		{ToolCallID: "p3", ToolName: "p", Input: `{}`},
-	}
-
-	results, err := runtime.Execute(t.Context(), []AgentTool{parallel, seq}, toolCalls, cb)
-	require.NoError(t, err)
-	require.Len(t, results, 4)
-
-	mu.Lock()
-	assert.Empty(t, cmp.Diff([]string{"p1", "p2", "s1", "p3"}, order))
-	mu.Unlock()
-}
-
-func TestParallelToolRuntime_CriticalErrorPropagation(t *testing.T) {
-	t.Parallel()
-
-	tool := NewParallelAgentTool("p", "parallel tool", func(_ context.Context, _ struct{}, call ToolCall) (ToolResponse, error) {
-		if call.ID == "bad" {
-			return ToolResponse{}, errors.New("boom")
-		}
-		return NewTextResponse("ok"), nil
-	})
-
-	runtime := ParallelToolRuntime{MaxConcurrency: 4}
-
-	toolCalls := []ToolCallContent{
-		{ToolCallID: "good", ToolName: "p", Input: `{}`},
-		{ToolCallID: "bad", ToolName: "p", Input: `{}`},
-	}
-
-	results, err := runtime.Execute(t.Context(), []AgentTool{tool}, toolCalls, nil)
-	require.Error(t, err)
-	require.Nil(t, results)
-}
-
-func TestParallelToolRuntime_MetricsAndLogHooks(t *testing.T) {
-	t.Parallel()
-
-	var metricsCalled bool
-	var logCalled bool
-
-	tool := NewParallelAgentTool("p", "tool", func(_ context.Context, _ struct{}, call ToolCall) (ToolResponse, error) {
-		return NewTextResponse(call.ID), nil
-	})
-
-	rt := ParallelToolRuntime{
-		MaxConcurrency: 2,
-		Metrics: func(m ToolRuntimeMetrics) {
-			metricsCalled = true
-			require.GreaterOrEqual(t, m.Queued, 0)
+	providerTool := NewExecutableProviderTool(
+		ProviderDefinedTool{ID: "provider.local", Name: "provider_local"},
+		func(_ context.Context, call ToolCall) (ToolResponse, error) {
+			return NewTextResponse("ok:" + call.ID), nil
 		},
-		Log: func(e ToolRuntimeLogEvent) {
-			logCalled = true
-			require.NotEmpty(t, e.Event)
-		},
-	}
+	)
 
-	toolCalls := []ToolCallContent{
-		{ToolCallID: "a", ToolName: "p", Input: `{}`},
-	}
-	res, err := rt.Execute(t.Context(), []AgentTool{tool}, toolCalls, nil)
+	results, err := ParallelToolRuntime{}.Execute(
+		t.Context(),
+		nil,
+		[]ExecutableProviderTool{providerTool},
+		[]ToolCallContent{{ToolCallID: "pt1", ToolName: "provider_local", Input: `{}`}},
+		nil,
+	)
 	require.NoError(t, err)
-	require.Len(t, res, 1)
-	require.True(t, metricsCalled)
-	require.True(t, logCalled)
+	require.Len(t, results, 1)
+	assert.Equal(t, "ok:pt1", results[0].Result.(ToolResultOutputContentText).Text)
 }

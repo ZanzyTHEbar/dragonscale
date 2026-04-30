@@ -8,13 +8,10 @@ import (
 	"charm.land/fantasy"
 	"charm.land/fantasy/providers/openai"
 	"charm.land/x/vcr"
-	"github.com/google/go-cmp/cmp"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestOpenAIResponsesCommon(t *testing.T) {
-	t.Parallel()
 	var pairs []builderPair
 	for _, m := range openaiTestModels {
 		pairs = append(pairs, builderPair{m.name, openAIReasoningBuilder(m.model), nil, nil})
@@ -37,14 +34,13 @@ func openAIReasoningBuilder(model string) builderFunc {
 }
 
 func TestOpenAIResponsesWithSummaryThinking(t *testing.T) {
-	t.Parallel()
 	opts := fantasy.ProviderOptions{
 		openai.Name: &openai.ResponsesProviderOptions{
 			Include: []openai.IncludeType{
 				openai.IncludeReasoningEncryptedContent,
 			},
 			ReasoningEffort:  openai.ReasoningEffortOption(openai.ReasoningEffortHigh),
-			ReasoningSummary: fantasy.Opt("auto"),
+			ReasoningSummary: new("auto"),
 		},
 	}
 	var pairs []builderPair
@@ -58,7 +54,6 @@ func TestOpenAIResponsesWithSummaryThinking(t *testing.T) {
 }
 
 func TestOpenAIResponsesObjectGeneration(t *testing.T) {
-	t.Parallel()
 	var pairs []builderPair
 	for _, m := range openaiTestModels {
 		pairs = append(pairs, builderPair{m.name, openAIReasoningBuilder(m.model), nil, nil})
@@ -97,5 +92,5 @@ func testOpenAIResponsesThinkingWithSummaryThinking(t *testing.T, result *fantas
 	}
 	require.Greater(t, reasoningContentCount, 0)
 	require.Greater(t, encryptedData, 0)
-	assert.Empty(t, cmp.Diff(reasoningContentCount, encryptedData))
+	require.Equal(t, reasoningContentCount, encryptedData)
 }

@@ -3,12 +3,10 @@ package azure
 import (
 	"testing"
 
-	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestParseAzureURL(t *testing.T) {
-	t.Parallel()
 	tests := []struct {
 		name     string
 		input    string
@@ -94,7 +92,7 @@ func TestParseAzureURL(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := parseAzureURL(tt.input)
-			assert.Empty(t, cmp.Diff(tt.expected, result))
+			assert.Equal(t, tt.expected, result)
 		})
 	}
 }

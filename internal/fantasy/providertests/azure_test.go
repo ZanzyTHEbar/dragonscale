@@ -16,7 +16,6 @@ import (
 const defaultBaseURL = "https://fantasy-playground-resource.openai.azure.com"
 
 func TestAzureCommon(t *testing.T) {
-	t.Parallel()
 	testCommon(t, []builderPair{
 		{"azure-o4-mini", builderAzureO4Mini, nil, nil},
 		{"azure-gpt-5-mini", builderAzureGpt5Mini, nil, nil},
@@ -25,7 +24,6 @@ func TestAzureCommon(t *testing.T) {
 }
 
 func TestAzureThinking(t *testing.T) {
-	t.Parallel()
 	opts := fantasy.ProviderOptions{
 		openai.Name: &openai.ProviderOptions{
 			ReasoningEffort: openai.ReasoningEffortOption(openai.ReasoningEffortHigh),

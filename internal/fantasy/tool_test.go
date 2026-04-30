@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/google/go-cmp/cmp"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -16,8 +14,7 @@ type CalculatorInput struct {
 }
 
 func TestTypedToolFuncExample(t *testing.T) {
-	t.Parallel()
-
+	// Create a typed tool using the function API
 	tool := NewAgentTool(
 		"calculator",
 		"Evaluates simple mathematical expressions",
@@ -31,9 +28,9 @@ func TestTypedToolFuncExample(t *testing.T) {
 
 	// Check the tool info
 	info := tool.Info()
-	assert.Empty(t, cmp.Diff("calculator", info.Name))
+	require.Equal(t, "calculator", info.Name)
 	require.Len(t, info.Required, 1)
-	assert.Empty(t, cmp.Diff("expression", info.Required[0]))
+	require.Equal(t, "expression", info.Required[0])
 
 	// Test execution
 	call := ToolCall{
@@ -42,14 +39,13 @@ func TestTypedToolFuncExample(t *testing.T) {
 		Input: `{"expression": "2+2"}`,
 	}
 
-	result, err := tool.Run(t.Context(), call)
+	result, err := tool.Run(context.Background(), call)
 	require.NoError(t, err)
-	assert.Empty(t, cmp.Diff("4", result.Content))
+	require.Equal(t, "4", result.Content)
 	require.False(t, result.IsError)
 }
 
 func TestEnumToolExample(t *testing.T) {
-	t.Parallel()
 	type WeatherInput struct {
 		Location string `json:"location" description:"City name"`
 		Units    string `json:"units" enum:"celsius,fahrenheit" description:"Temperature units"`
@@ -82,51 +78,34 @@ func TestEnumToolExample(t *testing.T) {
 		Input: `{"location": "San Francisco", "units": "fahrenheit"}`,
 	}
 
-	result, err := tool.Run(t.Context(), call)
+	result, err := tool.Run(context.Background(), call)
 	require.NoError(t, err)
 	require.Contains(t, result.Content, "San Francisco")
 	require.Contains(t, result.Content, "72°F")
 }
 
+func TestNewImageResponse(t *testing.T) {
+	imageData := []byte{0x89, 0x50, 0x4E, 0x47} // PNG header bytes
+	mediaType := "image/png"
+
+	resp := NewImageResponse(imageData, mediaType)
+
+	require.Equal(t, "image", resp.Type)
+	require.Equal(t, imageData, resp.Data)
+	require.Equal(t, mediaType, resp.MediaType)
+	require.False(t, resp.IsError)
+	require.Empty(t, resp.Content)
+}
+
 func TestNewMediaResponse(t *testing.T) {
-	t.Parallel()
-	tests := []struct {
-		name      string
-		mediaType string
-		data      []byte
-		wantType  string
-	}{
-		{
-			name:      "image response",
-			data:      []byte{0x89, 0x50, 0x4E, 0x47},
-			mediaType: "image/png",
-			wantType:  "image",
-		},
-		{
-			name:      "audio response",
-			data:      []byte{0x52, 0x49, 0x46, 0x46},
-			mediaType: "audio/wav",
-			wantType:  "media",
-		},
-	}
+	audioData := []byte{0x52, 0x49, 0x46, 0x46} // RIFF header bytes
+	mediaType := "audio/wav"
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			var got ToolResponse
-			if tt.wantType == "image" {
-				got = NewImageResponse(tt.data, tt.mediaType)
-			} else {
-				got = NewMediaResponse(tt.data, tt.mediaType)
-			}
+	resp := NewMediaResponse(audioData, mediaType)
 
-			require.Empty(t, cmp.Diff(ToolResponse{
-				Type:      tt.wantType,
-				Data:      tt.data,
-				MediaType: tt.mediaType,
-				IsError:   false,
-				Content:   "",
-			}, got))
-		})
-	}
+	require.Equal(t, "media", resp.Type)
+	require.Equal(t, audioData, resp.Data)
+	require.Equal(t, mediaType, resp.MediaType)
+	require.False(t, resp.IsError)
+	require.Empty(t, resp.Content)
 }

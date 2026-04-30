@@ -5,16 +5,17 @@ import (
 	"cmp"
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"maps"
+	"math"
 	"strings"
-
-	jsonv2 "github.com/go-json-experiment/json"
 
 	"charm.land/fantasy"
 	"charm.land/fantasy/object"
+	"charm.land/fantasy/providers/internal/httpheaders"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/charmbracelet/anthropic-sdk-go"
 	"github.com/charmbracelet/anthropic-sdk-go/bedrock"
@@ -24,19 +25,53 @@ import (
 	"golang.org/x/oauth2/google"
 )
 
+// betaRequestOptions converts beta flag strings into request
+// options that enable the corresponding Anthropic beta APIs.
+func betaRequestOptions(flags []string) []option.RequestOption {
+	if len(flags) == 0 {
+		return nil
+	}
+	opts := []option.RequestOption{option.WithQuery("beta", "true")}
+	for _, flag := range flags {
+		opts = append(opts, option.WithHeaderAdd("anthropic-beta", flag))
+	}
+	return opts
+}
+
+// buildRequestOptions constructs the common request options shared
+// by Generate and Stream: user-agent, raw tool injection, and any
+// beta API flags.
+func buildRequestOptions(call fantasy.Call, rawTools []json.RawMessage, betaFlags []string) []option.RequestOption {
+	reqOpts := callUARequestOptions(call)
+	if len(rawTools) > 0 {
+		// Tools are injected as raw JSON rather than via params.Tools
+		// because the SDK doesn't model beta tool types (e.g. computer
+		// use). If the SDK adds validation that reads params.Tools,
+		// this will need updating.
+		reqOpts = append(reqOpts, option.WithJSONSet("tools", rawTools))
+	}
+	if len(betaFlags) > 0 {
+		reqOpts = append(reqOpts, betaRequestOptions(betaFlags)...)
+	}
+	return reqOpts
+}
+
 const (
 	// Name is the name of the Anthropic provider.
 	Name = "anthropic"
 	// DefaultURL is the default URL for the Anthropic API.
 	DefaultURL = "https://api.anthropic.com"
+	// VertexAuthScope is the auth scope required for vertex auth if using a Service Account JSON file (e.g. GOOGLE_APPLICATION_CREDENTIALS).
+	VertexAuthScope = "https://www.googleapis.com/auth/cloud-platform"
 )
 
 type options struct {
-	baseURL string
-	apiKey  string
-	name    string
-	headers map[string]string
-	client  option.HTTPClient
+	baseURL   string
+	apiKey    string
+	name      string
+	headers   map[string]string
+	userAgent string
+	client    option.HTTPClient
 
 	vertexProject  string
 	vertexLocation string
@@ -64,7 +99,9 @@ func New(opts ...Option) (fantasy.Provider, error) {
 		o(&providerOptions)
 	}
 
-	providerOptions.baseURL = cmp.Or(providerOptions.baseURL, DefaultURL)
+	if !providerOptions.useBedrock {
+		providerOptions.baseURL = cmp.Or(providerOptions.baseURL, DefaultURL)
+	}
 	providerOptions.name = cmp.Or(providerOptions.name, Name)
 	return &provider{options: providerOptions}, nil
 }
@@ -126,6 +163,14 @@ func WithHTTPClient(client option.HTTPClient) Option {
 	}
 }
 
+// WithUserAgent sets an explicit User-Agent header, overriding the default and any
+// value set via WithHeaders.
+func WithUserAgent(ua string) Option {
+	return func(o *options) {
+		o.userAgent = ua
+	}
+}
+
 // WithObjectMode sets the object generation mode.
 func WithObjectMode(om fantasy.ObjectMode) Option {
 	return func(o *options) {
@@ -144,10 +189,12 @@ func (a *provider) LanguageModel(ctx context.Context, modelID string) (fantasy.L
 	if a.options.apiKey != "" && !a.options.useBedrock {
 		clientOptions = append(clientOptions, option.WithAPIKey(a.options.apiKey))
 	}
-	if a.options.baseURL != "" {
+	if !a.options.useBedrock && a.options.baseURL != "" {
 		clientOptions = append(clientOptions, option.WithBaseURL(a.options.baseURL))
 	}
-	for key, value := range a.options.headers {
+	defaultUA := httpheaders.DefaultUserAgent(fantasy.Version)
+	resolved := httpheaders.ResolveHeaders(a.options.headers, a.options.userAgent, defaultUA)
+	for key, value := range resolved {
 		clientOptions = append(clientOptions, option.WithHeader(key, value))
 	}
 	if a.options.client != nil {
@@ -159,7 +206,7 @@ func (a *provider) LanguageModel(ctx context.Context, modelID string) (fantasy.L
 			credentials = &google.Credentials{TokenSource: &googleDummyTokenSource{}}
 		} else {
 			var err error
-			credentials, err = google.FindDefaultCredentials(ctx)
+			credentials, err = google.FindDefaultCredentials(ctx, VertexAuthScope)
 			if err != nil {
 				return nil, err
 			}
@@ -191,6 +238,9 @@ func (a *provider) LanguageModel(ctx context.Context, modelID string) (fantasy.L
 				)
 			}
 		}
+		if a.options.baseURL != "" {
+			clientOptions = append(clientOptions, option.WithBaseURL(a.options.baseURL))
+		}
 	}
 	return languageModel{
 		modelID:  modelID,
@@ -217,13 +267,19 @@ func (a languageModel) Provider() string {
 	return a.provider
 }
 
-func (a languageModel) prepareParams(call fantasy.Call) (*anthropic.MessageNewParams, []fantasy.CallWarning, error) {
-	params := &anthropic.MessageNewParams{}
+func (a languageModel) prepareParams(call fantasy.Call) (
+	params *anthropic.MessageNewParams,
+	rawTools []json.RawMessage,
+	warnings []fantasy.CallWarning,
+	betaFlags []string,
+	err error,
+) {
+	params = &anthropic.MessageNewParams{}
 	providerOptions := &ProviderOptions{}
 	if v, ok := call.ProviderOptions[Name]; ok {
 		providerOptions, ok = v.(*ProviderOptions)
 		if !ok {
-			return nil, nil, &fantasy.Error{Title: "invalid argument", Message: "anthropic provider options should be *anthropic.ProviderOptions"}
+			return nil, nil, nil, nil, &fantasy.Error{Title: "invalid argument", Message: "anthropic provider options should be *anthropic.ProviderOptions"}
 		}
 	}
 	sendReasoning := true
@@ -264,17 +320,19 @@ func (a languageModel) prepareParams(call fantasy.Call) (*anthropic.MessageNewPa
 		params.TopP = param.NewOpt(*call.TopP)
 	}
 
-	isThinking := false
-	var thinkingBudget int64
-	if providerOptions.Thinking != nil {
-		isThinking = true
-		thinkingBudget = providerOptions.Thinking.BudgetTokens
-	}
-	if isThinking {
-		if thinkingBudget == 0 {
-			return nil, nil, &fantasy.Error{Title: "no budget", Message: "thinking requires budget"}
+	switch {
+	case providerOptions.Effort != nil:
+		effort := *providerOptions.Effort
+		params.OutputConfig = anthropic.OutputConfigParam{
+			Effort: anthropic.OutputConfigEffort(effort),
 		}
-		params.Thinking = anthropic.ThinkingConfigParamOfEnabled(thinkingBudget)
+		adaptive := anthropic.NewThinkingConfigAdaptiveParam()
+		params.Thinking.OfAdaptive = &adaptive
+	case providerOptions.Thinking != nil:
+		if providerOptions.Thinking.BudgetTokens == 0 {
+			return nil, nil, nil, nil, &fantasy.Error{Title: "no budget", Message: "thinking requires budget"}
+		}
+		params.Thinking = anthropic.ThinkingConfigParamOfEnabled(providerOptions.Thinking.BudgetTokens)
 		if call.Temperature != nil {
 			params.Temperature = param.Opt[float64]{}
 			warnings = append(warnings, fantasy.CallWarning{
@@ -306,15 +364,16 @@ func (a languageModel) prepareParams(call fantasy.Call) (*anthropic.MessageNewPa
 		if providerOptions.DisableParallelToolUse != nil {
 			disableParallelToolUse = *providerOptions.DisableParallelToolUse
 		}
-		tools, toolChoice, toolWarnings := a.toTools(call.Tools, call.ToolChoice, disableParallelToolUse)
-		params.Tools = tools
+		var toolChoice *anthropic.ToolChoiceUnionParam
+		var toolWarnings []fantasy.CallWarning
+		rawTools, toolChoice, toolWarnings, betaFlags = a.toTools(call.Tools, call.ToolChoice, disableParallelToolUse)
 		if toolChoice != nil {
 			params.ToolChoice = *toolChoice
 		}
 		warnings = append(warnings, toolWarnings...)
 	}
 
-	return params, warnings, nil
+	return params, rawTools, warnings, betaFlags, nil
 }
 
 func (a *provider) Name() string {
@@ -394,7 +453,133 @@ func groupIntoBlocks(prompt fantasy.Prompt) []*messageBlock {
 	return blocks
 }
 
-func (a languageModel) toTools(tools []fantasy.Tool, toolChoice *fantasy.ToolChoice, disableParallelToolCalls bool) (anthropicTools []anthropic.ToolUnionParam, anthropicToolChoice *anthropic.ToolChoiceUnionParam, warnings []fantasy.CallWarning) {
+func anyToStringSlice(v any) []string {
+	switch typed := v.(type) {
+	case []string:
+		if len(typed) == 0 {
+			return nil
+		}
+		out := make([]string, len(typed))
+		copy(out, typed)
+		return out
+	case []any:
+		if len(typed) == 0 {
+			return nil
+		}
+		out := make([]string, 0, len(typed))
+		for _, item := range typed {
+			s, ok := item.(string)
+			if !ok || s == "" {
+				continue
+			}
+			out = append(out, s)
+		}
+		if len(out) == 0 {
+			return nil
+		}
+		return out
+	default:
+		return nil
+	}
+}
+
+const maxExactIntFloat64 = float64(1<<53 - 1)
+
+// asProviderDefinedTool extracts the ProviderDefinedTool from a
+// Tool, handling both ProviderDefinedTool and
+// ExecutableProviderTool.
+func asProviderDefinedTool(tool fantasy.Tool) (fantasy.ProviderDefinedTool, bool) {
+	if pdt, ok := tool.(fantasy.ProviderDefinedTool); ok {
+		return pdt, true
+	}
+	if ept, ok := tool.(fantasy.ExecutableProviderTool); ok {
+		return ept.Definition(), true
+	}
+	return fantasy.ProviderDefinedTool{}, false
+}
+
+func anyToInt64(v any) (int64, bool) {
+	switch typed := v.(type) {
+	case int:
+		return int64(typed), true
+	case int8:
+		return int64(typed), true
+	case int16:
+		return int64(typed), true
+	case int32:
+		return int64(typed), true
+	case int64:
+		return typed, true
+	case uint:
+		u64 := uint64(typed)
+		if u64 > math.MaxInt64 {
+			return 0, false
+		}
+		return int64(u64), true
+	case uint8:
+		return int64(typed), true
+	case uint16:
+		return int64(typed), true
+	case uint32:
+		return int64(typed), true
+	case uint64:
+		if typed > math.MaxInt64 {
+			return 0, false
+		}
+		return int64(typed), true
+	case float32:
+		f := float64(typed)
+		if math.Trunc(f) != f || math.IsNaN(f) || math.IsInf(f, 0) || f < -maxExactIntFloat64 || f > maxExactIntFloat64 {
+			return 0, false
+		}
+		return int64(f), true
+	case float64:
+		if math.Trunc(typed) != typed || math.IsNaN(typed) || math.IsInf(typed, 0) || typed < -maxExactIntFloat64 || typed > maxExactIntFloat64 {
+			return 0, false
+		}
+		return int64(typed), true
+	case json.Number:
+		parsed, err := typed.Int64()
+		if err != nil {
+			return 0, false
+		}
+		return parsed, true
+	default:
+		return 0, false
+	}
+}
+
+func anyToUserLocation(v any) *UserLocation {
+	switch typed := v.(type) {
+	case *UserLocation:
+		return typed
+	case UserLocation:
+		loc := typed
+		return &loc
+	case map[string]any:
+		loc := &UserLocation{}
+		if city, ok := typed["city"].(string); ok {
+			loc.City = city
+		}
+		if region, ok := typed["region"].(string); ok {
+			loc.Region = region
+		}
+		if country, ok := typed["country"].(string); ok {
+			loc.Country = country
+		}
+		if timezone, ok := typed["timezone"].(string); ok {
+			loc.Timezone = timezone
+		}
+		if loc.City == "" && loc.Region == "" && loc.Country == "" && loc.Timezone == "" {
+			return nil
+		}
+		return loc
+	default:
+		return nil
+	}
+}
+
+func (a languageModel) toTools(tools []fantasy.Tool, toolChoice *fantasy.ToolChoice, disableParallelToolCalls bool) (rawTools []json.RawMessage, anthropicToolChoice *anthropic.ToolChoiceUnionParam, warnings []fantasy.CallWarning, betaFlags []string) {
 	for _, tool := range tools {
 		if tool.GetType() == fantasy.ToolTypeFunction {
 			ft, ok := tool.(fantasy.FunctionTool)
@@ -424,26 +609,104 @@ func (a languageModel) toTools(tools []fantasy.Tool, toolChoice *fantasy.ToolCho
 			if cacheControl != nil {
 				anthropicTool.CacheControl = anthropic.NewCacheControlEphemeralParam()
 			}
-			anthropicTools = append(anthropicTools, anthropic.ToolUnionParam{OfTool: &anthropicTool})
+			raw, err := json.Marshal(anthropic.ToolUnionParam{OfTool: &anthropicTool})
+			if err != nil {
+				warnings = append(warnings, fantasy.CallWarning{
+					Type:    fantasy.CallWarningTypeOther,
+					Tool:    tool,
+					Message: fmt.Sprintf("failed to marshal function tool: %v", err),
+				})
+				continue
+			}
+			rawTools = append(rawTools, raw)
 			continue
 		}
-
 		if tool.GetType() == fantasy.ToolTypeProviderDefined {
-			pt, ok := tool.(fantasy.ProviderDefinedTool)
+			pt, ok := asProviderDefinedTool(tool)
 			if !ok {
 				continue
 			}
-			t := toAnthropicProviderTool(pt)
-			if t != nil {
-				anthropicTools = append(anthropicTools, *t)
+			switch pt.ID {
+			case "web_search":
+				webSearchTool := anthropic.WebSearchTool20250305Param{}
+				if pt.Args != nil {
+					if domains := anyToStringSlice(pt.Args["allowed_domains"]); len(domains) > 0 {
+						webSearchTool.AllowedDomains = domains
+					}
+					if domains := anyToStringSlice(pt.Args["blocked_domains"]); len(domains) > 0 {
+						webSearchTool.BlockedDomains = domains
+					}
+					if maxUses, ok := anyToInt64(pt.Args["max_uses"]); ok && maxUses > 0 {
+						webSearchTool.MaxUses = param.NewOpt(maxUses)
+					}
+					if loc := anyToUserLocation(pt.Args["user_location"]); loc != nil {
+						var ulp anthropic.UserLocationParam
+						if loc.City != "" {
+							ulp.City = param.NewOpt(loc.City)
+						}
+						if loc.Region != "" {
+							ulp.Region = param.NewOpt(loc.Region)
+						}
+						if loc.Country != "" {
+							ulp.Country = param.NewOpt(loc.Country)
+						}
+						if loc.Timezone != "" {
+							ulp.Timezone = param.NewOpt(loc.Timezone)
+						}
+						webSearchTool.UserLocation = ulp
+					}
+				}
+				raw, err := json.Marshal(anthropic.ToolUnionParam{
+					OfWebSearchTool20250305: &webSearchTool,
+				})
+				if err != nil {
+					warnings = append(warnings, fantasy.CallWarning{
+						Type:    fantasy.CallWarningTypeOther,
+						Tool:    tool,
+						Message: fmt.Sprintf("failed to marshal web search tool: %v", err),
+					})
+					continue
+				}
+				rawTools = append(rawTools, raw)
 				continue
 			}
+			if IsComputerUseTool(tool) {
+				raw, err := computerUseToolJSON(pt)
+				if err != nil {
+					warnings = append(warnings, fantasy.CallWarning{
+						Type:    fantasy.CallWarningTypeOther,
+						Tool:    tool,
+						Message: fmt.Sprintf("failed to build computer use tool: %v", err),
+					})
+					continue
+				}
+				version, ok := getComputerUseVersion(pt)
+				if ok {
+					flag, err := computerUseBetaFlag(version)
+					if err != nil {
+						warnings = append(warnings, fantasy.CallWarning{
+							Type:    fantasy.CallWarningTypeOther,
+							Tool:    tool,
+							Message: fmt.Sprintf("unsupported computer use version: %v", err),
+						})
+						continue
+					}
+					betaFlags = append(betaFlags, flag)
+				}
+				rawTools = append(rawTools, raw)
+				continue
+			}
+			warnings = append(warnings, fantasy.CallWarning{
+				Type:    fantasy.CallWarningTypeUnsupportedTool,
+				Tool:    tool,
+				Message: "tool is not supported",
+			})
+			continue
 		}
-
 		warnings = append(warnings, fantasy.CallWarning{
 			Type:    fantasy.CallWarningTypeUnsupportedTool,
 			Tool:    tool,
-			Message: "tool is not supported by Anthropic provider: " + tool.GetName(),
+			Message: "tool is not supported",
 		})
 	}
 
@@ -462,7 +725,7 @@ func (a languageModel) toTools(tools []fantasy.Tool, toolChoice *fantasy.ToolCho
 				},
 			}
 		}
-		return anthropicTools, anthropicToolChoice, warnings
+		return rawTools, anthropicToolChoice, warnings, betaFlags
 	}
 
 	switch *toolChoice {
@@ -481,7 +744,10 @@ func (a languageModel) toTools(tools []fantasy.Tool, toolChoice *fantasy.ToolCho
 			},
 		}
 	case fantasy.ToolChoiceNone:
-		return anthropicTools, anthropicToolChoice, warnings
+		none := anthropic.NewToolChoiceNoneParam()
+		anthropicToolChoice = &anthropic.ToolChoiceUnionParam{
+			OfNone: &none,
+		}
 	default:
 		anthropicToolChoice = &anthropic.ToolChoiceUnionParam{
 			OfTool: &anthropic.ToolChoiceToolParam{
@@ -491,45 +757,7 @@ func (a languageModel) toTools(tools []fantasy.Tool, toolChoice *fantasy.ToolCho
 			},
 		}
 	}
-	return anthropicTools, anthropicToolChoice, warnings
-}
-
-// toAnthropicProviderTool maps a ProviderDefinedTool to its Anthropic SDK representation.
-// IDs follow the convention "anthropic.<tool-name>". Returns nil for unknown IDs.
-func toAnthropicProviderTool(pt fantasy.ProviderDefinedTool) *anthropic.ToolUnionParam {
-	switch pt.ID {
-	case "anthropic.bash", "anthropic.bash_20250124":
-		return &anthropic.ToolUnionParam{OfBashTool20250124: &anthropic.ToolBash20250124Param{}}
-
-	case "anthropic.text_editor_20250124":
-		return &anthropic.ToolUnionParam{OfTextEditor20250124: &anthropic.ToolTextEditor20250124Param{}}
-
-	case "anthropic.text_editor_20250429":
-		return &anthropic.ToolUnionParam{OfTextEditor20250429: &anthropic.ToolTextEditor20250429Param{}}
-
-	case "anthropic.text_editor", "anthropic.text_editor_20250728":
-		t := &anthropic.ToolTextEditor20250728Param{}
-		if maxChars, ok := pt.Args["max_characters"].(float64); ok {
-			t.MaxCharacters = param.NewOpt(int64(maxChars))
-		}
-		return &anthropic.ToolUnionParam{OfTextEditor20250728: t}
-
-	case "anthropic.web_search", "anthropic.web_search_20250305":
-		t := &anthropic.WebSearchTool20250305Param{}
-		if maxUses, ok := pt.Args["max_uses"].(float64); ok {
-			t.MaxUses = param.NewOpt(int64(maxUses))
-		}
-		if allowed, ok := pt.Args["allowed_domains"].([]string); ok {
-			t.AllowedDomains = allowed
-		}
-		if blocked, ok := pt.Args["blocked_domains"].([]string); ok {
-			t.BlockedDomains = blocked
-		}
-		return &anthropic.ToolUnionParam{OfWebSearchTool20250305: t}
-
-	default:
-		return nil
-	}
+	return rawTools, anthropicToolChoice, warnings, betaFlags
 }
 
 func toPrompt(prompt fantasy.Prompt, sendReasoningData bool) ([]anthropic.TextBlockParam, []anthropic.MessageParam, []fantasy.CallWarning) {
@@ -543,10 +771,8 @@ func toPrompt(prompt fantasy.Prompt, sendReasoningData bool) ([]anthropic.TextBl
 		switch block.Role {
 		case fantasy.MessageRoleSystem:
 			if finishedSystemBlock {
-				warnings = append(warnings, fantasy.CallWarning{
-					Type:    fantasy.CallWarningTypeOther,
-					Message: "anthropic: additional system message after user/assistant messages was skipped",
-				})
+				// skip multiple system messages that are separated by user/assistant messages
+				// TODO: see if we need to send error here?
 				continue
 			}
 			finishedSystemBlock = true
@@ -596,12 +822,15 @@ func toPrompt(prompt fantasy.Prompt, sendReasoningData bool) ([]anthropic.TextBl
 							anthropicContent = append(anthropicContent, anthropic.ContentBlockParamUnion{
 								OfText: textBlock,
 							})
+						case fantasy.ContentTypeSource:
+							// Source content from web search results is not a
+							// recognized Anthropic content block type; skip it.
+							continue
 						case fantasy.ContentTypeFile:
 							file, ok := fantasy.AsMessagePart[fantasy.FilePart](part)
 							if !ok {
 								continue
 							}
-
 							switch {
 							case strings.HasPrefix(file.MediaType, "image/"):
 								base64Encoded := base64.StdEncoding.EncodeToString(file.Data)
@@ -610,7 +839,6 @@ func toPrompt(prompt fantasy.Prompt, sendReasoningData bool) ([]anthropic.TextBl
 									imageBlock.OfImage.CacheControl = anthropic.NewCacheControlEphemeralParam()
 								}
 								anthropicContent = append(anthropicContent, imageBlock)
-
 							case file.MediaType == "application/pdf":
 								base64Encoded := base64.StdEncoding.EncodeToString(file.Data)
 								docBlock := anthropic.NewDocumentBlock(anthropic.Base64PDFSourceParam{
@@ -620,21 +848,14 @@ func toPrompt(prompt fantasy.Prompt, sendReasoningData bool) ([]anthropic.TextBl
 									docBlock.OfDocument.CacheControl = anthropic.NewCacheControlEphemeralParam()
 								}
 								anthropicContent = append(anthropicContent, docBlock)
-
-							case file.MediaType == "text/plain":
-								docBlock := anthropic.NewDocumentBlock(anthropic.PlainTextSourceParam{
+							case strings.HasPrefix(file.MediaType, "text/"):
+								documentBlock := anthropic.NewDocumentBlock(anthropic.PlainTextSourceParam{
 									Data: string(file.Data),
 								})
 								if cacheControl != nil {
-									docBlock.OfDocument.CacheControl = anthropic.NewCacheControlEphemeralParam()
+									documentBlock.OfDocument.CacheControl = anthropic.NewCacheControlEphemeralParam()
 								}
-								anthropicContent = append(anthropicContent, docBlock)
-
-							default:
-								warnings = append(warnings, fantasy.CallWarning{
-									Type:    fantasy.CallWarningTypeUnsupportedSetting,
-									Message: fmt.Sprintf("unsupported file media type for Anthropic: %s", file.MediaType),
-								})
+								anthropicContent = append(anthropicContent, documentBlock)
 							}
 						}
 					}
@@ -775,13 +996,25 @@ func toPrompt(prompt fantasy.Prompt, sendReasoningData bool) ([]anthropic.TextBl
 						if !ok {
 							continue
 						}
-
-						// Provider-executed tool calls still appear as tool_use blocks
-						// in the Anthropic assistant message; the ProviderExecuted flag
-						// is only informational metadata about who ran the tool.
-						var inputMap map[string]any
-						if err := jsonv2.Unmarshal([]byte(toolCall.Input), &inputMap); err != nil {
+						if toolCall.ProviderExecuted {
+							// Reconstruct server_tool_use block for
+							// multi-turn round-tripping.
+							inputAny, warning := decodeToolCallInputAny(toolCall)
+							if warning != nil {
+								warnings = append(warnings, *warning)
+							}
+							anthropicContent = append(anthropicContent, anthropic.ContentBlockParamUnion{
+								OfServerToolUse: &anthropic.ServerToolUseBlockParam{
+									ID:    toolCall.ToolCallID,
+									Name:  anthropic.ServerToolUseBlockParamName(toolCall.ToolName),
+									Input: inputAny,
+								},
+							})
 							continue
+						}
+						inputMap, warning := decodeToolCallInputMap(toolCall)
+						if warning != nil {
+							warnings = append(warnings, *warning)
 						}
 						toolUseBlock := anthropic.NewToolUseBlock(toolCall.ToolCallID, inputMap, toolCall.ToolName)
 						if cacheControl != nil {
@@ -789,17 +1022,28 @@ func toPrompt(prompt fantasy.Prompt, sendReasoningData bool) ([]anthropic.TextBl
 						}
 						anthropicContent = append(anthropicContent, toolUseBlock)
 					case fantasy.ContentTypeToolResult:
-						// Tool results in an assistant-role block are not a valid construct
-						// in the Anthropic API (they belong in user/tool-role messages).
-						// Emit a warning so callers know this content will be dropped.
-						warnings = append(warnings, fantasy.CallWarning{
-							Type:    fantasy.CallWarningTypeOther,
-							Message: "tool result found in assistant message block; Anthropic requires tool results in user/tool-role messages — content dropped",
-						})
+						result, ok := fantasy.AsMessagePart[fantasy.ToolResultPart](part)
+						if !ok {
+							continue
+						}
+						if result.ProviderExecuted {
+							// Reconstruct web_search_tool_result block
+							// with encrypted_content for round-tripping.
+							searchMeta := &WebSearchResultMetadata{}
+							if webMeta, ok := result.ProviderOptions[Name]; ok {
+								if typed, ok := webMeta.(*WebSearchResultMetadata); ok {
+									searchMeta = typed
+								}
+							}
+							anthropicContent = append(anthropicContent, buildWebSearchToolResultBlock(result.ToolCallID, searchMeta))
+							continue
+						}
+					case fantasy.ContentTypeSource: // Source content from web search results is not a
+						// recognized Anthropic content block type; skip it.
+						continue
 					}
 				}
 			}
-
 			if !hasVisibleAssistantContent(anthropicContent) {
 				warnings = append(warnings, fantasy.CallWarning{
 					Type:    fantasy.CallWarningTypeOther,
@@ -815,7 +1059,7 @@ func toPrompt(prompt fantasy.Prompt, sendReasoningData bool) ([]anthropic.TextBl
 
 func hasVisibleUserContent(content []anthropic.ContentBlockParamUnion) bool {
 	for _, block := range content {
-		if block.OfText != nil || block.OfImage != nil || block.OfToolResult != nil {
+		if block.OfText != nil || block.OfImage != nil || block.OfDocument != nil || block.OfToolResult != nil {
 			return true
 		}
 	}
@@ -824,11 +1068,82 @@ func hasVisibleUserContent(content []anthropic.ContentBlockParamUnion) bool {
 
 func hasVisibleAssistantContent(content []anthropic.ContentBlockParamUnion) bool {
 	for _, block := range content {
-		if block.OfText != nil || block.OfToolUse != nil {
+		if block.OfText != nil || block.OfToolUse != nil || block.OfServerToolUse != nil || block.OfWebSearchToolResult != nil {
 			return true
 		}
 	}
 	return false
+}
+
+// decodeToolCallInputMap unmarshals a ToolCallPart.Input into a map for
+// reconstructing an Anthropic tool_use block. The Anthropic API rejects any
+// request whose tool_result lacks a matching tool_use in the previous
+// message, so this helper never drops the block: empty input becomes {},
+// and malformed input falls back to {} with a CallWarning. The caller still
+// emits a tool_use block with the original ToolCallID, preserving the pair.
+func decodeToolCallInputMap(toolCall fantasy.ToolCallPart) (map[string]any, *fantasy.CallWarning) {
+	if strings.TrimSpace(toolCall.Input) == "" {
+		return map[string]any{}, nil
+	}
+	var inputMap map[string]any
+	if err := json.Unmarshal([]byte(toolCall.Input), &inputMap); err != nil {
+		return map[string]any{}, &fantasy.CallWarning{
+			Type: fantasy.CallWarningTypeOther,
+			Message: fmt.Sprintf(
+				"tool call %q has malformed input JSON; emitting empty arguments to preserve tool_use ↔ tool_result pairing: %s",
+				toolCall.ToolCallID, err,
+			),
+		}
+	}
+	if inputMap == nil {
+		return map[string]any{}, nil
+	}
+	return inputMap, nil
+}
+
+// decodeToolCallInputAny is the server_tool_use counterpart to
+// decodeToolCallInputMap. ServerToolUseBlockParam.Input has type `any` so
+// nil is acceptable for the empty case.
+func decodeToolCallInputAny(toolCall fantasy.ToolCallPart) (any, *fantasy.CallWarning) {
+	if strings.TrimSpace(toolCall.Input) == "" {
+		return nil, nil
+	}
+	var inputAny any
+	if err := json.Unmarshal([]byte(toolCall.Input), &inputAny); err != nil {
+		return nil, &fantasy.CallWarning{
+			Type: fantasy.CallWarningTypeOther,
+			Message: fmt.Sprintf(
+				"server tool call %q has malformed input JSON; emitting empty arguments to preserve tool_use ↔ tool_result pairing: %s",
+				toolCall.ToolCallID, err,
+			),
+		}
+	}
+	return inputAny, nil
+}
+
+// buildWebSearchToolResultBlock constructs an Anthropic
+// web_search_tool_result content block from structured metadata.
+func buildWebSearchToolResultBlock(toolCallID string, searchMeta *WebSearchResultMetadata) anthropic.ContentBlockParamUnion {
+	resultBlocks := make([]anthropic.WebSearchResultBlockParam, 0, len(searchMeta.Results))
+	for _, r := range searchMeta.Results {
+		block := anthropic.WebSearchResultBlockParam{
+			URL:              r.URL,
+			Title:            r.Title,
+			EncryptedContent: r.EncryptedContent,
+		}
+		if r.PageAge != "" {
+			block.PageAge = param.NewOpt(r.PageAge)
+		}
+		resultBlocks = append(resultBlocks, block)
+	}
+	return anthropic.ContentBlockParamUnion{
+		OfWebSearchToolResult: &anthropic.WebSearchToolResultBlockParam{
+			ToolUseID: toolCallID,
+			Content: anthropic.WebSearchToolResultBlockParamContentUnion{
+				OfWebSearchToolResultBlockItem: resultBlocks,
+			},
+		},
+	}
 }
 
 func mapFinishReason(finishReason string) fantasy.FinishReason {
@@ -846,11 +1161,13 @@ func mapFinishReason(finishReason string) fantasy.FinishReason {
 
 // Generate implements fantasy.LanguageModel.
 func (a languageModel) Generate(ctx context.Context, call fantasy.Call) (*fantasy.Response, error) {
-	params, warnings, err := a.prepareParams(call)
+	params, rawTools, warnings, betaFlags, err := a.prepareParams(call)
 	if err != nil {
 		return nil, err
 	}
-	response, err := a.client.Messages.New(ctx, *params)
+	reqOpts := buildRequestOptions(call, rawTools, betaFlags)
+
+	response, err := a.client.Messages.New(ctx, *params, reqOpts...)
 	if err != nil {
 		return nil, toProviderErr(err)
 	}
@@ -903,6 +1220,56 @@ func (a languageModel) Generate(ctx context.Context, call fantasy.Call) (*fantas
 				Input:            string(toolUse.Input),
 				ProviderExecuted: false,
 			})
+		case "server_tool_use":
+			serverToolUse, ok := block.AsAny().(anthropic.ServerToolUseBlock)
+			if !ok {
+				continue
+			}
+			var inputStr string
+			if b, err := json.Marshal(serverToolUse.Input); err == nil {
+				inputStr = string(b)
+			}
+			content = append(content, fantasy.ToolCallContent{
+				ToolCallID:       serverToolUse.ID,
+				ToolName:         string(serverToolUse.Name),
+				Input:            inputStr,
+				ProviderExecuted: true,
+			})
+		case "web_search_tool_result":
+			webSearchResult, ok := block.AsAny().(anthropic.WebSearchToolResultBlock)
+			if !ok {
+				continue
+			}
+			// Extract search results as sources/citations, preserving
+			// encrypted_content for multi-turn round-tripping.
+			toolResult := fantasy.ToolResultContent{
+				ToolCallID:       webSearchResult.ToolUseID,
+				ToolName:         "web_search",
+				ProviderExecuted: true,
+			}
+			if items := webSearchResult.Content.OfWebSearchResultBlockArray; len(items) > 0 {
+				var metadataResults []WebSearchResultItem
+				for _, item := range items {
+					content = append(content, fantasy.SourceContent{
+						SourceType: fantasy.SourceTypeURL,
+						ID:         item.URL,
+						URL:        item.URL,
+						Title:      item.Title,
+					})
+					metadataResults = append(metadataResults, WebSearchResultItem{
+						URL:              item.URL,
+						Title:            item.Title,
+						EncryptedContent: item.EncryptedContent,
+						PageAge:          item.PageAge,
+					})
+				}
+				toolResult.ProviderMetadata = fantasy.ProviderMetadata{
+					Name: &WebSearchResultMetadata{
+						Results: metadataResults,
+					},
+				}
+			}
+			content = append(content, toolResult)
 		}
 	}
 
@@ -923,12 +1290,14 @@ func (a languageModel) Generate(ctx context.Context, call fantasy.Call) (*fantas
 
 // Stream implements fantasy.LanguageModel.
 func (a languageModel) Stream(ctx context.Context, call fantasy.Call) (fantasy.StreamResponse, error) {
-	params, warnings, err := a.prepareParams(call)
+	params, rawTools, warnings, betaFlags, err := a.prepareParams(call)
 	if err != nil {
 		return nil, err
 	}
 
-	stream := a.client.Messages.NewStreaming(ctx, *params)
+	reqOpts := buildRequestOptions(call, rawTools, betaFlags)
+
+	stream := a.client.Messages.NewStreaming(ctx, *params, reqOpts...)
 	acc := anthropic.Message{}
 	return func(yield func(fantasy.StreamPart) bool) {
 		if len(warnings) > 0 {
@@ -982,6 +1351,16 @@ func (a languageModel) Stream(ctx context.Context, call fantasy.Call) (fantasy.S
 					}) {
 						return
 					}
+				case "server_tool_use":
+					if !yield(fantasy.StreamPart{
+						Type:             fantasy.StreamPartTypeToolInputStart,
+						ID:               chunk.ContentBlock.ID,
+						ToolCallName:     chunk.ContentBlock.Name,
+						ToolCallInput:    "",
+						ProviderExecuted: true,
+					}) {
+						return
+					}
 				}
 			case "content_block_stop":
 				if len(acc.Content)-1 < int(chunk.Index) {
@@ -1015,6 +1394,67 @@ func (a languageModel) Stream(ctx context.Context, call fantasy.Call) (fantasy.S
 						ID:            contentBlock.ID,
 						ToolCallName:  contentBlock.Name,
 						ToolCallInput: string(contentBlock.Input),
+					}) {
+						return
+					}
+				case "server_tool_use":
+					if !yield(fantasy.StreamPart{
+						Type:             fantasy.StreamPartTypeToolInputEnd,
+						ID:               contentBlock.ID,
+						ProviderExecuted: true,
+					}) {
+						return
+					}
+					if !yield(fantasy.StreamPart{
+						Type:             fantasy.StreamPartTypeToolCall,
+						ID:               contentBlock.ID,
+						ToolCallName:     contentBlock.Name,
+						ToolCallInput:    string(contentBlock.Input),
+						ProviderExecuted: true,
+					}) {
+						return
+					}
+				case "web_search_tool_result":
+					// Read search results directly from the ContentBlockUnion
+					// struct fields instead of using AsAny(). The Anthropic SDK's
+					// Accumulate re-marshals the content block at content_block_stop,
+					// which corrupts JSON.raw for inline union types like
+					// WebSearchToolResultBlockContentUnion. The struct fields
+					// themselves remain correctly populated from content_block_start.
+					var metadataResults []WebSearchResultItem
+					var providerMeta fantasy.ProviderMetadata
+					if items := contentBlock.Content.OfWebSearchResultBlockArray; len(items) > 0 {
+						for _, item := range items {
+							if !yield(fantasy.StreamPart{
+								Type:       fantasy.StreamPartTypeSource,
+								ID:         item.URL,
+								SourceType: fantasy.SourceTypeURL,
+								URL:        item.URL,
+								Title:      item.Title,
+							}) {
+								return
+							}
+							metadataResults = append(metadataResults, WebSearchResultItem{
+								URL:              item.URL,
+								Title:            item.Title,
+								EncryptedContent: item.EncryptedContent,
+								PageAge:          item.PageAge,
+							})
+						}
+					}
+					if len(metadataResults) > 0 {
+						providerMeta = fantasy.ProviderMetadata{
+							Name: &WebSearchResultMetadata{
+								Results: metadataResults,
+							},
+						}
+					}
+					if !yield(fantasy.StreamPart{
+						Type:             fantasy.StreamPartTypeToolResult,
+						ID:               contentBlock.ToolUseID,
+						ToolCallName:     "web_search",
+						ProviderExecuted: true,
+						ProviderMetadata: providerMeta,
 					}) {
 						return
 					}

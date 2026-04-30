@@ -33,15 +33,14 @@ type ResponseContent []Content
 
 // Text returns the text content of the response.
 func (r ResponseContent) Text() string {
-	var builder strings.Builder
 	for _, c := range r {
 		if c.GetType() == ContentTypeText {
 			if textContent, ok := AsContentType[TextContent](c); ok {
-				builder.WriteString(textContent.Text)
+				return textContent.Text
 			}
 		}
 	}
-	return builder.String()
+	return ""
 }
 
 // Reasoning returns all reasoning content parts.
@@ -218,6 +217,9 @@ type Call struct {
 	FrequencyPenalty *float64    `json:"frequency_penalty"`
 	Tools            []Tool      `json:"tools"`
 	ToolChoice       *ToolChoice `json:"tool_choice"`
+
+	// UserAgent overrides the provider-level User-Agent header for this call.
+	UserAgent string `json:"-"`
 
 	// for provider specific options, the key is the provider id
 	ProviderOptions ProviderOptions `json:"provider_options"`

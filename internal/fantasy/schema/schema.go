@@ -4,8 +4,8 @@ package schema
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
-	jsonv2 "github.com/go-json-experiment/json"
 	"reflect"
 	"slices"
 	"strings"
@@ -122,8 +122,8 @@ func generateSchemaRecursive(t reflect.Type, visited map[reflect.Type]bool) Sche
 			Type:       "object",
 			Properties: make(map[string]*Schema),
 		}
-		for i := range t.NumField() {
-			field := t.Field(i)
+		for field := range t.Fields() {
+			field := field
 
 			if !field.IsExported() {
 				continue
@@ -259,7 +259,7 @@ func ParsePartialJSON(text string) (any, ParseState, error) {
 	}
 
 	var result any
-	if err := jsonv2.Unmarshal([]byte(text), &result); err == nil {
+	if err := json.Unmarshal([]byte(text), &result); err == nil {
 		return result, ParseStateSuccessful, nil
 	}
 
@@ -268,7 +268,7 @@ func ParsePartialJSON(text string) (any, ParseState, error) {
 		return nil, ParseStateFailed, fmt.Errorf("json repair failed: %w", err)
 	}
 
-	if err := jsonv2.Unmarshal([]byte(repaired), &result); err != nil {
+	if err := json.Unmarshal([]byte(repaired), &result); err != nil {
 		return nil, ParseStateFailed, fmt.Errorf("failed to parse repaired json: %w", err)
 	}
 
@@ -312,18 +312,15 @@ func ValidateAgainstSchema(obj any, schema Schema) error {
 	return validateAgainstSchema(obj, schema)
 }
 
-// ValidateAgainstSchemaMap validates obj against a JSON Schema expressed as a raw
-// map[string]any (e.g. {"type":"object","properties":{...},"required":[...]}).
-// This is a convenience wrapper for use sites that hold the schema as a map rather
-// than the typed Schema struct.
+// ValidateAgainstSchemaMap validates a parsed object against a raw JSON Schema map.
 func ValidateAgainstSchemaMap(obj any, schemaMap map[string]any) error {
-	schemaBytes, err := jsonv2.Marshal(schemaMap)
+	jsonSchemaBytes, err := json.Marshal(schemaMap)
 	if err != nil {
-		return fmt.Errorf("failed to marshal schema map: %w", err)
+		return fmt.Errorf("failed to marshal schema: %w", err)
 	}
 
 	compiler := jsonschema.NewCompiler()
-	validator, err := compiler.Compile(schemaBytes)
+	validator, err := compiler.Compile(jsonSchemaBytes)
 	if err != nil {
 		return fmt.Errorf("invalid schema: %w", err)
 	}
@@ -341,7 +338,7 @@ func ValidateAgainstSchemaMap(obj any, schemaMap map[string]any) error {
 }
 
 func validateAgainstSchema(obj any, schema Schema) error {
-	jsonSchemaBytes, err := jsonv2.Marshal(schema)
+	jsonSchemaBytes, err := json.Marshal(schema)
 	if err != nil {
 		return fmt.Errorf("failed to marshal schema: %w", err)
 	}

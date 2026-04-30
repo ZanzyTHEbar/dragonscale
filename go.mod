@@ -1,11 +1,11 @@
 module github.com/ZanzyTHEbar/dragonscale
 
-go 1.26
+go 1.26.2
 
-replace charm.land/fantasy v0.8.1 => ./internal/fantasy
+replace charm.land/fantasy v0.22.0 => ./internal/fantasy
 
 require (
-	charm.land/fantasy v0.8.1
+	charm.land/fantasy v0.22.0
 	github.com/ZanzyTHEbar/assert-lib v1.3.1
 	github.com/ZanzyTHEbar/errbuilder-go v1.5.1
 	github.com/adhocore/gronx v1.19.6
@@ -31,9 +31,9 @@ require (
 	github.com/tencent-connect/botgo v0.2.1
 	github.com/tetratelabs/wazero v1.11.0
 	github.com/tursodatabase/go-libsql v0.0.0-20251219133454-43644db490ff
-	golang.org/x/crypto v0.48.0
-	golang.org/x/oauth2 v0.35.0
-	golang.org/x/sync v0.19.0
+	golang.org/x/crypto v0.50.0
+	golang.org/x/oauth2 v0.36.0
+	golang.org/x/sync v0.20.0
 )
 
 require (
@@ -48,6 +48,7 @@ require (
 	github.com/bytedance/gopkg v0.1.3 // indirect
 	github.com/bytedance/sonic v1.15.0 // indirect
 	github.com/bytedance/sonic/loader v0.5.0 // indirect
+	github.com/charmbracelet/openai-go v0.0.0-20260319145158-d0740cc34266 // indirect
 	github.com/charmbracelet/x/exp/slice v0.0.0-20250904123553-b4e2667e5ad5 // indirect
 	github.com/charmbracelet/x/json v0.2.0 // indirect
 	github.com/cloudwego/base64x v0.1.6 // indirect
@@ -58,13 +59,12 @@ require (
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/grbit/go-json v0.11.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
-	github.com/kaptinlin/go-i18n v0.2.3 // indirect
-	github.com/kaptinlin/jsonpointer v0.4.9 // indirect
-	github.com/kaptinlin/jsonschema v0.6.10 // indirect
-	github.com/kaptinlin/messageformat-go v0.4.9 // indirect
-	github.com/klauspost/compress v1.18.4 // indirect
+	github.com/kaptinlin/go-i18n v0.4.4 // indirect
+	github.com/kaptinlin/jsonpointer v0.4.19 // indirect
+	github.com/kaptinlin/jsonschema v0.7.11 // indirect
+	github.com/kaptinlin/messageformat-go v0.6.0 // indirect
+	github.com/klauspost/compress v1.18.5 // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
-	github.com/kr/pretty v0.3.1 // indirect
 	github.com/libsql/sqlite-antlr4-parser v0.0.0-20240327125255-dbf53b6cbf06 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
@@ -80,11 +80,12 @@ require (
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/valyala/fasthttp v1.69.0 // indirect
 	github.com/valyala/fastjson v1.6.7 // indirect
+	go.uber.org/mock v0.6.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	golang.org/x/arch v0.24.0 // indirect
 	golang.org/x/exp v0.0.0-20251023183803-a4bb9ffd2546 // indirect
-	golang.org/x/net v0.50.0 // indirect
-	golang.org/x/sys v0.41.0 // indirect
-	golang.org/x/text v0.34.0 // indirect
+	golang.org/x/net v0.53.0 // indirect
+	golang.org/x/sys v0.43.0 // indirect
+	golang.org/x/text v0.36.0 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 )
