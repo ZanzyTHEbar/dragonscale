@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/ZanzyTHEbar/dragonscale/pkg"
@@ -14,6 +15,12 @@ const (
 	EvalConfigEnvVar     = "DRAGONSCALE_EVAL_CONFIG"
 	EvalBaseConfigEnvVar = "DRAGONSCALE_EVAL_BASE_CONFIG"
 	EvalHostHomeEnvVar   = "DRAGONSCALE_EVAL_HOST_HOME"
+
+	evalDefaultModel         = "glm-4.7"
+	evalOpenRouterModel      = "openai/gpt-4o-mini"
+	evalOpenAIModel          = "gpt-4o-mini"
+	evalOpenRouterAPIBaseURL = "https://openrouter.ai/api/v1"
+	evalOpenAIAPIBaseURL     = "https://api.openai.com/v1"
 )
 
 type LoadConfigOptions struct {
@@ -80,6 +87,7 @@ func LoadResolvedConfig(opts LoadConfigOptions) (*config.Config, error) {
 		if err := config.OverlayConfigFile(cfg, opts.OverlayConfigPath); err != nil {
 			return nil, fmt.Errorf("load config overlay: %w", err)
 		}
+		config.ApplyEnvOverrides(cfg)
 	}
 
 	EnsureMinProviderTimeout(cfg, opts.MinProviderTimeout)
@@ -87,10 +95,143 @@ func LoadResolvedConfig(opts LoadConfigOptions) (*config.Config, error) {
 }
 
 func LoadEvalConfig(minTimeout time.Duration) (*config.Config, error) {
-	return LoadResolvedConfig(LoadConfigOptions{
+	cfg, err := LoadResolvedConfig(LoadConfigOptions{
 		OverlayConfigPath:  os.Getenv(EvalConfigEnvVar),
 		MinProviderTimeout: minTimeout,
 	})
+	if err != nil {
+		return nil, err
+	}
+	ApplyEvalProviderDefaults(cfg)
+	EnsureMinProviderTimeout(cfg, minTimeout)
+	return cfg, nil
+}
+
+func ApplyEvalProviderDefaults(cfg *config.Config) {
+	if cfg == nil {
+		return
+	}
+
+	if cfg.Providers.OpenRouter.APIKey == "" {
+		cfg.Providers.OpenRouter.APIKey = lookupFirstEnv("DRAGONSCALE_PROVIDERS_OPENROUTER_API_KEY", "OPENROUTER_API_KEY")
+	}
+	if cfg.Providers.OpenAI.APIKey == "" {
+		cfg.Providers.OpenAI.APIKey = lookupFirstEnv("DRAGONSCALE_PROVIDERS_OPENAI_API_KEY", "OPENAI_API_KEY")
+	}
+	if provider := lookupFirstEnv("DRAGONSCALE_AGENTS_DEFAULTS_PROVIDER"); provider != "" {
+		cfg.Agents.Defaults.Provider = provider
+	}
+	if model := lookupFirstEnv("DRAGONSCALE_AGENTS_DEFAULTS_MODEL"); model != "" {
+		cfg.Agents.Defaults.Model = model
+	}
+
+	if hasUsableEvalProvider(cfg) {
+		return
+	}
+
+	if cfg.Providers.OpenRouter.APIKey != "" {
+		cfg.Agents.Defaults.Provider = "openrouter"
+		if cfg.Providers.OpenRouter.APIBase == "" {
+			cfg.Providers.OpenRouter.APIBase = evalOpenRouterAPIBaseURL
+		}
+		if isDefaultOrEmptyEvalModel(cfg.Agents.Defaults.Model) {
+			cfg.Agents.Defaults.Model = evalOpenRouterModel
+		}
+		return
+	}
+
+	if cfg.Providers.OpenAI.APIKey != "" {
+		cfg.Agents.Defaults.Provider = "openai"
+		if cfg.Providers.OpenAI.APIBase == "" {
+			cfg.Providers.OpenAI.APIBase = evalOpenAIAPIBaseURL
+		}
+		if isDefaultOrEmptyEvalModel(cfg.Agents.Defaults.Model) {
+			cfg.Agents.Defaults.Model = evalOpenAIModel
+		}
+	}
+}
+
+func lookupFirstEnv(keys ...string) string {
+	for _, key := range keys {
+		if value := strings.TrimSpace(os.Getenv(key)); value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func isDefaultOrEmptyEvalModel(model string) bool {
+	switch strings.TrimSpace(model) {
+	case "", evalDefaultModel:
+		return true
+	default:
+		return false
+	}
+}
+
+func hasUsableEvalProvider(cfg *config.Config) bool {
+	provider := strings.ToLower(strings.TrimSpace(cfg.Agents.Defaults.Provider))
+	model := strings.ToLower(strings.TrimSpace(cfg.Agents.Defaults.Model))
+
+	if provider != "" {
+		return evalProviderConfigured(cfg, provider)
+	}
+
+	switch {
+	case strings.HasPrefix(model, "openai/") || strings.Contains(model, "gpt"):
+		return providerKeyConfigured(cfg.Providers.OpenAI.APIKey)
+	case strings.HasPrefix(model, "openrouter/"), strings.HasPrefix(model, "meta-llama/"), strings.HasPrefix(model, "deepseek/"), strings.HasPrefix(model, "google/"):
+		return providerKeyConfigured(cfg.Providers.OpenRouter.APIKey)
+	case strings.Contains(model, "glm") || strings.Contains(model, "zhipu") || strings.Contains(model, "zai"):
+		return providerKeyConfigured(cfg.Providers.Zhipu.APIKey)
+	case strings.Contains(model, "claude") || strings.HasPrefix(model, "anthropic/"):
+		return providerKeyConfigured(cfg.Providers.Anthropic.APIKey)
+	case strings.Contains(model, "gemini") || strings.HasPrefix(model, "gemini/"):
+		return providerKeyConfigured(cfg.Providers.Gemini.APIKey)
+	}
+
+	return false
+}
+
+func evalProviderConfigured(cfg *config.Config, provider string) bool {
+	switch provider {
+	case "openrouter":
+		return providerKeyConfigured(cfg.Providers.OpenRouter.APIKey)
+	case "openai", "gpt":
+		return providerKeyConfigured(cfg.Providers.OpenAI.APIKey)
+	case "anthropic", "claude":
+		return providerKeyConfigured(cfg.Providers.Anthropic.APIKey)
+	case "zhipu", "glm":
+		return providerKeyConfigured(cfg.Providers.Zhipu.APIKey)
+	case "gemini", "google":
+		return providerKeyConfigured(cfg.Providers.Gemini.APIKey)
+	case "groq":
+		return providerKeyConfigured(cfg.Providers.Groq.APIKey)
+	case "vllm":
+		return providerBaseConfigured(cfg.Providers.VLLM.APIBase)
+	case "ollama":
+		return providerBaseConfigured(cfg.Providers.Ollama.APIBase)
+	case "deepseek":
+		return providerKeyConfigured(cfg.Providers.DeepSeek.APIKey)
+	case "moonshot", "kimi":
+		return providerKeyConfigured(cfg.Providers.Moonshot.APIKey)
+	case "nvidia":
+		return providerKeyConfigured(cfg.Providers.Nvidia.APIKey)
+	case "shengsuanyun":
+		return providerKeyConfigured(cfg.Providers.ShengSuanYun.APIKey)
+	case "github_copilot":
+		return providerKeyConfigured(cfg.Providers.GitHubCopilot.APIKey)
+	default:
+		return false
+	}
+}
+
+func providerKeyConfigured(apiKey string) bool {
+	return strings.TrimSpace(apiKey) != ""
+}
+
+func providerBaseConfigured(apiBase string) bool {
+	return strings.TrimSpace(apiBase) != ""
 }
 
 func EnsureMinProviderTimeout(cfg *config.Config, minTimeout time.Duration) {

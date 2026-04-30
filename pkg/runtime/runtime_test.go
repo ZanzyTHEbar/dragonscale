@@ -204,6 +204,170 @@ func TestLoadResolvedConfig_AppliesOverlayAndKeepsBaseValues(t *testing.T) {
 	assert.True(t, cfg.Agents.Defaults.RestrictToSandbox)
 }
 
+func TestLoadResolvedConfig_ReappliesProviderEnvOverridesAfterOverlay(t *testing.T) {
+	dir := t.TempDir()
+	basePath := filepath.Join(dir, "base.json")
+	overlayPath := filepath.Join(dir, "overlay.json")
+
+	base := []byte(`{
+	  "providers": {"openai": {"api_key": "base-key"}}
+	}`)
+	overlay := []byte(`{
+	  "providers": {"openai": {"api_key": "overlay-key", "timeout": 15}}
+	}`)
+	require.NoError(t, os.WriteFile(basePath, base, 0o644))
+	require.NoError(t, os.WriteFile(overlayPath, overlay, 0o644))
+	t.Setenv("DRAGONSCALE_PROVIDERS_OPENAI_API_KEY", "env-key")
+	t.Setenv("DRAGONSCALE_PROVIDERS_OPENAI_TIMEOUT", "60")
+
+	cfg, err := LoadResolvedConfig(LoadConfigOptions{
+		BaseConfigPath:    basePath,
+		OverlayConfigPath: overlayPath,
+	})
+	require.NoError(t, err)
+	assert.Empty(t, cmp.Diff("env-key", cfg.Providers.OpenAI.APIKey))
+	assert.Empty(t, cmp.Diff(60, cfg.Providers.OpenAI.Timeout))
+}
+
+func TestLoadResolvedConfig_ReappliesProviderSpecificEnvOverridesAfterOverlay(t *testing.T) {
+	dir := t.TempDir()
+	basePath := filepath.Join(dir, "base.json")
+	overlayPath := filepath.Join(dir, "overlay.json")
+
+	base := []byte(`{
+	  "providers": {"openai": {"web_search": true}}
+	}`)
+	overlay := []byte(`{
+	  "providers": {"openai": {"web_search": false}}
+	}`)
+	require.NoError(t, os.WriteFile(basePath, base, 0o644))
+	require.NoError(t, os.WriteFile(overlayPath, overlay, 0o644))
+	t.Setenv("DRAGONSCALE_PROVIDERS_OPENAI_WEB_SEARCH", "true")
+
+	cfg, err := LoadResolvedConfig(LoadConfigOptions{
+		BaseConfigPath:    basePath,
+		OverlayConfigPath: overlayPath,
+	})
+	require.NoError(t, err)
+	assert.True(t, cfg.Providers.OpenAI.WebSearch)
+}
+
+func TestLoadEvalConfig_DefaultsToOpenRouterAlias(t *testing.T) {
+	basePath := writeEvalBaseConfig(t, `{}`)
+	t.Setenv(EvalBaseConfigEnvVar, basePath)
+	t.Setenv(EvalConfigEnvVar, "")
+	t.Setenv("OPENROUTER_API_KEY", "test-openrouter-key")
+
+	cfg, err := LoadEvalConfig(0)
+	require.NoError(t, err)
+	assert.Empty(t, cmp.Diff("openrouter", cfg.Agents.Defaults.Provider))
+	assert.Empty(t, cmp.Diff(evalOpenRouterModel, cfg.Agents.Defaults.Model))
+	assert.Empty(t, cmp.Diff("test-openrouter-key", cfg.Providers.OpenRouter.APIKey))
+	assert.Empty(t, cmp.Diff(evalOpenRouterAPIBaseURL, cfg.Providers.OpenRouter.APIBase))
+}
+
+func TestLoadEvalConfig_DefaultsToOpenAIAliasWhenNoOpenRouter(t *testing.T) {
+	basePath := writeEvalBaseConfig(t, `{}`)
+	t.Setenv(EvalBaseConfigEnvVar, basePath)
+	t.Setenv(EvalConfigEnvVar, "")
+	t.Setenv("OPENAI_API_KEY", "test-openai-key")
+
+	cfg, err := LoadEvalConfig(0)
+	require.NoError(t, err)
+	assert.Empty(t, cmp.Diff("openai", cfg.Agents.Defaults.Provider))
+	assert.Empty(t, cmp.Diff(evalOpenAIModel, cfg.Agents.Defaults.Model))
+	assert.Empty(t, cmp.Diff("test-openai-key", cfg.Providers.OpenAI.APIKey))
+	assert.Empty(t, cmp.Diff(evalOpenAIAPIBaseURL, cfg.Providers.OpenAI.APIBase))
+}
+
+func TestLoadEvalConfig_PrefersDragonScaleProviderEnvOverAlias(t *testing.T) {
+	basePath := writeEvalBaseConfig(t, `{}`)
+	t.Setenv(EvalBaseConfigEnvVar, basePath)
+	t.Setenv(EvalConfigEnvVar, "")
+	t.Setenv("DRAGONSCALE_PROVIDERS_OPENROUTER_API_KEY", "dragon-key")
+	t.Setenv("OPENROUTER_API_KEY", "alias-key")
+
+	cfg, err := LoadEvalConfig(0)
+	require.NoError(t, err)
+	assert.Empty(t, cmp.Diff("openrouter", cfg.Agents.Defaults.Provider))
+	assert.Empty(t, cmp.Diff("dragon-key", cfg.Providers.OpenRouter.APIKey))
+}
+
+func TestLoadEvalConfig_DoesNotOverrideUsableBaseConfigProvider(t *testing.T) {
+	basePath := writeEvalBaseConfig(t, `{
+	  "providers": {"openai": {"api_key": "base-openai-key"}},
+	  "agents": {"defaults": {"provider": "openai", "model": "gpt-4o"}}
+	}`)
+	t.Setenv(EvalBaseConfigEnvVar, basePath)
+	t.Setenv(EvalConfigEnvVar, "")
+	t.Setenv("OPENROUTER_API_KEY", "test-openrouter-key")
+
+	cfg, err := LoadEvalConfig(0)
+	require.NoError(t, err)
+	assert.Empty(t, cmp.Diff("openai", cfg.Agents.Defaults.Provider))
+	assert.Empty(t, cmp.Diff("gpt-4o", cfg.Agents.Defaults.Model))
+	assert.Empty(t, cmp.Diff("base-openai-key", cfg.Providers.OpenAI.APIKey))
+}
+
+func TestLoadEvalConfig_OpenRouterPreferredOverOpenAI(t *testing.T) {
+	basePath := writeEvalBaseConfig(t, `{}`)
+	t.Setenv(EvalBaseConfigEnvVar, basePath)
+	t.Setenv(EvalConfigEnvVar, "")
+	t.Setenv("OPENROUTER_API_KEY", "test-openrouter-key")
+	t.Setenv("OPENAI_API_KEY", "test-openai-key")
+
+	cfg, err := LoadEvalConfig(0)
+	require.NoError(t, err)
+	assert.Empty(t, cmp.Diff("openrouter", cfg.Agents.Defaults.Provider))
+	assert.Empty(t, cmp.Diff(evalOpenRouterModel, cfg.Agents.Defaults.Model))
+	assert.Empty(t, cmp.Diff("test-openrouter-key", cfg.Providers.OpenRouter.APIKey))
+	assert.Empty(t, cmp.Diff("test-openai-key", cfg.Providers.OpenAI.APIKey))
+}
+
+func TestLoadEvalConfig_RemoteAPIBaseOnlyDoesNotBlockAliasFallback(t *testing.T) {
+	basePath := writeEvalBaseConfig(t, `{
+	  "providers": {"zhipu": {"api_base": "https://zhipu.example/v1"}},
+	  "agents": {"defaults": {"provider": "zhipu", "model": "glm-4.7"}}
+	}`)
+	t.Setenv(EvalBaseConfigEnvVar, basePath)
+	t.Setenv(EvalConfigEnvVar, "")
+	t.Setenv("OPENROUTER_API_KEY", "test-openrouter-key")
+
+	cfg, err := LoadEvalConfig(0)
+	require.NoError(t, err)
+	assert.Empty(t, cmp.Diff("openrouter", cfg.Agents.Defaults.Provider))
+	assert.Empty(t, cmp.Diff(evalOpenRouterModel, cfg.Agents.Defaults.Model))
+	assert.Empty(t, cmp.Diff("test-openrouter-key", cfg.Providers.OpenRouter.APIKey))
+}
+
+func TestLoadEvalConfig_AgentEnvOverridesOverlayForEval(t *testing.T) {
+	dir := t.TempDir()
+	basePath := filepath.Join(dir, "base.json")
+	overlayPath := filepath.Join(dir, "overlay.json")
+	require.NoError(t, os.WriteFile(basePath, []byte(`{
+	  "providers": {"openrouter": {"api_key": "base-openrouter-key"}}
+	}`), 0o644))
+	require.NoError(t, os.WriteFile(overlayPath, []byte(`{
+	  "agents": {"defaults": {"provider": "openai", "model": "gpt-4o"}}
+	}`), 0o644))
+	t.Setenv(EvalBaseConfigEnvVar, basePath)
+	t.Setenv(EvalConfigEnvVar, overlayPath)
+	t.Setenv("DRAGONSCALE_AGENTS_DEFAULTS_PROVIDER", "openrouter")
+	t.Setenv("DRAGONSCALE_AGENTS_DEFAULTS_MODEL", "openai/gpt-4o-mini")
+
+	cfg, err := LoadEvalConfig(0)
+	require.NoError(t, err)
+	assert.Empty(t, cmp.Diff("openrouter", cfg.Agents.Defaults.Provider))
+	assert.Empty(t, cmp.Diff("openai/gpt-4o-mini", cfg.Agents.Defaults.Model))
+}
+
+func writeEvalBaseConfig(t *testing.T, content string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "config.json")
+	require.NoError(t, os.WriteFile(path, []byte(content), 0o644))
+	return path
+}
+
 func TestEnsureMinProviderTimeout_SetsFloor(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()

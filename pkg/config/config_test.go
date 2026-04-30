@@ -406,6 +406,48 @@ func TestLoadConfig_GatewayHostEnvOverrideWithoutConfigFile(t *testing.T) {
 	}
 }
 
+func TestLoadConfig_ProviderEnvOverride(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.json")
+	if err := os.WriteFile(configPath, []byte(`{"providers":{"openai":{"api_key":"file-key","timeout":15}}}`), 0o600); err != nil {
+		t.Fatalf("WriteFile() error: %v", err)
+	}
+	t.Setenv("DRAGONSCALE_PROVIDERS_OPENAI_API_KEY", "env-key")
+	t.Setenv("DRAGONSCALE_PROVIDERS_OPENAI_API_BASE", "https://example.invalid/v1")
+	t.Setenv("DRAGONSCALE_PROVIDERS_OPENAI_TIMEOUT", "45")
+
+	cfg, err := LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error: %v", err)
+	}
+	if cfg.Providers.OpenAI.APIKey != "env-key" {
+		t.Fatalf("expected env override api key, got %q", cfg.Providers.OpenAI.APIKey)
+	}
+	if cfg.Providers.OpenAI.APIBase != "https://example.invalid/v1" {
+		t.Fatalf("expected env override api base, got %q", cfg.Providers.OpenAI.APIBase)
+	}
+	if cfg.Providers.OpenAI.Timeout != 45 {
+		t.Fatalf("expected env override timeout 45, got %d", cfg.Providers.OpenAI.Timeout)
+	}
+}
+
+func TestLoadConfig_OpenAIWebSearchEnvOverride(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.json")
+	if err := os.WriteFile(configPath, []byte(`{"providers":{"openai":{"web_search":false}}}`), 0o600); err != nil {
+		t.Fatalf("WriteFile() error: %v", err)
+	}
+	t.Setenv("DRAGONSCALE_PROVIDERS_OPENAI_WEB_SEARCH", "true")
+
+	cfg, err := LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error: %v", err)
+	}
+	if !cfg.Providers.OpenAI.WebSearch {
+		t.Fatal("expected env override to re-enable OpenAI web_search")
+	}
+}
+
 func TestValidate_GatewayPortZeroWarns(t *testing.T) {
 	t.Parallel()
 	cfg := DefaultConfig()

@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"sync"
 
 	"github.com/ZanzyTHEbar/dragonscale/pkg"
@@ -324,6 +325,11 @@ type OpenAIProviderConfig struct {
 	WebSearch bool `json:"web_search" env:"DRAGONSCALE_PROVIDERS_OPENAI_WEB_SEARCH"`
 }
 
+type providerEnvBinding struct {
+	name   string
+	target *ProviderConfig
+}
+
 type GatewayConfig struct {
 	Host string `json:"host" env:"DRAGONSCALE_GATEWAY_HOST"`
 	Port int    `json:"port" env:"DRAGONSCALE_GATEWAY_PORT"`
@@ -525,6 +531,7 @@ func LoadConfig(path string) (*Config, error) {
 	if err := env.Parse(cfg); err != nil {
 		return nil, err
 	}
+	ApplyEnvOverrides(cfg)
 
 	if warnings := cfg.Validate(); len(warnings) > 0 {
 		for _, w := range warnings {
@@ -533,6 +540,83 @@ func LoadConfig(path string) (*Config, error) {
 	}
 
 	return cfg, nil
+}
+
+func ApplyEnvOverrides(cfg *Config) {
+	if cfg == nil {
+		return
+	}
+	applyProviderEnvOverrides(cfg)
+	applyProviderSpecificEnvOverrides(cfg)
+}
+
+func ApplyProviderEnvOverrides(cfg *Config) {
+	applyProviderEnvOverrides(cfg)
+}
+
+func applyProviderEnvOverrides(cfg *Config) {
+	if cfg == nil {
+		return
+	}
+
+	for _, binding := range providerEnvBindings(cfg) {
+		applyProviderEnv(binding.name, binding.target)
+	}
+}
+
+func applyProviderSpecificEnvOverrides(cfg *Config) {
+	if value, ok := os.LookupEnv("DRAGONSCALE_PROVIDERS_OPENAI_WEB_SEARCH"); ok {
+		if enabled, err := strconv.ParseBool(value); err == nil {
+			cfg.Providers.OpenAI.WebSearch = enabled
+		}
+	}
+}
+
+func providerEnvBindings(cfg *Config) []providerEnvBinding {
+	return []providerEnvBinding{
+		{name: "ANTHROPIC", target: &cfg.Providers.Anthropic},
+		{name: "OPENAI", target: &cfg.Providers.OpenAI.ProviderConfig},
+		{name: "OPENROUTER", target: &cfg.Providers.OpenRouter},
+		{name: "GROQ", target: &cfg.Providers.Groq},
+		{name: "ZHIPU", target: &cfg.Providers.Zhipu},
+		{name: "VLLM", target: &cfg.Providers.VLLM},
+		{name: "GEMINI", target: &cfg.Providers.Gemini},
+		{name: "NVIDIA", target: &cfg.Providers.Nvidia},
+		{name: "OLLAMA", target: &cfg.Providers.Ollama},
+		{name: "MOONSHOT", target: &cfg.Providers.Moonshot},
+		{name: "SHENGSUANYUN", target: &cfg.Providers.ShengSuanYun},
+		{name: "DEEPSEEK", target: &cfg.Providers.DeepSeek},
+		{name: "GITHUB_COPILOT", target: &cfg.Providers.GitHubCopilot},
+	}
+}
+
+func applyProviderEnv(name string, target *ProviderConfig) {
+	if target == nil {
+		return
+	}
+
+	prefix := "DRAGONSCALE_PROVIDERS_" + name + "_"
+
+	if value, ok := os.LookupEnv(prefix + "API_KEY"); ok {
+		target.APIKey = value
+	}
+	if value, ok := os.LookupEnv(prefix + "API_BASE"); ok {
+		target.APIBase = value
+	}
+	if value, ok := os.LookupEnv(prefix + "PROXY"); ok {
+		target.Proxy = value
+	}
+	if value, ok := os.LookupEnv(prefix + "AUTH_METHOD"); ok {
+		target.AuthMethod = value
+	}
+	if value, ok := os.LookupEnv(prefix + "CONNECT_MODE"); ok {
+		target.ConnectMode = value
+	}
+	if value, ok := os.LookupEnv(prefix + "TIMEOUT"); ok {
+		if timeout, err := strconv.Atoi(value); err == nil {
+			target.Timeout = timeout
+		}
+	}
 }
 
 // Validate checks configuration for common issues. Returns a list of
