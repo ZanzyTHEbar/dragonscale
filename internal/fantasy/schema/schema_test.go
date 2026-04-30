@@ -4,6 +4,7 @@ import (
 	"reflect"
 	"testing"
 
+	"charm.land/fantasy/internal/testcmp"
 	"github.com/stretchr/testify/require"
 )
 
@@ -22,15 +23,11 @@ func TestEnumSupport(t *testing.T) {
 	// Check units field has enum values
 	unitsSchema := schema.Properties["units"]
 	require.NotNil(t, unitsSchema, "Expected units property to exist")
-	require.Len(t, unitsSchema.Enum, 3)
-	expectedUnits := []string{"celsius", "fahrenheit", "kelvin"}
-	for i, expected := range expectedUnits {
-		require.Equal(t, expected, unitsSchema.Enum[i])
-	}
+	testcmp.RequireEqual(t, []any{"celsius", "fahrenheit", "kelvin"}, unitsSchema.Enum)
 
 	// Check required fields (format should not be required due to omitempty)
 	expectedRequired := []string{"location", "units"}
-	require.Len(t, schema.Required, len(expectedRequired))
+	testcmp.RequireEqual(t, expectedRequired, schema.Required)
 }
 
 func TestSchemaToParameters(t *testing.T) {
@@ -62,26 +59,28 @@ func TestSchemaToParameters(t *testing.T) {
 
 	params := ToParameters(testSchema)
 
-	// Check name parameter
-	nameParam, ok := params["name"].(map[string]any)
-	require.True(t, ok, "Expected name parameter to exist")
-	require.Equal(t, "string", nameParam["type"])
-	require.Equal(t, "The name field", nameParam["description"])
-
-	// Check age parameter with min/max
-	ageParam, ok := params["age"].(map[string]any)
-	require.True(t, ok, "Expected age parameter to exist")
-	require.Equal(t, "integer", ageParam["type"])
-	require.Equal(t, 0.0, ageParam["minimum"])
-	require.Equal(t, 120.0, ageParam["maximum"])
-
-	// Check priority parameter with enum
-	priorityParam, ok := params["priority"].(map[string]any)
-	require.True(t, ok, "Expected priority parameter to exist")
-	require.Equal(t, "string", priorityParam["type"])
-	enumValues, ok := priorityParam["enum"].([]any)
-	require.True(t, ok)
-	require.Len(t, enumValues, 3)
+	expected := map[string]any{
+		"name": map[string]any{
+			"type":        "string",
+			"description": "The name field",
+		},
+		"age": map[string]any{
+			"type":    "integer",
+			"minimum": 0.0,
+			"maximum": 120.0,
+		},
+		"tags": map[string]any{
+			"type": "array",
+			"items": map[string]any{
+				"type": "string",
+			},
+		},
+		"priority": map[string]any{
+			"type": "string",
+			"enum": []any{"low", "medium", "high"},
+		},
+	}
+	testcmp.RequireEqual(t, expected, params)
 }
 
 func TestGenerateSchemaBasicTypes(t *testing.T) {
@@ -133,7 +132,7 @@ func TestGenerateSchemaBasicTypes(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			schema := Generate(reflect.TypeOf(tt.input))
-			require.Equal(t, tt.expected.Type, schema.Type)
+			testcmp.RequireEqual(t, tt.expected, schema)
 		})
 	}
 }
@@ -176,9 +175,8 @@ func TestGenerateSchemaArrayTypes(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			schema := Generate(reflect.TypeOf(tt.input))
-			require.Equal(t, tt.expected.Type, schema.Type)
 			require.NotNil(t, schema.Items, "Expected items schema to exist")
-			require.Equal(t, tt.expected.Items.Type, schema.Items.Type)
+			testcmp.RequireEqual(t, tt.expected, schema)
 		})
 	}
 }
@@ -260,8 +258,7 @@ func TestGenerateSchemaStructTypes(t *testing.T) {
 			name:  "struct with omitempty",
 			input: StructWithOmitEmpty{},
 			validate: func(t *testing.T, schema Schema) {
-				require.Len(t, schema.Required, 1)
-				require.Equal(t, "required", schema.Required[0])
+				testcmp.RequireEqual(t, []string{"required"}, schema.Required)
 			},
 		},
 		{
@@ -304,11 +301,16 @@ func TestGenerateSchemaPointerTypes(t *testing.T) {
 
 	require.Equal(t, "object", schema.Type)
 
-	require.NotNil(t, schema.Properties["name"], "Expected name property to exist")
-	require.Equal(t, "string", schema.Properties["name"].Type)
-
-	require.NotNil(t, schema.Properties["age"], "Expected age property to exist")
-	require.Equal(t, "integer", schema.Properties["age"].Type)
+	actual := map[string]string{}
+	for _, field := range []string{"name", "age"} {
+		fieldSchema := schema.Properties[field]
+		require.NotNil(t, fieldSchema, "Expected %s property to exist", field)
+		actual[field] = fieldSchema.Type
+	}
+	testcmp.RequireEqual(t, map[string]string{
+		"name": "string",
+		"age":  "integer",
+	}, actual)
 }
 
 func TestGenerateSchemaNestedStructs(t *testing.T) {
@@ -333,8 +335,16 @@ func TestGenerateSchemaNestedStructs(t *testing.T) {
 	addressSchema := schema.Properties["address"]
 	require.Equal(t, "object", addressSchema.Type)
 
-	require.NotNil(t, addressSchema.Properties["street"], "Expected street property in address to exist")
-	require.NotNil(t, addressSchema.Properties["city"], "Expected city property in address to exist")
+	actual := map[string]string{}
+	for _, field := range []string{"street", "city"} {
+		fieldSchema := addressSchema.Properties[field]
+		require.NotNil(t, fieldSchema, "Expected %s property in address to exist", field)
+		actual[field] = fieldSchema.Type
+	}
+	testcmp.RequireEqual(t, map[string]string{
+		"street": "string",
+		"city":   "string",
+	}, actual)
 }
 
 func TestGenerateSchemaRecursiveStructs(t *testing.T) {
@@ -369,23 +379,35 @@ func TestGenerateSchemaWithEnumTags(t *testing.T) {
 
 	schema := Generate(reflect.TypeFor[ConfigInput]())
 
-	// Check level field
-	levelSchema := schema.Properties["level"]
-	require.NotNil(t, levelSchema, "Expected level property to exist")
-	require.Len(t, levelSchema.Enum, 4)
-	expectedLevels := []string{"debug", "info", "warn", "error"}
-	for i, expected := range expectedLevels {
-		require.Equal(t, expected, levelSchema.Enum[i])
+	tests := []struct {
+		name     string
+		field    string
+		expected []any
+	}{
+		{
+			name:     "level field",
+			field:    "level",
+			expected: []any{"debug", "info", "warn", "error"},
+		},
+		{
+			name:     "format field",
+			field:    "format",
+			expected: []any{"json", "text"},
+		},
 	}
 
-	// Check format field
-	formatSchema := schema.Properties["format"]
-	require.NotNil(t, formatSchema, "Expected format property to exist")
-	require.Len(t, formatSchema.Enum, 2)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			fieldSchema := schema.Properties[tt.field]
+			require.NotNil(t, fieldSchema, "Expected %s property to exist", tt.field)
+			testcmp.RequireEqual(t, tt.expected, fieldSchema.Enum)
+		})
+	}
 
 	// Check required fields (optional should not be required due to omitempty)
 	expectedRequired := []string{"level", "format"}
-	require.Len(t, schema.Required, len(expectedRequired))
+	testcmp.RequireEqual(t, expectedRequired, schema.Required)
 }
 
 func TestGenerateSchemaComplexTypes(t *testing.T) {
@@ -400,27 +422,48 @@ func TestGenerateSchemaComplexTypes(t *testing.T) {
 
 	schema := Generate(reflect.TypeFor[ComplexInput]())
 
-	// Check string slice
-	stringSliceSchema := schema.Properties["string_slice"]
-	require.NotNil(t, stringSliceSchema, "Expected string_slice property to exist")
-	require.Equal(t, "array", stringSliceSchema.Type)
-	require.Equal(t, "string", stringSliceSchema.Items.Type)
+	tests := []struct {
+		field        string
+		expectedType string
+		expectedItem string
+	}{
+		{
+			field:        "string_slice",
+			expectedType: "array",
+			expectedItem: "string",
+		},
+		{
+			field:        "int_map",
+			expectedType: "object",
+		},
+		{
+			field:        "nested_slice",
+			expectedType: "array",
+			expectedItem: "object",
+		},
+		{
+			field:        "interface",
+			expectedType: "object",
+		},
+	}
 
-	// Check int map
-	intMapSchema := schema.Properties["int_map"]
-	require.NotNil(t, intMapSchema, "Expected int_map property to exist")
-	require.Equal(t, "object", intMapSchema.Type)
-
-	// Check nested slice
-	nestedSliceSchema := schema.Properties["nested_slice"]
-	require.NotNil(t, nestedSliceSchema, "Expected nested_slice property to exist")
-	require.Equal(t, "array", nestedSliceSchema.Type)
-	require.Equal(t, "object", nestedSliceSchema.Items.Type)
-
-	// Check interface
-	interfaceSchema := schema.Properties["interface"]
-	require.NotNil(t, interfaceSchema, "Expected interface property to exist")
-	require.Equal(t, "object", interfaceSchema.Type)
+	for _, tt := range tests {
+		t.Run(tt.field, func(t *testing.T) {
+			t.Parallel()
+			fieldSchema := schema.Properties[tt.field]
+			require.NotNil(t, fieldSchema, "Expected %s property to exist", tt.field)
+			actual := map[string]string{"type": fieldSchema.Type}
+			if tt.expectedItem != "" {
+				require.NotNil(t, fieldSchema.Items, "Expected %s items schema to exist", tt.field)
+				actual["items.type"] = fieldSchema.Items.Type
+			}
+			expected := map[string]string{"type": tt.expectedType}
+			if tt.expectedItem != "" {
+				expected["items.type"] = tt.expectedItem
+			}
+			testcmp.RequireEqual(t, expected, actual)
+		})
+	}
 }
 
 func TestToSnakeCase(t *testing.T) {
@@ -519,16 +562,7 @@ func TestSchemaToParametersEdgeCases(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			result := ToParameters(tt.schema)
-			require.Len(t, result, len(tt.expected))
-			for key, expectedValue := range tt.expected {
-				require.NotNil(t, result[key], "Expected parameter %s to exist", key)
-				// Deep comparison would be complex, so we'll check key properties
-				resultParam := result[key].(map[string]any)
-				expectedParam := expectedValue.(map[string]any)
-				for propKey, propValue := range expectedParam {
-					require.Equal(t, propValue, resultParam[propKey], "Expected %s.%s", key, propKey)
-				}
-			}
+			testcmp.RequireEqual(t, tt.expected, result)
 		})
 	}
 }

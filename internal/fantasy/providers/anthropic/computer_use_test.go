@@ -6,298 +6,444 @@ import (
 	"testing"
 
 	"charm.land/fantasy"
+	"charm.land/fantasy/internal/testcmp"
 	"github.com/stretchr/testify/require"
 )
 
 func TestParseComputerUseInput(t *testing.T) {
 	t.Parallel()
 
-	t.Run("screenshot", func(t *testing.T) {
-		t.Parallel()
-		input, err := ParseComputerUseInput(`{"action":"screenshot"}`)
-		require.NoError(t, err)
-		require.Equal(t, ActionScreenshot, input.Action)
-		require.Equal(t, [2]int64{0, 0}, input.Coordinate)
-		require.Equal(t, "", input.Text)
-	})
+	tests := []struct {
+		name    string
+		input   string
+		want    ComputerUseInput
+		wantErr bool
+	}{
+		{
+			name:  "screenshot",
+			input: `{"action":"screenshot"}`,
+			want:  ComputerUseInput{Action: ActionScreenshot},
+		},
+		{
+			name:  "left_click with coordinate",
+			input: `{"action":"left_click","coordinate":[100,200]}`,
+			want: ComputerUseInput{
+				Action:     ActionLeftClick,
+				Coordinate: [2]int64{100, 200},
+			},
+		},
+		{
+			name:  "right_click with coordinate",
+			input: `{"action":"right_click","coordinate":[50,75]}`,
+			want: ComputerUseInput{
+				Action:     ActionRightClick,
+				Coordinate: [2]int64{50, 75},
+			},
+		},
+		{
+			name:  "double_click with coordinate",
+			input: `{"action":"double_click","coordinate":[300,400]}`,
+			want: ComputerUseInput{
+				Action:     ActionDoubleClick,
+				Coordinate: [2]int64{300, 400},
+			},
+		},
+		{
+			name:  "middle_click with coordinate",
+			input: `{"action":"middle_click","coordinate":[10,20]}`,
+			want: ComputerUseInput{
+				Action:     ActionMiddleClick,
+				Coordinate: [2]int64{10, 20},
+			},
+		},
+		{
+			name:  "mouse_move with coordinate",
+			input: `{"action":"mouse_move","coordinate":[500,600]}`,
+			want: ComputerUseInput{
+				Action:     ActionMouseMove,
+				Coordinate: [2]int64{500, 600},
+			},
+		},
+		{
+			name:  "left_click_drag with start_coordinate and coordinate",
+			input: `{"action":"left_click_drag","start_coordinate":[10,20],"coordinate":[300,400]}`,
+			want: ComputerUseInput{
+				Action:          ActionLeftClickDrag,
+				StartCoordinate: [2]int64{10, 20},
+				Coordinate:      [2]int64{300, 400},
+			},
+		},
+		{
+			name:  "type with text",
+			input: `{"action":"type","text":"hello world"}`,
+			want: ComputerUseInput{
+				Action: ActionType,
+				Text:   "hello world",
+			},
+		},
+		{
+			name:  "key with text",
+			input: `{"action":"key","text":"ctrl+c"}`,
+			want: ComputerUseInput{
+				Action: ActionKey,
+				Text:   "ctrl+c",
+			},
+		},
+		{
+			name:  "scroll with coordinate direction and amount",
+			input: `{"action":"scroll","coordinate":[960,540],"scroll_direction":"down","scroll_amount":3}`,
+			want: ComputerUseInput{
+				Action:          ActionScroll,
+				Coordinate:      [2]int64{960, 540},
+				ScrollDirection: "down",
+				ScrollAmount:    3,
+			},
+		},
+		{
+			name:    "invalid JSON returns error",
+			input:   `{not valid json}`,
+			wantErr: true,
+		},
+		{
+			name:  "triple_click with coordinate",
+			input: `{"action":"triple_click","coordinate":[120,240]}`,
+			want: ComputerUseInput{
+				Action:     ActionTripleClick,
+				Coordinate: [2]int64{120, 240},
+			},
+		},
+		{
+			name:  "left_mouse_down with coordinate",
+			input: `{"action":"left_mouse_down","coordinate":[80,90]}`,
+			want: ComputerUseInput{
+				Action:     ActionLeftMouseDown,
+				Coordinate: [2]int64{80, 90},
+			},
+		},
+		{
+			name:  "left_mouse_up with coordinate",
+			input: `{"action":"left_mouse_up","coordinate":[80,90]}`,
+			want: ComputerUseInput{
+				Action:     ActionLeftMouseUp,
+				Coordinate: [2]int64{80, 90},
+			},
+		},
+		{
+			name:  "wait",
+			input: `{"action":"wait"}`,
+			want:  ComputerUseInput{Action: ActionWait},
+		},
+		{
+			name:  "zoom with region",
+			input: `{"action":"zoom","region":[100,200,500,600]}`,
+			want: ComputerUseInput{
+				Action: ActionZoom,
+				Region: [4]int64{100, 200, 500, 600},
+			},
+		},
+		{
+			name:  "left_click with modifier key",
+			input: `{"action":"left_click","coordinate":[100,200],"text":"shift"}`,
+			want: ComputerUseInput{
+				Action:     ActionLeftClick,
+				Coordinate: [2]int64{100, 200},
+				Text:       "shift",
+			},
+		},
+		{
+			name:  "unknown action parses without error",
+			input: `{"action":"future_action","coordinate":[1,2]}`,
+			want: ComputerUseInput{
+				Action:     ComputerAction("future_action"),
+				Coordinate: [2]int64{1, 2},
+			},
+		},
+		{
+			name:  "hold_key with duration",
+			input: `{"action":"hold_key","text":"shift","duration":2}`,
+			want: ComputerUseInput{
+				Action:   ActionHoldKey,
+				Text:     "shift",
+				Duration: 2,
+			},
+		},
+	}
 
-	t.Run("left_click with coordinate", func(t *testing.T) {
-		t.Parallel()
-		input, err := ParseComputerUseInput(`{"action":"left_click","coordinate":[100,200]}`)
-		require.NoError(t, err)
-		require.Equal(t, ActionLeftClick, input.Action)
-		require.Equal(t, [2]int64{100, 200}, input.Coordinate)
-	})
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 
-	t.Run("right_click with coordinate", func(t *testing.T) {
-		t.Parallel()
-		input, err := ParseComputerUseInput(`{"action":"right_click","coordinate":[50,75]}`)
-		require.NoError(t, err)
-		require.Equal(t, ActionRightClick, input.Action)
-		require.Equal(t, [2]int64{50, 75}, input.Coordinate)
-	})
+			input, err := ParseComputerUseInput(tt.input)
+			if tt.wantErr {
+				require.Error(t, err)
+				return
+			}
 
-	t.Run("double_click with coordinate", func(t *testing.T) {
-		t.Parallel()
-		input, err := ParseComputerUseInput(`{"action":"double_click","coordinate":[300,400]}`)
-		require.NoError(t, err)
-		require.Equal(t, ActionDoubleClick, input.Action)
-		require.Equal(t, [2]int64{300, 400}, input.Coordinate)
-	})
-
-	t.Run("middle_click with coordinate", func(t *testing.T) {
-		t.Parallel()
-		input, err := ParseComputerUseInput(`{"action":"middle_click","coordinate":[10,20]}`)
-		require.NoError(t, err)
-		require.Equal(t, ActionMiddleClick, input.Action)
-		require.Equal(t, [2]int64{10, 20}, input.Coordinate)
-	})
-
-	t.Run("mouse_move with coordinate", func(t *testing.T) {
-		t.Parallel()
-		input, err := ParseComputerUseInput(`{"action":"mouse_move","coordinate":[500,600]}`)
-		require.NoError(t, err)
-		require.Equal(t, ActionMouseMove, input.Action)
-		require.Equal(t, [2]int64{500, 600}, input.Coordinate)
-	})
-
-	t.Run("left_click_drag with start_coordinate and coordinate", func(t *testing.T) {
-		t.Parallel()
-		input, err := ParseComputerUseInput(`{"action":"left_click_drag","start_coordinate":[10,20],"coordinate":[300,400]}`)
-		require.NoError(t, err)
-		require.Equal(t, ActionLeftClickDrag, input.Action)
-		require.Equal(t, [2]int64{10, 20}, input.StartCoordinate)
-		require.Equal(t, [2]int64{300, 400}, input.Coordinate)
-	})
-
-	t.Run("type with text", func(t *testing.T) {
-		t.Parallel()
-		input, err := ParseComputerUseInput(`{"action":"type","text":"hello world"}`)
-		require.NoError(t, err)
-		require.Equal(t, ActionType, input.Action)
-		require.Equal(t, "hello world", input.Text)
-	})
-
-	t.Run("key with text", func(t *testing.T) {
-		t.Parallel()
-		input, err := ParseComputerUseInput(`{"action":"key","text":"ctrl+c"}`)
-		require.NoError(t, err)
-		require.Equal(t, ActionKey, input.Action)
-		require.Equal(t, "ctrl+c", input.Text)
-	})
-
-	t.Run("scroll with coordinate direction and amount", func(t *testing.T) {
-		t.Parallel()
-		input, err := ParseComputerUseInput(`{"action":"scroll","coordinate":[960,540],"scroll_direction":"down","scroll_amount":3}`)
-		require.NoError(t, err)
-		require.Equal(t, ActionScroll, input.Action)
-		require.Equal(t, [2]int64{960, 540}, input.Coordinate)
-		require.Equal(t, "down", input.ScrollDirection)
-		require.Equal(t, int64(3), input.ScrollAmount)
-	})
-
-	t.Run("invalid JSON returns error", func(t *testing.T) {
-		t.Parallel()
-		_, err := ParseComputerUseInput(`{not valid json}`)
-		require.Error(t, err)
-	})
-
-	t.Run("triple_click with coordinate", func(t *testing.T) {
-		t.Parallel()
-		input, err := ParseComputerUseInput(`{"action":"triple_click","coordinate":[120,240]}`)
-		require.NoError(t, err)
-		require.Equal(t, ActionTripleClick, input.Action)
-		require.Equal(t, [2]int64{120, 240}, input.Coordinate)
-	})
-
-	t.Run("left_mouse_down with coordinate", func(t *testing.T) {
-		t.Parallel()
-		input, err := ParseComputerUseInput(`{"action":"left_mouse_down","coordinate":[80,90]}`)
-		require.NoError(t, err)
-		require.Equal(t, ActionLeftMouseDown, input.Action)
-		require.Equal(t, [2]int64{80, 90}, input.Coordinate)
-	})
-
-	t.Run("left_mouse_up with coordinate", func(t *testing.T) {
-		t.Parallel()
-		input, err := ParseComputerUseInput(`{"action":"left_mouse_up","coordinate":[80,90]}`)
-		require.NoError(t, err)
-		require.Equal(t, ActionLeftMouseUp, input.Action)
-		require.Equal(t, [2]int64{80, 90}, input.Coordinate)
-	})
-
-	t.Run("wait", func(t *testing.T) {
-		t.Parallel()
-		input, err := ParseComputerUseInput(`{"action":"wait"}`)
-		require.NoError(t, err)
-		require.Equal(t, ActionWait, input.Action)
-		require.Equal(t, [2]int64{0, 0}, input.Coordinate)
-		require.Equal(t, "", input.Text)
-	})
-
-	t.Run("zoom with region", func(t *testing.T) {
-		t.Parallel()
-		input, err := ParseComputerUseInput(`{"action":"zoom","region":[100,200,500,600]}`)
-		require.NoError(t, err)
-		require.Equal(t, ActionZoom, input.Action)
-		require.Equal(t, [4]int64{100, 200, 500, 600}, input.Region)
-	})
-
-	t.Run("left_click with modifier key", func(t *testing.T) {
-		t.Parallel()
-		input, err := ParseComputerUseInput(`{"action":"left_click","coordinate":[100,200],"text":"shift"}`)
-		require.NoError(t, err)
-		require.Equal(t, ActionLeftClick, input.Action)
-		require.Equal(t, [2]int64{100, 200}, input.Coordinate)
-		require.Equal(t, "shift", input.Text)
-	})
-
-	t.Run("unknown action parses without error", func(t *testing.T) {
-		t.Parallel()
-		input, err := ParseComputerUseInput(`{"action":"future_action","coordinate":[1,2]}`)
-		require.NoError(t, err)
-		require.Equal(t, ComputerAction("future_action"), input.Action)
-		require.Equal(t, [2]int64{1, 2}, input.Coordinate)
-	})
-
-	t.Run("hold_key with duration", func(t *testing.T) {
-		t.Parallel()
-		input, err := ParseComputerUseInput(`{"action":"hold_key","text":"shift","duration":2}`)
-		require.NoError(t, err)
-		require.Equal(t, ActionHoldKey, input.Action)
-		require.Equal(t, "shift", input.Text)
-		require.Equal(t, int64(2), input.Duration)
-	})
+			require.NoError(t, err)
+			testcmp.RequireEqual(t, tt.want, input)
+		})
+	}
 }
 
 func TestNewComputerUseScreenshotResult(t *testing.T) {
 	t.Parallel()
 
-	t.Run("base64 encodes PNG bytes", func(t *testing.T) {
-		t.Parallel()
-		pngData := []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A}
-		result := NewComputerUseScreenshotResult("call-123", pngData)
+	tests := []struct {
+		name          string
+		toolCallID    string
+		screenshotPNG []byte
+		want          fantasy.ToolResultPart
+	}{
+		{
+			name:          "base64 encodes PNG bytes",
+			toolCallID:    "call-123",
+			screenshotPNG: []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A},
+			want: fantasy.ToolResultPart{
+				ToolCallID: "call-123",
+				Output: fantasy.ToolResultOutputContentMedia{
+					MediaType: "image/png",
+					Data:      base64.StdEncoding.EncodeToString([]byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A}),
+				},
+			},
+		},
+		{
+			name:          "preserves tool call ID",
+			toolCallID:    "tc_abc",
+			screenshotPNG: []byte{0x01},
+			want: fantasy.ToolResultPart{
+				ToolCallID: "tc_abc",
+				Output: fantasy.ToolResultOutputContentMedia{
+					MediaType: "image/png",
+					Data:      base64.StdEncoding.EncodeToString([]byte{0x01}),
+				},
+			},
+		},
+		{
+			name:          "empty screenshot bytes",
+			toolCallID:    "call-empty",
+			screenshotPNG: []byte{},
+			want: fantasy.ToolResultPart{
+				ToolCallID: "call-empty",
+				Output: fantasy.ToolResultOutputContentMedia{
+					MediaType: "image/png",
+				},
+			},
+		},
+		{
+			name:          "output content type is media",
+			toolCallID:    "call-type",
+			screenshotPNG: []byte{0xFF},
+			want: fantasy.ToolResultPart{
+				ToolCallID: "call-type",
+				Output: fantasy.ToolResultOutputContentMedia{
+					MediaType: "image/png",
+					Data:      base64.StdEncoding.EncodeToString([]byte{0xFF}),
+				},
+			},
+		},
+	}
 
-		require.Equal(t, "call-123", result.ToolCallID)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 
-		media, ok := result.Output.(fantasy.ToolResultOutputContentMedia)
-		require.True(t, ok, "output should be ToolResultOutputContentMedia")
-		require.Equal(t, "image/png", media.MediaType)
-		require.Equal(t, base64.StdEncoding.EncodeToString(pngData), media.Data)
-	})
-
-	t.Run("preserves tool call ID", func(t *testing.T) {
-		t.Parallel()
-		result := NewComputerUseScreenshotResult("tc_abc", []byte{0x01})
-		require.Equal(t, "tc_abc", result.ToolCallID)
-	})
-
-	t.Run("empty screenshot bytes", func(t *testing.T) {
-		t.Parallel()
-		result := NewComputerUseScreenshotResult("call-empty", []byte{})
-
-		media, ok := result.Output.(fantasy.ToolResultOutputContentMedia)
-		require.True(t, ok)
-		require.Equal(t, "image/png", media.MediaType)
-		require.Equal(t, "", media.Data)
-	})
-
-	t.Run("output content type is media", func(t *testing.T) {
-		t.Parallel()
-		result := NewComputerUseScreenshotResult("call-type", []byte{0xFF})
-		require.Equal(t, fantasy.ToolResultContentTypeMedia, result.Output.GetType())
-	})
+			result := NewComputerUseScreenshotResult(tt.toolCallID, tt.screenshotPNG)
+			testcmp.RequireEqual(t, tt.want, result)
+			testcmp.RequireEqual(t, fantasy.ToolResultContentTypeMedia, result.Output.GetType())
+		})
+	}
 }
 
 func TestNewComputerUseScreenshotResultWithMediaType(t *testing.T) {
 	t.Parallel()
 
-	t.Run("custom media type and base64 data", func(t *testing.T) {
-		t.Parallel()
-		b64 := base64.StdEncoding.EncodeToString([]byte("jpeg-data"))
-		result := NewComputerUseScreenshotResultWithMediaType("call-456", b64, "image/jpeg")
+	tests := []struct {
+		name       string
+		toolCallID string
+		base64Data string
+		mediaType  string
+		want       fantasy.ToolResultPart
+	}{
+		{
+			name:       "custom media type and base64 data",
+			toolCallID: "call-456",
+			base64Data: base64.StdEncoding.EncodeToString([]byte("jpeg-data")),
+			mediaType:  "image/jpeg",
+			want: fantasy.ToolResultPart{
+				ToolCallID: "call-456",
+				Output: fantasy.ToolResultOutputContentMedia{
+					MediaType: "image/jpeg",
+					Data:      base64.StdEncoding.EncodeToString([]byte("jpeg-data")),
+				},
+			},
+		},
+		{
+			name:       "preserves tool call ID",
+			toolCallID: "tc_xyz",
+			base64Data: "data",
+			mediaType:  "image/webp",
+			want: fantasy.ToolResultPart{
+				ToolCallID: "tc_xyz",
+				Output: fantasy.ToolResultOutputContentMedia{
+					MediaType: "image/webp",
+					Data:      "data",
+				},
+			},
+		},
+		{
+			name:       "output content type is media",
+			toolCallID: "call-type",
+			base64Data: "data",
+			mediaType:  "image/png",
+			want: fantasy.ToolResultPart{
+				ToolCallID: "call-type",
+				Output: fantasy.ToolResultOutputContentMedia{
+					MediaType: "image/png",
+					Data:      "data",
+				},
+			},
+		},
+	}
 
-		require.Equal(t, "call-456", result.ToolCallID)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 
-		media, ok := result.Output.(fantasy.ToolResultOutputContentMedia)
-		require.True(t, ok, "output should be ToolResultOutputContentMedia")
-		require.Equal(t, "image/jpeg", media.MediaType)
-		require.Equal(t, b64, media.Data)
-	})
-
-	t.Run("preserves tool call ID", func(t *testing.T) {
-		t.Parallel()
-		result := NewComputerUseScreenshotResultWithMediaType("tc_xyz", "data", "image/webp")
-		require.Equal(t, "tc_xyz", result.ToolCallID)
-	})
-
-	t.Run("output content type is media", func(t *testing.T) {
-		t.Parallel()
-		result := NewComputerUseScreenshotResultWithMediaType("call-type", "data", "image/png")
-		require.Equal(t, fantasy.ToolResultContentTypeMedia, result.Output.GetType())
-	})
+			result := NewComputerUseScreenshotResultWithMediaType(
+				tt.toolCallID,
+				tt.base64Data,
+				tt.mediaType,
+			)
+			testcmp.RequireEqual(t, tt.want, result)
+			testcmp.RequireEqual(t, fantasy.ToolResultContentTypeMedia, result.Output.GetType())
+		})
+	}
 }
 
 func TestNewComputerUseErrorResult(t *testing.T) {
 	t.Parallel()
 
-	t.Run("error message propagates", func(t *testing.T) {
-		t.Parallel()
-		err := errors.New("screenshot capture failed")
-		result := NewComputerUseErrorResult("call-err", err)
+	type errorResultProjection struct {
+		ToolCallID string
+		OutputType fantasy.ToolResultContentType
+		Error      string
+	}
 
-		require.Equal(t, "call-err", result.ToolCallID)
+	tests := []struct {
+		name       string
+		toolCallID string
+		err        error
+		want       errorResultProjection
+	}{
+		{
+			name:       "error message propagates",
+			toolCallID: "call-err",
+			err:        errors.New("screenshot capture failed"),
+			want: errorResultProjection{
+				ToolCallID: "call-err",
+				OutputType: fantasy.ToolResultContentTypeError,
+				Error:      "screenshot capture failed",
+			},
+		},
+		{
+			name:       "preserves tool call ID",
+			toolCallID: "tc_err",
+			err:        errors.New("fail"),
+			want: errorResultProjection{
+				ToolCallID: "tc_err",
+				OutputType: fantasy.ToolResultContentTypeError,
+				Error:      "fail",
+			},
+		},
+		{
+			name:       "output content type is error",
+			toolCallID: "call-type",
+			err:        errors.New("oops"),
+			want: errorResultProjection{
+				ToolCallID: "call-type",
+				OutputType: fantasy.ToolResultContentTypeError,
+				Error:      "oops",
+			},
+		},
+	}
 
-		errOutput, ok := result.Output.(fantasy.ToolResultOutputContentError)
-		require.True(t, ok, "output should be ToolResultOutputContentError")
-		require.Equal(t, "screenshot capture failed", errOutput.Error.Error())
-	})
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 
-	t.Run("preserves tool call ID", func(t *testing.T) {
-		t.Parallel()
-		result := NewComputerUseErrorResult("tc_err", errors.New("fail"))
-		require.Equal(t, "tc_err", result.ToolCallID)
-	})
+			result := NewComputerUseErrorResult(tt.toolCallID, tt.err)
+			errOutput, ok := result.Output.(fantasy.ToolResultOutputContentError)
+			require.True(t, ok, "output should be ToolResultOutputContentError")
 
-	t.Run("output content type is error", func(t *testing.T) {
-		t.Parallel()
-		result := NewComputerUseErrorResult("call-type", errors.New("oops"))
-		require.Equal(t, fantasy.ToolResultContentTypeError, result.Output.GetType())
-	})
+			got := errorResultProjection{
+				ToolCallID: result.ToolCallID,
+				OutputType: result.Output.GetType(),
+				Error:      errOutput.Error.Error(),
+			}
+			testcmp.RequireEqual(t, tt.want, got)
+		})
+	}
 }
 
 func TestNewComputerUseTextResult(t *testing.T) {
 	t.Parallel()
 
-	t.Run("text content is set", func(t *testing.T) {
-		t.Parallel()
-		result := NewComputerUseTextResult("call-txt", "action completed successfully")
+	tests := []struct {
+		name       string
+		toolCallID string
+		text       string
+		want       fantasy.ToolResultPart
+	}{
+		{
+			name:       "text content is set",
+			toolCallID: "call-txt",
+			text:       "action completed successfully",
+			want: fantasy.ToolResultPart{
+				ToolCallID: "call-txt",
+				Output: fantasy.ToolResultOutputContentText{
+					Text: "action completed successfully",
+				},
+			},
+		},
+		{
+			name:       "preserves tool call ID",
+			toolCallID: "tc_text",
+			text:       "hello",
+			want: fantasy.ToolResultPart{
+				ToolCallID: "tc_text",
+				Output: fantasy.ToolResultOutputContentText{
+					Text: "hello",
+				},
+			},
+		},
+		{
+			name:       "empty text",
+			toolCallID: "call-empty",
+			want: fantasy.ToolResultPart{
+				ToolCallID: "call-empty",
+				Output:     fantasy.ToolResultOutputContentText{},
+			},
+		},
+		{
+			name:       "output content type is text",
+			toolCallID: "call-type",
+			text:       "test",
+			want: fantasy.ToolResultPart{
+				ToolCallID: "call-type",
+				Output: fantasy.ToolResultOutputContentText{
+					Text: "test",
+				},
+			},
+		},
+	}
 
-		require.Equal(t, "call-txt", result.ToolCallID)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 
-		textOutput, ok := result.Output.(fantasy.ToolResultOutputContentText)
-		require.True(t, ok, "output should be ToolResultOutputContentText")
-		require.Equal(t, "action completed successfully", textOutput.Text)
-	})
-
-	t.Run("preserves tool call ID", func(t *testing.T) {
-		t.Parallel()
-		result := NewComputerUseTextResult("tc_text", "hello")
-		require.Equal(t, "tc_text", result.ToolCallID)
-	})
-
-	t.Run("empty text", func(t *testing.T) {
-		t.Parallel()
-		result := NewComputerUseTextResult("call-empty", "")
-
-		textOutput, ok := result.Output.(fantasy.ToolResultOutputContentText)
-		require.True(t, ok)
-		require.Equal(t, "", textOutput.Text)
-	})
-
-	t.Run("output content type is text", func(t *testing.T) {
-		t.Parallel()
-		result := NewComputerUseTextResult("call-type", "test")
-		require.Equal(t, fantasy.ToolResultContentTypeText, result.Output.GetType())
-	})
+			result := NewComputerUseTextResult(tt.toolCallID, tt.text)
+			testcmp.RequireEqual(t, tt.want, result)
+			testcmp.RequireEqual(t, fantasy.ToolResultContentTypeText, result.Output.GetType())
+		})
+	}
 }
