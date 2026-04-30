@@ -7,49 +7,28 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ZanzyTHEbar/dragonscale/pkg/ids"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/memory"
+	"go.uber.org/mock/gomock"
 )
 
-// mockAuditAnalysisStore implements AuditAnalysisStore for testing.
-type mockAuditAnalysisStore struct {
-	entries           []AuditEntry
-	patternsStored    []DetectedPattern
-	highTokenSessions []SessionSummary
-	insertRecallErr   error
-	getEntriesErr     error
-	storePatternErr   error
+func expectRecentAuditEntries(store *MockAuditAnalysisStore, entries []AuditEntry, err error) {
+	store.EXPECT().GetRecentAuditEntries(gomock.Any(), gomock.Any()).Return(entries, err)
 }
 
-func (m *mockAuditAnalysisStore) GetRecentAuditEntries(ctx context.Context, since time.Time) ([]AuditEntry, error) {
-	if m.getEntriesErr != nil {
-		return nil, m.getEntriesErr
-	}
-	return m.entries, nil
+func captureInsertedPatterns(store *MockAuditAnalysisStore, patterns *[]DetectedPattern, err error) {
+	store.EXPECT().InsertRecallItem(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, item *memory.RecallItem) error {
+		if err != nil {
+			return err
+		}
+		*patterns = append(*patterns, recallItemPattern(item))
+		return nil
+	}).AnyTimes()
 }
 
-func (m *mockAuditAnalysisStore) StoreDetectedPattern(ctx context.Context, pattern DetectedPattern) error {
-	if m.storePatternErr != nil {
-		return m.storePatternErr
-	}
-	m.patternsStored = append(m.patternsStored, pattern)
-	return nil
-}
-
-func (m *mockAuditAnalysisStore) GetHighTokenSessions(ctx context.Context, minTokens int64) ([]SessionSummary, error) {
-	return m.highTokenSessions, nil
-}
-
-func (m *mockAuditAnalysisStore) InsertRecallItem(ctx context.Context, item *memory.RecallItem) error {
-	if m.insertRecallErr != nil {
-		return m.insertRecallErr
-	}
-	// Convert recall item back to pattern for test tracking
-	// Parse tags to extract pattern type and category
+func recallItemPattern(item *memory.RecallItem) DetectedPattern {
 	patternType := "unknown"
 	category := "unknown"
 	if item.Tags != "" {
-		// Tags format: "audit,type,category"
 		parts := []string{}
 		for _, p := range splitTags(item.Tags) {
 			if p != "audit" {
@@ -63,15 +42,14 @@ func (m *mockAuditAnalysisStore) InsertRecallItem(ctx context.Context, item *mem
 			category = parts[1]
 		}
 	}
-	m.patternsStored = append(m.patternsStored, DetectedPattern{
+	return DetectedPattern{
 		Type:        patternType,
 		Description: item.Content,
 		Weight:      item.Importance,
 		Category:    category,
 		SessionID:   item.SessionKey,
 		AgentID:     item.AgentID,
-	})
-	return nil
+	}
 }
 
 // splitTags splits a comma-separated tag string
@@ -89,7 +67,8 @@ func splitTags(tags string) []string {
 }
 
 func TestAuditAnalysisTask_Name(t *testing.T) {
-	store := &mockAuditAnalysisStore{}
+	ctrl := gomock.NewController(t)
+	store := NewMockAuditAnalysisStore(ctrl)
 	task := NewAuditAnalysisTask(store)
 
 	if got := task.Name(); got != "audit_analysis" {
@@ -98,7 +77,8 @@ func TestAuditAnalysisTask_Name(t *testing.T) {
 }
 
 func TestAuditAnalysisTask_Interval(t *testing.T) {
-	store := &mockAuditAnalysisStore{}
+	ctrl := gomock.NewController(t)
+	store := NewMockAuditAnalysisStore(ctrl)
 	task := NewAuditAnalysisTask(store)
 
 	want := 10 * time.Minute
@@ -108,7 +88,8 @@ func TestAuditAnalysisTask_Interval(t *testing.T) {
 }
 
 func TestAuditAnalysisTask_Timeout(t *testing.T) {
-	store := &mockAuditAnalysisStore{}
+	ctrl := gomock.NewController(t)
+	store := NewMockAuditAnalysisStore(ctrl)
 	task := NewAuditAnalysisTask(store)
 
 	want := 60 * time.Second
@@ -127,9 +108,9 @@ func TestAuditAnalysisTask_Execute_NoStore(t *testing.T) {
 }
 
 func TestAuditAnalysisTask_Execute_NoEntries(t *testing.T) {
-	store := &mockAuditAnalysisStore{
-		entries: []AuditEntry{}, // No entries
-	}
+	ctrl := gomock.NewController(t)
+	store := NewMockAuditAnalysisStore(ctrl)
+	expectRecentAuditEntries(store, []AuditEntry{}, nil)
 	task := NewAuditAnalysisTask(store)
 
 	ctx := context.Background()
@@ -144,28 +125,30 @@ func TestAuditAnalysisTask_Execute_NoEntries(t *testing.T) {
 }
 
 func TestAuditAnalysisTask_Execute_DetectsCorrections(t *testing.T) {
-	store := &mockAuditAnalysisStore{
-		entries: []AuditEntry{
-			{
-				ID:        "entry-1",
-				Timestamp: time.Now(),
-				ToolName:  "read_file",
-				ToolInput: "path/to/file1",
-				Success:   false, // Failed
-				SessionID: "session-1",
-				AgentID:   "agent-1",
-			},
-			{
-				ID:        "entry-2",
-				Timestamp: time.Now().Add(time.Second),
-				ToolName:  "read_file",
-				ToolInput: "path/to/file2", // Different input
-				Success:   true,            // Succeeded
-				SessionID: "session-1",
-				AgentID:   "agent-1",
-			},
+	ctrl := gomock.NewController(t)
+	store := NewMockAuditAnalysisStore(ctrl)
+	patternsStored := []DetectedPattern{}
+	expectRecentAuditEntries(store, []AuditEntry{
+		{
+			ID:        "entry-1",
+			Timestamp: time.Now(),
+			ToolName:  "read_file",
+			ToolInput: "path/to/file1",
+			Success:   false, // Failed
+			SessionID: "session-1",
+			AgentID:   "agent-1",
 		},
-	}
+		{
+			ID:        "entry-2",
+			Timestamp: time.Now().Add(time.Second),
+			ToolName:  "read_file",
+			ToolInput: "path/to/file2", // Different input
+			Success:   true,            // Succeeded
+			SessionID: "session-1",
+			AgentID:   "agent-1",
+		},
+	}, nil)
+	captureInsertedPatterns(store, &patternsStored, nil)
 	task := NewAuditAnalysisTask(store)
 
 	ctx := context.Background()
@@ -174,12 +157,12 @@ func TestAuditAnalysisTask_Execute_DetectsCorrections(t *testing.T) {
 	}
 
 	// Should have detected one correction pattern
-	if len(store.patternsStored) != 1 {
-		t.Errorf("expected 1 pattern stored, got %d", len(store.patternsStored))
+	if len(patternsStored) != 1 {
+		t.Errorf("expected 1 pattern stored, got %d", len(patternsStored))
 	}
 
-	if len(store.patternsStored) > 0 {
-		pattern := store.patternsStored[0]
+	if len(patternsStored) > 0 {
+		pattern := patternsStored[0]
 		if pattern.Type != "correction" {
 			t.Errorf("expected pattern type 'correction', got %q", pattern.Type)
 		}
@@ -193,50 +176,54 @@ func TestAuditAnalysisTask_Execute_DetectsCorrections(t *testing.T) {
 }
 
 func TestAuditAnalysisTask_Execute_SortsSessionEntriesByTimestamp(t *testing.T) {
-	store := &mockAuditAnalysisStore{
-		entries: []AuditEntry{
-			{
-				ID:        "entry-2",
-				Timestamp: time.Now().Add(time.Second),
-				ToolName:  "read_file",
-				ToolInput: "path/to/file2",
-				Success:   true,
-				SessionID: "session-1",
-				AgentID:   "agent-1",
-			},
-			{
-				ID:        "entry-1",
-				Timestamp: time.Now(),
-				ToolName:  "read_file",
-				ToolInput: "path/to/file1",
-				Success:   false,
-				SessionID: "session-1",
-				AgentID:   "agent-1",
-			},
+	ctrl := gomock.NewController(t)
+	store := NewMockAuditAnalysisStore(ctrl)
+	patternsStored := []DetectedPattern{}
+	expectRecentAuditEntries(store, []AuditEntry{
+		{
+			ID:        "entry-2",
+			Timestamp: time.Now().Add(time.Second),
+			ToolName:  "read_file",
+			ToolInput: "path/to/file2",
+			Success:   true,
+			SessionID: "session-1",
+			AgentID:   "agent-1",
 		},
-	}
+		{
+			ID:        "entry-1",
+			Timestamp: time.Now(),
+			ToolName:  "read_file",
+			ToolInput: "path/to/file1",
+			Success:   false,
+			SessionID: "session-1",
+			AgentID:   "agent-1",
+		},
+	}, nil)
+	captureInsertedPatterns(store, &patternsStored, nil)
 	task := NewAuditAnalysisTask(store)
 
 	err := task.Execute(context.Background())
 	if err != nil {
 		t.Fatalf("Execute() error: %v", err)
 	}
-	if len(store.patternsStored) != 1 {
-		t.Fatalf("expected 1 correction pattern, got %d", len(store.patternsStored))
+	if len(patternsStored) != 1 {
+		t.Fatalf("expected 1 correction pattern, got %d", len(patternsStored))
 	}
-	if store.patternsStored[0].Type != "correction" {
-		t.Fatalf("expected correction pattern, got %q", store.patternsStored[0].Type)
+	if patternsStored[0].Type != "correction" {
+		t.Fatalf("expected correction pattern, got %q", patternsStored[0].Type)
 	}
 }
 
 func TestAuditAnalysisTask_Execute_AdvancesWatermarkToLatestEntry(t *testing.T) {
 	now := time.Now().UTC()
-	store := &mockAuditAnalysisStore{
-		entries: []AuditEntry{
-			{ID: "e1", Timestamp: now.Add(-30 * time.Second), ToolName: "read", Success: true, SessionID: "s1", AgentID: "a1"},
-			{ID: "e2", Timestamp: now.Add(-10 * time.Second), ToolName: "read", Success: true, SessionID: "s1", AgentID: "a1"},
-		},
-	}
+	ctrl := gomock.NewController(t)
+	store := NewMockAuditAnalysisStore(ctrl)
+	patternsStored := []DetectedPattern{}
+	expectRecentAuditEntries(store, []AuditEntry{
+		{ID: "e1", Timestamp: now.Add(-30 * time.Second), ToolName: "read", Success: true, SessionID: "s1", AgentID: "a1"},
+		{ID: "e2", Timestamp: now.Add(-10 * time.Second), ToolName: "read", Success: true, SessionID: "s1", AgentID: "a1"},
+	}, nil)
+	captureInsertedPatterns(store, &patternsStored, nil)
 	task := NewAuditAnalysisTask(store)
 
 	err := task.Execute(context.Background())
@@ -275,9 +262,11 @@ func TestAuditAnalysisTask_Execute_DetectsDiscovery(t *testing.T) {
 		})
 	}
 
-	store := &mockAuditAnalysisStore{
-		entries: entries,
-	}
+	ctrl := gomock.NewController(t)
+	store := NewMockAuditAnalysisStore(ctrl)
+	patternsStored := []DetectedPattern{}
+	expectRecentAuditEntries(store, entries, nil)
+	captureInsertedPatterns(store, &patternsStored, nil)
 	task := NewAuditAnalysisTask(store)
 
 	ctx := context.Background()
@@ -286,7 +275,7 @@ func TestAuditAnalysisTask_Execute_DetectsDiscovery(t *testing.T) {
 	}
 
 	foundDiscovery := false
-	for _, pattern := range store.patternsStored {
+	for _, pattern := range patternsStored {
 		if pattern.Type == "discovery" {
 			foundDiscovery = true
 			if pattern.Weight != 1.2 {
@@ -302,13 +291,15 @@ func TestAuditAnalysisTask_Execute_DetectsDiscovery(t *testing.T) {
 
 func TestAuditAnalysisTask_Execute_DetectsFailurePatterns(t *testing.T) {
 	// Create 3 failures of the same tool
-	store := &mockAuditAnalysisStore{
-		entries: []AuditEntry{
-			{ID: "f1", Timestamp: time.Now(), ToolName: "exec", Success: false, ErrorMsg: "timeout", SessionID: "s1", AgentID: "agent-1"},
-			{ID: "f2", Timestamp: time.Now().Add(time.Second), ToolName: "exec", Success: false, ErrorMsg: "timeout", SessionID: "s1", AgentID: "agent-1"},
-			{ID: "f3", Timestamp: time.Now().Add(2 * time.Second), ToolName: "exec", Success: false, ErrorMsg: "timeout", SessionID: "s1", AgentID: "agent-1"},
-		},
-	}
+	ctrl := gomock.NewController(t)
+	store := NewMockAuditAnalysisStore(ctrl)
+	patternsStored := []DetectedPattern{}
+	expectRecentAuditEntries(store, []AuditEntry{
+		{ID: "f1", Timestamp: time.Now(), ToolName: "exec", Success: false, ErrorMsg: "timeout", SessionID: "s1", AgentID: "agent-1"},
+		{ID: "f2", Timestamp: time.Now().Add(time.Second), ToolName: "exec", Success: false, ErrorMsg: "timeout", SessionID: "s1", AgentID: "agent-1"},
+		{ID: "f3", Timestamp: time.Now().Add(2 * time.Second), ToolName: "exec", Success: false, ErrorMsg: "timeout", SessionID: "s1", AgentID: "agent-1"},
+	}, nil)
+	captureInsertedPatterns(store, &patternsStored, nil)
 	task := NewAuditAnalysisTask(store)
 
 	ctx := context.Background()
@@ -318,7 +309,7 @@ func TestAuditAnalysisTask_Execute_DetectsFailurePatterns(t *testing.T) {
 
 	// Should have detected failure pattern
 	foundFailurePattern := false
-	for _, pattern := range store.patternsStored {
+	for _, pattern := range patternsStored {
 		if pattern.Type == "failure_pattern" {
 			foundFailurePattern = true
 			if pattern.Weight != 1.5 {
@@ -335,17 +326,19 @@ func TestAuditAnalysisTask_Execute_DetectsFailurePatterns(t *testing.T) {
 }
 
 func TestAuditAnalysisTask_Execute_MultipleSessions(t *testing.T) {
-	store := &mockAuditAnalysisStore{
-		entries: []AuditEntry{
-			// Session 1: has correction
-			{ID: "s1-1", Timestamp: time.Now(), ToolName: "read", ToolInput: "file1", Success: false, SessionID: "session-1", AgentID: "agent-1"},
-			{ID: "s1-2", Timestamp: time.Now().Add(time.Second), ToolName: "read", ToolInput: "file2", Success: true, SessionID: "session-1", AgentID: "agent-1"},
-			// Session 2: has 3 failures
-			{ID: "s2-1", Timestamp: time.Now(), ToolName: "exec", Success: false, SessionID: "session-2", AgentID: "agent-2"},
-			{ID: "s2-2", Timestamp: time.Now().Add(time.Second), ToolName: "exec", Success: false, SessionID: "session-2", AgentID: "agent-2"},
-			{ID: "s2-3", Timestamp: time.Now().Add(2 * time.Second), ToolName: "exec", Success: false, SessionID: "session-2", AgentID: "agent-2"},
-		},
-	}
+	ctrl := gomock.NewController(t)
+	store := NewMockAuditAnalysisStore(ctrl)
+	patternsStored := []DetectedPattern{}
+	expectRecentAuditEntries(store, []AuditEntry{
+		// Session 1: has correction
+		{ID: "s1-1", Timestamp: time.Now(), ToolName: "read", ToolInput: "file1", Success: false, SessionID: "session-1", AgentID: "agent-1"},
+		{ID: "s1-2", Timestamp: time.Now().Add(time.Second), ToolName: "read", ToolInput: "file2", Success: true, SessionID: "session-1", AgentID: "agent-1"},
+		// Session 2: has 3 failures
+		{ID: "s2-1", Timestamp: time.Now(), ToolName: "exec", Success: false, SessionID: "session-2", AgentID: "agent-2"},
+		{ID: "s2-2", Timestamp: time.Now().Add(time.Second), ToolName: "exec", Success: false, SessionID: "session-2", AgentID: "agent-2"},
+		{ID: "s2-3", Timestamp: time.Now().Add(2 * time.Second), ToolName: "exec", Success: false, SessionID: "session-2", AgentID: "agent-2"},
+	}, nil)
+	captureInsertedPatterns(store, &patternsStored, nil)
 	task := NewAuditAnalysisTask(store)
 
 	ctx := context.Background()
@@ -354,13 +347,13 @@ func TestAuditAnalysisTask_Execute_MultipleSessions(t *testing.T) {
 	}
 
 	// Should have detected patterns from both sessions
-	if len(store.patternsStored) < 2 {
-		t.Errorf("expected at least 2 patterns (one per session), got %d", len(store.patternsStored))
+	if len(patternsStored) < 2 {
+		t.Errorf("expected at least 2 patterns (one per session), got %d", len(patternsStored))
 	}
 
 	// Verify session IDs are correct
 	sessionIDs := make(map[string]int)
-	for _, pattern := range store.patternsStored {
+	for _, pattern := range patternsStored {
 		sessionIDs[pattern.SessionID]++
 	}
 	if sessionIDs["session-1"] == 0 {
@@ -372,9 +365,9 @@ func TestAuditAnalysisTask_Execute_MultipleSessions(t *testing.T) {
 }
 
 func TestAuditAnalysisTask_Execute_GetEntriesError(t *testing.T) {
-	store := &mockAuditAnalysisStore{
-		getEntriesErr: errors.New("database error"),
-	}
+	ctrl := gomock.NewController(t)
+	store := NewMockAuditAnalysisStore(ctrl)
+	expectRecentAuditEntries(store, nil, errors.New("database error"))
 	task := NewAuditAnalysisTask(store)
 
 	ctx := context.Background()
@@ -389,14 +382,15 @@ func TestAuditAnalysisTask_Execute_GetEntriesError(t *testing.T) {
 
 func TestAuditAnalysisTask_Execute_StorePatternError(t *testing.T) {
 	// Pattern storage errors should not stop the task
-	store := &mockAuditAnalysisStore{
-		entries: []AuditEntry{
-			{ID: "f1", Timestamp: time.Now(), ToolName: "exec", Success: false, SessionID: "s1", AgentID: "agent-1"},
-			{ID: "f2", Timestamp: time.Now().Add(time.Second), ToolName: "exec", Success: false, SessionID: "s1", AgentID: "agent-1"},
-			{ID: "f3", Timestamp: time.Now().Add(2 * time.Second), ToolName: "exec", Success: false, SessionID: "s1", AgentID: "agent-1"},
-		},
-		storePatternErr: errors.New("storage error"),
-	}
+	ctrl := gomock.NewController(t)
+	store := NewMockAuditAnalysisStore(ctrl)
+	patternsStored := []DetectedPattern{}
+	expectRecentAuditEntries(store, []AuditEntry{
+		{ID: "f1", Timestamp: time.Now(), ToolName: "exec", Success: false, SessionID: "s1", AgentID: "agent-1"},
+		{ID: "f2", Timestamp: time.Now().Add(time.Second), ToolName: "exec", Success: false, SessionID: "s1", AgentID: "agent-1"},
+		{ID: "f3", Timestamp: time.Now().Add(2 * time.Second), ToolName: "exec", Success: false, SessionID: "s1", AgentID: "agent-1"},
+	}, nil)
+	captureInsertedPatterns(store, &patternsStored, errors.New("storage error"))
 	task := NewAuditAnalysisTask(store)
 
 	ctx := context.Background()
@@ -868,7 +862,10 @@ func TestFilterFailures(t *testing.T) {
 }
 
 func TestAuditAnalysisTask_storePattern(t *testing.T) {
-	store := &mockAuditAnalysisStore{}
+	ctrl := gomock.NewController(t)
+	store := NewMockAuditAnalysisStore(ctrl)
+	patternsStored := []DetectedPattern{}
+	captureInsertedPatterns(store, &patternsStored, nil)
 	task := NewAuditAnalysisTask(store)
 
 	pattern := DetectedPattern{
@@ -883,6 +880,9 @@ func TestAuditAnalysisTask_storePattern(t *testing.T) {
 	ctx := context.Background()
 	if err := task.storePattern(ctx, pattern); err != nil {
 		t.Errorf("storePattern() error: %v", err)
+	}
+	if len(patternsStored) != 1 {
+		t.Fatalf("expected 1 pattern stored, got %d", len(patternsStored))
 	}
 }
 
@@ -904,14 +904,4 @@ func TestDefaultAuditAnalysisConfig(t *testing.T) {
 	if cfg.LookbackWindow != 10*time.Minute {
 		t.Errorf("LookbackWindow = %v, want 10m", cfg.LookbackWindow)
 	}
-}
-
-// Helper function to create a recall item pointer (for potential future use)
-func recallItemPtr(item memory.RecallItem) *memory.RecallItem {
-	return &item
-}
-
-// Helper to create UUID for testing
-func mustUUID(s string) ids.UUID {
-	return ids.MustParse(s)
 }

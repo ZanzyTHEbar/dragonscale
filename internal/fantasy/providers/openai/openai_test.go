@@ -11,8 +11,8 @@ import (
 	"testing"
 
 	"charm.land/fantasy"
+	"charm.land/fantasy/internal/testcmp"
 	"github.com/charmbracelet/openai-go/packages/param"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -38,7 +38,7 @@ func TestToOpenAiPrompt_SystemMessages(t *testing.T) {
 
 		systemMsg := messages[0].OfSystem
 		require.NotNil(t, systemMsg)
-		require.Equal(t, "You are a helpful assistant.", systemMsg.Content.OfString.Value)
+		testcmp.RequireEqual(t, "You are a helpful assistant.", systemMsg.Content.OfString.Value)
 	})
 
 	t.Run("should handle empty system messages", func(t *testing.T) {
@@ -78,7 +78,7 @@ func TestToOpenAiPrompt_SystemMessages(t *testing.T) {
 
 		systemMsg := messages[0].OfSystem
 		require.NotNil(t, systemMsg)
-		require.Equal(t, "You are a helpful assistant.\nBe concise.", systemMsg.Content.OfString.Value)
+		testcmp.RequireEqual(t, "You are a helpful assistant.\nBe concise.", systemMsg.Content.OfString.Value)
 	})
 }
 
@@ -104,7 +104,7 @@ func TestToOpenAiPrompt_UserMessages(t *testing.T) {
 
 		userMsg := messages[0].OfUser
 		require.NotNil(t, userMsg)
-		require.Equal(t, "Hello", userMsg.Content.OfString.Value)
+		testcmp.RequireEqual(t, "Hello", userMsg.Content.OfString.Value)
 	})
 
 	t.Run("should convert messages with image parts", func(t *testing.T) {
@@ -138,13 +138,13 @@ func TestToOpenAiPrompt_UserMessages(t *testing.T) {
 		// Check text part
 		textPart := content[0].OfText
 		require.NotNil(t, textPart)
-		require.Equal(t, "Hello", textPart.Text)
+		testcmp.RequireEqual(t, "Hello", textPart.Text)
 
 		// Check image part
 		imagePart := content[1].OfImageURL
 		require.NotNil(t, imagePart)
 		expectedURL := "data:image/png;base64," + base64.StdEncoding.EncodeToString(imageData)
-		require.Equal(t, expectedURL, imagePart.ImageURL.URL)
+		testcmp.RequireEqual(t, expectedURL, imagePart.ImageURL.URL)
 	})
 
 	t.Run("should add image detail when specified through provider options", func(t *testing.T) {
@@ -179,7 +179,7 @@ func TestToOpenAiPrompt_UserMessages(t *testing.T) {
 
 		imagePart := content[0].OfImageURL
 		require.NotNil(t, imagePart)
-		require.Equal(t, "low", imagePart.ImageURL.Detail)
+		testcmp.RequireEqual(t, "low", imagePart.ImageURL.Detail)
 	})
 }
 
@@ -238,8 +238,8 @@ func TestToOpenAiPrompt_FileParts(t *testing.T) {
 
 		audioPart := content[0].OfInputAudio
 		require.NotNil(t, audioPart)
-		require.Equal(t, base64.StdEncoding.EncodeToString(audioData), audioPart.InputAudio.Data)
-		require.Equal(t, "wav", audioPart.InputAudio.Format)
+		testcmp.RequireEqual(t, base64.StdEncoding.EncodeToString(audioData), audioPart.InputAudio.Data)
+		testcmp.RequireEqual(t, "wav", audioPart.InputAudio.Format)
 	})
 
 	t.Run("should add audio content for audio/mpeg file parts", func(t *testing.T) {
@@ -267,7 +267,7 @@ func TestToOpenAiPrompt_FileParts(t *testing.T) {
 		content := userMsg.Content.OfArrayOfContentParts
 		audioPart := content[0].OfInputAudio
 		require.NotNil(t, audioPart)
-		require.Equal(t, "mp3", audioPart.InputAudio.Format)
+		testcmp.RequireEqual(t, "mp3", audioPart.InputAudio.Format)
 	})
 
 	t.Run("should add audio content for audio/mp3 file parts", func(t *testing.T) {
@@ -295,7 +295,7 @@ func TestToOpenAiPrompt_FileParts(t *testing.T) {
 		content := userMsg.Content.OfArrayOfContentParts
 		audioPart := content[0].OfInputAudio
 		require.NotNil(t, audioPart)
-		require.Equal(t, "mp3", audioPart.InputAudio.Format)
+		testcmp.RequireEqual(t, "mp3", audioPart.InputAudio.Format)
 	})
 
 	t.Run("should convert messages with PDF file parts", func(t *testing.T) {
@@ -326,10 +326,10 @@ func TestToOpenAiPrompt_FileParts(t *testing.T) {
 
 		filePart := content[0].OfFile
 		require.NotNil(t, filePart)
-		require.Equal(t, "document.pdf", filePart.File.Filename.Value)
+		testcmp.RequireEqual(t, "document.pdf", filePart.File.Filename.Value)
 
 		expectedData := "data:application/pdf;base64," + base64.StdEncoding.EncodeToString(pdfData)
-		require.Equal(t, expectedData, filePart.File.FileData.Value)
+		testcmp.RequireEqual(t, expectedData, filePart.File.FileData.Value)
 	})
 
 	t.Run("should convert messages with binary PDF file parts", func(t *testing.T) {
@@ -360,7 +360,7 @@ func TestToOpenAiPrompt_FileParts(t *testing.T) {
 		require.NotNil(t, filePart)
 
 		expectedData := "data:application/pdf;base64," + base64.StdEncoding.EncodeToString(pdfData)
-		require.Equal(t, expectedData, filePart.File.FileData.Value)
+		testcmp.RequireEqual(t, expectedData, filePart.File.FileData.Value)
 	})
 
 	t.Run("should convert messages with PDF file parts using file_id", func(t *testing.T) {
@@ -387,7 +387,7 @@ func TestToOpenAiPrompt_FileParts(t *testing.T) {
 		content := userMsg.Content.OfArrayOfContentParts
 		filePart := content[0].OfFile
 		require.NotNil(t, filePart)
-		require.Equal(t, "file-pdf-12345", filePart.File.FileID.Value)
+		testcmp.RequireEqual(t, "file-pdf-12345", filePart.File.FileID.Value)
 		require.True(t, param.IsOmitted(filePart.File.FileData))
 		require.True(t, param.IsOmitted(filePart.File.Filename))
 	})
@@ -417,7 +417,7 @@ func TestToOpenAiPrompt_FileParts(t *testing.T) {
 		content := userMsg.Content.OfArrayOfContentParts
 		filePart := content[0].OfFile
 		require.NotNil(t, filePart)
-		require.Equal(t, "part-0.pdf", filePart.File.Filename.Value)
+		testcmp.RequireEqual(t, "part-0.pdf", filePart.File.Filename.Value)
 	})
 }
 
@@ -465,20 +465,20 @@ func TestToOpenAiPrompt_ToolCalls(t *testing.T) {
 		// Check assistant message with tool call
 		assistantMsg := messages[0].OfAssistant
 		require.NotNil(t, assistantMsg)
-		require.Equal(t, "", assistantMsg.Content.OfString.Value)
+		testcmp.RequireEqual(t, "", assistantMsg.Content.OfString.Value)
 		require.Len(t, assistantMsg.ToolCalls, 1)
 
 		toolCall := assistantMsg.ToolCalls[0].OfFunction
 		require.NotNil(t, toolCall)
-		require.Equal(t, "quux", toolCall.ID)
-		require.Equal(t, "thwomp", toolCall.Function.Name)
-		require.Equal(t, string(inputJSON), toolCall.Function.Arguments)
+		testcmp.RequireEqual(t, "quux", toolCall.ID)
+		testcmp.RequireEqual(t, "thwomp", toolCall.Function.Name)
+		testcmp.RequireEqual(t, string(inputJSON), toolCall.Function.Arguments)
 
 		// Check tool message
 		toolMsg := messages[1].OfTool
 		require.NotNil(t, toolMsg)
-		require.Equal(t, string(outputJSON), toolMsg.Content.OfString.Value)
-		require.Equal(t, "quux", toolMsg.ToolCallID)
+		testcmp.RequireEqual(t, string(outputJSON), toolMsg.Content.OfString.Value)
+		testcmp.RequireEqual(t, "quux", toolMsg.ToolCallID)
 	})
 
 	t.Run("should handle different tool output types", func(t *testing.T) {
@@ -512,14 +512,14 @@ func TestToOpenAiPrompt_ToolCalls(t *testing.T) {
 		// Check first tool message (text)
 		textToolMsg := messages[0].OfTool
 		require.NotNil(t, textToolMsg)
-		require.Equal(t, "Hello world", textToolMsg.Content.OfString.Value)
-		require.Equal(t, "text-tool", textToolMsg.ToolCallID)
+		testcmp.RequireEqual(t, "Hello world", textToolMsg.Content.OfString.Value)
+		testcmp.RequireEqual(t, "text-tool", textToolMsg.ToolCallID)
 
 		// Check second tool message (error)
 		errorToolMsg := messages[1].OfTool
 		require.NotNil(t, errorToolMsg)
-		require.Equal(t, "Something went wrong", errorToolMsg.Content.OfString.Value)
-		require.Equal(t, "error-tool", errorToolMsg.ToolCallID)
+		testcmp.RequireEqual(t, "Something went wrong", errorToolMsg.Content.OfString.Value)
+		testcmp.RequireEqual(t, "error-tool", errorToolMsg.ToolCallID)
 	})
 }
 
@@ -545,7 +545,7 @@ func TestToOpenAiPrompt_AssistantMessages(t *testing.T) {
 
 		assistantMsg := messages[0].OfAssistant
 		require.NotNil(t, assistantMsg)
-		require.Equal(t, "Hello, how can I help you?", assistantMsg.Content.OfString.Value)
+		testcmp.RequireEqual(t, "Hello, how can I help you?", assistantMsg.Content.OfString.Value)
 	})
 
 	t.Run("should handle assistant messages with mixed content", func(t *testing.T) {
@@ -575,13 +575,13 @@ func TestToOpenAiPrompt_AssistantMessages(t *testing.T) {
 
 		assistantMsg := messages[0].OfAssistant
 		require.NotNil(t, assistantMsg)
-		require.Equal(t, "Let me search for that.", assistantMsg.Content.OfString.Value)
+		testcmp.RequireEqual(t, "Let me search for that.", assistantMsg.Content.OfString.Value)
 		require.Len(t, assistantMsg.ToolCalls, 1)
 
 		toolCall := assistantMsg.ToolCalls[0].OfFunction
-		require.Equal(t, "call-123", toolCall.ID)
-		require.Equal(t, "search", toolCall.Function.Name)
-		require.Equal(t, string(inputJSON), toolCall.Function.Arguments)
+		testcmp.RequireEqual(t, "call-123", toolCall.ID)
+		testcmp.RequireEqual(t, "search", toolCall.Function.Name)
+		testcmp.RequireEqual(t, string(inputJSON), toolCall.Function.Arguments)
 	})
 }
 
@@ -827,7 +827,7 @@ func TestDoGenerate(t *testing.T) {
 
 		textContent, ok := result.Content[0].(fantasy.TextContent)
 		require.True(t, ok)
-		require.Equal(t, "Hello, World!", textContent.Text)
+		testcmp.RequireEqual(t, "Hello, World!", textContent.Text)
 	})
 
 	t.Run("should extract usage", func(t *testing.T) {
@@ -856,9 +856,9 @@ func TestDoGenerate(t *testing.T) {
 		})
 
 		require.NoError(t, err)
-		require.Equal(t, int64(20), result.Usage.InputTokens)
-		require.Equal(t, int64(5), result.Usage.OutputTokens)
-		require.Equal(t, int64(25), result.Usage.TotalTokens)
+		testcmp.RequireEqual(t, int64(20), result.Usage.InputTokens)
+		testcmp.RequireEqual(t, int64(5), result.Usage.OutputTokens)
+		testcmp.RequireEqual(t, int64(25), result.Usage.TotalTokens)
 	})
 
 	t.Run("should send request body", func(t *testing.T) {
@@ -884,17 +884,17 @@ func TestDoGenerate(t *testing.T) {
 		require.Len(t, server.calls, 1)
 
 		call := server.calls[0]
-		require.Equal(t, "POST", call.method)
-		require.Equal(t, "/chat/completions", call.path)
-		require.Equal(t, "gpt-3.5-turbo", call.body["model"])
+		testcmp.RequireEqual(t, "POST", call.method)
+		testcmp.RequireEqual(t, "/chat/completions", call.path)
+		testcmp.RequireEqual(t, "gpt-3.5-turbo", call.body["model"])
 
 		messages, ok := call.body["messages"].([]any)
 		require.True(t, ok)
 		require.Len(t, messages, 1)
 
 		message := messages[0].(map[string]any)
-		require.Equal(t, "user", message["role"])
-		require.Equal(t, "Hello", message["content"])
+		testcmp.RequireEqual(t, "user", message["role"])
+		testcmp.RequireEqual(t, "Hello", message["content"])
 	})
 
 	t.Run("should support partial usage", func(t *testing.T) {
@@ -922,9 +922,9 @@ func TestDoGenerate(t *testing.T) {
 		})
 
 		require.NoError(t, err)
-		require.Equal(t, int64(20), result.Usage.InputTokens)
-		require.Equal(t, int64(0), result.Usage.OutputTokens)
-		require.Equal(t, int64(20), result.Usage.TotalTokens)
+		testcmp.RequireEqual(t, int64(20), result.Usage.InputTokens)
+		testcmp.RequireEqual(t, int64(0), result.Usage.OutputTokens)
+		testcmp.RequireEqual(t, int64(20), result.Usage.TotalTokens)
 	})
 
 	t.Run("should extract logprobs", func(t *testing.T) {
@@ -984,7 +984,7 @@ func TestDoGenerate(t *testing.T) {
 		})
 
 		require.NoError(t, err)
-		require.Equal(t, fantasy.FinishReasonStop, result.FinishReason)
+		testcmp.RequireEqual(t, fantasy.FinishReasonStop, result.FinishReason)
 	})
 
 	t.Run("should support unknown finish reason", func(t *testing.T) {
@@ -1009,7 +1009,7 @@ func TestDoGenerate(t *testing.T) {
 		})
 
 		require.NoError(t, err)
-		require.Equal(t, fantasy.FinishReasonUnknown, result.FinishReason)
+		testcmp.RequireEqual(t, fantasy.FinishReasonUnknown, result.FinishReason)
 	})
 
 	t.Run("should pass the model and the messages", func(t *testing.T) {
@@ -1037,14 +1037,14 @@ func TestDoGenerate(t *testing.T) {
 		require.Len(t, server.calls, 1)
 
 		call := server.calls[0]
-		require.Equal(t, "gpt-3.5-turbo", call.body["model"])
+		testcmp.RequireEqual(t, "gpt-3.5-turbo", call.body["model"])
 
 		messages := call.body["messages"].([]any)
 		require.Len(t, messages, 1)
 
 		message := messages[0].(map[string]any)
-		require.Equal(t, "user", message["role"])
-		require.Equal(t, "Hello", message["content"])
+		testcmp.RequireEqual(t, "user", message["role"])
+		testcmp.RequireEqual(t, "Hello", message["content"])
 	})
 
 	t.Run("should pass settings", func(t *testing.T) {
@@ -1077,15 +1077,15 @@ func TestDoGenerate(t *testing.T) {
 		require.Len(t, server.calls, 1)
 
 		call := server.calls[0]
-		require.Equal(t, "gpt-3.5-turbo", call.body["model"])
+		testcmp.RequireEqual(t, "gpt-3.5-turbo", call.body["model"])
 
 		messages := call.body["messages"].([]any)
 		require.Len(t, messages, 1)
 
 		logitBias := call.body["logit_bias"].(map[string]any)
-		require.Equal(t, float64(-100), logitBias["50256"])
-		require.Equal(t, false, call.body["parallel_tool_calls"])
-		require.Equal(t, "test-user-id", call.body["user"])
+		testcmp.RequireEqual(t, any(float64(-100)), logitBias["50256"])
+		testcmp.RequireEqual(t, false, call.body["parallel_tool_calls"])
+		testcmp.RequireEqual(t, "test-user-id", call.body["user"])
 	})
 
 	t.Run("should pass reasoningEffort setting", func(t *testing.T) {
@@ -1118,15 +1118,15 @@ func TestDoGenerate(t *testing.T) {
 		require.Len(t, server.calls, 1)
 
 		call := server.calls[0]
-		require.Equal(t, "o1-mini", call.body["model"])
-		require.Equal(t, "low", call.body["reasoning_effort"])
+		testcmp.RequireEqual(t, "o1-mini", call.body["model"])
+		testcmp.RequireEqual(t, "low", call.body["reasoning_effort"])
 
 		messages := call.body["messages"].([]any)
 		require.Len(t, messages, 1)
 
 		message := messages[0].(map[string]any)
-		require.Equal(t, "user", message["role"])
-		require.Equal(t, "Hello", message["content"])
+		testcmp.RequireEqual(t, "user", message["role"])
+		testcmp.RequireEqual(t, "Hello", message["content"])
 	})
 
 	t.Run("should pass textVerbosity setting", func(t *testing.T) {
@@ -1157,15 +1157,15 @@ func TestDoGenerate(t *testing.T) {
 		require.Len(t, server.calls, 1)
 
 		call := server.calls[0]
-		require.Equal(t, "gpt-4o", call.body["model"])
-		require.Equal(t, "low", call.body["verbosity"])
+		testcmp.RequireEqual(t, "gpt-4o", call.body["model"])
+		testcmp.RequireEqual(t, "low", call.body["verbosity"])
 
 		messages := call.body["messages"].([]any)
 		require.Len(t, messages, 1)
 
 		message := messages[0].(map[string]any)
-		require.Equal(t, "user", message["role"])
-		require.Equal(t, "Hello", message["content"])
+		testcmp.RequireEqual(t, "user", message["role"])
+		testcmp.RequireEqual(t, "Hello", message["content"])
 	})
 
 	t.Run("should pass tools and toolChoice", func(t *testing.T) {
@@ -1210,7 +1210,7 @@ func TestDoGenerate(t *testing.T) {
 		require.Len(t, server.calls, 1)
 
 		call := server.calls[0]
-		require.Equal(t, "gpt-3.5-turbo", call.body["model"])
+		testcmp.RequireEqual(t, "gpt-3.5-turbo", call.body["model"])
 
 		messages := call.body["messages"].([]any)
 		require.Len(t, messages, 1)
@@ -1219,17 +1219,17 @@ func TestDoGenerate(t *testing.T) {
 		require.Len(t, tools, 1)
 
 		tool := tools[0].(map[string]any)
-		require.Equal(t, "function", tool["type"])
+		testcmp.RequireEqual(t, "function", tool["type"])
 
 		function := tool["function"].(map[string]any)
-		require.Equal(t, "test-tool", function["name"])
-		require.Equal(t, false, function["strict"])
+		testcmp.RequireEqual(t, "test-tool", function["name"])
+		testcmp.RequireEqual(t, false, function["strict"])
 
 		toolChoice := call.body["tool_choice"].(map[string]any)
-		require.Equal(t, "function", toolChoice["type"])
+		testcmp.RequireEqual(t, "function", toolChoice["type"])
 
 		toolChoiceFunction := toolChoice["function"].(map[string]any)
-		require.Equal(t, "test-tool", toolChoiceFunction["name"])
+		testcmp.RequireEqual(t, "test-tool", toolChoiceFunction["name"])
 	})
 
 	t.Run("should parse tool results", func(t *testing.T) {
@@ -1284,9 +1284,9 @@ func TestDoGenerate(t *testing.T) {
 
 		toolCall, ok := result.Content[0].(fantasy.ToolCallContent)
 		require.True(t, ok)
-		require.Equal(t, "call_O17Uplv4lJvD6DVdIvFFeRMw", toolCall.ToolCallID)
-		require.Equal(t, "test-tool", toolCall.ToolName)
-		require.Equal(t, `{"value":"Spark"}`, toolCall.Input)
+		testcmp.RequireEqual(t, "call_O17Uplv4lJvD6DVdIvFFeRMw", toolCall.ToolCallID)
+		testcmp.RequireEqual(t, "test-tool", toolCall.ToolName)
+		testcmp.RequireEqual(t, `{"value":"Spark"}`, toolCall.Input)
 	})
 
 	t.Run("should handle ToolChoiceRequired", func(t *testing.T) {
@@ -1331,21 +1331,21 @@ func TestDoGenerate(t *testing.T) {
 		require.Len(t, server.calls, 1)
 
 		call := server.calls[0]
-		require.Equal(t, "gpt-3.5-turbo", call.body["model"])
+		testcmp.RequireEqual(t, "gpt-3.5-turbo", call.body["model"])
 
 		// Verify tool is present
 		tools := call.body["tools"].([]any)
 		require.Len(t, tools, 1)
 
 		tool := tools[0].(map[string]any)
-		require.Equal(t, "function", tool["type"])
+		testcmp.RequireEqual(t, "function", tool["type"])
 
 		function := tool["function"].(map[string]any)
-		require.Equal(t, "test-tool", function["name"])
+		testcmp.RequireEqual(t, "test-tool", function["name"])
 
 		// Verify tool_choice is set to "required" (not a function name)
 		toolChoice := call.body["tool_choice"]
-		require.Equal(t, "required", toolChoice)
+		testcmp.RequireEqual(t, "required", toolChoice)
 	})
 
 	t.Run("should parse annotations/citations", func(t *testing.T) {
@@ -1385,13 +1385,13 @@ func TestDoGenerate(t *testing.T) {
 
 		textContent, ok := result.Content[0].(fantasy.TextContent)
 		require.True(t, ok)
-		require.Equal(t, "Based on the search results [doc1], I found information.", textContent.Text)
+		testcmp.RequireEqual(t, "Based on the search results [doc1], I found information.", textContent.Text)
 
 		sourceContent, ok := result.Content[1].(fantasy.SourceContent)
 		require.True(t, ok)
-		require.Equal(t, fantasy.SourceTypeURL, sourceContent.SourceType)
-		require.Equal(t, "https://example.com/doc1.pdf", sourceContent.URL)
-		require.Equal(t, "Document 1", sourceContent.Title)
+		testcmp.RequireEqual(t, fantasy.SourceTypeURL, sourceContent.SourceType)
+		testcmp.RequireEqual(t, "https://example.com/doc1.pdf", sourceContent.URL)
+		testcmp.RequireEqual(t, "Document 1", sourceContent.Title)
 		require.NotEmpty(t, sourceContent.ID)
 	})
 
@@ -1424,11 +1424,11 @@ func TestDoGenerate(t *testing.T) {
 		})
 
 		require.NoError(t, err)
-		require.Equal(t, int64(1152), result.Usage.CacheReadTokens)
+		testcmp.RequireEqual(t, int64(1152), result.Usage.CacheReadTokens)
 		// InputTokens = prompt_tokens - cached_tokens = 15 - 1152 = -1137 → clamped to 0
-		require.Equal(t, int64(0), result.Usage.InputTokens)
-		require.Equal(t, int64(20), result.Usage.OutputTokens)
-		require.Equal(t, int64(35), result.Usage.TotalTokens)
+		testcmp.RequireEqual(t, int64(0), result.Usage.InputTokens)
+		testcmp.RequireEqual(t, int64(20), result.Usage.OutputTokens)
+		testcmp.RequireEqual(t, int64(35), result.Usage.TotalTokens)
 	})
 
 	t.Run("should return accepted_prediction_tokens and rejected_prediction_tokens", func(t *testing.T) {
@@ -1466,8 +1466,8 @@ func TestDoGenerate(t *testing.T) {
 		openaiMeta, ok := result.ProviderMetadata["openai"].(*ProviderMetadata)
 
 		require.True(t, ok)
-		require.Equal(t, int64(123), openaiMeta.AcceptedPredictionTokens)
-		require.Equal(t, int64(456), openaiMeta.RejectedPredictionTokens)
+		testcmp.RequireEqual(t, int64(123), openaiMeta.AcceptedPredictionTokens)
+		testcmp.RequireEqual(t, int64(456), openaiMeta.RejectedPredictionTokens)
 	})
 
 	t.Run("should clear out temperature, top_p, frequency_penalty, presence_penalty for reasoning models", func(t *testing.T) {
@@ -1497,14 +1497,14 @@ func TestDoGenerate(t *testing.T) {
 		require.Len(t, server.calls, 1)
 
 		call := server.calls[0]
-		require.Equal(t, "o1-preview", call.body["model"])
+		testcmp.RequireEqual(t, "o1-preview", call.body["model"])
 
 		messages := call.body["messages"].([]any)
 		require.Len(t, messages, 1)
 
 		message := messages[0].(map[string]any)
-		require.Equal(t, "user", message["role"])
-		require.Equal(t, "Hello", message["content"])
+		testcmp.RequireEqual(t, "user", message["role"])
+		testcmp.RequireEqual(t, "Hello", message["content"])
 
 		// These should not be present
 		require.Nil(t, call.body["temperature"])
@@ -1514,8 +1514,8 @@ func TestDoGenerate(t *testing.T) {
 
 		// Should have warnings
 		require.Len(t, result.Warnings, 4)
-		require.Equal(t, fantasy.CallWarningTypeUnsupportedSetting, result.Warnings[0].Type)
-		require.Equal(t, "temperature", result.Warnings[0].Setting)
+		testcmp.RequireEqual(t, fantasy.CallWarningTypeUnsupportedSetting, result.Warnings[0].Type)
+		testcmp.RequireEqual(t, "temperature", result.Warnings[0].Setting)
 		require.Contains(t, result.Warnings[0].Details, "temperature is not supported for reasoning models")
 	})
 
@@ -1543,16 +1543,16 @@ func TestDoGenerate(t *testing.T) {
 		require.Len(t, server.calls, 1)
 
 		call := server.calls[0]
-		require.Equal(t, "o1-preview", call.body["model"])
-		require.Equal(t, float64(1000), call.body["max_completion_tokens"])
+		testcmp.RequireEqual(t, "o1-preview", call.body["model"])
+		testcmp.RequireEqual(t, any(float64(1000)), call.body["max_completion_tokens"])
 		require.Nil(t, call.body["max_tokens"])
 
 		messages := call.body["messages"].([]any)
 		require.Len(t, messages, 1)
 
 		message := messages[0].(map[string]any)
-		require.Equal(t, "user", message["role"])
-		require.Equal(t, "Hello", message["content"])
+		testcmp.RequireEqual(t, "user", message["role"])
+		testcmp.RequireEqual(t, "Hello", message["content"])
 	})
 
 	t.Run("should return reasoning tokens", func(t *testing.T) {
@@ -1584,10 +1584,10 @@ func TestDoGenerate(t *testing.T) {
 		})
 
 		require.NoError(t, err)
-		require.Equal(t, int64(15), result.Usage.InputTokens)
-		require.Equal(t, int64(20), result.Usage.OutputTokens)
-		require.Equal(t, int64(35), result.Usage.TotalTokens)
-		require.Equal(t, int64(10), result.Usage.ReasoningTokens)
+		testcmp.RequireEqual(t, int64(15), result.Usage.InputTokens)
+		testcmp.RequireEqual(t, int64(20), result.Usage.OutputTokens)
+		testcmp.RequireEqual(t, int64(35), result.Usage.TotalTokens)
+		testcmp.RequireEqual(t, int64(10), result.Usage.ReasoningTokens)
 	})
 
 	t.Run("should send max_completion_tokens extension setting", func(t *testing.T) {
@@ -1618,15 +1618,15 @@ func TestDoGenerate(t *testing.T) {
 		require.Len(t, server.calls, 1)
 
 		call := server.calls[0]
-		require.Equal(t, "o1-preview", call.body["model"])
-		require.Equal(t, float64(255), call.body["max_completion_tokens"])
+		testcmp.RequireEqual(t, "o1-preview", call.body["model"])
+		testcmp.RequireEqual(t, any(float64(255)), call.body["max_completion_tokens"])
 
 		messages := call.body["messages"].([]any)
 		require.Len(t, messages, 1)
 
 		message := messages[0].(map[string]any)
-		require.Equal(t, "user", message["role"])
-		require.Equal(t, "Hello", message["content"])
+		testcmp.RequireEqual(t, "user", message["role"])
+		testcmp.RequireEqual(t, "Hello", message["content"])
 	})
 
 	t.Run("should send prediction extension setting", func(t *testing.T) {
@@ -1660,18 +1660,18 @@ func TestDoGenerate(t *testing.T) {
 		require.Len(t, server.calls, 1)
 
 		call := server.calls[0]
-		require.Equal(t, "gpt-3.5-turbo", call.body["model"])
+		testcmp.RequireEqual(t, "gpt-3.5-turbo", call.body["model"])
 
 		prediction := call.body["prediction"].(map[string]any)
-		require.Equal(t, "content", prediction["type"])
-		require.Equal(t, "Hello, World!", prediction["content"])
+		testcmp.RequireEqual(t, "content", prediction["type"])
+		testcmp.RequireEqual(t, "Hello, World!", prediction["content"])
 
 		messages := call.body["messages"].([]any)
 		require.Len(t, messages, 1)
 
 		message := messages[0].(map[string]any)
-		require.Equal(t, "user", message["role"])
-		require.Equal(t, "Hello", message["content"])
+		testcmp.RequireEqual(t, "user", message["role"])
+		testcmp.RequireEqual(t, "Hello", message["content"])
 	})
 
 	t.Run("should send store extension setting", func(t *testing.T) {
@@ -1702,15 +1702,15 @@ func TestDoGenerate(t *testing.T) {
 		require.Len(t, server.calls, 1)
 
 		call := server.calls[0]
-		require.Equal(t, "gpt-3.5-turbo", call.body["model"])
-		require.Equal(t, true, call.body["store"])
+		testcmp.RequireEqual(t, "gpt-3.5-turbo", call.body["model"])
+		testcmp.RequireEqual(t, true, call.body["store"])
 
 		messages := call.body["messages"].([]any)
 		require.Len(t, messages, 1)
 
 		message := messages[0].(map[string]any)
-		require.Equal(t, "user", message["role"])
-		require.Equal(t, "Hello", message["content"])
+		testcmp.RequireEqual(t, "user", message["role"])
+		testcmp.RequireEqual(t, "Hello", message["content"])
 	})
 
 	t.Run("should send metadata extension values", func(t *testing.T) {
@@ -1743,17 +1743,17 @@ func TestDoGenerate(t *testing.T) {
 		require.Len(t, server.calls, 1)
 
 		call := server.calls[0]
-		require.Equal(t, "gpt-3.5-turbo", call.body["model"])
+		testcmp.RequireEqual(t, "gpt-3.5-turbo", call.body["model"])
 
 		metadata := call.body["metadata"].(map[string]any)
-		require.Equal(t, "value", metadata["custom"])
+		testcmp.RequireEqual(t, "value", metadata["custom"])
 
 		messages := call.body["messages"].([]any)
 		require.Len(t, messages, 1)
 
 		message := messages[0].(map[string]any)
-		require.Equal(t, "user", message["role"])
-		require.Equal(t, "Hello", message["content"])
+		testcmp.RequireEqual(t, "user", message["role"])
+		testcmp.RequireEqual(t, "Hello", message["content"])
 	})
 
 	t.Run("should send promptCacheKey extension value", func(t *testing.T) {
@@ -1784,15 +1784,15 @@ func TestDoGenerate(t *testing.T) {
 		require.Len(t, server.calls, 1)
 
 		call := server.calls[0]
-		require.Equal(t, "gpt-3.5-turbo", call.body["model"])
-		require.Equal(t, "test-cache-key-123", call.body["prompt_cache_key"])
+		testcmp.RequireEqual(t, "gpt-3.5-turbo", call.body["model"])
+		testcmp.RequireEqual(t, "test-cache-key-123", call.body["prompt_cache_key"])
 
 		messages := call.body["messages"].([]any)
 		require.Len(t, messages, 1)
 
 		message := messages[0].(map[string]any)
-		require.Equal(t, "user", message["role"])
-		require.Equal(t, "Hello", message["content"])
+		testcmp.RequireEqual(t, "user", message["role"])
+		testcmp.RequireEqual(t, "Hello", message["content"])
 	})
 
 	t.Run("should send safety_identifier extension value", func(t *testing.T) {
@@ -1823,15 +1823,15 @@ func TestDoGenerate(t *testing.T) {
 		require.Len(t, server.calls, 1)
 
 		call := server.calls[0]
-		require.Equal(t, "gpt-3.5-turbo", call.body["model"])
-		require.Equal(t, "test-safety-identifier-123", call.body["safety_identifier"])
+		testcmp.RequireEqual(t, "gpt-3.5-turbo", call.body["model"])
+		testcmp.RequireEqual(t, "test-safety-identifier-123", call.body["safety_identifier"])
 
 		messages := call.body["messages"].([]any)
 		require.Len(t, messages, 1)
 
 		message := messages[0].(map[string]any)
-		require.Equal(t, "user", message["role"])
-		require.Equal(t, "Hello", message["content"])
+		testcmp.RequireEqual(t, "user", message["role"])
+		testcmp.RequireEqual(t, "Hello", message["content"])
 	})
 
 	t.Run("should remove temperature setting for search preview models", func(t *testing.T) {
@@ -1858,12 +1858,12 @@ func TestDoGenerate(t *testing.T) {
 		require.Len(t, server.calls, 1)
 
 		call := server.calls[0]
-		require.Equal(t, "gpt-4o-search-preview", call.body["model"])
+		testcmp.RequireEqual(t, "gpt-4o-search-preview", call.body["model"])
 		require.Nil(t, call.body["temperature"])
 
 		require.Len(t, result.Warnings, 1)
-		require.Equal(t, fantasy.CallWarningTypeUnsupportedSetting, result.Warnings[0].Type)
-		require.Equal(t, "temperature", result.Warnings[0].Setting)
+		testcmp.RequireEqual(t, fantasy.CallWarningTypeUnsupportedSetting, result.Warnings[0].Type)
+		testcmp.RequireEqual(t, "temperature", result.Warnings[0].Setting)
 		require.Contains(t, result.Warnings[0].Details, "search preview models")
 	})
 
@@ -1895,15 +1895,15 @@ func TestDoGenerate(t *testing.T) {
 		require.Len(t, server.calls, 1)
 
 		call := server.calls[0]
-		require.Equal(t, "o3-mini", call.body["model"])
-		require.Equal(t, "flex", call.body["service_tier"])
+		testcmp.RequireEqual(t, "o3-mini", call.body["model"])
+		testcmp.RequireEqual(t, "flex", call.body["service_tier"])
 
 		messages := call.body["messages"].([]any)
 		require.Len(t, messages, 1)
 
 		message := messages[0].(map[string]any)
-		require.Equal(t, "user", message["role"])
-		require.Equal(t, "Hello", message["content"])
+		testcmp.RequireEqual(t, "user", message["role"])
+		testcmp.RequireEqual(t, "Hello", message["content"])
 	})
 
 	t.Run("should show warning when using flex processing with unsupported model", func(t *testing.T) {
@@ -1935,8 +1935,8 @@ func TestDoGenerate(t *testing.T) {
 		require.Nil(t, call.body["service_tier"])
 
 		require.Len(t, result.Warnings, 1)
-		require.Equal(t, fantasy.CallWarningTypeUnsupportedSetting, result.Warnings[0].Type)
-		require.Equal(t, "ServiceTier", result.Warnings[0].Setting)
+		testcmp.RequireEqual(t, fantasy.CallWarningTypeUnsupportedSetting, result.Warnings[0].Type)
+		testcmp.RequireEqual(t, "ServiceTier", result.Warnings[0].Setting)
 		require.Contains(t, result.Warnings[0].Details, "flex processing is only available")
 	})
 
@@ -1966,15 +1966,15 @@ func TestDoGenerate(t *testing.T) {
 		require.Len(t, server.calls, 1)
 
 		call := server.calls[0]
-		require.Equal(t, "gpt-4o-mini", call.body["model"])
-		require.Equal(t, "priority", call.body["service_tier"])
+		testcmp.RequireEqual(t, "gpt-4o-mini", call.body["model"])
+		testcmp.RequireEqual(t, "priority", call.body["service_tier"])
 
 		messages := call.body["messages"].([]any)
 		require.Len(t, messages, 1)
 
 		message := messages[0].(map[string]any)
-		require.Equal(t, "user", message["role"])
-		require.Equal(t, "Hello", message["content"])
+		testcmp.RequireEqual(t, "user", message["role"])
+		testcmp.RequireEqual(t, "Hello", message["content"])
 	})
 
 	t.Run("should show warning when using priority processing with unsupported model", func(t *testing.T) {
@@ -2006,8 +2006,8 @@ func TestDoGenerate(t *testing.T) {
 		require.Nil(t, call.body["service_tier"])
 
 		require.Len(t, result.Warnings, 1)
-		require.Equal(t, fantasy.CallWarningTypeUnsupportedSetting, result.Warnings[0].Type)
-		require.Equal(t, "ServiceTier", result.Warnings[0].Setting)
+		testcmp.RequireEqual(t, fantasy.CallWarningTypeUnsupportedSetting, result.Warnings[0].Type)
+		testcmp.RequireEqual(t, "ServiceTier", result.Warnings[0].Setting)
 		require.Contains(t, result.Warnings[0].Details, "priority processing is only available")
 	})
 }
@@ -2344,14 +2344,14 @@ func TestDoStream(t *testing.T) {
 		require.NotEqual(t, -1, textStart)
 		require.NotEqual(t, -1, textEnd)
 		require.NotEqual(t, -1, finish)
-		require.Equal(t, []string{"Hello", ", ", "World!"}, deltas)
+		testcmp.RequireEqual(t, []string{"Hello", ", ", "World!"}, deltas)
 
 		// Check finish part
 		finishPart := parts[finish]
-		require.Equal(t, fantasy.FinishReasonStop, finishPart.FinishReason)
-		require.Equal(t, int64(17), finishPart.Usage.InputTokens)
-		require.Equal(t, int64(227), finishPart.Usage.OutputTokens)
-		require.Equal(t, int64(244), finishPart.Usage.TotalTokens)
+		testcmp.RequireEqual(t, fantasy.FinishReasonStop, finishPart.FinishReason)
+		testcmp.RequireEqual(t, int64(17), finishPart.Usage.InputTokens)
+		testcmp.RequireEqual(t, int64(227), finishPart.Usage.OutputTokens)
+		testcmp.RequireEqual(t, int64(244), finishPart.Usage.TotalTokens)
 	})
 
 	t.Run("should stream tool deltas", func(t *testing.T) {
@@ -2402,17 +2402,17 @@ func TestDoStream(t *testing.T) {
 			switch part.Type {
 			case fantasy.StreamPartTypeToolInputStart:
 				toolInputStart = i
-				require.Equal(t, "call_O17Uplv4lJvD6DVdIvFFeRMw", part.ID)
-				require.Equal(t, "test-tool", part.ToolCallName)
+				testcmp.RequireEqual(t, "call_O17Uplv4lJvD6DVdIvFFeRMw", part.ID)
+				testcmp.RequireEqual(t, "test-tool", part.ToolCallName)
 			case fantasy.StreamPartTypeToolInputDelta:
 				toolDeltas = append(toolDeltas, part.Delta)
 			case fantasy.StreamPartTypeToolInputEnd:
 				toolInputEnd = i
 			case fantasy.StreamPartTypeToolCall:
 				toolCall = i
-				require.Equal(t, "call_O17Uplv4lJvD6DVdIvFFeRMw", part.ID)
-				require.Equal(t, "test-tool", part.ToolCallName)
-				require.Equal(t, `{"value":"Sparkle Day"}`, part.ToolCallInput)
+				testcmp.RequireEqual(t, "call_O17Uplv4lJvD6DVdIvFFeRMw", part.ID)
+				testcmp.RequireEqual(t, "test-tool", part.ToolCallName)
+				testcmp.RequireEqual(t, `{"value":"Sparkle Day"}`, part.ToolCallInput)
 			}
 		}
 
@@ -2425,7 +2425,7 @@ func TestDoStream(t *testing.T) {
 		for _, delta := range toolDeltas {
 			fullInput.WriteString(delta)
 		}
-		require.Equal(t, `{"value":"Sparkle Day"}`, fullInput.String())
+		testcmp.RequireEqual(t, `{"value":"Sparkle Day"}`, fullInput.String())
 	})
 
 	t.Run("should handle tool calls with empty arguments", func(t *testing.T) {
@@ -2475,17 +2475,17 @@ func TestDoStream(t *testing.T) {
 			switch part.Type {
 			case fantasy.StreamPartTypeToolInputStart:
 				toolInputStart = i
-				require.Equal(t, "call_empty_args", part.ID)
-				require.Equal(t, "test-tool", part.ToolCallName)
+				testcmp.RequireEqual(t, "call_empty_args", part.ID)
+				testcmp.RequireEqual(t, "test-tool", part.ToolCallName)
 			case fantasy.StreamPartTypeToolInputEnd:
 				toolInputEnd = i
-				require.Equal(t, "call_empty_args", part.ID)
+				testcmp.RequireEqual(t, "call_empty_args", part.ID)
 			case fantasy.StreamPartTypeToolCall:
 				toolCall = i
-				require.Equal(t, "call_empty_args", part.ID)
-				require.Equal(t, "test-tool", part.ToolCallName)
+				testcmp.RequireEqual(t, "call_empty_args", part.ID)
+				testcmp.RequireEqual(t, "test-tool", part.ToolCallName)
 				// Empty arguments should be normalized to "{}"
-				require.Equal(t, "{}", part.ToolCallInput)
+				testcmp.RequireEqual(t, "{}", part.ToolCallInput)
 			}
 		}
 
@@ -2541,9 +2541,9 @@ func TestDoStream(t *testing.T) {
 		}
 
 		require.NotNil(t, sourcePart)
-		require.Equal(t, fantasy.SourceTypeURL, sourcePart.SourceType)
-		require.Equal(t, "https://example.com/doc1.pdf", sourcePart.URL)
-		require.Equal(t, "Document 1", sourcePart.Title)
+		testcmp.RequireEqual(t, fantasy.SourceTypeURL, sourcePart.SourceType)
+		testcmp.RequireEqual(t, "https://example.com/doc1.pdf", sourcePart.URL)
+		testcmp.RequireEqual(t, "Document 1", sourcePart.Title)
 		require.NotEmpty(t, sourcePart.ID)
 	})
 
@@ -2612,20 +2612,20 @@ func TestDoStream(t *testing.T) {
 		require.Len(t, server.calls, 1)
 
 		call := server.calls[0]
-		require.Equal(t, "POST", call.method)
-		require.Equal(t, "/chat/completions", call.path)
-		require.Equal(t, "gpt-3.5-turbo", call.body["model"])
-		require.Equal(t, true, call.body["stream"])
+		testcmp.RequireEqual(t, "POST", call.method)
+		testcmp.RequireEqual(t, "/chat/completions", call.path)
+		testcmp.RequireEqual(t, "gpt-3.5-turbo", call.body["model"])
+		testcmp.RequireEqual(t, true, call.body["stream"])
 
 		streamOptions := call.body["stream_options"].(map[string]any)
-		require.Equal(t, true, streamOptions["include_usage"])
+		testcmp.RequireEqual(t, true, streamOptions["include_usage"])
 
 		messages := call.body["messages"].([]any)
 		require.Len(t, messages, 1)
 
 		message := messages[0].(map[string]any)
-		require.Equal(t, "user", message["role"])
-		require.Equal(t, "Hello", message["content"])
+		testcmp.RequireEqual(t, "user", message["role"])
+		testcmp.RequireEqual(t, "Hello", message["content"])
 	})
 
 	t.Run("should return cached tokens in providerMetadata", func(t *testing.T) {
@@ -2672,11 +2672,11 @@ func TestDoStream(t *testing.T) {
 		}
 
 		require.NotNil(t, finishPart)
-		require.Equal(t, int64(1152), finishPart.Usage.CacheReadTokens)
+		testcmp.RequireEqual(t, int64(1152), finishPart.Usage.CacheReadTokens)
 		// InputTokens = prompt_tokens - cached_tokens = 15 - 1152 = -1137 → clamped to 0
-		require.Equal(t, int64(0), finishPart.Usage.InputTokens)
-		require.Equal(t, int64(20), finishPart.Usage.OutputTokens)
-		require.Equal(t, int64(35), finishPart.Usage.TotalTokens)
+		testcmp.RequireEqual(t, int64(0), finishPart.Usage.InputTokens)
+		testcmp.RequireEqual(t, int64(20), finishPart.Usage.OutputTokens)
+		testcmp.RequireEqual(t, int64(35), finishPart.Usage.TotalTokens)
 	})
 
 	t.Run("should return accepted_prediction_tokens and rejected_prediction_tokens", func(t *testing.T) {
@@ -2728,8 +2728,8 @@ func TestDoStream(t *testing.T) {
 
 		openaiMeta, ok := finishPart.ProviderMetadata["openai"].(*ProviderMetadata)
 		require.True(t, ok)
-		require.Equal(t, int64(123), openaiMeta.AcceptedPredictionTokens)
-		require.Equal(t, int64(456), openaiMeta.RejectedPredictionTokens)
+		testcmp.RequireEqual(t, int64(123), openaiMeta.AcceptedPredictionTokens)
+		testcmp.RequireEqual(t, int64(456), openaiMeta.RejectedPredictionTokens)
 	})
 
 	t.Run("should send store extension setting", func(t *testing.T) {
@@ -2760,19 +2760,19 @@ func TestDoStream(t *testing.T) {
 		require.Len(t, server.calls, 1)
 
 		call := server.calls[0]
-		require.Equal(t, "gpt-3.5-turbo", call.body["model"])
-		require.Equal(t, true, call.body["stream"])
-		require.Equal(t, true, call.body["store"])
+		testcmp.RequireEqual(t, "gpt-3.5-turbo", call.body["model"])
+		testcmp.RequireEqual(t, true, call.body["stream"])
+		testcmp.RequireEqual(t, true, call.body["store"])
 
 		streamOptions := call.body["stream_options"].(map[string]any)
-		require.Equal(t, true, streamOptions["include_usage"])
+		testcmp.RequireEqual(t, true, streamOptions["include_usage"])
 
 		messages := call.body["messages"].([]any)
 		require.Len(t, messages, 1)
 
 		message := messages[0].(map[string]any)
-		require.Equal(t, "user", message["role"])
-		require.Equal(t, "Hello", message["content"])
+		testcmp.RequireEqual(t, "user", message["role"])
+		testcmp.RequireEqual(t, "Hello", message["content"])
 	})
 
 	t.Run("should send metadata extension values", func(t *testing.T) {
@@ -2805,21 +2805,21 @@ func TestDoStream(t *testing.T) {
 		require.Len(t, server.calls, 1)
 
 		call := server.calls[0]
-		require.Equal(t, "gpt-3.5-turbo", call.body["model"])
-		require.Equal(t, true, call.body["stream"])
+		testcmp.RequireEqual(t, "gpt-3.5-turbo", call.body["model"])
+		testcmp.RequireEqual(t, true, call.body["stream"])
 
 		metadata := call.body["metadata"].(map[string]any)
-		require.Equal(t, "value", metadata["custom"])
+		testcmp.RequireEqual(t, "value", metadata["custom"])
 
 		streamOptions := call.body["stream_options"].(map[string]any)
-		require.Equal(t, true, streamOptions["include_usage"])
+		testcmp.RequireEqual(t, true, streamOptions["include_usage"])
 
 		messages := call.body["messages"].([]any)
 		require.Len(t, messages, 1)
 
 		message := messages[0].(map[string]any)
-		require.Equal(t, "user", message["role"])
-		require.Equal(t, "Hello", message["content"])
+		testcmp.RequireEqual(t, "user", message["role"])
+		testcmp.RequireEqual(t, "Hello", message["content"])
 	})
 
 	t.Run("should send serviceTier flex processing setting in streaming", func(t *testing.T) {
@@ -2850,19 +2850,19 @@ func TestDoStream(t *testing.T) {
 		require.Len(t, server.calls, 1)
 
 		call := server.calls[0]
-		require.Equal(t, "o3-mini", call.body["model"])
-		require.Equal(t, "flex", call.body["service_tier"])
-		require.Equal(t, true, call.body["stream"])
+		testcmp.RequireEqual(t, "o3-mini", call.body["model"])
+		testcmp.RequireEqual(t, "flex", call.body["service_tier"])
+		testcmp.RequireEqual(t, true, call.body["stream"])
 
 		streamOptions := call.body["stream_options"].(map[string]any)
-		require.Equal(t, true, streamOptions["include_usage"])
+		testcmp.RequireEqual(t, true, streamOptions["include_usage"])
 
 		messages := call.body["messages"].([]any)
 		require.Len(t, messages, 1)
 
 		message := messages[0].(map[string]any)
-		require.Equal(t, "user", message["role"])
-		require.Equal(t, "Hello", message["content"])
+		testcmp.RequireEqual(t, "user", message["role"])
+		testcmp.RequireEqual(t, "Hello", message["content"])
 	})
 
 	t.Run("should send serviceTier priority processing setting in streaming", func(t *testing.T) {
@@ -2893,19 +2893,19 @@ func TestDoStream(t *testing.T) {
 		require.Len(t, server.calls, 1)
 
 		call := server.calls[0]
-		require.Equal(t, "gpt-4o-mini", call.body["model"])
-		require.Equal(t, "priority", call.body["service_tier"])
-		require.Equal(t, true, call.body["stream"])
+		testcmp.RequireEqual(t, "gpt-4o-mini", call.body["model"])
+		testcmp.RequireEqual(t, "priority", call.body["service_tier"])
+		testcmp.RequireEqual(t, true, call.body["stream"])
 
 		streamOptions := call.body["stream_options"].(map[string]any)
-		require.Equal(t, true, streamOptions["include_usage"])
+		testcmp.RequireEqual(t, true, streamOptions["include_usage"])
 
 		messages := call.body["messages"].([]any)
 		require.Len(t, messages, 1)
 
 		message := messages[0].(map[string]any)
-		require.Equal(t, "user", message["role"])
-		require.Equal(t, "Hello", message["content"])
+		testcmp.RequireEqual(t, "user", message["role"])
+		testcmp.RequireEqual(t, "Hello", message["content"])
 	})
 
 	t.Run("should stream text delta for reasoning models", func(t *testing.T) {
@@ -2944,7 +2944,7 @@ func TestDoStream(t *testing.T) {
 		}
 
 		// Should contain the text content (without empty delta)
-		require.Equal(t, []string{"Hello, World!"}, textDeltas)
+		testcmp.RequireEqual(t, []string{"Hello, World!"}, textDeltas)
 	})
 
 	t.Run("should send reasoning tokens", func(t *testing.T) {
@@ -2992,10 +2992,10 @@ func TestDoStream(t *testing.T) {
 		}
 
 		require.NotNil(t, finishPart)
-		require.Equal(t, int64(15), finishPart.Usage.InputTokens)
-		require.Equal(t, int64(20), finishPart.Usage.OutputTokens)
-		require.Equal(t, int64(35), finishPart.Usage.TotalTokens)
-		require.Equal(t, int64(10), finishPart.Usage.ReasoningTokens)
+		testcmp.RequireEqual(t, int64(15), finishPart.Usage.InputTokens)
+		testcmp.RequireEqual(t, int64(20), finishPart.Usage.OutputTokens)
+		testcmp.RequireEqual(t, int64(35), finishPart.Usage.TotalTokens)
+		testcmp.RequireEqual(t, int64(10), finishPart.Usage.ReasoningTokens)
 	})
 }
 
@@ -3022,7 +3022,7 @@ func TestDefaultToPrompt_DropsEmptyMessages(t *testing.T) {
 
 		require.Len(t, messages, 1, "should only have user message")
 		require.Len(t, warnings, 1)
-		require.Equal(t, fantasy.CallWarningTypeOther, warnings[0].Type)
+		testcmp.RequireEqual(t, fantasy.CallWarningTypeOther, warnings[0].Type)
 		require.Contains(t, warnings[0].Message, "dropping empty assistant message")
 	})
 
@@ -3187,7 +3187,7 @@ func TestResponsesToPrompt_DropsEmptyMessages(t *testing.T) {
 
 		require.Len(t, input, 1, "should only have user message")
 		require.Len(t, warnings, 1)
-		require.Equal(t, fantasy.CallWarningTypeOther, warnings[0].Type)
+		testcmp.RequireEqual(t, fantasy.CallWarningTypeOther, warnings[0].Type)
 		require.Contains(t, warnings[0].Message, "dropping empty assistant message")
 	})
 
@@ -3374,8 +3374,8 @@ func TestParseContextTooLargeError(t *testing.T) {
 			if tt.wantErr {
 				require.True(t, providerErr.IsContextTooLarge())
 				if tt.wantUsed > 0 {
-					require.Equal(t, tt.wantUsed, providerErr.ContextUsedTokens)
-					require.Equal(t, tt.wantMax, providerErr.ContextMaxTokens)
+					testcmp.RequireEqual(t, tt.wantUsed, providerErr.ContextUsedTokens)
+					testcmp.RequireEqual(t, tt.wantMax, providerErr.ContextMaxTokens)
 				}
 			} else {
 				require.False(t, providerErr.IsContextTooLarge())
@@ -3400,7 +3400,7 @@ func TestUserAgent(t *testing.T) {
 		_, _ = model.Generate(t.Context(), fantasy.Call{Prompt: testPrompt})
 
 		require.Len(t, server.calls, 1)
-		assert.Equal(t, "Charm-Fantasy/"+fantasy.Version+" (https://charm.land/fantasy)", server.calls[0].headers["User-Agent"])
+		testcmp.AssertEqual(t, "Charm-Fantasy/"+fantasy.Version+" (https://charm.land/fantasy)", server.calls[0].headers["User-Agent"])
 	})
 
 	t.Run("WithHeaders User-Agent wins over default", func(t *testing.T) {
@@ -3416,7 +3416,7 @@ func TestUserAgent(t *testing.T) {
 		_, _ = model.Generate(t.Context(), fantasy.Call{Prompt: testPrompt})
 
 		require.Len(t, server.calls, 1)
-		assert.Equal(t, "custom-from-headers", server.calls[0].headers["User-Agent"])
+		testcmp.AssertEqual(t, "custom-from-headers", server.calls[0].headers["User-Agent"])
 	})
 
 	t.Run("WithUserAgent wins over both", func(t *testing.T) {
@@ -3437,7 +3437,7 @@ func TestUserAgent(t *testing.T) {
 		_, _ = model.Generate(t.Context(), fantasy.Call{Prompt: testPrompt})
 
 		require.Len(t, server.calls, 1)
-		assert.Equal(t, "explicit-ua", server.calls[0].headers["User-Agent"])
+		testcmp.AssertEqual(t, "explicit-ua", server.calls[0].headers["User-Agent"])
 	})
 
 	t.Run("Call.UserAgent overrides provider WithHeaders UA", func(t *testing.T) {
@@ -3460,7 +3460,7 @@ func TestUserAgent(t *testing.T) {
 		})
 
 		require.Len(t, server.calls, 1)
-		assert.Equal(t, "call-level-ua", server.calls[0].headers["User-Agent"])
+		testcmp.AssertEqual(t, "call-level-ua", server.calls[0].headers["User-Agent"])
 	})
 
 	t.Run("no Call UA falls through to provider UA", func(t *testing.T) {
@@ -3480,7 +3480,7 @@ func TestUserAgent(t *testing.T) {
 		_, _ = model.Generate(t.Context(), fantasy.Call{Prompt: testPrompt})
 
 		require.Len(t, server.calls, 1)
-		assert.Equal(t, "provider-ua", server.calls[0].headers["User-Agent"])
+		testcmp.AssertEqual(t, "provider-ua", server.calls[0].headers["User-Agent"])
 	})
 
 	t.Run("agent WithUserAgent overrides provider UA end-to-end", func(t *testing.T) {
@@ -3502,7 +3502,7 @@ func TestUserAgent(t *testing.T) {
 		_, _ = agent.Generate(t.Context(), fantasy.AgentCall{Prompt: "hi"})
 
 		require.Len(t, server.calls, 1)
-		assert.Equal(t, "agent-ua", server.calls[0].headers["User-Agent"])
+		testcmp.AssertEqual(t, "agent-ua", server.calls[0].headers["User-Agent"])
 	})
 
 	t.Run("agent without UA falls through to provider UA end-to-end", func(t *testing.T) {
@@ -3524,7 +3524,7 @@ func TestUserAgent(t *testing.T) {
 		_, _ = agent.Generate(t.Context(), fantasy.AgentCall{Prompt: "hi"})
 
 		require.Len(t, server.calls, 1)
-		assert.Equal(t, "provider-ua", server.calls[0].headers["User-Agent"])
+		testcmp.AssertEqual(t, "provider-ua", server.calls[0].headers["User-Agent"])
 	})
 }
 
@@ -3614,8 +3614,8 @@ func TestResponsesGenerate_WebSearchResponse(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	require.Equal(t, "POST", server.calls[0].method)
-	require.Equal(t, "/responses", server.calls[0].path)
+	testcmp.RequireEqual(t, "POST", server.calls[0].method)
+	testcmp.RequireEqual(t, "/responses", server.calls[0].path)
 
 	var (
 		toolCalls   []fantasy.ToolCallContent
@@ -3639,38 +3639,38 @@ func TestResponsesGenerate_WebSearchResponse(t *testing.T) {
 	// ToolCallContent for the provider-executed web_search.
 	require.Len(t, toolCalls, 1)
 	require.True(t, toolCalls[0].ProviderExecuted)
-	require.Equal(t, "web_search", toolCalls[0].ToolName)
-	require.Equal(t, "ws_01", toolCalls[0].ToolCallID)
+	testcmp.RequireEqual(t, "web_search", toolCalls[0].ToolName)
+	testcmp.RequireEqual(t, "ws_01", toolCalls[0].ToolCallID)
 
 	// SourceContent entries from url_citation annotations.
 	require.Len(t, sources, 2)
-	require.Equal(t, "https://example.com/ai-news", sources[0].URL)
-	require.Equal(t, "Latest AI News", sources[0].Title)
-	require.Equal(t, fantasy.SourceTypeURL, sources[0].SourceType)
-	require.Equal(t, "https://example.com/ml-update", sources[1].URL)
-	require.Equal(t, "ML Update", sources[1].Title)
+	testcmp.RequireEqual(t, "https://example.com/ai-news", sources[0].URL)
+	testcmp.RequireEqual(t, "Latest AI News", sources[0].Title)
+	testcmp.RequireEqual(t, fantasy.SourceTypeURL, sources[0].SourceType)
+	testcmp.RequireEqual(t, "https://example.com/ml-update", sources[1].URL)
+	testcmp.RequireEqual(t, "ML Update", sources[1].Title)
 
 	// ToolResultContent with provider metadata.
 	require.Len(t, toolResults, 1)
 	require.True(t, toolResults[0].ProviderExecuted)
-	require.Equal(t, "web_search", toolResults[0].ToolName)
-	require.Equal(t, "ws_01", toolResults[0].ToolCallID)
+	testcmp.RequireEqual(t, "web_search", toolResults[0].ToolName)
+	testcmp.RequireEqual(t, "ws_01", toolResults[0].ToolCallID)
 
 	metaVal, ok := toolResults[0].ProviderMetadata[Name]
 	require.True(t, ok, "providerMetadata should contain openai key")
 	wsMeta, ok := metaVal.(*WebSearchCallMetadata)
 	require.True(t, ok, "metadata should be *WebSearchCallMetadata")
-	require.Equal(t, "ws_01", wsMeta.ItemID)
+	testcmp.RequireEqual(t, "ws_01", wsMeta.ItemID)
 	require.NotNil(t, wsMeta.Action)
-	require.Equal(t, "search", wsMeta.Action.Type)
-	require.Equal(t, "latest AI news", wsMeta.Action.Query)
+	testcmp.RequireEqual(t, "search", wsMeta.Action.Type)
+	testcmp.RequireEqual(t, "latest AI news", wsMeta.Action.Query)
 
 	// TextContent with the final answer.
 	require.Len(t, texts, 1)
-	require.Equal(t,
+	testcmp.RequireEqual(t,
 		"Based on recent search results, here is the latest AI news.",
-		texts[0].Text,
-	)
+		texts[0].Text)
+
 }
 
 func TestResponsesGenerate_StoreOption(t *testing.T) {
@@ -3692,9 +3692,9 @@ func TestResponsesGenerate_StoreOption(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	require.Equal(t, "POST", server.calls[0].method)
-	require.Equal(t, "/responses", server.calls[0].path)
-	require.Equal(t, true, server.calls[0].body["store"])
+	testcmp.RequireEqual(t, "POST", server.calls[0].method)
+	testcmp.RequireEqual(t, "/responses", server.calls[0].path)
+	testcmp.RequireEqual(t, true, server.calls[0].body["store"])
 }
 
 func TestResponsesGenerate_PreviousResponseIDOption(t *testing.T) {
@@ -3717,9 +3717,9 @@ func TestResponsesGenerate_PreviousResponseIDOption(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	require.Equal(t, "POST", server.calls[0].method)
-	require.Equal(t, "/responses", server.calls[0].path)
-	require.Equal(t, "resp_prev_123", server.calls[0].body["previous_response_id"])
+	testcmp.RequireEqual(t, "POST", server.calls[0].method)
+	testcmp.RequireEqual(t, "/responses", server.calls[0].path)
+	testcmp.RequireEqual(t, "resp_prev_123", server.calls[0].body["previous_response_id"])
 }
 
 func TestResponsesGenerate_StateChainingAcrossTurns(t *testing.T) {
@@ -3765,7 +3765,7 @@ func TestResponsesGenerate_StateChainingAcrossTurns(t *testing.T) {
 
 	meta, ok := first.ProviderMetadata[Name].(*ResponsesProviderMetadata)
 	require.True(t, ok)
-	require.Equal(t, "resp_turn_1", meta.ResponseID)
+	testcmp.RequireEqual(t, "resp_turn_1", meta.ResponseID)
 
 	server.response = map[string]any{
 		"id":     "resp_turn_2",
@@ -3808,11 +3808,11 @@ func TestResponsesGenerate_StateChainingAcrossTurns(t *testing.T) {
 	require.Len(t, server.calls, 2)
 
 	firstCall := server.calls[0]
-	require.Equal(t, true, firstCall.body["store"])
+	testcmp.RequireEqual(t, true, firstCall.body["store"])
 
 	secondCall := server.calls[1]
-	require.Equal(t, "resp_turn_1", secondCall.body["previous_response_id"])
-	require.Equal(t, true, secondCall.body["store"])
+	testcmp.RequireEqual(t, "resp_turn_1", secondCall.body["previous_response_id"])
+	testcmp.RequireEqual(t, true, secondCall.body["store"])
 
 	input, ok := secondCall.body["input"].([]any)
 	require.True(t, ok)
@@ -3820,7 +3820,7 @@ func TestResponsesGenerate_StateChainingAcrossTurns(t *testing.T) {
 
 	inputMessage, ok := input[0].(map[string]any)
 	require.True(t, ok)
-	require.Equal(t, "user", inputMessage["role"])
+	testcmp.RequireEqual(t, "user", inputMessage["role"])
 }
 
 func TestResponsesGenerate_WebSearchToolInRequest(t *testing.T) {
@@ -3847,7 +3847,7 @@ func TestResponsesGenerate_WebSearchToolInRequest(t *testing.T) {
 
 		tool, ok := tools[0].(map[string]any)
 		require.True(t, ok)
-		require.Equal(t, "web_search", tool["type"])
+		testcmp.RequireEqual(t, "web_search", tool["type"])
 	})
 
 	t.Run("with search_context_size and allowed_domains", func(t *testing.T) {
@@ -3876,16 +3876,16 @@ func TestResponsesGenerate_WebSearchToolInRequest(t *testing.T) {
 
 		tool, ok := tools[0].(map[string]any)
 		require.True(t, ok)
-		require.Equal(t, "web_search", tool["type"])
-		require.Equal(t, "high", tool["search_context_size"])
+		testcmp.RequireEqual(t, "web_search", tool["type"])
+		testcmp.RequireEqual(t, "high", tool["search_context_size"])
 
 		filters, ok := tool["filters"].(map[string]any)
 		require.True(t, ok, "tool should have filters")
 		domains, ok := filters["allowed_domains"].([]any)
 		require.True(t, ok, "filters should have allowed_domains")
 		require.Len(t, domains, 2)
-		require.Equal(t, "example.com", domains[0])
-		require.Equal(t, "test.com", domains[1])
+		testcmp.RequireEqual(t, "example.com", domains[0])
+		testcmp.RequireEqual(t, "test.com", domains[1])
 	})
 
 	t.Run("with user_location", func(t *testing.T) {
@@ -3916,12 +3916,12 @@ func TestResponsesGenerate_WebSearchToolInRequest(t *testing.T) {
 
 		tool, ok := tools[0].(map[string]any)
 		require.True(t, ok)
-		require.Equal(t, "web_search", tool["type"])
+		testcmp.RequireEqual(t, "web_search", tool["type"])
 
 		userLoc, ok := tool["user_location"].(map[string]any)
 		require.True(t, ok, "tool should have user_location")
-		require.Equal(t, "San Francisco", userLoc["city"])
-		require.Equal(t, "US", userLoc["country"])
+		testcmp.RequireEqual(t, "San Francisco", userLoc["city"])
+		testcmp.RequireEqual(t, "US", userLoc["country"])
 	})
 }
 
@@ -3973,7 +3973,7 @@ func TestResponsesToPrompt_WebSearchProviderExecutedToolResults(t *testing.T) {
 		require.Len(t, input, 3,
 			"expected user + item_reference + assistant text when store=true")
 		require.NotNil(t, input[1].OfItemReference)
-		require.Equal(t, "ws_01", input[1].OfItemReference.ID)
+		testcmp.RequireEqual(t, "ws_01", input[1].OfItemReference.ID)
 	})
 }
 
@@ -4116,34 +4116,34 @@ func TestResponsesStream_WebSearchResponse(t *testing.T) {
 
 	require.NotEmpty(t, toolInputStarts, "should have a tool input start")
 	require.True(t, toolInputStarts[0].ProviderExecuted)
-	require.Equal(t, "web_search", toolInputStarts[0].ToolCallName)
+	testcmp.RequireEqual(t, "web_search", toolInputStarts[0].ToolCallName)
 
 	require.NotEmpty(t, toolCalls, "should have a tool call")
 	require.True(t, toolCalls[0].ProviderExecuted)
-	require.Equal(t, "web_search", toolCalls[0].ToolCallName)
+	testcmp.RequireEqual(t, "web_search", toolCalls[0].ToolCallName)
 
 	require.NotEmpty(t, toolResults, "should have a tool result")
 	require.True(t, toolResults[0].ProviderExecuted)
-	require.Equal(t, "web_search", toolResults[0].ToolCallName)
-	require.Equal(t, "ws_01", toolResults[0].ID)
+	testcmp.RequireEqual(t, "web_search", toolResults[0].ToolCallName)
+	testcmp.RequireEqual(t, "ws_01", toolResults[0].ID)
 
 	require.NotEmpty(t, textDeltas, "should have text deltas")
-	require.Equal(t, "Here are the results.", textDeltas[0].Delta)
+	testcmp.RequireEqual(t, "Here are the results.", textDeltas[0].Delta)
 
 	require.Len(t, sources, 2, "should have two source citations from annotation events")
-	require.Equal(t, fantasy.SourceTypeURL, sources[0].SourceType)
-	require.Equal(t, "https://example.com/ai-news", sources[0].URL)
-	require.Equal(t, "Latest AI News", sources[0].Title)
+	testcmp.RequireEqual(t, fantasy.SourceTypeURL, sources[0].SourceType)
+	testcmp.RequireEqual(t, "https://example.com/ai-news", sources[0].URL)
+	testcmp.RequireEqual(t, "Latest AI News", sources[0].Title)
 	require.NotEmpty(t, sources[0].ID, "source should have an ID")
-	require.Equal(t, fantasy.SourceTypeURL, sources[1].SourceType)
-	require.Equal(t, "https://example.com/more-news", sources[1].URL)
-	require.Equal(t, "More AI News", sources[1].Title)
+	testcmp.RequireEqual(t, fantasy.SourceTypeURL, sources[1].SourceType)
+	testcmp.RequireEqual(t, "https://example.com/more-news", sources[1].URL)
+	testcmp.RequireEqual(t, "More AI News", sources[1].Title)
 	require.NotEmpty(t, sources[1].ID, "source should have an ID")
 
 	require.Len(t, finishes, 1)
 	responsesMeta, ok := finishes[0].ProviderMetadata[Name].(*ResponsesProviderMetadata)
 	require.True(t, ok)
-	require.Equal(t, "resp_01", responsesMeta.ResponseID)
+	testcmp.RequireEqual(t, "resp_01", responsesMeta.ResponseID)
 }
 
 func TestResponsesStream_StoreOption(t *testing.T) {
@@ -4174,9 +4174,9 @@ func TestResponsesStream_StoreOption(t *testing.T) {
 		return part.Type != fantasy.StreamPartTypeFinish
 	})
 
-	require.Equal(t, "POST", sms.calls[0].method)
-	require.Equal(t, "/responses", sms.calls[0].path)
-	require.Equal(t, true, sms.calls[0].body["store"])
+	testcmp.RequireEqual(t, "POST", sms.calls[0].method)
+	testcmp.RequireEqual(t, "/responses", sms.calls[0].path)
+	testcmp.RequireEqual(t, true, sms.calls[0].body["store"])
 }
 
 func TestResponsesStream_PreviousResponseIDOption(t *testing.T) {
@@ -4208,7 +4208,7 @@ func TestResponsesStream_PreviousResponseIDOption(t *testing.T) {
 		return part.Type != fantasy.StreamPartTypeFinish
 	})
 
-	require.Equal(t, "POST", sms.calls[0].method)
-	require.Equal(t, "/responses", sms.calls[0].path)
-	require.Equal(t, "resp_prev_456", sms.calls[0].body["previous_response_id"])
+	testcmp.RequireEqual(t, "POST", sms.calls[0].method)
+	testcmp.RequireEqual(t, "/responses", sms.calls[0].path)
+	testcmp.RequireEqual(t, "resp_prev_456", sms.calls[0].body["previous_response_id"])
 }

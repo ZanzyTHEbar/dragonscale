@@ -7,88 +7,47 @@ import (
 	"time"
 
 	"github.com/ZanzyTHEbar/dragonscale/pkg/ids"
+	"go.uber.org/mock/gomock"
 )
 
-// mockRLStore implements RLStore for testing without a real database.
-type mockRLStore struct {
-	baseline       *TaskBaseline
-	tasks          []TaskRecord
-	memories       []RetrievedMemoryRecord
-	updatedWeights []struct {
-		id     ids.UUID
-		weight float64
-		credit float64
-	}
-	updatedSelfReports []struct {
-		id    ids.UUID
-		score int
-	}
-	getTaskBaselineErr        error
-	updateTaskBaselineErr     error
-	getCompletedTasksErr      error
-	getRetrievedMemoriesErr   error
-	updateMemoryWeightErr     error
-	updateMemorySelfReportErr error
+type updatedWeight struct {
+	id     ids.UUID
+	weight float64
+	credit float64
 }
 
-func (m *mockRLStore) GetTaskBaseline(ctx context.Context, agentID string) (*TaskBaseline, error) {
-	if m.getTaskBaselineErr != nil {
-		return nil, m.getTaskBaselineErr
-	}
-	return m.baseline, nil
+func expectUpdateTaskBaseline(store *MockRLStore, updatedBaseline **TaskBaseline, err error) {
+	store.EXPECT().UpdateTaskBaseline(gomock.Any(), "test-agent", gomock.Any()).DoAndReturn(
+		func(_ context.Context, _ string, baseline *TaskBaseline) error {
+			if err != nil {
+				return err
+			}
+			*updatedBaseline = baseline
+			return nil
+		},
+	)
 }
 
-func (m *mockRLStore) UpdateTaskBaseline(ctx context.Context, agentID string, baseline *TaskBaseline) error {
-	if m.updateTaskBaselineErr != nil {
-		return m.updateTaskBaselineErr
-	}
-	m.baseline = baseline
-	return nil
+func expectUpdateMemoryWeights(store *MockRLStore, updatedWeights *[]updatedWeight, times int, err error) {
+	store.EXPECT().UpdateMemoryWeight(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(
+		func(_ context.Context, memoryID ids.UUID, weight, credit float64) error {
+			if err != nil {
+				return err
+			}
+			*updatedWeights = append(*updatedWeights, updatedWeight{memoryID, weight, credit})
+			return nil
+		},
+	).Times(times)
 }
 
-func (m *mockRLStore) GetCompletedTasks(ctx context.Context, agentID string, since time.Time) ([]TaskRecord, error) {
-	if m.getCompletedTasksErr != nil {
-		return nil, m.getCompletedTasksErr
-	}
-	return m.tasks, nil
-}
-
-func (m *mockRLStore) GetRetrievedMemories(ctx context.Context, taskID string) ([]RetrievedMemoryRecord, error) {
-	if m.getRetrievedMemoriesErr != nil {
-		return nil, m.getRetrievedMemoriesErr
-	}
-	return m.memories, nil
-}
-
-func (m *mockRLStore) UpdateMemoryWeight(ctx context.Context, memoryID ids.UUID, weight, credit float64) error {
-	if m.updateMemoryWeightErr != nil {
-		return m.updateMemoryWeightErr
-	}
-	m.updatedWeights = append(m.updatedWeights, struct {
-		id     ids.UUID
-		weight float64
-		credit float64
-	}{memoryID, weight, credit})
-	return nil
-}
-
-func (m *mockRLStore) UpdateMemorySelfReport(ctx context.Context, memoryID ids.UUID, score int) error {
-	if m.updateMemorySelfReportErr != nil {
-		return m.updateMemorySelfReportErr
-	}
-	m.updatedSelfReports = append(m.updatedSelfReports, struct {
-		id    ids.UUID
-		score int
-	}{memoryID, score})
-	return nil
-}
-
-func (m *mockRLStore) ListActiveAgents(ctx context.Context, since time.Time) ([]string, error) {
-	return []string{"test-agent"}, nil
+func expectRetrievedMemories(store *MockRLStore, taskID string, memories []RetrievedMemoryRecord) {
+	// Execute needs one read for processing and currently allows a second read for metrics/logging.
+	store.EXPECT().GetRetrievedMemories(gomock.Any(), taskID).Return(memories, nil).MinTimes(1).MaxTimes(2)
 }
 
 func TestRLTask_Name(t *testing.T) {
-	store := &mockRLStore{}
+	ctrl := gomock.NewController(t)
+	store := NewMockRLStore(ctrl)
 	task := NewRLTask(store, "test-agent")
 
 	if got := task.Name(); got != "rl" {
@@ -97,7 +56,8 @@ func TestRLTask_Name(t *testing.T) {
 }
 
 func TestRLTask_Interval(t *testing.T) {
-	store := &mockRLStore{}
+	ctrl := gomock.NewController(t)
+	store := NewMockRLStore(ctrl)
 	task := NewRLTask(store, "test-agent")
 
 	want := 5 * time.Minute
@@ -107,7 +67,8 @@ func TestRLTask_Interval(t *testing.T) {
 }
 
 func TestRLTask_Timeout(t *testing.T) {
-	store := &mockRLStore{}
+	ctrl := gomock.NewController(t)
+	store := NewMockRLStore(ctrl)
 	task := NewRLTask(store, "test-agent")
 
 	want := 30 * time.Second
@@ -126,10 +87,10 @@ func TestRLTask_Execute_NoStore(t *testing.T) {
 }
 
 func TestRLTask_Execute_NoTasks(t *testing.T) {
-	store := &mockRLStore{
-		baseline: &TaskBaseline{Count: 10},
-		tasks:    []TaskRecord{}, // No tasks
-	}
+	ctrl := gomock.NewController(t)
+	store := NewMockRLStore(ctrl)
+	store.EXPECT().GetTaskBaseline(gomock.Any(), "test-agent").Return(&TaskBaseline{Count: 10}, nil)
+	store.EXPECT().GetCompletedTasks(gomock.Any(), "test-agent", gomock.Any()).Return([]TaskRecord{}, nil)
 	task := NewRLTask(store, "test-agent")
 
 	ctx := context.Background()
@@ -147,33 +108,40 @@ func TestRLTask_Execute_UpdatesWeights(t *testing.T) {
 	memoryID1 := ids.New()
 	memoryID2 := ids.New()
 
-	store := &mockRLStore{
-		baseline: &TaskBaseline{
-			Count:               20,
-			MeanTokens:          1000,
-			MeanErrors:          5,
-			MeanUserCorrections: 2,
-			M2Tokens:            10000,
-			M2Errors:            100,
-			M2UserCorrections:   40,
-		},
-		tasks: []TaskRecord{
-			{
-				ID:              "task-1",
-				Description:     "Test task",
-				TokensUsed:      800, // Better than baseline (fewer tokens)
-				ToolCalls:       5,
-				Errors:          1, // Better than baseline (fewer errors)
-				UserCorrections: 0,
-				Completed:       true,
-				CreatedAt:       time.Now(),
-			},
-		},
-		memories: []RetrievedMemoryRecord{
-			{MemoryID: memoryID1, Similarity: 0.9, SelfReportScore: intPtr(3)},
-			{MemoryID: memoryID2, Similarity: 0.8, SelfReportScore: intPtr(2)},
+	baseline := &TaskBaseline{
+		Count:               20,
+		MeanTokens:          1000,
+		MeanErrors:          5,
+		MeanUserCorrections: 2,
+		M2Tokens:            10000,
+		M2Errors:            100,
+		M2UserCorrections:   40,
+	}
+	tasks := []TaskRecord{
+		{
+			ID:              "task-1",
+			Description:     "Test task",
+			TokensUsed:      800, // Better than baseline (fewer tokens)
+			ToolCalls:       5,
+			Errors:          1, // Better than baseline (fewer errors)
+			UserCorrections: 0,
+			Completed:       true,
+			CreatedAt:       time.Now(),
 		},
 	}
+	memories := []RetrievedMemoryRecord{
+		{MemoryID: memoryID1, Similarity: 0.9, SelfReportScore: intPtr(3)},
+		{MemoryID: memoryID2, Similarity: 0.8, SelfReportScore: intPtr(2)},
+	}
+	var updatedBaseline *TaskBaseline
+	var updatedWeights []updatedWeight
+	ctrl := gomock.NewController(t)
+	store := NewMockRLStore(ctrl)
+	store.EXPECT().GetTaskBaseline(gomock.Any(), "test-agent").Return(baseline, nil)
+	store.EXPECT().GetCompletedTasks(gomock.Any(), "test-agent", gomock.Any()).Return(tasks, nil)
+	expectRetrievedMemories(store, "task-1", memories)
+	expectUpdateMemoryWeights(store, &updatedWeights, 2, nil)
+	expectUpdateTaskBaseline(store, &updatedBaseline, nil)
 
 	task := NewRLTask(store, "test-agent")
 
@@ -183,40 +151,46 @@ func TestRLTask_Execute_UpdatesWeights(t *testing.T) {
 	}
 
 	// Verify weights were updated
-	if len(store.updatedWeights) != 2 {
-		t.Errorf("expected 2 weight updates, got %d", len(store.updatedWeights))
+	if len(updatedWeights) != 2 {
+		t.Errorf("expected 2 weight updates, got %d", len(updatedWeights))
 	}
 
 	// Verify baseline was updated
-	if store.baseline == nil {
+	if updatedBaseline == nil {
 		t.Fatal("baseline should have been updated")
 	}
-	if store.baseline.Count != 21 {
-		t.Errorf("baseline count = %d, want 21", store.baseline.Count)
+	if updatedBaseline.Count != 21 {
+		t.Errorf("baseline count = %d, want 21", updatedBaseline.Count)
 	}
 }
 
 func TestRLTask_Execute_ColdStart(t *testing.T) {
 	memoryID := ids.New()
 
-	store := &mockRLStore{
-		baseline: nil, // Cold start - no baseline
-		tasks: []TaskRecord{
-			{
-				ID:              "task-1",
-				Description:     "First task",
-				TokensUsed:      500,
-				ToolCalls:       3,
-				Errors:          0,
-				UserCorrections: 0,
-				Completed:       true,
-				CreatedAt:       time.Now(),
-			},
-		},
-		memories: []RetrievedMemoryRecord{
-			{MemoryID: memoryID, Similarity: 0.95, SelfReportScore: intPtr(3)},
+	tasks := []TaskRecord{
+		{
+			ID:              "task-1",
+			Description:     "First task",
+			TokensUsed:      500,
+			ToolCalls:       3,
+			Errors:          0,
+			UserCorrections: 0,
+			Completed:       true,
+			CreatedAt:       time.Now(),
 		},
 	}
+	memories := []RetrievedMemoryRecord{
+		{MemoryID: memoryID, Similarity: 0.95, SelfReportScore: intPtr(3)},
+	}
+	var updatedBaseline *TaskBaseline
+	var updatedWeights []updatedWeight
+	ctrl := gomock.NewController(t)
+	store := NewMockRLStore(ctrl)
+	store.EXPECT().GetTaskBaseline(gomock.Any(), "test-agent").Return(nil, nil)
+	store.EXPECT().GetCompletedTasks(gomock.Any(), "test-agent", gomock.Any()).Return(tasks, nil)
+	expectRetrievedMemories(store, "task-1", memories)
+	expectUpdateMemoryWeights(store, &updatedWeights, 1, nil)
+	expectUpdateTaskBaseline(store, &updatedBaseline, nil)
 
 	task := NewRLTask(store, "test-agent")
 
@@ -226,19 +200,19 @@ func TestRLTask_Execute_ColdStart(t *testing.T) {
 	}
 
 	// Verify baseline was created
-	if store.baseline == nil {
+	if updatedBaseline == nil {
 		t.Fatal("baseline should have been created")
 	}
-	if store.baseline.Count != 1 {
-		t.Errorf("baseline count = %d, want 1", store.baseline.Count)
+	if updatedBaseline.Count != 1 {
+		t.Errorf("baseline count = %d, want 1", updatedBaseline.Count)
 	}
-	if store.baseline.MeanTokens != 500 {
-		t.Errorf("baseline mean tokens = %f, want 500", store.baseline.MeanTokens)
+	if updatedBaseline.MeanTokens != 500 {
+		t.Errorf("baseline mean tokens = %f, want 500", updatedBaseline.MeanTokens)
 	}
 
 	// Verify weights were updated
-	if len(store.updatedWeights) != 1 {
-		t.Errorf("expected 1 weight update, got %d", len(store.updatedWeights))
+	if len(updatedWeights) != 1 {
+		t.Errorf("expected 1 weight update, got %d", len(updatedWeights))
 	}
 }
 
@@ -248,34 +222,30 @@ func TestRLTask_Execute_MultipleMemories(t *testing.T) {
 	memoryID2 := ids.New()
 	memoryID3 := ids.New()
 
-	store := &mockRLStore{
-		baseline: &TaskBaseline{
-			Count:               15,
-			MeanTokens:          1000,
-			MeanErrors:          5,
-			MeanUserCorrections: 2,
-			M2Tokens:            5000,
-			M2Errors:            50,
-			M2UserCorrections:   20,
-		},
-		tasks: []TaskRecord{
-			{
-				ID:              "task-1",
-				Description:     "Multi-memory task",
-				TokensUsed:      900,
-				ToolCalls:       10,
-				Errors:          2,
-				UserCorrections: 1,
-				Completed:       true,
-				CreatedAt:       time.Now(),
-			},
-		},
-		memories: []RetrievedMemoryRecord{
-			{MemoryID: memoryID1, Similarity: 0.9, SelfReportScore: intPtr(3)},
-			{MemoryID: memoryID2, Similarity: 0.85, SelfReportScore: intPtr(3)},
-			{MemoryID: memoryID3, Similarity: 0.8, SelfReportScore: intPtr(3)},
-		},
+	baseline := &TaskBaseline{
+		Count:               15,
+		MeanTokens:          1000,
+		MeanErrors:          5,
+		MeanUserCorrections: 2,
+		M2Tokens:            5000,
+		M2Errors:            50,
+		M2UserCorrections:   20,
 	}
+	tasks := []TaskRecord{{ID: "task-1", Description: "Multi-memory task", TokensUsed: 900, ToolCalls: 10, Errors: 2, UserCorrections: 1, Completed: true, CreatedAt: time.Now()}}
+	memories := []RetrievedMemoryRecord{
+		{MemoryID: memoryID1, Similarity: 0.9, SelfReportScore: intPtr(3)},
+		{MemoryID: memoryID2, Similarity: 0.85, SelfReportScore: intPtr(3)},
+		{MemoryID: memoryID3, Similarity: 0.8, SelfReportScore: intPtr(3)},
+	}
+	var updatedBaseline *TaskBaseline
+	var updatedWeights []updatedWeight
+	ctrl := gomock.NewController(t)
+	store := NewMockRLStore(ctrl)
+	store.EXPECT().GetTaskBaseline(gomock.Any(), "test-agent").Return(baseline, nil)
+	store.EXPECT().GetCompletedTasks(gomock.Any(), "test-agent", gomock.Any()).Return(tasks, nil)
+	expectRetrievedMemories(store, "task-1", memories)
+	expectUpdateMemoryWeights(store, &updatedWeights, 3, nil)
+	expectUpdateTaskBaseline(store, &updatedBaseline, nil)
 
 	task := NewRLTask(store, "test-agent")
 
@@ -285,13 +255,13 @@ func TestRLTask_Execute_MultipleMemories(t *testing.T) {
 	}
 
 	// All 3 memories should be updated
-	if len(store.updatedWeights) != 3 {
-		t.Errorf("expected 3 weight updates, got %d", len(store.updatedWeights))
+	if len(updatedWeights) != 3 {
+		t.Errorf("expected 3 weight updates, got %d", len(updatedWeights))
 	}
 
 	// Verify that all memory IDs were updated
 	updatedIDs := make(map[ids.UUID]bool)
-	for _, uw := range store.updatedWeights {
+	for _, uw := range updatedWeights {
 		updatedIDs[uw.id] = true
 	}
 	if !updatedIDs[memoryID1] {
@@ -308,32 +278,26 @@ func TestRLTask_Execute_MultipleMemories(t *testing.T) {
 func TestRLTask_Execute_IncompleteTask(t *testing.T) {
 	memoryID := ids.New()
 
-	store := &mockRLStore{
-		baseline: &TaskBaseline{
-			Count:               20,
-			MeanTokens:          1000,
-			MeanErrors:          5,
-			MeanUserCorrections: 2,
-			M2Tokens:            10000,
-			M2Errors:            100,
-			M2UserCorrections:   40,
-		},
-		tasks: []TaskRecord{
-			{
-				ID:              "task-1",
-				Description:     "Incomplete task",
-				TokensUsed:      800,
-				ToolCalls:       5,
-				Errors:          1,
-				UserCorrections: 0,
-				Completed:       false, // Not completed
-				CreatedAt:       time.Now(),
-			},
-		},
-		memories: []RetrievedMemoryRecord{
-			{MemoryID: memoryID, Similarity: 0.9, SelfReportScore: intPtr(3)},
-		},
+	baseline := &TaskBaseline{
+		Count:               20,
+		MeanTokens:          1000,
+		MeanErrors:          5,
+		MeanUserCorrections: 2,
+		M2Tokens:            10000,
+		M2Errors:            100,
+		M2UserCorrections:   40,
 	}
+	tasks := []TaskRecord{{ID: "task-1", Description: "Incomplete task", TokensUsed: 800, ToolCalls: 5, Errors: 1, UserCorrections: 0, Completed: false, CreatedAt: time.Now()}}
+	memories := []RetrievedMemoryRecord{{MemoryID: memoryID, Similarity: 0.9, SelfReportScore: intPtr(3)}}
+	var updatedBaseline *TaskBaseline
+	var updatedWeights []updatedWeight
+	ctrl := gomock.NewController(t)
+	store := NewMockRLStore(ctrl)
+	store.EXPECT().GetTaskBaseline(gomock.Any(), "test-agent").Return(baseline, nil)
+	store.EXPECT().GetCompletedTasks(gomock.Any(), "test-agent", gomock.Any()).Return(tasks, nil)
+	expectRetrievedMemories(store, "task-1", memories)
+	expectUpdateMemoryWeights(store, &updatedWeights, 1, nil)
+	expectUpdateTaskBaseline(store, &updatedBaseline, nil)
 
 	task := NewRLTask(store, "test-agent")
 
@@ -343,21 +307,21 @@ func TestRLTask_Execute_IncompleteTask(t *testing.T) {
 	}
 
 	// Even incomplete tasks should update memories (with negative credit)
-	if len(store.updatedWeights) != 1 {
-		t.Errorf("expected 1 weight update, got %d", len(store.updatedWeights))
+	if len(updatedWeights) != 1 {
+		t.Errorf("expected 1 weight update, got %d", len(updatedWeights))
 	}
 
 	// The credit should be negative for incomplete task
-	credit := store.updatedWeights[0].credit
+	credit := updatedWeights[0].credit
 	if credit > 0 {
 		t.Errorf("expected negative credit for incomplete task, got %f", credit)
 	}
 }
 
 func TestRLTask_Execute_GetBaselineError(t *testing.T) {
-	store := &mockRLStore{
-		getTaskBaselineErr: errors.New("database error"),
-	}
+	ctrl := gomock.NewController(t)
+	store := NewMockRLStore(ctrl)
+	store.EXPECT().GetTaskBaseline(gomock.Any(), "test-agent").Return(nil, errors.New("database error"))
 	task := NewRLTask(store, "test-agent")
 
 	ctx := context.Background()
@@ -371,17 +335,15 @@ func TestRLTask_Execute_GetBaselineError(t *testing.T) {
 }
 
 func TestRLTask_Execute_UpdateBaselineError(t *testing.T) {
-	store := &mockRLStore{
-		baseline: &TaskBaseline{Count: 10},
-		tasks: []TaskRecord{
-			{
-				ID:        "task-1",
-				Completed: true,
-				CreatedAt: time.Now(),
-			},
-		},
-		updateTaskBaselineErr: errors.New("update failed"),
-	}
+	baseline := &TaskBaseline{Count: 10}
+	tasks := []TaskRecord{{ID: "task-1", Completed: true, CreatedAt: time.Now()}}
+	var updatedBaseline *TaskBaseline
+	ctrl := gomock.NewController(t)
+	store := NewMockRLStore(ctrl)
+	store.EXPECT().GetTaskBaseline(gomock.Any(), "test-agent").Return(baseline, nil)
+	store.EXPECT().GetCompletedTasks(gomock.Any(), "test-agent", gomock.Any()).Return(tasks, nil)
+	expectRetrievedMemories(store, "task-1", nil)
+	expectUpdateTaskBaseline(store, &updatedBaseline, errors.New("update failed"))
 	task := NewRLTask(store, "test-agent")
 
 	ctx := context.Background()
@@ -392,17 +354,15 @@ func TestRLTask_Execute_UpdateBaselineError(t *testing.T) {
 }
 
 func TestRLTask_Execute_GetRetrievedMemoriesError(t *testing.T) {
-	store := &mockRLStore{
-		baseline: &TaskBaseline{Count: 10},
-		tasks: []TaskRecord{
-			{
-				ID:        "task-1",
-				Completed: true,
-				CreatedAt: time.Now(),
-			},
-		},
-		getRetrievedMemoriesErr: errors.New("memory lookup failed"),
-	}
+	baseline := &TaskBaseline{Count: 10}
+	tasks := []TaskRecord{{ID: "task-1", Completed: true, CreatedAt: time.Now()}}
+	var updatedBaseline *TaskBaseline
+	ctrl := gomock.NewController(t)
+	store := NewMockRLStore(ctrl)
+	store.EXPECT().GetTaskBaseline(gomock.Any(), "test-agent").Return(baseline, nil)
+	store.EXPECT().GetCompletedTasks(gomock.Any(), "test-agent", gomock.Any()).Return(tasks, nil)
+	store.EXPECT().GetRetrievedMemories(gomock.Any(), "task-1").Return(nil, errors.New("memory lookup failed"))
+	expectUpdateTaskBaseline(store, &updatedBaseline, nil)
 	task := NewRLTask(store, "test-agent")
 
 	ctx := context.Background()
@@ -416,21 +376,21 @@ func TestRLTask_Execute_UpdateMemoryWeightError(t *testing.T) {
 	memoryID1 := ids.New()
 	memoryID2 := ids.New()
 
-	store := &mockRLStore{
-		baseline: &TaskBaseline{Count: 10},
-		tasks: []TaskRecord{
-			{
-				ID:        "task-1",
-				Completed: true,
-				CreatedAt: time.Now(),
-			},
-		},
-		memories: []RetrievedMemoryRecord{
-			{MemoryID: memoryID1, Similarity: 0.9, SelfReportScore: intPtr(3)},
-			{MemoryID: memoryID2, Similarity: 0.8, SelfReportScore: intPtr(3)},
-		},
-		updateMemoryWeightErr: errors.New("weight update failed"),
+	baseline := &TaskBaseline{Count: 10}
+	tasks := []TaskRecord{{ID: "task-1", Completed: true, CreatedAt: time.Now()}}
+	memories := []RetrievedMemoryRecord{
+		{MemoryID: memoryID1, Similarity: 0.9, SelfReportScore: intPtr(3)},
+		{MemoryID: memoryID2, Similarity: 0.8, SelfReportScore: intPtr(3)},
 	}
+	var updatedBaseline *TaskBaseline
+	var updatedWeights []updatedWeight
+	ctrl := gomock.NewController(t)
+	store := NewMockRLStore(ctrl)
+	store.EXPECT().GetTaskBaseline(gomock.Any(), "test-agent").Return(baseline, nil)
+	store.EXPECT().GetCompletedTasks(gomock.Any(), "test-agent", gomock.Any()).Return(tasks, nil)
+	expectRetrievedMemories(store, "task-1", memories)
+	expectUpdateMemoryWeights(store, &updatedWeights, 2, errors.New("weight update failed"))
+	expectUpdateTaskBaseline(store, &updatedBaseline, nil)
 	task := NewRLTask(store, "test-agent")
 
 	ctx := context.Background()
@@ -440,23 +400,22 @@ func TestRLTask_Execute_UpdateMemoryWeightError(t *testing.T) {
 	}
 
 	// No weights should be recorded (all updates failed)
-	if len(store.updatedWeights) != 0 {
-		t.Errorf("expected 0 weight updates (all failed), got %d", len(store.updatedWeights))
+	if len(updatedWeights) != 0 {
+		t.Errorf("expected 0 weight updates (all failed), got %d", len(updatedWeights))
 	}
 }
 
 func TestRLTask_Execute_NoMemoriesForTask(t *testing.T) {
-	store := &mockRLStore{
-		baseline: &TaskBaseline{Count: 10},
-		tasks: []TaskRecord{
-			{
-				ID:        "task-1",
-				Completed: true,
-				CreatedAt: time.Now(),
-			},
-		},
-		memories: []RetrievedMemoryRecord{}, // No memories retrieved
-	}
+	baseline := &TaskBaseline{Count: 10}
+	tasks := []TaskRecord{{ID: "task-1", Completed: true, CreatedAt: time.Now()}}
+	var updatedBaseline *TaskBaseline
+	var updatedWeights []updatedWeight
+	ctrl := gomock.NewController(t)
+	store := NewMockRLStore(ctrl)
+	store.EXPECT().GetTaskBaseline(gomock.Any(), "test-agent").Return(baseline, nil)
+	store.EXPECT().GetCompletedTasks(gomock.Any(), "test-agent", gomock.Any()).Return(tasks, nil)
+	expectRetrievedMemories(store, "task-1", []RetrievedMemoryRecord{})
+	expectUpdateTaskBaseline(store, &updatedBaseline, nil)
 	task := NewRLTask(store, "test-agent")
 
 	ctx := context.Background()
@@ -465,8 +424,8 @@ func TestRLTask_Execute_NoMemoriesForTask(t *testing.T) {
 	}
 
 	// No weights should be updated
-	if len(store.updatedWeights) != 0 {
-		t.Errorf("expected 0 weight updates (no memories), got %d", len(store.updatedWeights))
+	if len(updatedWeights) != 0 {
+		t.Errorf("expected 0 weight updates (no memories), got %d", len(updatedWeights))
 	}
 }
 
@@ -474,40 +433,30 @@ func TestRLTask_Execute_MultipleTasks(t *testing.T) {
 	memoryID1 := ids.New()
 	memoryID2 := ids.New()
 
-	store := &mockRLStore{
-		baseline: &TaskBaseline{
-			Count:               10,
-			MeanTokens:          1000,
-			MeanErrors:          5,
-			MeanUserCorrections: 2,
-		},
-		tasks: []TaskRecord{
-			{
-				ID:              "task-1",
-				Description:     "First task",
-				TokensUsed:      900,
-				ToolCalls:       5,
-				Errors:          1,
-				UserCorrections: 0,
-				Completed:       true,
-				CreatedAt:       time.Now(),
-			},
-			{
-				ID:              "task-2",
-				Description:     "Second task",
-				TokensUsed:      950,
-				ToolCalls:       6,
-				Errors:          2,
-				UserCorrections: 1,
-				Completed:       true,
-				CreatedAt:       time.Now(),
-			},
-		},
-		memories: []RetrievedMemoryRecord{
-			{MemoryID: memoryID1, Similarity: 0.9, SelfReportScore: intPtr(3)},
-			{MemoryID: memoryID2, Similarity: 0.8, SelfReportScore: intPtr(2)},
-		},
+	baseline := &TaskBaseline{
+		Count:               10,
+		MeanTokens:          1000,
+		MeanErrors:          5,
+		MeanUserCorrections: 2,
 	}
+	tasks := []TaskRecord{
+		{ID: "task-1", Description: "First task", TokensUsed: 900, ToolCalls: 5, Errors: 1, UserCorrections: 0, Completed: true, CreatedAt: time.Now()},
+		{ID: "task-2", Description: "Second task", TokensUsed: 950, ToolCalls: 6, Errors: 2, UserCorrections: 1, Completed: true, CreatedAt: time.Now()},
+	}
+	memories := []RetrievedMemoryRecord{
+		{MemoryID: memoryID1, Similarity: 0.9, SelfReportScore: intPtr(3)},
+		{MemoryID: memoryID2, Similarity: 0.8, SelfReportScore: intPtr(2)},
+	}
+	var updatedBaseline *TaskBaseline
+	var updatedWeights []updatedWeight
+	ctrl := gomock.NewController(t)
+	store := NewMockRLStore(ctrl)
+	store.EXPECT().GetTaskBaseline(gomock.Any(), "test-agent").Return(baseline, nil)
+	store.EXPECT().GetCompletedTasks(gomock.Any(), "test-agent", gomock.Any()).Return(tasks, nil)
+	expectRetrievedMemories(store, "task-1", memories)
+	expectRetrievedMemories(store, "task-2", memories)
+	expectUpdateMemoryWeights(store, &updatedWeights, 4, nil)
+	expectUpdateTaskBaseline(store, &updatedBaseline, nil)
 
 	task := NewRLTask(store, "test-agent")
 
@@ -517,42 +466,36 @@ func TestRLTask_Execute_MultipleTasks(t *testing.T) {
 	}
 
 	// Both tasks should process the same memories (4 updates total)
-	if len(store.updatedWeights) != 4 {
-		t.Errorf("expected 4 weight updates (2 tasks x 2 memories), got %d", len(store.updatedWeights))
+	if len(updatedWeights) != 4 {
+		t.Errorf("expected 4 weight updates (2 tasks x 2 memories), got %d", len(updatedWeights))
 	}
 
 	// Baseline should be updated twice (count = 12)
-	if store.baseline.Count != 12 {
-		t.Errorf("baseline count = %d, want 12", store.baseline.Count)
+	if updatedBaseline.Count != 12 {
+		t.Errorf("baseline count = %d, want 12", updatedBaseline.Count)
 	}
 }
 
 func TestRLTask_Execute_NoSelfReportScore(t *testing.T) {
 	memoryID := ids.New()
 
-	store := &mockRLStore{
-		baseline: &TaskBaseline{
-			Count:               15,
-			MeanTokens:          1000,
-			MeanErrors:          5,
-			MeanUserCorrections: 2,
-		},
-		tasks: []TaskRecord{
-			{
-				ID:              "task-1",
-				Description:     "Task with no self-report",
-				TokensUsed:      900,
-				ToolCalls:       5,
-				Errors:          1,
-				UserCorrections: 0,
-				Completed:       true,
-				CreatedAt:       time.Now(),
-			},
-		},
-		memories: []RetrievedMemoryRecord{
-			{MemoryID: memoryID, Similarity: 0.9, SelfReportScore: nil}, // No self-report
-		},
+	baseline := &TaskBaseline{
+		Count:               15,
+		MeanTokens:          1000,
+		MeanErrors:          5,
+		MeanUserCorrections: 2,
 	}
+	tasks := []TaskRecord{{ID: "task-1", Description: "Task with no self-report", TokensUsed: 900, ToolCalls: 5, Errors: 1, UserCorrections: 0, Completed: true, CreatedAt: time.Now()}}
+	memories := []RetrievedMemoryRecord{{MemoryID: memoryID, Similarity: 0.9, SelfReportScore: nil}}
+	var updatedBaseline *TaskBaseline
+	var updatedWeights []updatedWeight
+	ctrl := gomock.NewController(t)
+	store := NewMockRLStore(ctrl)
+	store.EXPECT().GetTaskBaseline(gomock.Any(), "test-agent").Return(baseline, nil)
+	store.EXPECT().GetCompletedTasks(gomock.Any(), "test-agent", gomock.Any()).Return(tasks, nil)
+	expectRetrievedMemories(store, "task-1", memories)
+	expectUpdateMemoryWeights(store, &updatedWeights, 1, nil)
+	expectUpdateTaskBaseline(store, &updatedBaseline, nil)
 
 	task := NewRLTask(store, "test-agent")
 
@@ -562,12 +505,12 @@ func TestRLTask_Execute_NoSelfReportScore(t *testing.T) {
 	}
 
 	// Memory should still be updated with default self-report of 0
-	if len(store.updatedWeights) != 1 {
-		t.Errorf("expected 1 weight update, got %d", len(store.updatedWeights))
+	if len(updatedWeights) != 1 {
+		t.Errorf("expected 1 weight update, got %d", len(updatedWeights))
 	}
 
 	// Credit should be 0 when no self-report (selfReportNorm = 0/3 = 0)
-	credit := store.updatedWeights[0].credit
+	credit := updatedWeights[0].credit
 	if credit != 0 {
 		t.Errorf("expected 0 credit when no self-report, got %f", credit)
 	}
@@ -576,17 +519,18 @@ func TestRLTask_Execute_NoSelfReportScore(t *testing.T) {
 func TestRLTask_processTask_SingleMemory(t *testing.T) {
 	memoryID := ids.New()
 
-	store := &mockRLStore{
-		baseline: &TaskBaseline{
-			Count:               15,
-			MeanTokens:          1000,
-			MeanErrors:          5,
-			MeanUserCorrections: 2,
-		},
-		memories: []RetrievedMemoryRecord{
-			{MemoryID: memoryID, Similarity: 0.9, SelfReportScore: intPtr(3)},
-		},
+	baseline := &TaskBaseline{
+		Count:               15,
+		MeanTokens:          1000,
+		MeanErrors:          5,
+		MeanUserCorrections: 2,
 	}
+	memories := []RetrievedMemoryRecord{{MemoryID: memoryID, Similarity: 0.9, SelfReportScore: intPtr(3)}}
+	var updatedWeights []updatedWeight
+	ctrl := gomock.NewController(t)
+	store := NewMockRLStore(ctrl)
+	store.EXPECT().GetRetrievedMemories(gomock.Any(), "task-1").Return(memories, nil)
+	expectUpdateMemoryWeights(store, &updatedWeights, 1, nil)
 
 	task := NewRLTask(store, "test-agent")
 
@@ -602,13 +546,13 @@ func TestRLTask_processTask_SingleMemory(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	if err := task.processTask(ctx, taskRecord, store.baseline); err != nil {
+	if err := task.processTask(ctx, taskRecord, baseline); err != nil {
 		t.Fatalf("processTask() error: %v", err)
 	}
 
 	// Single memory should get full distribution (no split)
-	if len(store.updatedWeights) != 1 {
-		t.Errorf("expected 1 weight update, got %d", len(store.updatedWeights))
+	if len(updatedWeights) != 1 {
+		t.Errorf("expected 1 weight update, got %d", len(updatedWeights))
 	}
 }
 

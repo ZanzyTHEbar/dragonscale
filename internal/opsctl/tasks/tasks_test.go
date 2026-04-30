@@ -58,6 +58,7 @@ func TestNewRegistryContainsCoreTasks(t *testing.T) {
 		"sqlc-check",
 		"sqlc-vet",
 		"test",
+		"test-containers",
 		"test-integration",
 		"uninstall",
 		"uninstall-all",
@@ -131,6 +132,16 @@ func TestRunTaskEnvUsesArgv(t *testing.T) {
 
 	got := runTaskEnv(ctx)
 	testcmp.RequireEqual(t, []string{"ARGS=--verbose foo bar baz"}, got)
+}
+
+func TestScriptHeaderDefaultsGoEnvironment(t *testing.T) {
+	script := scriptHeader()
+
+	require.Contains(t, script, `export GO="${GO:-go}"`)
+	require.Contains(t, script, `export GOFLAGS="${GOFLAGS:--v -trimpath -tags=stdjson}"`)
+	require.Contains(t, script, `export CGO_ENABLED="${CGO_ENABLED:-1}"`)
+	require.Contains(t, script, `export GOOS="${GOOS:-linux}"`)
+	require.Contains(t, script, `export GOARCH="${GOARCH:-`)
 }
 
 func TestQuoteArgs(t *testing.T) {
@@ -320,12 +331,12 @@ func TestEvalRunSpecsPreservesEvalConfig(t *testing.T) {
 	})
 
 	require.Len(t, specs, 2)
-	require.Equal(t, "echo", specs[0].Name)
-	require.Equal(t, []string{"DRAGONSCALE_EVAL_CONFIG=./configs/override.json"}, specs[0].Args)
-	require.Equal(t, "npx", specs[1].Name)
+	testcmp.RequireEqual(t, []runner.CommandSpec{
+		{Name: "echo", Args: []string{"DRAGONSCALE_EVAL_CONFIG=./configs/override.json"}},
+		{Name: "npx", Args: []string{"--yes", "promptfoo", "eval", "--config", "promptfooconfig.yaml", "--no-cache", "--no-progress-bar", "-j", "1"}},
+	}, projectCommandSpecs(specs))
 	require.Contains(t, strings.Join(specs[1].Env, " "), "DRAGONSCALE_EVAL_CONFIG=./configs/override.json")
 	require.NotContains(t, strings.Join(specs[1].Env, " "), "DRAGONSCALE_EVAL_CONFIG=./configs/default.json")
-	require.Contains(t, strings.Join(specs[1].Args, " "), "--yes promptfoo eval --config promptfooconfig.yaml --no-cache --no-progress-bar -j 1")
 
 	compareScript, err := os.ReadFile(filepath.Clean(filepath.Join("..", "..", "..", "eval", "scripts", "compare.sh")))
 	require.NoError(t, err)
@@ -368,11 +379,13 @@ func TestEvalRunSpecsUsesPromptfooArgsOverride(t *testing.T) {
 
 	require.NotEmpty(t, specs)
 	last := specs[len(specs)-1]
-	require.Equal(t, "npx", last.Name)
-	testcmp.RequireEqual(t, []string{
-		"--yes", "promptfoo", "eval", "--config", "promptfooconfig.yaml",
-		"--no-cache", "--max-concurrency", "1",
-	}, last.Args)
+	testcmp.RequireEqual(t, runner.CommandSpec{
+		Name: "npx",
+		Args: []string{
+			"--yes", "promptfoo", "eval", "--config", "promptfooconfig.yaml",
+			"--no-cache", "--max-concurrency", "1",
+		},
+	}, runner.CommandSpec{Name: last.Name, Args: last.Args})
 }
 
 func TestEvalCompareTaskDisablesNestedDevcontainerExecution(t *testing.T) {
@@ -470,6 +483,17 @@ func TestEvalCompareTaskPassesBaseConfigEnvToRunner(t *testing.T) {
 	}
 }
 
+func TestDefaultEnvForwardsOllamaContainerOptions(t *testing.T) {
+	ctx := &app.Context{ExtraEnv: map[string]string{
+		"DRAGONSCALE_OLLAMA_CONTAINER_IMAGE": "ollama/ollama:0.12.6",
+		"DRAGONSCALE_OLLAMA_CONTAINER_MODEL": "nomic-embed-text",
+	}}
+
+	env := strings.Join(defaultEnv(ctx), " ")
+	require.Contains(t, env, "DRAGONSCALE_OLLAMA_CONTAINER_IMAGE=ollama/ollama:0.12.6")
+	require.Contains(t, env, "DRAGONSCALE_OLLAMA_CONTAINER_MODEL=nomic-embed-text")
+}
+
 func TestLintTaskUsesCommandSpecs(t *testing.T) {
 	ctx := &app.Context{
 		Root: t.TempDir(),
@@ -524,7 +548,7 @@ func TestDevcontainerGenerateTaskUsesNpxExecCommand(t *testing.T) {
 	_, err := task.Run(context.Background(), fake, ctx)
 	require.NoError(t, err)
 	require.Len(t, fake.Calls, 1)
-	require.Equal(t, "npx", fake.Calls[0].Name)
+	testcmp.RequireEqual(t, "npx", fake.Calls[0].Name)
 	require.Contains(t, fake.Calls[0].Args, "@devcontainers/cli")
 	require.Contains(t, fake.Calls[0].Args, "exec")
 	require.Contains(t, fake.Calls[0].Args, "bash")
@@ -646,7 +670,7 @@ func TestEvalTestTaskBypassesDevcontainerWrapperWhenDisabled(t *testing.T) {
 	_, err := task.Run(context.Background(), fake, ctx)
 	require.NoError(t, err)
 	require.Len(t, fake.Calls, 1)
-	require.Equal(t, "bash", fake.Calls[0].Name)
+	testcmp.RequireEqual(t, "bash", fake.Calls[0].Name)
 	joinedArgs := strings.Join(fake.Calls[0].Args, " ")
 	require.Contains(t, joinedArgs, "$GO test -v ./eval/go_evals/...")
 	require.NotContains(t, joinedArgs, "@devcontainers/cli")
@@ -740,7 +764,7 @@ func TestEvalTasksUseRepoRootPathsWhenCwdIsNested(t *testing.T) {
 	_, err := evalView.Run(context.Background(), fake, ctx)
 	require.NoError(t, err)
 	require.Len(t, fake.Calls, 1)
-	require.Equal(t, filepath.Join(root, "eval"), fake.Calls[0].Dir)
+	testcmp.RequireEqual(t, runner.CommandSpec{Name: "npx", Dir: filepath.Join(root, "eval")}, projectCommandNameAndDir(fake.Calls[0]))
 
 	fake.Calls = nil
 	evalCompare := findTaskByName(t, NewRegistry(ctx.Root), "eval-compare")
@@ -762,8 +786,29 @@ func TestEvalFixturesTaskCreatesFixtureCommands(t *testing.T) {
 	task := findTaskByName(t, NewRegistry(ctx.Root), "eval-fixtures")
 	_, err := task.Run(context.Background(), fake, ctx)
 	require.NoError(t, err)
-	require.GreaterOrEqual(t, len(fake.Calls), 5)
+	require.GreaterOrEqual(t, len(fake.Calls), 6)
 	testcmp.RequireEqual(t, []string{"mkdir", "rm", "bash", "cp"}, []string{fake.Calls[0].Name, fake.Calls[1].Name, fake.Calls[4].Name, fake.Calls[5].Name})
+}
+
+func TestGenerateTaskIncludesNestedFantasyMocks(t *testing.T) {
+	script := generateScript(&app.Context{})
+
+	require.Contains(t, script, "$GO generate ./...")
+	require.Contains(t, script, "(cd internal/fantasy && $GO generate -run mockgen ./...)")
+}
+
+func TestTestContainersTaskOptsIntoContainerTests(t *testing.T) {
+	ctx := &app.Context{Root: t.TempDir()}
+	fake := &runner.FakeRunner{Result: runner.CommandResult{ExitCode: 0}}
+	task := findTaskByName(t, NewRegistry(ctx.Root), "test-containers")
+
+	_, err := task.Run(context.Background(), fake, ctx)
+	require.NoError(t, err)
+	require.Len(t, fake.Calls, 1)
+	script := strings.Join(fake.Calls[0].Args, " ")
+	require.Contains(t, script, "DRAGONSCALE_RUN_CONTAINER_TESTS=1 $GO test -tags 'integration containers'")
+	require.Contains(t, script, "-timeout 20m")
+	require.Contains(t, script, "./pkg/memory/...")
 }
 
 func projectCommandSpecs(specs []runner.CommandSpec) []runner.CommandSpec {

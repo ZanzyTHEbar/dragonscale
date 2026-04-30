@@ -28,7 +28,7 @@ func TestAssembleContext_UsesActiveContextProjection(t *testing.T) {
 	cfg.Agents.Defaults.MaxToolIterations = 4
 	cfg.Memory.DBPath = filepath.Join(tmpDir, "active-context.db")
 
-	al := mustNewAgentLoop(t, cfg, bus.NewMessageBus(), newMockLanguageModel("ok"))
+	al := mustNewAgentLoop(t, cfg, bus.NewMessageBus(), newMockLanguageModel(t, "ok"))
 	require.NotNil(t, al.activeContextBuilder)
 
 	sessionKey := "projection-session"
@@ -86,7 +86,7 @@ func TestActiveContextBuilder_IncludesPersistedDAGProjection(t *testing.T) {
 	cfg.Agents.Defaults.MaxTokens = 4096
 	cfg.Memory.DBPath = filepath.Join(tmpDir, "active-context-dag.db")
 
-	al := mustNewAgentLoop(t, cfg, bus.NewMessageBus(), newMockLanguageModel("ok"))
+	al := mustNewAgentLoop(t, cfg, bus.NewMessageBus(), newMockLanguageModel(t, "ok"))
 	require.NotNil(t, al.activeContextBuilder)
 
 	sessionKey := "dag-projection-session"
@@ -164,7 +164,7 @@ func TestActiveContextBuilder_UsesTurnSpecificToolHintsInSystemSegment(t *testin
 	cfg.Agents.Defaults.MaxTokens = 4096
 	cfg.Memory.DBPath = filepath.Join(tmpDir, "active-context-tools.db")
 
-	al := mustNewAgentLoop(t, cfg, bus.NewMessageBus(), newMockLanguageModel("ok"))
+	al := mustNewAgentLoop(t, cfg, bus.NewMessageBus(), newMockLanguageModel(t, "ok"))
 	require.NotNil(t, al.activeContextBuilder)
 
 	built, err := al.activeContextBuilder.BuildTurnContext(t.Context(), TurnContextBuildRequest{

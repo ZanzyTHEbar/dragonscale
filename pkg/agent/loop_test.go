@@ -13,6 +13,7 @@ import (
 	"github.com/ZanzyTHEbar/dragonscale/pkg/config"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/memory"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/messages"
+	"go.uber.org/mock/gomock"
 )
 
 // mustNewAgentLoop wraps NewAgentLoop and fails the test on error.
@@ -28,44 +29,30 @@ func mustNewAgentLoop(t *testing.T, cfg *config.Config, msgBus *bus.MessageBus, 
 	return al
 }
 
-// mockLanguageModel is a simple mock fantasy.LanguageModel for testing
-type mockLanguageModel struct {
-	response string
-}
-
-func newMockLanguageModel(response string) *mockLanguageModel {
+func newMockLanguageModel(t *testing.T, response string) *MockLanguageModel {
+	t.Helper()
 	if response == "" {
 		response = "Mock response"
 	}
-	return &mockLanguageModel{response: response}
-}
-
-func (m *mockLanguageModel) Generate(_ context.Context, call fantasy.Call) (*fantasy.Response, error) {
-	return &fantasy.Response{
-		Content:      fantasy.ResponseContent{fantasy.TextContent{Text: m.response}},
+	model := NewMockLanguageModel(gomock.NewController(t))
+	model.EXPECT().Provider().Return("mock").AnyTimes()
+	model.EXPECT().Model().Return("mock-model").AnyTimes()
+	model.EXPECT().Generate(gomock.Any(), gomock.Any()).Return(&fantasy.Response{
+		Content:      fantasy.ResponseContent{fantasy.TextContent{Text: response}},
 		FinishReason: fantasy.FinishReasonStop,
-	}, nil
+	}, nil).AnyTimes()
+	model.EXPECT().Stream(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, _ fantasy.Call) (fantasy.StreamResponse, error) {
+		return func(yield func(fantasy.StreamPart) bool) {
+			if !yield(fantasy.StreamPart{Type: fantasy.StreamPartTypeTextDelta, Delta: response}) {
+				return
+			}
+			yield(fantasy.StreamPart{Type: fantasy.StreamPartTypeFinish, FinishReason: fantasy.FinishReasonStop})
+		}, nil
+	}).AnyTimes()
+	model.EXPECT().GenerateObject(gomock.Any(), gomock.Any()).Return(nil, fmt.Errorf("not implemented")).AnyTimes()
+	model.EXPECT().StreamObject(gomock.Any(), gomock.Any()).Return(nil, fmt.Errorf("not implemented")).AnyTimes()
+	return model
 }
-
-func (m *mockLanguageModel) Stream(_ context.Context, call fantasy.Call) (fantasy.StreamResponse, error) {
-	return func(yield func(fantasy.StreamPart) bool) {
-		if !yield(fantasy.StreamPart{Type: fantasy.StreamPartTypeTextDelta, Delta: m.response}) {
-			return
-		}
-		yield(fantasy.StreamPart{Type: fantasy.StreamPartTypeFinish, FinishReason: fantasy.FinishReasonStop})
-	}, nil
-}
-
-func (m *mockLanguageModel) GenerateObject(_ context.Context, _ fantasy.ObjectCall) (*fantasy.ObjectResponse, error) {
-	return nil, fmt.Errorf("not implemented")
-}
-
-func (m *mockLanguageModel) StreamObject(_ context.Context, _ fantasy.ObjectCall) (fantasy.ObjectStreamResponse, error) {
-	return nil, fmt.Errorf("not implemented")
-}
-
-func (m *mockLanguageModel) Provider() string { return "mock" }
-func (m *mockLanguageModel) Model() string    { return "mock-model" }
 
 func TestContinuityKeepCount_UsesConfiguredPolicy(t *testing.T) {
 	t.Parallel()
@@ -138,7 +125,7 @@ func TestAgentLoop_EnsureSessionKey_NotEmpty(t *testing.T) {
 	cfg.Agents.Defaults.Sandbox = tmpDir
 
 	msgBus := bus.NewMessageBus()
-	model := newMockLanguageModel("ok")
+	model := newMockLanguageModel(t, "ok")
 	al := mustNewAgentLoop(t, cfg, msgBus, model)
 	defer al.Stop()
 
@@ -164,7 +151,7 @@ func TestAgentLoop_ContextTimeout(t *testing.T) {
 	cfg.Agents.Defaults.Sandbox = tmpDir
 
 	msgBus := bus.NewMessageBus()
-	model := newMockLanguageModel("ok")
+	model := newMockLanguageModel(t, "ok")
 	al := mustNewAgentLoop(t, cfg, msgBus, model)
 	defer al.Stop()
 
@@ -190,7 +177,7 @@ func TestAgentLoop_KVOperations(t *testing.T) {
 	cfg.Agents.Defaults.Sandbox = tmpDir
 
 	msgBus := bus.NewMessageBus()
-	model := newMockLanguageModel("ok")
+	model := newMockLanguageModel(t, "ok")
 	al := mustNewAgentLoop(t, cfg, msgBus, model)
 	defer al.Stop()
 
@@ -222,7 +209,7 @@ func TestAgentLoop_KVOperations_NotFound(t *testing.T) {
 	cfg.Agents.Defaults.Sandbox = tmpDir
 
 	msgBus := bus.NewMessageBus()
-	model := newMockLanguageModel("ok")
+	model := newMockLanguageModel(t, "ok")
 	al := mustNewAgentLoop(t, cfg, msgBus, model)
 	defer al.Stop()
 
@@ -246,7 +233,7 @@ func TestAgentLoop_MemoryDelegateOperations(t *testing.T) {
 	cfg.Agents.Defaults.Sandbox = tmpDir
 
 	msgBus := bus.NewMessageBus()
-	model := newMockLanguageModel("ok")
+	model := newMockLanguageModel(t, "ok")
 	al := mustNewAgentLoop(t, cfg, msgBus, model)
 	defer al.Stop()
 
@@ -280,7 +267,7 @@ func TestAgentLoop_SessionOperations(t *testing.T) {
 	cfg.Agents.Defaults.Sandbox = tmpDir
 
 	msgBus := bus.NewMessageBus()
-	model := newMockLanguageModel("ok")
+	model := newMockLanguageModel(t, "ok")
 	al := mustNewAgentLoop(t, cfg, msgBus, model)
 	defer al.Stop()
 
@@ -310,7 +297,7 @@ func TestAgentLoop_ConcurrentSessionAccess(t *testing.T) {
 	cfg.Agents.Defaults.Sandbox = tmpDir
 
 	msgBus := bus.NewMessageBus()
-	model := newMockLanguageModel("ok")
+	model := newMockLanguageModel(t, "ok")
 	al := mustNewAgentLoop(t, cfg, msgBus, model)
 	defer al.Stop()
 
@@ -345,7 +332,7 @@ func TestAgentLoop_ProcessOptions(t *testing.T) {
 	cfg.Agents.Defaults.Sandbox = tmpDir
 
 	msgBus := bus.NewMessageBus()
-	model := newMockLanguageModel("ok")
+	model := newMockLanguageModel(t, "ok")
 	al := mustNewAgentLoop(t, cfg, msgBus, model)
 	defer al.Stop()
 
@@ -400,7 +387,7 @@ func TestAgentLoop_ContextBuilder(t *testing.T) {
 	cfg.Agents.Defaults.Sandbox = tmpDir
 
 	msgBus := bus.NewMessageBus()
-	model := newMockLanguageModel("ok")
+	model := newMockLanguageModel(t, "ok")
 	al := mustNewAgentLoop(t, cfg, msgBus, model)
 	defer al.Stop()
 
@@ -429,7 +416,7 @@ func TestAgentLoop_ToolRegistry(t *testing.T) {
 	cfg.Agents.Defaults.Sandbox = tmpDir
 
 	msgBus := bus.NewMessageBus()
-	model := newMockLanguageModel("ok")
+	model := newMockLanguageModel(t, "ok")
 	al := mustNewAgentLoop(t, cfg, msgBus, model)
 	defer al.Stop()
 
@@ -453,7 +440,7 @@ func TestAgentLoop_Summarization(t *testing.T) {
 	cfg.Agents.Defaults.Sandbox = tmpDir
 
 	msgBus := bus.NewMessageBus()
-	model := newMockLanguageModel("ok")
+	model := newMockLanguageModel(t, "ok")
 	al := mustNewAgentLoop(t, cfg, msgBus, model)
 	defer al.Stop()
 
@@ -527,7 +514,7 @@ func TestAgentLoop_ContextCancellation(t *testing.T) {
 	cfg.Agents.Defaults.Sandbox = tmpDir
 
 	msgBus := bus.NewMessageBus()
-	model := newMockLanguageModel("ok")
+	model := newMockLanguageModel(t, "ok")
 	al := mustNewAgentLoop(t, cfg, msgBus, model)
 
 	// Create a context that will be cancelled
@@ -565,7 +552,7 @@ func TestAgentLoop_ToolResultLimit(t *testing.T) {
 	cfg.Agents.Defaults.Sandbox = tmpDir
 
 	msgBus := bus.NewMessageBus()
-	model := newMockLanguageModel("ok")
+	model := newMockLanguageModel(t, "ok")
 	al := mustNewAgentLoop(t, cfg, msgBus, model)
 	defer al.Stop()
 
@@ -581,7 +568,7 @@ func TestAgentLoop_HealthCheck(t *testing.T) {
 	cfg.Agents.Defaults.Sandbox = tmpDir
 
 	msgBus := bus.NewMessageBus()
-	model := newMockLanguageModel("ok")
+	model := newMockLanguageModel(t, "ok")
 	al := mustNewAgentLoop(t, cfg, msgBus, model)
 	defer al.Stop()
 
@@ -611,7 +598,7 @@ func TestAgentLoop_DefaultIdentity(t *testing.T) {
 	cfg.Agents.Defaults.Sandbox = tmpDir
 
 	msgBus := bus.NewMessageBus()
-	model := newMockLanguageModel("ok")
+	model := newMockLanguageModel(t, "ok")
 	al := mustNewAgentLoop(t, cfg, msgBus, model)
 	defer al.Stop()
 
@@ -628,7 +615,7 @@ func TestAgentLoop_MessageBusIntegration(t *testing.T) {
 	cfg.Agents.Defaults.Sandbox = tmpDir
 
 	msgBus := bus.NewMessageBus()
-	model := newMockLanguageModel("ok")
+	model := newMockLanguageModel(t, "ok")
 	al := mustNewAgentLoop(t, cfg, msgBus, model)
 	defer al.Stop()
 
@@ -653,7 +640,7 @@ func TestAgentLoop_FocusStateNotLoadedWhenMissing(t *testing.T) {
 		},
 	}
 	msgBus := bus.NewMessageBus()
-	model := newMockLanguageModel("ok")
+	model := newMockLanguageModel(t, "ok")
 	al := mustNewAgentLoop(t, cfg, msgBus, model)
 
 	sessionKey := "missing-focus-session"

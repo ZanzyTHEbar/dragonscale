@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ZanzyTHEbar/dragonscale/internal/testcmp"
 	"github.com/ZanzyTHEbar/dragonscale/pkg"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/config"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/ids"
@@ -127,13 +128,13 @@ func TestDaemonSecureBusAuditSink_PersistsBusNativeAuditRow(t *testing.T) {
 	require.NotNil(t, row.DurationMs)
 	require.GreaterOrEqual(t, *row.DurationMs, int64(0))
 	require.NotNil(t, row.Input)
-	require.Equal(t, `{}`, *row.Input)
-	require.Equal(t, string(itr.CmdToolExec), payload.CommandType)
-	require.Equal(t, "echo", payload.ToolName)
-	require.Equal(t, "call-1", payload.ToolCallID)
-	require.Equal(t, "daemon-session", payload.SessionKey)
-	require.Equal(t, "req-daemon-1", payload.RequestID)
-	require.Equal(t, `{}`, payload.ToolInput)
+	testcmp.RequireEqual(t, `{}`, *row.Input)
+	testcmp.RequireEqual(t, string(itr.CmdToolExec), payload.CommandType)
+	testcmp.RequireEqual(t, "echo", payload.ToolName)
+	testcmp.RequireEqual(t, "call-1", payload.ToolCallID)
+	testcmp.RequireEqual(t, "daemon-session", payload.SessionKey)
+	testcmp.RequireEqual(t, "req-daemon-1", payload.RequestID)
+	testcmp.RequireEqual(t, `{}`, payload.ToolInput)
 }
 
 func TestDaemonSecureBusAuditSink_PersistsPolicyViolationAuditRow(t *testing.T) {
@@ -152,10 +153,10 @@ func TestDaemonSecureBusAuditSink_PersistsPolicyViolationAuditRow(t *testing.T) 
 	var payload securebus.AuditEvent
 	require.NoError(t, json.Unmarshal([]byte(*row.Output), &payload))
 	require.True(t, payload.IsError)
-	require.Equal(t, "echo", payload.ToolName)
+	testcmp.RequireEqual(t, "echo", payload.ToolName)
 	require.NotNil(t, row.Input)
-	require.Equal(t, `{}`, *row.Input)
-	require.Equal(t, `{}`, payload.ToolInput)
+	testcmp.RequireEqual(t, `{}`, *row.Input)
+	testcmp.RequireEqual(t, `{}`, payload.ToolInput)
 	require.NotEmpty(t, payload.PolicyViolation)
 }
 
@@ -169,14 +170,14 @@ func TestDaemonSecureBusAuditSink_PersistsToolErrorAuditRow(t *testing.T) {
 	row := waitForDaemonAuditRow(t, d, "securebus_tool_exec_error", "call-error")
 	require.False(t, row.Success)
 	require.NotNil(t, row.Input)
-	require.Equal(t, `{"text":"boom"}`, *row.Input)
-	require.Equal(t, "boom", row.ErrorMsg)
+	testcmp.RequireEqual(t, `{"text":"boom"}`, *row.Input)
+	testcmp.RequireEqual(t, "boom", row.ErrorMsg)
 	var payload securebus.AuditEvent
 	require.NoError(t, json.Unmarshal([]byte(*row.Output), &payload))
 	require.True(t, payload.IsError)
-	require.Equal(t, `{"text":"boom"}`, payload.ToolInput)
-	require.Equal(t, "", payload.PolicyViolation)
-	require.Equal(t, "boom", payload.ExecutionError)
+	testcmp.RequireEqual(t, `{"text":"boom"}`, payload.ToolInput)
+	testcmp.RequireEqual(t, "", payload.PolicyViolation)
+	testcmp.RequireEqual(t, "boom", payload.ExecutionError)
 	require.False(t, payload.LeakDetected)
 }
 
@@ -191,10 +192,10 @@ func TestDaemonSecureBusAuditSink_PersistsLeakAuditRow(t *testing.T) {
 	row := waitForDaemonAuditRow(t, d, "securebus_tool_exec_leak", "call-leak")
 	require.True(t, row.Success)
 	require.NotNil(t, row.Input)
-	require.Equal(t, `{}`, *row.Input)
+	testcmp.RequireEqual(t, `{}`, *row.Input)
 	var payload securebus.AuditEvent
 	require.NoError(t, json.Unmarshal([]byte(*row.Output), &payload))
-	require.Equal(t, `{}`, payload.ToolInput)
+	testcmp.RequireEqual(t, `{}`, payload.ToolInput)
 	require.True(t, payload.LeakDetected)
 	require.False(t, payload.IsError)
 }
@@ -279,7 +280,7 @@ func TestNewDaemonAuditDelegate_UsesConfiguredDBPath(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Len(t, rows, 1)
-	require.Equal(t, "call-configured", rows[0].ToolCallID)
+	testcmp.RequireEqual(t, "call-configured", rows[0].ToolCallID)
 }
 
 func TestServiceDaemonStart_PersistsSocketAuditRow(t *testing.T) {

@@ -97,7 +97,7 @@ func newSessionBoundAgentLoop(t *testing.T) *AgentLoop {
 	cfg.Agents.Defaults.Sandbox = tmpDir
 	cfg.Memory.DBPath = filepath.Join(tmpDir, "session-binding.db")
 
-	return mustNewAgentLoop(t, cfg, bus.NewMessageBus(), newMockLanguageModel("ok"))
+	return mustNewAgentLoop(t, cfg, bus.NewMessageBus(), newMockLanguageModel(t, "ok"))
 }
 
 func invokeMemoryAction(t *testing.T, tool *MemGPTTool, args map[string]interface{}) memstore.MemoryToolResponse {

@@ -6,7 +6,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ZanzyTHEbar/dragonscale/internal/opsctl/format"
 	"github.com/ZanzyTHEbar/dragonscale/internal/opsctl/runner"
+	"github.com/ZanzyTHEbar/dragonscale/internal/testcmp"
 	"github.com/stretchr/testify/require"
 )
 
@@ -29,11 +31,9 @@ func TestTaskRegistryAndDispatch(t *testing.T) {
 	tr, err := ops.Run(context.Background(), "demo", []string{"--flag", "value"}, &Context{Cwd: root})
 	require.NoError(t, err)
 	require.True(t, task.called)
-	require.Equal(t, []string{"--flag", "value"}, task.receivedArgs)
+	testcmp.RequireEqual(t, []string{"--flag", "value"}, task.receivedArgs)
+	testcmp.RequireEqual(t, resultFields{Task: "demo", ExitCode: 0, Stdout: "ok"}, projectResult(tr))
 	require.Equal(t, root, task.receivedCtx.Cwd)
-	require.Equal(t, "demo", tr.Task)
-	require.Equal(t, 0, tr.ExitCode)
-	require.Equal(t, "ok", tr.Stdout)
 }
 
 func TestRunPropagatesTaskError(t *testing.T) {
@@ -45,9 +45,7 @@ func TestRunPropagatesTaskError(t *testing.T) {
 
 	tr, err := ops.Run(context.Background(), "failed", []string{}, &Context{Root: root})
 	require.Error(t, err)
-	require.Equal(t, "failed", tr.Task)
-	require.Equal(t, 2, tr.ExitCode)
-	require.Equal(t, "boom", tr.Error)
+	testcmp.RequireEqual(t, resultFields{Task: "failed", ExitCode: 2, Error: "boom"}, projectResult(tr))
 }
 
 func TestRunAppliesTimeoutContext(t *testing.T) {
@@ -88,6 +86,22 @@ type captureTask struct {
 	receivedArgs []string
 	receivedCtx  *Context
 	withContext  func(context.Context)
+}
+
+type resultFields struct {
+	Task     string
+	ExitCode int
+	Stdout   string
+	Error    string
+}
+
+func projectResult(result format.TaskResult) resultFields {
+	return resultFields{
+		Task:     result.Task,
+		ExitCode: result.ExitCode,
+		Stdout:   result.Stdout,
+		Error:    result.Error,
+	}
 }
 
 func (t *captureTask) Name() string {

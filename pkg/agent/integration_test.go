@@ -336,7 +336,7 @@ func TestIntegration_FullAgentLoop_SimpleResponse(t *testing.T) {
 	}
 
 	msgBus := bus.NewMessageBus()
-	model := newMockLanguageModel("Hello from Fantasy agent")
+	model := newMockLanguageModel(t, "Hello from Fantasy agent")
 	al := mustNewAgentLoop(t, cfg, msgBus, model)
 
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
@@ -527,7 +527,7 @@ func TestIntegration_ProcessDirect(t *testing.T) {
 	}
 
 	msgBus := bus.NewMessageBus()
-	model := newMockLanguageModel("Direct CLI response")
+	model := newMockLanguageModel(t, "Direct CLI response")
 	al := mustNewAgentLoop(t, cfg, msgBus, model)
 
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
@@ -757,7 +757,7 @@ func TestIntegration_MultipleMessages(t *testing.T) {
 	}
 
 	msgBus := bus.NewMessageBus()
-	model := newMockLanguageModel("Response")
+	model := newMockLanguageModel(t, "Response")
 	al := mustNewAgentLoop(t, cfg, msgBus, model)
 
 	sessionKey := "multi-msg-session"

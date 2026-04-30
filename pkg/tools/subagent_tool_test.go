@@ -8,13 +8,34 @@ import (
 
 	fantasy "charm.land/fantasy"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/bus"
+	"go.uber.org/mock/gomock"
 )
 
-// MockLanguageModel is a test implementation of fantasy.LanguageModel
-type MockLanguageModel struct{}
+func newPromptEchoLanguageModel(t *testing.T) *MockLanguageModel {
+	t.Helper()
+	model := NewMockLanguageModel(gomock.NewController(t))
+	model.EXPECT().Provider().Return("mock").AnyTimes()
+	model.EXPECT().Model().Return("test-model").AnyTimes()
+	model.EXPECT().Generate(gomock.Any(), gomock.Any()).DoAndReturn(promptEchoGenerate).AnyTimes()
+	model.EXPECT().Stream(gomock.Any(), gomock.Any()).DoAndReturn(func(ctx context.Context, call fantasy.Call) (fantasy.StreamResponse, error) {
+		resp, err := promptEchoGenerate(ctx, call)
+		if err != nil {
+			return nil, err
+		}
+		return func(yield func(fantasy.StreamPart) bool) {
+			if !yield(fantasy.StreamPart{Type: fantasy.StreamPartTypeTextDelta, Delta: resp.Content.Text()}) {
+				return
+			}
+			yield(fantasy.StreamPart{Type: fantasy.StreamPartTypeFinish, FinishReason: fantasy.FinishReasonStop})
+		}, nil
+	}).AnyTimes()
+	model.EXPECT().GenerateObject(gomock.Any(), gomock.Any()).Return(nil, fmt.Errorf("not implemented")).AnyTimes()
+	model.EXPECT().StreamObject(gomock.Any(), gomock.Any()).Return(nil, fmt.Errorf("not implemented")).AnyTimes()
+	return model
+}
 
-func (m *MockLanguageModel) Generate(_ context.Context, call fantasy.Call) (*fantasy.Response, error) {
-	// Find the last user message to generate a response
+func promptEchoGenerate(_ context.Context, call fantasy.Call) (*fantasy.Response, error) {
+	// Find the last user message to generate a response.
 	for i := len(call.Prompt) - 1; i >= 0; i-- {
 		if call.Prompt[i].Role == fantasy.MessageRoleUser {
 			for _, part := range call.Prompt[i].Content {
@@ -33,34 +54,10 @@ func (m *MockLanguageModel) Generate(_ context.Context, call fantasy.Call) (*fan
 	}, nil
 }
 
-func (m *MockLanguageModel) Stream(ctx context.Context, call fantasy.Call) (fantasy.StreamResponse, error) {
-	resp, err := m.Generate(ctx, call)
-	if err != nil {
-		return nil, err
-	}
-	return func(yield func(fantasy.StreamPart) bool) {
-		if !yield(fantasy.StreamPart{Type: fantasy.StreamPartTypeTextDelta, Delta: resp.Content.Text()}) {
-			return
-		}
-		yield(fantasy.StreamPart{Type: fantasy.StreamPartTypeFinish, FinishReason: fantasy.FinishReasonStop})
-	}, nil
-}
-
-func (m *MockLanguageModel) GenerateObject(_ context.Context, _ fantasy.ObjectCall) (*fantasy.ObjectResponse, error) {
-	return nil, fmt.Errorf("not implemented")
-}
-
-func (m *MockLanguageModel) StreamObject(_ context.Context, _ fantasy.ObjectCall) (fantasy.ObjectStreamResponse, error) {
-	return nil, fmt.Errorf("not implemented")
-}
-
-func (m *MockLanguageModel) Provider() string { return "mock" }
-func (m *MockLanguageModel) Model() string    { return "test-model" }
-
 // TestSubagentTool_Name verifies tool name
 func TestSubagentTool_Name(t *testing.T) {
 	t.Parallel()
-	provider := &MockLanguageModel{}
+	provider := newPromptEchoLanguageModel(t)
 	manager := NewSubagentManager(provider, "test-model", "/tmp/test", nil)
 	tool := NewSubagentTool(manager)
 
@@ -72,7 +69,7 @@ func TestSubagentTool_Name(t *testing.T) {
 // TestSubagentTool_Description verifies tool description
 func TestSubagentTool_Description(t *testing.T) {
 	t.Parallel()
-	provider := &MockLanguageModel{}
+	provider := newPromptEchoLanguageModel(t)
 	manager := NewSubagentManager(provider, "test-model", "/tmp/test", nil)
 	tool := NewSubagentTool(manager)
 
@@ -88,7 +85,7 @@ func TestSubagentTool_Description(t *testing.T) {
 // TestSubagentTool_Parameters verifies tool parameters schema
 func TestSubagentTool_Parameters(t *testing.T) {
 	t.Parallel()
-	provider := &MockLanguageModel{}
+	provider := newPromptEchoLanguageModel(t)
 	manager := NewSubagentManager(provider, "test-model", "/tmp/test", nil)
 	tool := NewSubagentTool(manager)
 
@@ -157,7 +154,7 @@ func TestSubagentTool_Parameters(t *testing.T) {
 // TestSubagentTool_SetContext verifies context setting
 func TestSubagentTool_SetContext(t *testing.T) {
 	t.Parallel()
-	provider := &MockLanguageModel{}
+	provider := newPromptEchoLanguageModel(t)
 	manager := NewSubagentManager(provider, "test-model", "/tmp/test", nil)
 	tool := NewSubagentTool(manager)
 
@@ -171,7 +168,7 @@ func TestSubagentTool_SetContext(t *testing.T) {
 // TestSubagentTool_Execute_Success tests successful execution
 func TestSubagentTool_Execute_Success(t *testing.T) {
 	t.Parallel()
-	provider := &MockLanguageModel{}
+	provider := newPromptEchoLanguageModel(t)
 	msgBus := bus.NewMessageBus()
 	manager := NewSubagentManager(provider, "test-model", "/tmp/test", msgBus)
 	manager.SetRunLoop(func(_ context.Context, _ ToolLoopConfig, _, userPrompt, _, _ string) (*ToolLoopResult, error) {
@@ -234,7 +231,7 @@ func TestSubagentTool_Execute_Success(t *testing.T) {
 // TestSubagentTool_Execute_NoLabel tests execution without label
 func TestSubagentTool_Execute_NoLabel(t *testing.T) {
 	t.Parallel()
-	provider := &MockLanguageModel{}
+	provider := newPromptEchoLanguageModel(t)
 	msgBus := bus.NewMessageBus()
 	manager := NewSubagentManager(provider, "test-model", "/tmp/test", msgBus)
 	manager.SetRunLoop(func(_ context.Context, _ ToolLoopConfig, _, userPrompt, _, _ string) (*ToolLoopResult, error) {
@@ -262,7 +259,7 @@ func TestSubagentTool_Execute_NoLabel(t *testing.T) {
 // TestSubagentTool_Execute_MissingTask tests error handling for missing task
 func TestSubagentTool_Execute_MissingTask(t *testing.T) {
 	t.Parallel()
-	provider := &MockLanguageModel{}
+	provider := newPromptEchoLanguageModel(t)
 	manager := NewSubagentManager(provider, "test-model", "/tmp/test", nil)
 	tool := NewSubagentTool(manager)
 
@@ -314,7 +311,7 @@ func TestSubagentTool_Execute_NilManager(t *testing.T) {
 // TestSubagentTool_Execute_ContextPassing verifies context is properly used
 func TestSubagentTool_Execute_ContextPassing(t *testing.T) {
 	t.Parallel()
-	provider := &MockLanguageModel{}
+	provider := newPromptEchoLanguageModel(t)
 	msgBus := bus.NewMessageBus()
 	manager := NewSubagentManager(provider, "test-model", "/tmp/test", msgBus)
 	manager.SetRunLoop(func(_ context.Context, _ ToolLoopConfig, _, userPrompt, _, _ string) (*ToolLoopResult, error) {
@@ -345,7 +342,7 @@ func TestSubagentTool_Execute_ContextPassing(t *testing.T) {
 
 func TestSubagentTool_Execute_NestedDelegationRequiresScopeAndKeptWork(t *testing.T) {
 	t.Parallel()
-	provider := &MockLanguageModel{}
+	provider := newPromptEchoLanguageModel(t)
 	msgBus := bus.NewMessageBus()
 	manager := NewSubagentManager(provider, "test-model", "/tmp/test", msgBus)
 	manager.SetRunLoop(func(_ context.Context, _ ToolLoopConfig, _, userPrompt, _, _ string) (*ToolLoopResult, error) {
@@ -370,7 +367,7 @@ func TestSubagentTool_Execute_NestedDelegationRequiresScopeAndKeptWork(t *testin
 
 func TestSubagentTool_Execute_NestedDelegationWithMetadataSucceeds(t *testing.T) {
 	t.Parallel()
-	provider := &MockLanguageModel{}
+	provider := newPromptEchoLanguageModel(t)
 	msgBus := bus.NewMessageBus()
 	manager := NewSubagentManager(provider, "test-model", "/tmp/test", msgBus)
 	manager.SetRunLoop(func(_ context.Context, _ ToolLoopConfig, _, userPrompt, _, _ string) (*ToolLoopResult, error) {
@@ -394,7 +391,7 @@ func TestSubagentTool_Execute_NestedDelegationWithMetadataSucceeds(t *testing.T)
 // TestSubagentTool_ForUserTruncation verifies long content is truncated for user
 func TestSubagentTool_ForUserTruncation(t *testing.T) {
 	t.Parallel()
-	provider := &MockLanguageModel{}
+	provider := newPromptEchoLanguageModel(t)
 	msgBus := bus.NewMessageBus()
 	manager := NewSubagentManager(provider, "test-model", "/tmp/test", msgBus)
 	manager.SetRunLoop(func(_ context.Context, _ ToolLoopConfig, _, userPrompt, _, _ string) (*ToolLoopResult, error) {

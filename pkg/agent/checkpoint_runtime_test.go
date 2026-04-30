@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ZanzyTHEbar/dragonscale/internal/testcmp"
 	pkgroot "github.com/ZanzyTHEbar/dragonscale/pkg"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/agent/conversations"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/bus"
@@ -41,14 +42,14 @@ func TestIntegration_RuntimeCheckpoint_PersistsSnapshotAndCheckpoint(t *testing.
 	require.NoError(t, al.sessions.Save(sessionKey))
 
 	run, checkpoint, snapshot := loadCheckpointFixture(t, al, sessionKey)
-	assert.Equal(t, "completed", run.Status)
-	assert.Equal(t, checkpointTurnCompletedEvent, snapshot.Event)
+	testcmp.AssertEqual(t, "completed", run.Status)
+	testcmp.AssertEqual(t, checkpointTurnCompletedEvent, snapshot.Event)
 	assert.NotEmpty(t, snapshot.Messages)
-	assert.Equal(t, "user", snapshot.Messages[0].Role)
-	assert.Equal(t, "hello checkpoint runtime", snapshot.Messages[0].Content)
-	assert.Equal(t, "assistant", snapshot.Messages[len(snapshot.Messages)-1].Role)
+	testcmp.AssertEqual(t, "user", snapshot.Messages[0].Role)
+	testcmp.AssertEqual(t, "hello checkpoint runtime", snapshot.Messages[0].Content)
+	testcmp.AssertEqual(t, "assistant", snapshot.Messages[len(snapshot.Messages)-1].Role)
 	assert.Contains(t, snapshot.Messages[len(snapshot.Messages)-1].Content, "checkpoint reply")
-	assert.Equal(t, checkpointNameForRun(run.ID), checkpoint.Name)
+	testcmp.AssertEqual(t, checkpointNameForRun(run.ID), checkpoint.Name)
 }
 
 func TestAgentLoop_RestoreSessionFromCheckpoint_ReplacesPersistedHistory(t *testing.T) {
@@ -80,13 +81,13 @@ func TestAgentLoop_RestoreSessionFromCheckpoint_ReplacesPersistedHistory(t *test
 	require.NoError(t, err)
 
 	expected := conversations.HydrationMessages(snapshot.Messages, conversations.MaxCheckpointHydrationMessages)
-	assert.Equal(t, checkpointHistoryView(expected), checkpointHistoryView(al.sessions.GetHistory(sessionKey)))
+	testcmp.AssertEqual(t, checkpointHistoryView(expected), checkpointHistoryView(al.sessions.GetHistory(sessionKey)))
 
 	lister, ok := al.memDelegate.(sessionMessageLister)
 	require.True(t, ok)
 	rows, err := lister.ListSessionMessages(ctx, pkgroot.NAME, sessionKey, "", 64)
 	require.NoError(t, err)
-	assert.Equal(t, checkpointHistoryView(expected), recallHistoryView(rows))
+	testcmp.AssertEqual(t, checkpointHistoryView(expected), recallHistoryView(rows))
 }
 
 func TestAgentLoop_ForkSessionFromCheckpoint_CreatesHydratedChildSession(t *testing.T) {
@@ -114,13 +115,13 @@ func TestAgentLoop_ForkSessionFromCheckpoint_CreatesHydratedChildSession(t *test
 	require.False(t, childConversationID.IsZero())
 
 	expected := conversations.HydrationMessages(snapshot.Messages, conversations.MaxCheckpointHydrationMessages)
-	assert.Equal(t, checkpointHistoryView(expected), checkpointHistoryView(al.sessions.GetHistory(forkSessionKey)))
+	testcmp.AssertEqual(t, checkpointHistoryView(expected), checkpointHistoryView(al.sessions.GetHistory(forkSessionKey)))
 
 	seeded, err := al.queries.ListAgentMessagesByConversationID(ctx, memsqlc.ListAgentMessagesByConversationIDParams{
 		ConversationID: childConversationID,
 	})
 	require.NoError(t, err)
-	assert.Equal(t, checkpointHistoryView(expected), agentMessageHistoryView(seeded))
+	testcmp.AssertEqual(t, checkpointHistoryView(expected), agentMessageHistoryView(seeded))
 }
 
 func TestAgentLoop_RestartReusesConversationBinding(t *testing.T) {
@@ -139,7 +140,7 @@ func TestAgentLoop_RestartReusesConversationBinding(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
 
-	al1 := mustNewAgentLoop(t, cfg, bus.NewMessageBus(), newMockLanguageModel("first response"))
+	al1 := mustNewAgentLoop(t, cfg, bus.NewMessageBus(), newMockLanguageModel(t, "first response"))
 	sessionKey := "restart-session"
 	_, err = al1.processMessage(ctx, bus.InboundMessage{
 		Channel:    "test",
@@ -154,7 +155,7 @@ func TestAgentLoop_RestartReusesConversationBinding(t *testing.T) {
 	require.NoError(t, al1.sessions.Save(sessionKey))
 	al1.sessions.Close()
 
-	al2 := mustNewAgentLoop(t, cfg, bus.NewMessageBus(), newMockLanguageModel("second response"))
+	al2 := mustNewAgentLoop(t, cfg, bus.NewMessageBus(), newMockLanguageModel(t, "second response"))
 	_, err = al2.processMessage(ctx, bus.InboundMessage{
 		Channel:    "test",
 		SenderID:   "user1",
@@ -166,17 +167,17 @@ func TestAgentLoop_RestartReusesConversationBinding(t *testing.T) {
 	secondConversationID, err := al2.lookupConversationIDForSession(ctx, sessionKey)
 	require.NoError(t, err)
 
-	assert.Equal(t, firstConversationID, secondConversationID)
+	testcmp.AssertEqual(t, firstConversationID, secondConversationID)
 	conversations, err := al2.queries.ListAgentConversations(ctx, memsqlc.ListAgentConversationsParams{Limit: 10})
 	require.NoError(t, err)
 	require.Len(t, conversations, 1)
 	latestRun, err := al2.queries.GetLatestAgentRunByConversationID(ctx, memsqlc.GetLatestAgentRunByConversationIDParams{ConversationID: secondConversationID})
 	require.NoError(t, err)
-	assert.Equal(t, secondConversationID, latestRun.ConversationID)
-	assert.Equal(t, sessionKey, al2.state.GetLastSessionKey())
+	testcmp.AssertEqual(t, secondConversationID, latestRun.ConversationID)
+	testcmp.AssertEqual(t, sessionKey, al2.state.GetLastSessionKey())
 	boundRaw, err := al2.memDelegate.GetKV(ctx, pkgroot.NAME, conversationBindingKey(sessionKey))
 	require.NoError(t, err)
-	assert.Equal(t, secondConversationID.String(), boundRaw)
+	testcmp.AssertEqual(t, secondConversationID.String(), boundRaw)
 	al2.Stop()
 }
 
@@ -207,7 +208,7 @@ func TestAgentLoop_HeartbeatUsesUniqueSessionAndLastPersistedSessionContext(t *t
 		assert.Contains(t, *conv.Title, "heartbeat:")
 		assert.NotEqual(t, "heartbeat", *conv.Title)
 	}
-	assert.Equal(t, userSessionKey, al.state.GetLastSessionKey())
+	testcmp.AssertEqual(t, userSessionKey, al.state.GetLastSessionKey())
 }
 
 func TestAgentLoop_HeartbeatUsesTargetScopedSessionContext(t *testing.T) {
@@ -237,9 +238,9 @@ func TestAgentLoop_HeartbeatUsesTargetScopedSessionContext(t *testing.T) {
 		require.NotNil(t, conv.Title)
 		assert.Contains(t, *conv.Title, "heartbeat:")
 	}
-	assert.Equal(t, "session-chat-b", al.state.GetLastSessionKey())
-	assert.Equal(t, "session-chat-a", al.state.GetLastSessionKeyForTarget("telegram", "chat-a"))
-	assert.Equal(t, "session-chat-b", al.state.GetLastSessionKeyForTarget("telegram", "chat-b"))
+	testcmp.AssertEqual(t, "session-chat-b", al.state.GetLastSessionKey())
+	testcmp.AssertEqual(t, "session-chat-a", al.state.GetLastSessionKeyForTarget("telegram", "chat-a"))
+	testcmp.AssertEqual(t, "session-chat-b", al.state.GetLastSessionKeyForTarget("telegram", "chat-b"))
 }
 
 func TestAgentLoop_ProcessDirectStreamingPersistsLastSessionKey(t *testing.T) {
@@ -253,7 +254,7 @@ func TestAgentLoop_ProcessDirectStreamingPersistsLastSessionKey(t *testing.T) {
 	response, err := al.ProcessDirectStreaming(ctx, "stream this", sessionKey, "cli", "stream-chat")
 	require.NoError(t, err)
 	assert.Contains(t, response, "streaming reply")
-	assert.Equal(t, sessionKey, al.state.GetLastSessionKey())
+	testcmp.AssertEqual(t, sessionKey, al.state.GetLastSessionKey())
 }
 
 func TestIntegration_RuntimeCheckpoint_SubagentSnapshotIncludesToolMessages(t *testing.T) {
@@ -281,7 +282,7 @@ func TestIntegration_RuntimeCheckpoint_SubagentSnapshotIncludesToolMessages(t *t
 	result, err := runLoop(ctx, tools.ToolLoopConfig{Model: &multiToolCallingModel{}, Tools: al.tools, Bus: msgBus, MaxIterations: 10}, "", "Use the echo tool twice", "test", "chat1")
 	require.NoError(t, err)
 	require.NotNil(t, result)
-	assert.Equal(t, "Final response after two tools", result.Content)
+	testcmp.AssertEqual(t, "Final response after two tools", result.Content)
 
 	convs, err := al.queries.ListAgentConversations(ctx, memsqlc.ListAgentConversationsParams{Limit: 10})
 	require.NoError(t, err)
@@ -293,8 +294,10 @@ func TestIntegration_RuntimeCheckpoint_SubagentSnapshotIncludesToolMessages(t *t
 
 	var meta map[string]any
 	require.NoError(t, json.Unmarshal(checkpoint.MetadataJson, &meta))
-	assert.Equal(t, float64(2), meta["tool_calls"])
-	assert.Equal(t, float64(0), meta["errors"])
+	testcmp.AssertEqual(t, map[string]any{"tool_calls": float64(2), "errors": float64(0)}, map[string]any{
+		"tool_calls": meta["tool_calls"],
+		"errors":     meta["errors"],
+	})
 
 	runState, err := al.queries.GetAgentRunStateByID(ctx, memsqlc.GetAgentRunStateByIDParams{ID: checkpoint.RunStateID})
 	require.NoError(t, err)
@@ -332,7 +335,7 @@ func TestIntegration_RuntimeCheckpoint_SubagentRecoveredFinalPersistsAssistantMe
 	result, err := runLoop(ctx, tools.ToolLoopConfig{Model: &emptyFinalAfterToolModel{}, Tools: al.tools, Bus: msgBus, MaxIterations: 10}, "", "Recover the final content from the tool result", "test", "chat1")
 	require.NoError(t, err)
 	require.NotNil(t, result)
-	assert.Equal(t, "Echo: recovered final", result.Content)
+	testcmp.AssertEqual(t, "Echo: recovered final", result.Content)
 
 	convs, err := al.queries.ListAgentConversations(ctx, memsqlc.ListAgentConversationsParams{Limit: 10})
 	require.NoError(t, err)
@@ -368,7 +371,7 @@ func newCheckpointTestAgentLoop(t *testing.T, response string) *AgentLoop {
 	cfg.Agents.Defaults.MaxToolIterations = 4
 	cfg.Memory.DBPath = filepath.Join(tmpDir, "agent-checkpoint.db")
 
-	return mustNewAgentLoop(t, cfg, bus.NewMessageBus(), newMockLanguageModel(response))
+	return mustNewAgentLoop(t, cfg, bus.NewMessageBus(), newMockLanguageModel(t, response))
 }
 
 func loadCheckpointFixture(t *testing.T, al *AgentLoop, sessionKey string) (memsqlc.AgentRun, memsqlc.AgentCheckpoint, conversations.CheckpointSnapshot) {

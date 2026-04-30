@@ -478,6 +478,8 @@ make build-all      # Build for current Linux/CGO target (Linux host required, g
 make install        # Install to ~/.local/bin + copy skills
 make fmt            # go fmt ./...
 make deps           # go get -u + go mod tidy
+make test-integration # Run integration-tagged tests without Docker
+make test-containers  # Run memory integration + Docker-backed smoke tests
 make clean          # Remove build artifacts
 ```
 
@@ -491,6 +493,8 @@ You can run the wrapper directly for faster iteration:
 go run ./cmd/opsctl build
 go run ./cmd/opsctl help
 ```
+
+Docker-backed integration tests are opt-in and isolated from the default suite. `make test-containers` sets `DRAGONSCALE_RUN_CONTAINER_TESTS=1`, runs the memory integration packages, and starts a pinned Ollama container for an `/api/tags` readiness smoke test. Set `DRAGONSCALE_OLLAMA_CONTAINER_MODEL=nomic-embed-text` to also pull a model and exercise `/api/embed`; this can take several minutes on a cold Docker host. Override the image with `DRAGONSCALE_OLLAMA_CONTAINER_IMAGE` if needed.
 
 ### Devcontainer (flatc + sqlc ready)
 

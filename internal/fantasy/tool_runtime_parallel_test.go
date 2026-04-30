@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/assert"
+	"charm.land/fantasy/internal/testcmp"
 	"github.com/stretchr/testify/require"
 )
 
@@ -48,16 +48,30 @@ func TestParallelToolRuntime_OrderAndCallbackDeterminism(t *testing.T) {
 
 	results, err := runtime.Execute(t.Context(), []AgentTool{tool}, nil, toolCalls, cb)
 	require.NoError(t, err)
-	require.Len(t, results, 3)
-	assert.Equal(t, "c1", results[0].ToolCallID)
-	assert.Equal(t, "a", results[0].Result.(ToolResultOutputContentText).Text)
-	assert.Equal(t, "c2", results[1].ToolCallID)
-	assert.Equal(t, "b", results[1].Result.(ToolResultOutputContentText).Text)
-	assert.Equal(t, "c3", results[2].ToolCallID)
-	assert.Equal(t, "c", results[2].Result.(ToolResultOutputContentText).Text)
+	gotResults := make([]struct {
+		ToolCallID string
+		Text       string
+	}, 0, len(results))
+	for _, result := range results {
+		gotResults = append(gotResults, struct {
+			ToolCallID string
+			Text       string
+		}{
+			ToolCallID: result.ToolCallID,
+			Text:       result.Result.(ToolResultOutputContentText).Text,
+		})
+	}
+	testcmp.AssertEqual(t, []struct {
+		ToolCallID string
+		Text       string
+	}{
+		{ToolCallID: "c1", Text: "a"},
+		{ToolCallID: "c2", Text: "b"},
+		{ToolCallID: "c3", Text: "c"},
+	}, gotResults)
 
 	cbMu.Lock()
-	assert.Equal(t, []string{"c1", "c2", "c3"}, cbOrder)
+	testcmp.AssertEqual(t, []string{"c1", "c2", "c3"}, cbOrder)
 	cbMu.Unlock()
 }
 
@@ -80,5 +94,5 @@ func TestParallelToolRuntime_ExecutableProviderTool(t *testing.T) {
 	)
 	require.NoError(t, err)
 	require.Len(t, results, 1)
-	assert.Equal(t, "ok:pt1", results[0].Result.(ToolResultOutputContentText).Text)
+	testcmp.AssertEqual(t, "ok:pt1", results[0].Result.(ToolResultOutputContentText).Text)
 }

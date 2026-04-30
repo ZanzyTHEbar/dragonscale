@@ -10,6 +10,7 @@ import (
 	"time"
 
 	fantasy "charm.land/fantasy"
+	"github.com/ZanzyTHEbar/dragonscale/internal/testcmp"
 	"github.com/ZanzyTHEbar/dragonscale/pkg"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/ids"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/itr"
@@ -307,8 +308,8 @@ func TestSecureBusToolRuntime_ExecutesToolExactlyOnce(t *testing.T) {
 	)
 	require.NoError(t, err)
 	require.Len(t, results, 1)
-	assert.Equal(t, int32(1), tool.calls.Load())
-	assert.Equal(t, "hello", results[0].Result.(fantasy.ToolResultOutputContentText).Text)
+	testcmp.AssertEqual(t, int32(1), tool.calls.Load())
+	testcmp.AssertEqual(t, "hello", results[0].Result.(fantasy.ToolResultOutputContentText).Text)
 }
 
 func TestSecureBusToolRuntime_ExecutesEachToolCallOnce(t *testing.T) {
@@ -329,9 +330,9 @@ func TestSecureBusToolRuntime_ExecutesEachToolCallOnce(t *testing.T) {
 	)
 	require.NoError(t, err)
 	require.Len(t, results, 2)
-	assert.Equal(t, int32(2), tool.calls.Load())
-	assert.Equal(t, "one", results[0].Result.(fantasy.ToolResultOutputContentText).Text)
-	assert.Equal(t, "two", results[1].Result.(fantasy.ToolResultOutputContentText).Text)
+	testcmp.AssertEqual(t, int32(2), tool.calls.Load())
+	testcmp.AssertEqual(t, "one", results[0].Result.(fantasy.ToolResultOutputContentText).Text)
+	testcmp.AssertEqual(t, "two", results[1].Result.(fantasy.ToolResultOutputContentText).Text)
 }
 
 func TestSecureBusToolRuntime_LeakRedactionIsPersisted(t *testing.T) {
@@ -350,7 +351,7 @@ func TestSecureBusToolRuntime_LeakRedactionIsPersisted(t *testing.T) {
 	)
 	require.NoError(t, err)
 	require.Len(t, results, 1)
-	assert.Equal(t, int32(1), tool.calls.Load())
+	testcmp.AssertEqual(t, int32(1), tool.calls.Load())
 
 	textResult, ok := results[0].Result.(fantasy.ToolResultOutputContentText)
 	require.True(t, ok)
@@ -410,8 +411,8 @@ func TestSecureBusToolRuntime_EnforcesFilesystemPolicyAndPersistsAuditEvents(t *
 	require.Len(t, allowedResults, 1)
 	allowedText, ok := allowedResults[0].Result.(fantasy.ToolResultOutputContentText)
 	require.True(t, ok)
-	assert.Equal(t, "workspace file contents", allowedText.Text)
-	assert.Equal(t, int32(1), tool.calls.Load())
+	testcmp.AssertEqual(t, "workspace file contents", allowedText.Text)
+	testcmp.AssertEqual(t, int32(1), tool.calls.Load())
 
 	allowedAudit := waitForSecureBusAuditEvent(t, q, runtime.SessionKey, "securebus_tool_exec", "call-allow")
 	assert.True(t, allowedAudit.Success)
@@ -420,7 +421,7 @@ func TestSecureBusToolRuntime_EnforcesFilesystemPolicyAndPersistsAuditEvents(t *
 	require.NoError(t, json.Unmarshal([]byte(*allowedAudit.Output), &allowedPayload))
 	assert.False(t, allowedPayload.IsError)
 	assert.Empty(t, allowedPayload.PolicyViolation)
-	assert.Equal(t, "read_file", allowedPayload.ToolName)
+	testcmp.AssertEqual(t, "read_file", allowedPayload.ToolName)
 
 	outsidePath := filepath.Join(t.TempDir(), "secret.txt")
 	deniedInput, err := json.Marshal(map[string]string{"path": outsidePath})
@@ -436,7 +437,7 @@ func TestSecureBusToolRuntime_EnforcesFilesystemPolicyAndPersistsAuditEvents(t *
 	require.Len(t, deniedResults, 1)
 	deniedError, ok := deniedResults[0].Result.(fantasy.ToolResultOutputContentError)
 	require.True(t, ok)
-	assert.Equal(t, "policy violation: filesystem access denied", deniedError.Error.Error())
+	testcmp.AssertEqual(t, "policy violation: filesystem access denied", deniedError.Error.Error())
 	assert.Equal(t, int32(1), tool.calls.Load(), "policy deny must happen before tool execution")
 
 	deniedAudit := waitForSecureBusAuditEvent(t, q, runtime.SessionKey, "securebus_tool_exec_policy_violation", "call-deny")
@@ -447,7 +448,7 @@ func TestSecureBusToolRuntime_EnforcesFilesystemPolicyAndPersistsAuditEvents(t *
 	require.NoError(t, json.Unmarshal([]byte(*deniedAudit.Output), &deniedPayload))
 	assert.True(t, deniedPayload.IsError)
 	assert.Contains(t, deniedPayload.PolicyViolation, "filesystem access denied")
-	assert.Equal(t, "read_file", deniedPayload.ToolName)
+	testcmp.AssertEqual(t, "read_file", deniedPayload.ToolName)
 }
 
 func TestSecureBusToolRuntime_PersistsToolExecutionErrorResult(t *testing.T) {
@@ -465,11 +466,11 @@ func TestSecureBusToolRuntime_PersistsToolExecutionErrorResult(t *testing.T) {
 	)
 	require.NoError(t, err)
 	require.Len(t, results, 1)
-	assert.Equal(t, int32(1), tool.calls.Load())
+	testcmp.AssertEqual(t, int32(1), tool.calls.Load())
 
 	errorResult, ok := results[0].Result.(fantasy.ToolResultOutputContentError)
 	require.True(t, ok)
-	assert.Equal(t, "tool execution denied", errorResult.Error.Error())
+	testcmp.AssertEqual(t, "tool execution denied", errorResult.Error.Error())
 
 	rows, err := q.ListAgentToolResultsByRunID(t.Context(), sqlc.ListAgentToolResultsByRunIDParams{RunID: runID, Lim: 10})
 	require.NoError(t, err)
@@ -502,7 +503,7 @@ func TestSecureBusToolRuntime_PersistsInvalidArgsErrorResult(t *testing.T) {
 	errorResult, ok := results[0].Result.(fantasy.ToolResultOutputContentError)
 	require.True(t, ok)
 	assert.Contains(t, errorResult.Error.Error(), "policy violation")
-	assert.Equal(t, int32(0), tool.calls.Load())
+	testcmp.AssertEqual(t, int32(0), tool.calls.Load())
 
 	rows, err := q.ListAgentToolResultsByRunID(t.Context(), sqlc.ListAgentToolResultsByRunIDParams{RunID: runID, Lim: 10})
 	require.NoError(t, err)
@@ -537,7 +538,7 @@ func TestSecureBusToolRuntime_RejectsExecutableProviderTools(t *testing.T) {
 	)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "does not execute provider-defined tool")
-	assert.Equal(t, int32(0), tool.calls.Load())
+	testcmp.AssertEqual(t, int32(0), tool.calls.Load())
 }
 
 func TestSecureBusToolRuntime_PersistsBusNativeAuditEvent(t *testing.T) {
@@ -556,13 +557,13 @@ func TestSecureBusToolRuntime_PersistsBusNativeAuditEvent(t *testing.T) {
 	require.NoError(t, err)
 
 	row := waitForSecureBusAuditEvent(t, q, runtime.SessionKey, "securebus_tool_exec", "call-1")
-	require.Equal(t, "echo", row.Target)
+	testcmp.RequireEqual(t, "echo", row.Target)
 	require.NotNil(t, row.Output)
 	var payload securebus.AuditEvent
 	require.NoError(t, json.Unmarshal([]byte(*row.Output), &payload))
-	assert.Equal(t, string(itr.CmdToolExec), payload.CommandType)
-	assert.Equal(t, "echo", payload.ToolName)
-	assert.Equal(t, "call-1", payload.ToolCallID)
+	testcmp.AssertEqual(t, string(itr.CmdToolExec), payload.CommandType)
+	testcmp.AssertEqual(t, "echo", payload.ToolName)
+	testcmp.AssertEqual(t, "call-1", payload.ToolCallID)
 	assert.NotEmpty(t, payload.RequestID)
 	require.NotNil(t, row.DurationMs)
 	assert.GreaterOrEqual(t, *row.DurationMs, int64(0))
@@ -581,7 +582,7 @@ func TestSecureBusToolRuntime_PersistsBusNativePolicyViolationAuditEvent(t *test
 	assert.True(t, resp.IsError)
 
 	row := waitForSecureBusAuditEvent(t, q, runtime.SessionKey, "securebus_tool_exec_policy_violation", "call-policy")
-	assert.Equal(t, "echo", row.Target)
+	testcmp.AssertEqual(t, "echo", row.Target)
 	assert.False(t, row.Success)
 	assert.Contains(t, row.ErrorMsg, "recursion depth")
 	require.NotNil(t, row.Output)
@@ -589,7 +590,7 @@ func TestSecureBusToolRuntime_PersistsBusNativePolicyViolationAuditEvent(t *test
 	require.NoError(t, json.Unmarshal([]byte(*row.Output), &payload))
 	assert.True(t, payload.IsError)
 	assert.NotEmpty(t, payload.PolicyViolation)
-	assert.Equal(t, "echo", payload.ToolName)
+	testcmp.AssertEqual(t, "echo", payload.ToolName)
 }
 
 func TestSecureBusToolRuntime_PersistsBusNativeToolErrorAuditEvent(t *testing.T) {
@@ -608,15 +609,15 @@ func TestSecureBusToolRuntime_PersistsBusNativeToolErrorAuditEvent(t *testing.T)
 	require.NoError(t, err)
 
 	row := waitForSecureBusAuditEvent(t, q, runtime.SessionKey, "securebus_tool_exec_error", "call-error")
-	assert.Equal(t, "echo", row.Target)
+	testcmp.AssertEqual(t, "echo", row.Target)
 	assert.False(t, row.Success)
-	assert.Equal(t, "boom", row.ErrorMsg)
+	testcmp.AssertEqual(t, "boom", row.ErrorMsg)
 	require.NotNil(t, row.Output)
 	var payload securebus.AuditEvent
 	require.NoError(t, json.Unmarshal([]byte(*row.Output), &payload))
 	assert.True(t, payload.IsError)
-	assert.Equal(t, "boom", payload.ExecutionError)
-	assert.Equal(t, "", payload.PolicyViolation)
+	testcmp.AssertEqual(t, "boom", payload.ExecutionError)
+	testcmp.AssertEqual(t, "", payload.PolicyViolation)
 	assert.False(t, payload.LeakDetected)
 }
 
@@ -636,7 +637,7 @@ func TestSecureBusToolRuntime_PersistsBusNativeLeakAuditEvent(t *testing.T) {
 	require.NoError(t, err)
 
 	row := waitForSecureBusAuditEvent(t, q, runtime.SessionKey, "securebus_tool_exec_leak", "call-leak")
-	assert.Equal(t, "echo", row.Target)
+	testcmp.AssertEqual(t, "echo", row.Target)
 	assert.True(t, row.Success)
 	require.NotNil(t, row.Output)
 	var payload securebus.AuditEvent
@@ -665,7 +666,7 @@ func TestSecureBusAuditSink_WriteReturnsErrorWhenEnqueueFails(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "securebus audit enqueue failed")
 	require.NotNil(t, captured)
-	assert.Equal(t, "securebus_tool_exec", captured.Action)
-	assert.Equal(t, "echo", captured.Target)
-	assert.Equal(t, "call-drop", captured.ToolCallID)
+	testcmp.AssertEqual(t, "securebus_tool_exec", captured.Action)
+	testcmp.AssertEqual(t, "echo", captured.Target)
+	testcmp.AssertEqual(t, "call-drop", captured.ToolCallID)
 }

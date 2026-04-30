@@ -290,7 +290,8 @@ func NewRegistry(_ string) []app.Task {
 		NewShellTask("fantasy-diff", "Show diff between vendored and upstream", fantasyDiffScript, nil),
 		NewShellTask("fantasy-sync", "Full sync of vendored Fantasy SDK", fantasySyncScript, nil),
 		NewShellTask("fantasy-patch", "Save local modifications as a patch", fantasyPatchScript, nil),
-		NewShellTask("test-integration", "Run integration tests", staticGoScript("-tags integration -count=1 -timeout 120s -v ./pkg/memory/..."), nil),
+		NewShellTask("test-integration", "Run integration tests", staticGoScript("test -tags integration -count=1 -timeout 120s -v ./pkg/memory/..."), nil),
+		NewShellTask("test-containers", "Run memory integration tests plus Docker-backed smoke tests", containerTestScript, nil),
 		NewCommandTask("check", "Run deps, formatting, linting and tests", checkSpecs, nil, nil),
 		NewShellTask("run", "Build and run dragonscale", runScript, runTaskEnv),
 		NewCommandTask("devcontainer-build", "Build the local devcontainer image via npx", devcontainerBuildSpecs, nil, nil),
@@ -343,6 +344,8 @@ func defaultEnv(c *app.Context) []string {
 	appendIfSet("DRAGONSCALE_PROVIDERS_OPENAI_API_BASE", cEnv(c, "DRAGONSCALE_PROVIDERS_OPENAI_API_BASE", ""))
 	appendIfSet("DRAGONSCALE_AGENTS_DEFAULTS_PROVIDER", cEnv(c, "DRAGONSCALE_AGENTS_DEFAULTS_PROVIDER", ""))
 	appendIfSet("DRAGONSCALE_AGENTS_DEFAULTS_MODEL", cEnv(c, "DRAGONSCALE_AGENTS_DEFAULTS_MODEL", ""))
+	appendIfSet("DRAGONSCALE_OLLAMA_CONTAINER_IMAGE", cEnv(c, "DRAGONSCALE_OLLAMA_CONTAINER_IMAGE", ""))
+	appendIfSet("DRAGONSCALE_OLLAMA_CONTAINER_MODEL", cEnv(c, "DRAGONSCALE_OLLAMA_CONTAINER_MODEL", ""))
 	appendIfSet("VERSION", cEnv(c, "VERSION", ""))
 	appendIfSet("FANTASY_VERSION", cEnv(c, "FANTASY_VERSION", ""))
 	appendIfSet("NAME", cEnv(c, "NAME", ""))
@@ -449,7 +452,7 @@ func homeDir() string {
 }
 
 func scriptHeader() string {
-	return "set -euo pipefail\ngit config --global --add safe.directory \"$PWD\" >/dev/null 2>&1 || true\n"
+	return fmt.Sprintf("set -euo pipefail\nexport GO=\"${GO:-go}\"\nexport GOFLAGS=\"${GOFLAGS:--v -trimpath -tags=stdjson}\"\nexport CGO_ENABLED=\"${CGO_ENABLED:-1}\"\nexport GOOS=\"${GOOS:-linux}\"\nexport GOARCH=\"${GOARCH:-%s}\"\ngit config --global --add safe.directory \"$PWD\" >/dev/null 2>&1 || true\n", runtime.GOARCH)
 }
 
 func staticGoScript(rest string) func(*app.Context) string {
@@ -458,11 +461,16 @@ func staticGoScript(rest string) func(*app.Context) string {
 	}
 }
 
+func containerTestScript(*app.Context) string {
+	return scriptHeader() + "DRAGONSCALE_RUN_CONTAINER_TESTS=1 $GO test -tags 'integration containers' -count=1 -timeout 20m -v ./pkg/memory/...\n"
+}
+
 func generateScript(c *app.Context) string {
 	cmdDir := cEnv(c, "CMD_DIR", defaultCmdDir)
 	return scriptHeader() +
 		fmt.Sprintf("rm -rf ./%s/workspace 2>/dev/null || true\n", cmdDir) +
-		"$GO generate ./...\n"
+		"$GO generate ./...\n" +
+		"(cd internal/fantasy && $GO generate -run mockgen ./...)\n"
 }
 
 func buildScript(c *app.Context) string {

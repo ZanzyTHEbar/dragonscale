@@ -12,7 +12,7 @@ func TestAgent_WithUserAgent_PropagatesOnGenerate(t *testing.T) {
 	t.Parallel()
 
 	var capturedCall Call
-	model := &mockLanguageModel{
+	model := &scriptedLanguageModel{
 		generateFunc: func(_ context.Context, call Call) (*Response, error) {
 			capturedCall = call
 			return &Response{
@@ -32,7 +32,7 @@ func TestAgent_WithUserAgent_PropagatesOnStream(t *testing.T) {
 	t.Parallel()
 
 	var capturedCall Call
-	model := &mockLanguageModel{
+	model := &scriptedLanguageModel{
 		streamFunc: func(_ context.Context, call Call) (StreamResponse, error) {
 			capturedCall = call
 			return func(yield func(StreamPart) bool) {
@@ -54,7 +54,7 @@ func TestAgent_NoUA_OmitsCallLevelFields(t *testing.T) {
 	t.Parallel()
 
 	var capturedCall Call
-	model := &mockLanguageModel{
+	model := &scriptedLanguageModel{
 		generateFunc: func(_ context.Context, call Call) (*Response, error) {
 			capturedCall = call
 			return &Response{

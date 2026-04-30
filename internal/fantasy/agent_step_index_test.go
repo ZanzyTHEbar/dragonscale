@@ -4,28 +4,33 @@ import (
 	"context"
 	"testing"
 
+	"charm.land/fantasy/internal/testcmp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
 )
 
-type recordingToolRuntime struct {
-	stepIndices []int
-}
-
-func (r *recordingToolRuntime) Execute(ctx context.Context, _ []AgentTool, _ []ExecutableProviderTool, calls []ToolCallContent, _ func(ToolResultContent) error) ([]ToolResultContent, error) {
-	if len(calls) == 0 {
-		return nil, nil
-	}
-	r.stepIndices = append(r.stepIndices, StepIndexFromCtx(ctx))
-	results := make([]ToolResultContent, 0, len(calls))
-	for _, call := range calls {
-		results = append(results, ToolResultContent{
-			ToolCallID: call.ToolCallID,
-			ToolName:   call.ToolName,
-			Result:     ToolResultOutputContentText{Text: "ok:" + call.ToolCallID},
-		})
-	}
-	return results, nil
+func newRecordingToolRuntime(t *testing.T, stepIndices *[]int) *MockToolRuntime {
+	t.Helper()
+	runtime := NewMockToolRuntime(gomock.NewController(t))
+	runtime.EXPECT().Execute(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(
+		func(ctx context.Context, _ []AgentTool, _ []ExecutableProviderTool, calls []ToolCallContent, _ func(ToolResultContent) error) ([]ToolResultContent, error) {
+			if len(calls) == 0 {
+				return nil, nil
+			}
+			*stepIndices = append(*stepIndices, StepIndexFromCtx(ctx))
+			results := make([]ToolResultContent, 0, len(calls))
+			for _, call := range calls {
+				results = append(results, ToolResultContent{
+					ToolCallID: call.ToolCallID,
+					ToolName:   call.ToolName,
+					Result:     ToolResultOutputContentText{Text: "ok:" + call.ToolCallID},
+				})
+			}
+			return results, nil
+		},
+	).AnyTimes()
+	return runtime
 }
 
 type multiStepToolModel struct{}
@@ -119,7 +124,8 @@ func uniqueTransitionStepIndices(transitions []ReActTransition) []int {
 func TestAgent_Generate_PropagatesCurrentStepIndex(t *testing.T) {
 	t.Parallel()
 
-	runtime := &recordingToolRuntime{}
+	var stepIndices []int
+	runtime := newRecordingToolRuntime(t, &stepIndices)
 	observer := &captureObserver{}
 	agent := NewAgent(
 		&multiStepToolModel{},
@@ -132,14 +138,15 @@ func TestAgent_Generate_PropagatesCurrentStepIndex(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, result)
 
-	assert.Equal(t, []int{0, 1}, runtime.stepIndices)
-	assert.Equal(t, []int{0, 1, 2}, uniqueTransitionStepIndices(observer.Snapshot()))
+	testcmp.AssertEqual(t, []int{0, 1}, stepIndices)
+	testcmp.AssertEqual(t, []int{0, 1, 2}, uniqueTransitionStepIndices(observer.Snapshot()))
 }
 
 func TestAgent_Stream_PropagatesCurrentStepIndex(t *testing.T) {
 	t.Parallel()
 
-	runtime := &recordingToolRuntime{}
+	var stepIndices []int
+	runtime := newRecordingToolRuntime(t, &stepIndices)
 	observer := &captureObserver{}
 	agent := NewAgent(
 		&multiStepToolModel{},
@@ -152,15 +159,15 @@ func TestAgent_Stream_PropagatesCurrentStepIndex(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, result)
 
-	assert.Equal(t, []int{0, 1}, runtime.stepIndices)
-	assert.Equal(t, []int{0, 1, 2}, uniqueTransitionStepIndices(observer.Snapshot()))
+	testcmp.AssertEqual(t, []int{0, 1}, stepIndices)
+	testcmp.AssertEqual(t, []int{0, 1, 2}, uniqueTransitionStepIndices(observer.Snapshot()))
 }
 
 func TestAgent_RegularToolUsesFullSchemaValidation(t *testing.T) {
 	t.Parallel()
 
 	var called bool
-	model := &mockLanguageModel{generateFunc: func(_ context.Context, call Call) (*Response, error) {
+	model := &scriptedLanguageModel{generateFunc: func(_ context.Context, call Call) (*Response, error) {
 		if countToolResults(call.Prompt) > 0 {
 			return &Response{Content: ResponseContent{TextContent{Text: "done"}}, FinishReason: FinishReasonStop}, nil
 		}
@@ -199,7 +206,7 @@ func TestAgent_ActiveToolsFiltersExecution(t *testing.T) {
 	t.Parallel()
 
 	var called bool
-	model := &mockLanguageModel{generateFunc: func(_ context.Context, call Call) (*Response, error) {
+	model := &scriptedLanguageModel{generateFunc: func(_ context.Context, call Call) (*Response, error) {
 		if countToolResults(call.Prompt) > 0 {
 			return &Response{Content: ResponseContent{TextContent{Text: "done"}}, FinishReason: FinishReasonStop}, nil
 		}

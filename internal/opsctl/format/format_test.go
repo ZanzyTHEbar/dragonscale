@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ZanzyTHEbar/dragonscale/internal/testcmp"
 	"github.com/stretchr/testify/require"
 )
 
@@ -25,9 +26,7 @@ func TestRenderJSONIncludesTaskAndError(t *testing.T) {
 	require.NoError(t, Render(buf, OutputJSON, result, false))
 	decoded := TaskResult{}
 	require.NoError(t, json.NewDecoder(buf).Decode(&decoded))
-	require.Equal(t, "build", decoded.Task)
-	require.Equal(t, "failed", decoded.Error)
-	require.Equal(t, 1, decoded.ExitCode)
+	testcmp.RequireEqual(t, taskResultFields{Task: "build", Error: "failed", ExitCode: 1}, projectTaskResult(decoded))
 }
 
 func TestRenderTextIncludesDetails(t *testing.T) {
@@ -124,9 +123,22 @@ func TestRenderJSONHonorsQuietOnlyForSuccess(t *testing.T) {
 
 	decoded := TaskResult{}
 	require.NoError(t, json.NewDecoder(buf).Decode(&decoded))
-	require.Equal(t, "run", decoded.Task)
-	require.Equal(t, "boom", decoded.Error)
-	require.Equal(t, "bad", decoded.Stderr)
-	require.Equal(t, 1, decoded.ExitCode)
+	testcmp.RequireEqual(t, taskResultFields{Task: "run", Error: "boom", Stderr: "bad", ExitCode: 1}, projectTaskResult(decoded))
 	require.False(t, decoded.Success)
+}
+
+type taskResultFields struct {
+	Task     string
+	Error    string
+	Stderr   string
+	ExitCode int
+}
+
+func projectTaskResult(result TaskResult) taskResultFields {
+	return taskResultFields{
+		Task:     result.Task,
+		Error:    result.Error,
+		Stderr:   result.Stderr,
+		ExitCode: result.ExitCode,
+	}
 }

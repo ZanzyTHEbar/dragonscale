@@ -28,7 +28,7 @@ func TestAssembleContext_ReducesProjectionWithRLM(t *testing.T) {
 	cfg.Agents.Defaults.MaxTokens = 4096
 	cfg.Memory.DBPath = filepath.Join(tmpDir, "agent-rlm.db")
 
-	al := mustNewAgentLoop(t, cfg, bus.NewMessageBus(), newMockLanguageModel("ok"))
+	al := mustNewAgentLoop(t, cfg, bus.NewMessageBus(), newMockLanguageModel(t, "ok"))
 	mock := &mockRLMAnswerer{answer: "critical dependency: prior DAG summary says to preserve the write-path invariants"}
 	al.rlmEngine = mock
 	al.rlmDirectThresholdBytes = 1

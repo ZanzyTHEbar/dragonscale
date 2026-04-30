@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"charm.land/fantasy"
+	"charm.land/fantasy/internal/testcmp"
 	"github.com/charmbracelet/anthropic-sdk-go"
 	"github.com/stretchr/testify/require"
 )
@@ -56,7 +57,7 @@ func TestToPrompt_DropsEmptyMessages(t *testing.T) {
 		require.Empty(t, systemBlocks)
 		require.Len(t, messages, 1, "should only have user message, assistant message should be dropped")
 		require.Len(t, warnings, 1)
-		require.Equal(t, fantasy.CallWarningTypeOther, warnings[0].Type)
+		testcmp.RequireEqual(t, fantasy.CallWarningTypeOther, warnings[0].Type)
 		require.Contains(t, warnings[0].Message, "dropping empty assistant message")
 		require.Contains(t, warnings[0].Message, "neither user-facing content nor tool calls")
 	})
@@ -91,9 +92,9 @@ func TestToPrompt_DropsEmptyMessages(t *testing.T) {
 		require.Empty(t, systemBlocks)
 		require.Len(t, messages, 1, "should only have user message, assistant message should be dropped")
 		require.Len(t, warnings, 2)
-		require.Equal(t, fantasy.CallWarningTypeOther, warnings[0].Type)
+		testcmp.RequireEqual(t, fantasy.CallWarningTypeOther, warnings[0].Type)
 		require.Contains(t, warnings[0].Message, "sending reasoning content is disabled")
-		require.Equal(t, fantasy.CallWarningTypeOther, warnings[1].Type)
+		testcmp.RequireEqual(t, fantasy.CallWarningTypeOther, warnings[1].Type)
 		require.Contains(t, warnings[1].Message, "dropping empty assistant message")
 	})
 
@@ -118,7 +119,7 @@ func TestToPrompt_DropsEmptyMessages(t *testing.T) {
 		require.Empty(t, systemBlocks)
 		require.Len(t, messages, 1, "should only have user message")
 		require.Len(t, warnings, 1)
-		require.Equal(t, fantasy.CallWarningTypeOther, warnings[0].Type)
+		testcmp.RequireEqual(t, fantasy.CallWarningTypeOther, warnings[0].Type)
 		require.Contains(t, warnings[0].Message, "dropping empty assistant message")
 	})
 
@@ -208,14 +209,14 @@ func TestToPrompt_DropsEmptyMessages(t *testing.T) {
 		require.Empty(t, systemBlocks)
 		require.Len(t, messages, 2, "user + assistant — assistant must be preserved so tool_result can pair")
 		assistant := messages[1]
-		require.Equal(t, anthropic.MessageParamRoleAssistant, assistant.Role)
+		testcmp.RequireEqual(t, anthropic.MessageParamRoleAssistant, assistant.Role)
 		require.Len(t, assistant.Content, 1)
 		toolUse := assistant.Content[0].OfToolUse
 		require.NotNil(t, toolUse, "tool_use block should be emitted even when input is malformed")
-		require.Equal(t, "call_123", toolUse.ID)
-		require.Equal(t, "get_weather", toolUse.Name)
+		testcmp.RequireEqual(t, "call_123", toolUse.ID)
+		testcmp.RequireEqual(t, "get_weather", toolUse.Name)
 		require.Len(t, warnings, 1)
-		require.Equal(t, fantasy.CallWarningTypeOther, warnings[0].Type)
+		testcmp.RequireEqual(t, fantasy.CallWarningTypeOther, warnings[0].Type)
 		require.Contains(t, warnings[0].Message, "malformed input JSON")
 		require.Contains(t, warnings[0].Message, "call_123")
 	})
@@ -251,11 +252,11 @@ func TestToPrompt_DropsEmptyMessages(t *testing.T) {
 		require.Empty(t, systemBlocks)
 		require.Empty(t, warnings, "empty input is a valid round-trip; no warning")
 		require.Len(t, messages, 2)
-		require.Equal(t, anthropic.MessageParamRoleAssistant, messages[1].Role)
+		testcmp.RequireEqual(t, anthropic.MessageParamRoleAssistant, messages[1].Role)
 		toolUse := messages[1].Content[0].OfToolUse
 		require.NotNil(t, toolUse)
-		require.Equal(t, "call_empty", toolUse.ID)
-		require.Equal(t, "ping", toolUse.Name)
+		testcmp.RequireEqual(t, "call_empty", toolUse.ID)
+		testcmp.RequireEqual(t, "ping", toolUse.Name)
 	})
 
 	t.Run("should keep assistant messages with reasoning and text", func(t *testing.T) {
@@ -377,7 +378,7 @@ func TestToPrompt_DropsEmptyMessages(t *testing.T) {
 		require.Empty(t, systemBlocks)
 		require.Empty(t, messages)
 		require.Len(t, warnings, 1)
-		require.Equal(t, fantasy.CallWarningTypeOther, warnings[0].Type)
+		testcmp.RequireEqual(t, fantasy.CallWarningTypeOther, warnings[0].Type)
 		require.Contains(t, warnings[0].Message, "dropping empty user message")
 		require.Contains(t, warnings[0].Message, "neither user-facing content nor tool results")
 	})
@@ -503,8 +504,8 @@ func TestParseContextTooLargeError(t *testing.T) {
 
 			if tt.wantErr {
 				require.True(t, providerErr.IsContextTooLarge())
-				require.Equal(t, tt.wantUsed, providerErr.ContextUsedTokens)
-				require.Equal(t, tt.wantMax, providerErr.ContextMaxTokens)
+				testcmp.RequireEqual(t, tt.wantUsed, providerErr.ContextUsedTokens)
+				testcmp.RequireEqual(t, tt.wantMax, providerErr.ContextMaxTokens)
 			} else {
 				require.False(t, providerErr.IsContextTooLarge())
 			}
@@ -525,9 +526,9 @@ func TestParseOptions_Effort(t *testing.T) {
 	require.NotNil(t, options.SendReasoning)
 	require.True(t, *options.SendReasoning)
 	require.NotNil(t, options.Thinking)
-	require.Equal(t, int64(2048), options.Thinking.BudgetTokens)
+	testcmp.RequireEqual(t, int64(2048), options.Thinking.BudgetTokens)
 	require.NotNil(t, options.Effort)
-	require.Equal(t, EffortMedium, *options.Effort)
+	testcmp.RequireEqual(t, EffortMedium, *options.Effort)
 	require.NotNil(t, options.DisableParallelToolUse)
 	require.True(t, *options.DisableParallelToolUse)
 }
@@ -557,8 +558,8 @@ func TestGenerate_SendsOutputConfigEffort(t *testing.T) {
 	require.NoError(t, err)
 
 	call := awaitAnthropicCall(t, calls)
-	require.Equal(t, "POST", call.method)
-	require.Equal(t, "/v1/messages", call.path)
+	testcmp.RequireEqual(t, "POST", call.method)
+	testcmp.RequireEqual(t, "/v1/messages", call.path)
 	requireAnthropicEffort(t, call.body, EffortMedium)
 }
 
@@ -594,8 +595,8 @@ func TestStream_SendsOutputConfigEffort(t *testing.T) {
 	stream(func(fantasy.StreamPart) bool { return true })
 
 	call := awaitAnthropicCall(t, calls)
-	require.Equal(t, "POST", call.method)
-	require.Equal(t, "/v1/messages", call.path)
+	testcmp.RequireEqual(t, "POST", call.method)
+	testcmp.RequireEqual(t, "/v1/messages", call.path)
 	requireAnthropicEffort(t, call.body, EffortHigh)
 }
 
@@ -686,8 +687,8 @@ func requireAnthropicEffort(t *testing.T, body map[string]any, expected Effort) 
 	outputConfig, ok := body["output_config"].(map[string]any)
 	thinking, ok := body["thinking"].(map[string]any)
 	require.True(t, ok)
-	require.Equal(t, string(expected), outputConfig["effort"])
-	require.Equal(t, "adaptive", thinking["type"])
+	testcmp.RequireEqual(t, any(string(expected)), outputConfig["effort"])
+	testcmp.RequireEqual(t, any("adaptive"), thinking["type"])
 }
 
 func testPrompt() fantasy.Prompt {
@@ -853,8 +854,8 @@ func TestToPrompt_WebSearchProviderExecutedToolResults(t *testing.T) {
 	serverToolUse := assistantMsg.Content[0]
 	require.NotNil(t, serverToolUse.OfServerToolUse,
 		"first block should be a server_tool_use")
-	require.Equal(t, "srvtoolu_01", serverToolUse.OfServerToolUse.ID)
-	require.Equal(t, anthropic.ServerToolUseBlockParamName("web_search"),
+	testcmp.RequireEqual(t, "srvtoolu_01", serverToolUse.OfServerToolUse.ID)
+	testcmp.RequireEqual(t, anthropic.ServerToolUseBlockParamName("web_search"),
 		serverToolUse.OfServerToolUse.Name)
 
 	// Second content block: reconstructed web_search_tool_result with
@@ -862,23 +863,23 @@ func TestToPrompt_WebSearchProviderExecutedToolResults(t *testing.T) {
 	webResult := assistantMsg.Content[1]
 	require.NotNil(t, webResult.OfWebSearchToolResult,
 		"second block should be a web_search_tool_result")
-	require.Equal(t, "srvtoolu_01", webResult.OfWebSearchToolResult.ToolUseID)
+	testcmp.RequireEqual(t, "srvtoolu_01", webResult.OfWebSearchToolResult.ToolUseID)
 
 	results := webResult.OfWebSearchToolResult.Content.OfWebSearchToolResultBlockItem
 	require.Len(t, results, 2)
-	require.Equal(t, "https://example.com/ai-news", results[0].URL)
-	require.Equal(t, "Latest AI News", results[0].Title)
-	require.Equal(t, "encrypted_abc123", results[0].EncryptedContent)
-	require.Equal(t, "https://example.com/ml-update", results[1].URL)
-	require.Equal(t, "encrypted_def456", results[1].EncryptedContent)
+	testcmp.RequireEqual(t, "https://example.com/ai-news", results[0].URL)
+	testcmp.RequireEqual(t, "Latest AI News", results[0].Title)
+	testcmp.RequireEqual(t, "encrypted_abc123", results[0].EncryptedContent)
+	testcmp.RequireEqual(t, "https://example.com/ml-update", results[1].URL)
+	testcmp.RequireEqual(t, "encrypted_def456", results[1].EncryptedContent)
 	// PageAge should be set for the first result and absent for the second.
 	require.True(t, results[0].PageAge.Valid())
-	require.Equal(t, "2 hours ago", results[0].PageAge.Value)
+	testcmp.RequireEqual(t, "2 hours ago", results[0].PageAge.Value)
 	require.False(t, results[1].PageAge.Valid())
 
 	// Third content block: plain text.
 	require.NotNil(t, assistantMsg.Content[2].OfText)
-	require.Equal(t, "Here is what I found.", assistantMsg.Content[2].OfText.Text)
+	testcmp.RequireEqual(t, "Here is what I found.", assistantMsg.Content[2].OfText.Text)
 }
 
 func TestGenerate_WebSearchResponse(t *testing.T) {
@@ -905,8 +906,8 @@ func TestGenerate_WebSearchResponse(t *testing.T) {
 	require.NoError(t, err)
 
 	call := awaitAnthropicCall(t, calls)
-	require.Equal(t, "POST", call.method)
-	require.Equal(t, "/v1/messages", call.path)
+	testcmp.RequireEqual(t, "POST", call.method)
+	testcmp.RequireEqual(t, "/v1/messages", call.path)
 
 	// Walk the response content and categorise each item.
 	var (
@@ -931,38 +932,38 @@ func TestGenerate_WebSearchResponse(t *testing.T) {
 	// ToolCallContent for the provider-executed web_search.
 	require.Len(t, toolCalls, 1)
 	require.True(t, toolCalls[0].ProviderExecuted)
-	require.Equal(t, "web_search", toolCalls[0].ToolName)
-	require.Equal(t, "srvtoolu_01", toolCalls[0].ToolCallID)
+	testcmp.RequireEqual(t, "web_search", toolCalls[0].ToolName)
+	testcmp.RequireEqual(t, "srvtoolu_01", toolCalls[0].ToolCallID)
 
 	// SourceContent entries for each search result.
 	require.Len(t, sources, 2)
-	require.Equal(t, "https://example.com/ai-news", sources[0].URL)
-	require.Equal(t, "Latest AI News", sources[0].Title)
-	require.Equal(t, fantasy.SourceTypeURL, sources[0].SourceType)
-	require.Equal(t, "https://example.com/ml-update", sources[1].URL)
-	require.Equal(t, "ML Update", sources[1].Title)
+	testcmp.RequireEqual(t, "https://example.com/ai-news", sources[0].URL)
+	testcmp.RequireEqual(t, "Latest AI News", sources[0].Title)
+	testcmp.RequireEqual(t, fantasy.SourceTypeURL, sources[0].SourceType)
+	testcmp.RequireEqual(t, "https://example.com/ml-update", sources[1].URL)
+	testcmp.RequireEqual(t, "ML Update", sources[1].Title)
 
 	// ToolResultContent with provider metadata preserving encrypted_content.
 	require.Len(t, toolResults, 1)
 	require.True(t, toolResults[0].ProviderExecuted)
-	require.Equal(t, "web_search", toolResults[0].ToolName)
-	require.Equal(t, "srvtoolu_01", toolResults[0].ToolCallID)
+	testcmp.RequireEqual(t, "web_search", toolResults[0].ToolName)
+	testcmp.RequireEqual(t, "srvtoolu_01", toolResults[0].ToolCallID)
 
 	searchMeta, ok := toolResults[0].ProviderMetadata[Name]
 	require.True(t, ok, "providerMetadata should contain anthropic key")
 	webMeta, ok := searchMeta.(*WebSearchResultMetadata)
 	require.True(t, ok, "metadata should be *WebSearchResultMetadata")
 	require.Len(t, webMeta.Results, 2)
-	require.Equal(t, "encrypted_abc123", webMeta.Results[0].EncryptedContent)
-	require.Equal(t, "encrypted_def456", webMeta.Results[1].EncryptedContent)
-	require.Equal(t, "2 hours ago", webMeta.Results[0].PageAge)
+	testcmp.RequireEqual(t, "encrypted_abc123", webMeta.Results[0].EncryptedContent)
+	testcmp.RequireEqual(t, "encrypted_def456", webMeta.Results[1].EncryptedContent)
+	testcmp.RequireEqual(t, "2 hours ago", webMeta.Results[0].PageAge)
 
 	// TextContent with the final answer.
 	require.Len(t, texts, 1)
-	require.Equal(t,
+	testcmp.RequireEqual(t,
 		"Based on recent search results, here is the latest AI news.",
-		texts[0].Text,
-	)
+		texts[0].Text)
+
 }
 
 func TestGenerate_WebSearchToolInRequest(t *testing.T) {
@@ -998,7 +999,7 @@ func TestGenerate_WebSearchToolInRequest(t *testing.T) {
 
 		tool, ok := tools[0].(map[string]any)
 		require.True(t, ok)
-		require.Equal(t, "web_search_20250305", tool["type"])
+		testcmp.RequireEqual(t, "web_search_20250305", tool["type"])
 	})
 
 	t.Run("with allowed_domains and blocked_domains", func(t *testing.T) {
@@ -1033,13 +1034,13 @@ func TestGenerate_WebSearchToolInRequest(t *testing.T) {
 
 		tool, ok := tools[0].(map[string]any)
 		require.True(t, ok)
-		require.Equal(t, "web_search_20250305", tool["type"])
+		testcmp.RequireEqual(t, "web_search_20250305", tool["type"])
 
 		domains, ok := tool["allowed_domains"].([]any)
 		require.True(t, ok, "tool should have allowed_domains")
 		require.Len(t, domains, 2)
-		require.Equal(t, "example.com", domains[0])
-		require.Equal(t, "test.com", domains[1])
+		testcmp.RequireEqual(t, "example.com", domains[0])
+		testcmp.RequireEqual(t, "test.com", domains[1])
 	})
 
 	t.Run("with max uses and user location", func(t *testing.T) {
@@ -1078,19 +1079,19 @@ func TestGenerate_WebSearchToolInRequest(t *testing.T) {
 
 		tool, ok := tools[0].(map[string]any)
 		require.True(t, ok)
-		require.Equal(t, "web_search_20250305", tool["type"])
+		testcmp.RequireEqual(t, "web_search_20250305", tool["type"])
 
 		// max_uses is serialized as a JSON number; json.Unmarshal
 		// into map[string]any decodes numbers as float64.
 		maxUses, ok := tool["max_uses"].(float64)
 		require.True(t, ok, "tool should have max_uses")
-		require.Equal(t, float64(5), maxUses)
+		testcmp.RequireEqual(t, float64(5), maxUses)
 
 		userLoc, ok := tool["user_location"].(map[string]any)
 		require.True(t, ok, "tool should have user_location")
-		require.Equal(t, "San Francisco", userLoc["city"])
-		require.Equal(t, "US", userLoc["country"])
-		require.Equal(t, "approximate", userLoc["type"])
+		testcmp.RequireEqual(t, "San Francisco", userLoc["city"])
+		testcmp.RequireEqual(t, "US", userLoc["country"])
+		testcmp.RequireEqual(t, "approximate", userLoc["type"])
 	})
 
 	t.Run("with max uses", func(t *testing.T) {
@@ -1125,11 +1126,11 @@ func TestGenerate_WebSearchToolInRequest(t *testing.T) {
 
 		tool, ok := tools[0].(map[string]any)
 		require.True(t, ok)
-		require.Equal(t, "web_search_20250305", tool["type"])
+		testcmp.RequireEqual(t, "web_search_20250305", tool["type"])
 
 		maxUses, ok := tool["max_uses"].(float64)
 		require.True(t, ok, "tool should have max_uses")
-		require.Equal(t, float64(3), maxUses)
+		testcmp.RequireEqual(t, float64(3), maxUses)
 	})
 
 	t.Run("with json-round-tripped provider tool args", func(t *testing.T) {
@@ -1178,25 +1179,25 @@ func TestGenerate_WebSearchToolInRequest(t *testing.T) {
 
 		tool, ok := tools[0].(map[string]any)
 		require.True(t, ok)
-		require.Equal(t, "web_search_20250305", tool["type"])
+		testcmp.RequireEqual(t, "web_search_20250305", tool["type"])
 
 		domains, ok := tool["blocked_domains"].([]any)
 		require.True(t, ok, "tool should have blocked_domains")
 		require.Len(t, domains, 2)
-		require.Equal(t, "example.com", domains[0])
-		require.Equal(t, "test.com", domains[1])
+		testcmp.RequireEqual(t, "example.com", domains[0])
+		testcmp.RequireEqual(t, "test.com", domains[1])
 
 		maxUses, ok := tool["max_uses"].(float64)
 		require.True(t, ok, "tool should have max_uses")
-		require.Equal(t, float64(7), maxUses)
+		testcmp.RequireEqual(t, float64(7), maxUses)
 
 		userLoc, ok := tool["user_location"].(map[string]any)
 		require.True(t, ok, "tool should have user_location")
-		require.Equal(t, "San Francisco", userLoc["city"])
-		require.Equal(t, "CA", userLoc["region"])
-		require.Equal(t, "US", userLoc["country"])
-		require.Equal(t, "America/Los_Angeles", userLoc["timezone"])
-		require.Equal(t, "approximate", userLoc["type"])
+		testcmp.RequireEqual(t, "San Francisco", userLoc["city"])
+		testcmp.RequireEqual(t, "CA", userLoc["region"])
+		testcmp.RequireEqual(t, "US", userLoc["country"])
+		testcmp.RequireEqual(t, "America/Los_Angeles", userLoc["timezone"])
+		testcmp.RequireEqual(t, "approximate", userLoc["type"])
 	})
 }
 
@@ -1207,14 +1208,14 @@ func TestAnyToStringSlice(t *testing.T) {
 		t.Parallel()
 
 		got := anyToStringSlice([]string{"example.com", ""})
-		require.Equal(t, []string{"example.com", ""}, got)
+		testcmp.RequireEqual(t, []string{"example.com", ""}, got)
 	})
 
 	t.Run("from any slice filters non-strings and empty", func(t *testing.T) {
 		t.Parallel()
 
 		got := anyToStringSlice([]any{"example.com", 123, "", "test.com"})
-		require.Equal(t, []string{"example.com", "test.com"}, got)
+		testcmp.RequireEqual(t, []string{"example.com", "test.com"}, got)
 	})
 
 	t.Run("unsupported type", func(t *testing.T) {
@@ -1250,9 +1251,9 @@ func TestAnyToInt64(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got, ok := anyToInt64(tt.input)
-			require.Equal(t, tt.wantOK, ok)
+			testcmp.RequireEqual(t, tt.wantOK, ok)
 			if tt.wantOK {
-				require.Equal(t, tt.want, got)
+				testcmp.RequireEqual(t, tt.want, got)
 			}
 		})
 	}
@@ -1274,8 +1275,8 @@ func TestAnyToUserLocation(t *testing.T) {
 
 		got := anyToUserLocation(UserLocation{City: "San Francisco", Country: "US"})
 		require.NotNil(t, got)
-		require.Equal(t, "San Francisco", got.City)
-		require.Equal(t, "US", got.Country)
+		testcmp.RequireEqual(t, "San Francisco", got.City)
+		testcmp.RequireEqual(t, "US", got.Country)
 	})
 
 	t.Run("map value", func(t *testing.T) {
@@ -1289,10 +1290,10 @@ func TestAnyToUserLocation(t *testing.T) {
 			"type":     "approximate",
 		})
 		require.NotNil(t, got)
-		require.Equal(t, "San Francisco", got.City)
-		require.Equal(t, "CA", got.Region)
-		require.Equal(t, "US", got.Country)
-		require.Equal(t, "America/Los_Angeles", got.Timezone)
+		testcmp.RequireEqual(t, "San Francisco", got.City)
+		testcmp.RequireEqual(t, "CA", got.Region)
+		testcmp.RequireEqual(t, "US", got.Country)
+		testcmp.RequireEqual(t, "America/Los_Angeles", got.Timezone)
 	})
 
 	t.Run("empty map", func(t *testing.T) {
@@ -1409,7 +1410,7 @@ func TestStream_WebSearchResponse(t *testing.T) {
 	// server_tool_use emits a ToolInputStart with ProviderExecuted.
 	require.NotEmpty(t, toolInputStarts, "should have a tool input start")
 	require.True(t, toolInputStarts[0].ProviderExecuted)
-	require.Equal(t, "web_search", toolInputStarts[0].ToolCallName)
+	testcmp.RequireEqual(t, "web_search", toolInputStarts[0].ToolCallName)
 
 	// server_tool_use emits a ToolCall with ProviderExecuted.
 	require.NotEmpty(t, toolCalls, "should have a tool call")
@@ -1420,20 +1421,20 @@ func TestStream_WebSearchResponse(t *testing.T) {
 	// union field as a fallback.
 	require.NotEmpty(t, toolResults, "should have a tool result")
 	require.True(t, toolResults[0].ProviderExecuted)
-	require.Equal(t, "web_search", toolResults[0].ToolCallName)
+	testcmp.RequireEqual(t, "web_search", toolResults[0].ToolCallName)
 	require.Equal(t, "srvtoolu_01", toolResults[0].ID,
 		"tool result ID should match the tool_use_id")
 
 	// Source parts are now correctly emitted by reading struct fields
 	// directly instead of using AsAny().
 	require.Len(t, sourceParts, 1)
-	require.Equal(t, "https://example.com/ai-news", sourceParts[0].URL)
-	require.Equal(t, "Latest AI News", sourceParts[0].Title)
-	require.Equal(t, fantasy.SourceTypeURL, sourceParts[0].SourceType)
+	testcmp.RequireEqual(t, "https://example.com/ai-news", sourceParts[0].URL)
+	testcmp.RequireEqual(t, "Latest AI News", sourceParts[0].Title)
+	testcmp.RequireEqual(t, fantasy.SourceTypeURL, sourceParts[0].SourceType)
 
 	// Text block emits a text delta.
 	require.NotEmpty(t, textDeltas, "should have text deltas")
-	require.Equal(t, "Here are the results.", textDeltas[0].Delta)
+	testcmp.RequireEqual(t, "Here are the results.", textDeltas[0].Delta)
 }
 
 func TestGenerate_ToolChoiceNone(t *testing.T) {
@@ -1495,11 +1496,11 @@ func TestNewComputerUseTool(t *testing.T) {
 			DisplayHeightPx: 1080,
 			ToolVersion:     ComputerUse20250124,
 		}, noopComputerRun).Definition()
-		require.Equal(t, "anthropic.computer", tool.ID)
-		require.Equal(t, "computer", tool.Name)
-		require.Equal(t, int64(1920), tool.Args["display_width_px"])
-		require.Equal(t, int64(1080), tool.Args["display_height_px"])
-		require.Equal(t, string(ComputerUse20250124), tool.Args["tool_version"])
+		testcmp.RequireEqual(t, "anthropic.computer", tool.ID)
+		testcmp.RequireEqual(t, "computer", tool.Name)
+		testcmp.RequireEqual(t, any(int64(1920)), tool.Args["display_width_px"])
+		testcmp.RequireEqual(t, any(int64(1080)), tool.Args["display_height_px"])
+		testcmp.RequireEqual(t, any(string(ComputerUse20250124)), tool.Args["tool_version"])
 	})
 
 	t.Run("includes optional fields when set", func(t *testing.T) {
@@ -1514,8 +1515,8 @@ func TestNewComputerUseTool(t *testing.T) {
 			ToolVersion:     ComputerUse20251124,
 			CacheControl:    &CacheControl{Type: "ephemeral"},
 		}, noopComputerRun).Definition()
-		require.Equal(t, int64(1), tool.Args["display_number"])
-		require.Equal(t, true, tool.Args["enable_zoom"])
+		testcmp.RequireEqual(t, any(int64(1)), tool.Args["display_number"])
+		testcmp.RequireEqual(t, any(true), tool.Args["enable_zoom"])
 		require.NotNil(t, tool.Args["cache_control"])
 	})
 
@@ -1619,8 +1620,8 @@ func TestComputerUseToolJSON(t *testing.T) {
 		require.NoError(t, err)
 		var m map[string]any
 		require.NoError(t, json.Unmarshal(data, &m))
-		require.Equal(t, "computer_20250124", m["type"])
-		require.Equal(t, "computer", m["name"])
+		testcmp.RequireEqual(t, "computer_20250124", m["type"])
+		testcmp.RequireEqual(t, "computer", m["name"])
 		require.InDelta(t, 1920, m["display_width_px"], 0)
 		require.InDelta(t, 1080, m["display_height_px"], 0)
 	})
@@ -1638,8 +1639,8 @@ func TestComputerUseToolJSON(t *testing.T) {
 		require.NoError(t, err)
 		var m map[string]any
 		require.NoError(t, json.Unmarshal(data, &m))
-		require.Equal(t, "computer_20251124", m["type"])
-		require.Equal(t, true, m["enable_zoom"])
+		testcmp.RequireEqual(t, "computer_20251124", m["type"])
+		testcmp.RequireEqual(t, true, m["enable_zoom"])
 	})
 
 	t.Run("handles int64 args without JSON round-trip", func(t *testing.T) {
@@ -1724,14 +1725,14 @@ func TestParseComputerUseInput_CoordinateValidation(t *testing.T) {
 		t.Parallel()
 		result, err := ParseComputerUseInput(`{"action":"left_click","coordinate":[100,200]}`)
 		require.NoError(t, err)
-		require.Equal(t, [2]int64{100, 200}, result.Coordinate)
+		testcmp.RequireEqual(t, [2]int64{100, 200}, result.Coordinate)
 	})
 
 	t.Run("accepts absent optional arrays", func(t *testing.T) {
 		t.Parallel()
 		result, err := ParseComputerUseInput(`{"action":"screenshot"}`)
 		require.NoError(t, err)
-		require.Equal(t, ActionScreenshot, result.Action)
+		testcmp.RequireEqual(t, ActionScreenshot, result.Action)
 	})
 }
 
@@ -1777,18 +1778,18 @@ func TestToTools_RawJSON(t *testing.T) {
 	// Check function tool.
 	var funcTool map[string]any
 	require.NoError(t, json.Unmarshal(rawTools[0], &funcTool))
-	require.Equal(t, "weather", funcTool["name"])
+	testcmp.RequireEqual(t, "weather", funcTool["name"])
 
 	// Check web search tool.
 	var webTool map[string]any
 	require.NoError(t, json.Unmarshal(rawTools[1], &webTool))
-	require.Equal(t, "web_search_20250305", webTool["type"])
+	testcmp.RequireEqual(t, "web_search_20250305", webTool["type"])
 
 	// Check computer use tool.
 	var cuToolJSON map[string]any
 	require.NoError(t, json.Unmarshal(rawTools[2], &cuToolJSON))
-	require.Equal(t, "computer_20250124", cuToolJSON["type"])
-	require.Equal(t, "computer", cuToolJSON["name"])
+	testcmp.RequireEqual(t, "computer_20250124", cuToolJSON["type"])
+	testcmp.RequireEqual(t, "computer", cuToolJSON["name"])
 }
 
 func TestGenerate_BetaAPI(t *testing.T) {
@@ -1922,15 +1923,15 @@ func TestGenerate_BetaAPI(t *testing.T) {
 
 		toolCalls := resp.Content.ToolCalls()
 		require.Len(t, toolCalls, 1)
-		require.Equal(t, "computer", toolCalls[0].ToolName)
-		require.Equal(t, "toolu_01", toolCalls[0].ToolCallID)
+		testcmp.RequireEqual(t, "computer", toolCalls[0].ToolName)
+		testcmp.RequireEqual(t, "toolu_01", toolCalls[0].ToolCallID)
 		require.Contains(t, toolCalls[0].Input, "screenshot")
-		require.Equal(t, fantasy.FinishReasonToolCalls, resp.FinishReason)
+		testcmp.RequireEqual(t, fantasy.FinishReasonToolCalls, resp.FinishReason)
 
 		// Verify typed parsing works on the tool call input.
 		parsed, err := ParseComputerUseInput(toolCalls[0].Input)
 		require.NoError(t, err)
-		require.Equal(t, ActionScreenshot, parsed.Action)
+		testcmp.RequireEqual(t, ActionScreenshot, parsed.Action)
 	})
 }
 
@@ -2157,7 +2158,7 @@ func TestGenerate_ComputerUseTool(t *testing.T) {
 		require.NoError(t, err, "turn %d", turn)
 
 		if resp.FinishReason != fantasy.FinishReasonToolCalls {
-			require.Equal(t, fantasy.FinishReasonStop, resp.FinishReason)
+			testcmp.RequireEqual(t, fantasy.FinishReasonStop, resp.FinishReason)
 			require.Contains(t, resp.Content.Text(), "Done")
 			break
 		}
@@ -2196,13 +2197,11 @@ func TestGenerate_ComputerUseTool(t *testing.T) {
 
 	// Every scripted action was received and parsed correctly.
 	require.Len(t, got, len(steps))
-	for i, step := range steps {
-		require.Equal(t, step.want.Action, got[i].Action, "step %d", i)
-		require.Equal(t, step.want.Coordinate, got[i].Coordinate, "step %d", i)
-		require.Equal(t, step.want.Text, got[i].Text, "step %d", i)
-		require.Equal(t, step.want.ScrollDirection, got[i].ScrollDirection, "step %d", i)
-		require.Equal(t, step.want.ScrollAmount, got[i].ScrollAmount, "step %d", i)
+	want := make([]ComputerUseInput, 0, len(steps))
+	for _, step := range steps {
+		want = append(want, step.want)
 	}
+	testcmp.RequireEqual(t, want, got)
 
 	// Beta header was sent on every request.
 	require.Len(t, betaHeaders, len(steps)+1)
@@ -2375,9 +2374,11 @@ func TestStream_ComputerUseTool(t *testing.T) {
 	}
 
 	require.Len(t, gotActions, len(steps))
-	for i, step := range steps {
-		require.Equal(t, step.wantAction, gotActions[i], "step %d", i)
+	wantActions := make([]ComputerAction, 0, len(steps))
+	for _, step := range steps {
+		wantActions = append(wantActions, step.wantAction)
 	}
+	testcmp.RequireEqual(t, wantActions, gotActions)
 
 	require.Len(t, betaHeaders, len(steps)+1)
 	for i, h := range betaHeaders {

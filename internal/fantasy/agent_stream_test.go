@@ -8,6 +8,7 @@ import (
 	"sync"
 	"testing"
 
+	"charm.land/fantasy/internal/testcmp"
 	"github.com/stretchr/testify/require"
 )
 
@@ -64,7 +65,7 @@ func TestStreamingAgentCallbacks(t *testing.T) {
 	callbacks := make(map[string]bool)
 
 	// Create a mock language model that returns various stream parts
-	mockModel := &mockLanguageModel{
+	mockModel := &scriptedLanguageModel{
 		streamFunc: func(ctx context.Context, call Call) (StreamResponse, error) {
 			return func(yield func(StreamPart) bool) {
 				// Test all stream part types
@@ -244,7 +245,7 @@ func TestStreamingAgentWithTools(t *testing.T) {
 
 	stepCount := 0
 	// Create a mock language model that makes a tool call then finishes
-	mockModel := &mockLanguageModel{
+	mockModel := &scriptedLanguageModel{
 		streamFunc: func(ctx context.Context, call Call) (StreamResponse, error) {
 			stepCount++
 			return func(yield func(StreamPart) bool) {
@@ -317,30 +318,30 @@ func TestStreamingAgentWithTools(t *testing.T) {
 		Prompt: "Echo 'test'",
 		OnToolInputStart: func(id, toolName string) error {
 			toolInputStartCalled = true
-			require.Equal(t, "tool-1", id)
-			require.Equal(t, "echo", toolName)
+			testcmp.RequireEqual(t, "tool-1", id)
+			testcmp.RequireEqual(t, "echo", toolName)
 			return nil
 		},
 		OnToolInputDelta: func(id, delta string) error {
 			toolInputDeltaCalled = true
-			require.Equal(t, "tool-1", id)
+			testcmp.RequireEqual(t, "tool-1", id)
 			require.Contains(t, []string{`{"message"`, `: "test"}`}, delta)
 			return nil
 		},
 		OnToolInputEnd: func(id string) error {
 			toolInputEndCalled = true
-			require.Equal(t, "tool-1", id)
+			testcmp.RequireEqual(t, "tool-1", id)
 			return nil
 		},
 		OnToolCall: func(toolCall ToolCallContent) error {
 			toolCallCalled = true
-			require.Equal(t, "echo", toolCall.ToolName)
-			require.Equal(t, `{"message": "test"}`, toolCall.Input)
+			testcmp.RequireEqual(t, "echo", toolCall.ToolName)
+			testcmp.RequireEqual(t, `{"message": "test"}`, toolCall.Input)
 			return nil
 		},
 		OnToolResult: func(result ToolResultContent) error {
 			toolResultCalled = true
-			require.Equal(t, "echo", result.ToolName)
+			testcmp.RequireEqual(t, "echo", result.ToolName)
 			return nil
 		},
 	}
@@ -355,17 +356,17 @@ func TestStreamingAgentWithTools(t *testing.T) {
 	require.True(t, toolInputEndCalled, "OnToolInputEnd should have been called")
 	require.True(t, toolCallCalled, "OnToolCall should have been called")
 	require.True(t, toolResultCalled, "OnToolResult should have been called")
-	require.Equal(t, 2, len(result.Steps)) // Two steps: tool call + final response
+	testcmp.RequireEqual(t, 2, len(result.Steps)) // Two steps: tool call + final response
 
 	// Check that tool was executed in first step
 	firstStep := result.Steps[0]
 	toolCalls := firstStep.Content.ToolCalls()
-	require.Equal(t, 1, len(toolCalls))
-	require.Equal(t, "echo", toolCalls[0].ToolName)
+	testcmp.RequireEqual(t, 1, len(toolCalls))
+	testcmp.RequireEqual(t, "echo", toolCalls[0].ToolName)
 
 	toolResults := firstStep.Content.ToolResults()
-	require.Equal(t, 1, len(toolResults))
-	require.Equal(t, "echo", toolResults[0].ToolName)
+	testcmp.RequireEqual(t, 1, len(toolResults))
+	testcmp.RequireEqual(t, "echo", toolResults[0].ToolName)
 }
 
 // TestStreamingAgentToolCallBeforeResult verifies that all OnToolCall callbacks
@@ -375,7 +376,7 @@ func TestStreamingAgentToolCallBeforeResult(t *testing.T) {
 	t.Parallel()
 
 	stepCount := 0
-	mockModel := &mockLanguageModel{
+	mockModel := &scriptedLanguageModel{
 		streamFunc: func(ctx context.Context, call Call) (StreamResponse, error) {
 			stepCount++
 			return func(yield func(StreamPart) bool) {
@@ -447,7 +448,7 @@ func TestStreamingAgentToolCallBeforeResult(t *testing.T) {
 			firstResultIdx = i
 		}
 	}
-	require.Equal(t, 2, stepCount)
+	testcmp.RequireEqual(t, 2, stepCount)
 	require.Less(t, lastCallIdx, firstResultIdx,
 		"all OnToolCall events must complete before the first OnToolResult; got %v", events)
 }
@@ -457,7 +458,7 @@ func TestStreamingAgentTextDeltas(t *testing.T) {
 	t.Parallel()
 
 	// Create a mock language model that returns text deltas
-	mockModel := &mockLanguageModel{
+	mockModel := &scriptedLanguageModel{
 		streamFunc: func(ctx context.Context, call Call) (StreamResponse, error) {
 			return func(yield func(StreamPart) bool) {
 				if !yield(StreamPart{Type: StreamPartTypeTextStart, ID: "text-1"}) {
@@ -504,16 +505,16 @@ func TestStreamingAgentTextDeltas(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify text deltas match expected pattern
-	require.Equal(t, []string{"Hello", ", ", "world!"}, textDeltas)
-	require.Equal(t, "Hello, world!", result.Response.Content.Text())
-	require.Equal(t, int64(13), result.TotalUsage.TotalTokens)
+	testcmp.RequireEqual(t, []string{"Hello", ", ", "world!"}, textDeltas)
+	testcmp.RequireEqual(t, "Hello, world!", result.Response.Content.Text())
+	testcmp.RequireEqual(t, int64(13), result.TotalUsage.TotalTokens)
 }
 
 // TestStreamingAgentReasoning tests reasoning content (mirrors TS reasoning tests)
 func TestStreamingAgentReasoning(t *testing.T) {
 	t.Parallel()
 
-	mockModel := &mockLanguageModel{
+	mockModel := &scriptedLanguageModel{
 		streamFunc: func(ctx context.Context, call Call) (StreamResponse, error) {
 			return func(yield func(StreamPart) bool) {
 				if !yield(StreamPart{Type: StreamPartTypeReasoningStart, ID: "reasoning-1"}) {
@@ -568,10 +569,10 @@ func TestStreamingAgentReasoning(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify reasoning and text are separate
-	require.Equal(t, []string{"I will open the conversation", " with witty banter."}, reasoningDeltas)
-	require.Equal(t, []string{"Hi there!"}, textDeltas)
-	require.Equal(t, "Hi there!", result.Response.Content.Text())
-	require.Equal(t, "I will open the conversation with witty banter.", result.Response.Content.ReasoningText())
+	testcmp.RequireEqual(t, []string{"I will open the conversation", " with witty banter."}, reasoningDeltas)
+	testcmp.RequireEqual(t, []string{"Hi there!"}, textDeltas)
+	testcmp.RequireEqual(t, "Hi there!", result.Response.Content.Text())
+	testcmp.RequireEqual(t, "I will open the conversation with witty banter.", result.Response.Content.ReasoningText())
 }
 
 // TestStreamingAgentError tests error handling (mirrors TS error tests)
@@ -579,7 +580,7 @@ func TestStreamingAgentError(t *testing.T) {
 	t.Parallel()
 
 	// Create a mock language model that returns an error
-	mockModel := &mockLanguageModel{
+	mockModel := &scriptedLanguageModel{
 		streamFunc: func(ctx context.Context, call Call) (StreamResponse, error) {
 			return func(yield func(StreamPart) bool) {
 				yield(StreamPart{Type: StreamPartTypeError, Error: fmt.Errorf("mock stream error")})
@@ -615,7 +616,7 @@ func TestStreamingAgentError(t *testing.T) {
 func TestStreamingAgentSources(t *testing.T) {
 	t.Parallel()
 
-	mockModel := &mockLanguageModel{
+	mockModel := &scriptedLanguageModel{
 		streamFunc: func(ctx context.Context, call Call) (StreamResponse, error) {
 			return func(yield func(StreamPart) bool) {
 				if !yield(StreamPart{
@@ -670,23 +671,23 @@ func TestStreamingAgentSources(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify sources were captured
-	require.Equal(t, 2, len(sources))
-	require.Equal(t, SourceTypeURL, sources[0].SourceType)
-	require.Equal(t, "https://example.com", sources[0].URL)
-	require.Equal(t, "Example", sources[0].Title)
-	require.Equal(t, SourceTypeDocument, sources[1].SourceType)
-	require.Equal(t, "Document Example", sources[1].Title)
+	testcmp.RequireEqual(t, 2, len(sources))
+	testcmp.RequireEqual(t, SourceTypeURL, sources[0].SourceType)
+	testcmp.RequireEqual(t, "https://example.com", sources[0].URL)
+	testcmp.RequireEqual(t, "Example", sources[0].Title)
+	testcmp.RequireEqual(t, SourceTypeDocument, sources[1].SourceType)
+	testcmp.RequireEqual(t, "Document Example", sources[1].Title)
 
 	// Verify sources are in final result
 	resultSources := result.Response.Content.Sources()
-	require.Equal(t, 2, len(resultSources))
+	testcmp.RequireEqual(t, 2, len(resultSources))
 }
 
 func TestStreamingAgent_StopTurn(t *testing.T) {
 	t.Parallel()
 
 	stepCount := 0
-	mockModel := &mockLanguageModel{
+	mockModel := &scriptedLanguageModel{
 		streamFunc: func(ctx context.Context, call Call) (StreamResponse, error) {
 			stepCount++
 			return func(yield func(StreamPart) bool) {
@@ -748,12 +749,12 @@ func TestStreamingAgent_StopTurn(t *testing.T) {
 
 	// Only one step — StopTurn prevented the second model call.
 	require.Len(t, result.Steps, 1)
-	require.Equal(t, 1, stepCount)
+	testcmp.RequireEqual(t, 1, stepCount)
 
 	// Tool result should be present with StopTurn=true.
 	toolResults := result.Steps[0].Content.ToolResults()
 	require.Len(t, toolResults, 1)
-	require.Equal(t, "blocked_tool", toolResults[0].ToolName)
+	testcmp.RequireEqual(t, "blocked_tool", toolResults[0].ToolName)
 	require.True(t, toolResults[0].StopTurn)
 
 	// The final response also includes the stop-marked tool result.

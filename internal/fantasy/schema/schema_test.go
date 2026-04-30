@@ -18,7 +18,7 @@ func TestEnumSupport(t *testing.T) {
 
 	schema := Generate(reflect.TypeFor[WeatherInput]())
 
-	require.Equal(t, "object", schema.Type)
+	testcmp.RequireEqual(t, "object", schema.Type)
 
 	// Check units field has enum values
 	unitsSchema := schema.Properties["units"]
@@ -210,7 +210,7 @@ func TestGenerateSchemaMapTypes(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			schema := Generate(reflect.TypeOf(tt.input))
-			require.Equal(t, tt.expected, schema.Type)
+			testcmp.RequireEqual(t, tt.expected, schema.Type)
 		})
 	}
 }
@@ -247,10 +247,10 @@ func TestGenerateSchemaStructTypes(t *testing.T) {
 			name:  "simple struct",
 			input: SimpleStruct{},
 			validate: func(t *testing.T, schema Schema) {
-				require.Equal(t, "object", schema.Type)
+				testcmp.RequireEqual(t, "object", schema.Type)
 				require.Len(t, schema.Properties, 2)
 				require.NotNil(t, schema.Properties["name"], "Expected name property to exist")
-				require.Equal(t, "The name field", schema.Properties["name"].Description)
+				testcmp.RequireEqual(t, "The name field", schema.Properties["name"].Description)
 				require.Len(t, schema.Required, 2)
 			},
 		},
@@ -299,7 +299,7 @@ func TestGenerateSchemaPointerTypes(t *testing.T) {
 
 	schema := Generate(reflect.TypeFor[StructWithPointers]())
 
-	require.Equal(t, "object", schema.Type)
+	testcmp.RequireEqual(t, "object", schema.Type)
 
 	actual := map[string]string{}
 	for _, field := range []string{"name", "age"} {
@@ -328,12 +328,12 @@ func TestGenerateSchemaNestedStructs(t *testing.T) {
 
 	schema := Generate(reflect.TypeFor[Person]())
 
-	require.Equal(t, "object", schema.Type)
+	testcmp.RequireEqual(t, "object", schema.Type)
 
 	require.NotNil(t, schema.Properties["address"], "Expected address property to exist")
 
 	addressSchema := schema.Properties["address"]
-	require.Equal(t, "object", addressSchema.Type)
+	testcmp.RequireEqual(t, "object", addressSchema.Type)
 
 	actual := map[string]string{}
 	for _, field := range []string{"street", "city"} {
@@ -357,7 +357,7 @@ func TestGenerateSchemaRecursiveStructs(t *testing.T) {
 
 	schema := Generate(reflect.TypeFor[Node]())
 
-	require.Equal(t, "object", schema.Type)
+	testcmp.RequireEqual(t, "object", schema.Type)
 
 	require.NotNil(t, schema.Properties["value"], "Expected value property to exist")
 
@@ -365,7 +365,7 @@ func TestGenerateSchemaRecursiveStructs(t *testing.T) {
 
 	// The recursive reference should be handled gracefully
 	nextSchema := schema.Properties["next"]
-	require.Equal(t, "object", nextSchema.Type)
+	testcmp.RequireEqual(t, "object", nextSchema.Type)
 }
 
 func TestGenerateSchemaWithEnumTags(t *testing.T) {
@@ -594,7 +594,7 @@ func TestNormalize_TypeArray(t *testing.T) {
 			require.Contains(t, variant, "items")
 		}
 	}
-	require.Equal(t, "Config value", val["description"])
+	testcmp.RequireEqual(t, "Config value", val["description"])
 }
 
 func TestNormalize_SingleStringType(t *testing.T) {
@@ -610,7 +610,7 @@ func TestNormalize_SingleStringType(t *testing.T) {
 	Normalize(node)
 
 	val := node["properties"].(map[string]any)["name"].(map[string]any)
-	require.Equal(t, "string", val["type"])
+	testcmp.RequireEqual(t, "string", val["type"])
 }
 
 func TestNormalize_BareArrayGetsItems(t *testing.T) {
@@ -626,7 +626,7 @@ func TestNormalize_BareArrayGetsItems(t *testing.T) {
 	Normalize(node)
 
 	val := node["properties"].(map[string]any)["tags"].(map[string]any)
-	require.Equal(t, "array", val["type"])
+	testcmp.RequireEqual(t, "array", val["type"])
 	require.Contains(t, val, "items")
 }
 
@@ -647,7 +647,7 @@ func TestNormalize_SingleElementTypeArray(t *testing.T) {
 	anyOf, ok := val["anyOf"].([]any)
 	require.True(t, ok)
 	require.Len(t, anyOf, 1)
-	require.Equal(t, "string", anyOf[0].(map[string]any)["type"])
+	testcmp.RequireEqual(t, "string", anyOf[0].(map[string]any)["type"])
 }
 
 func TestNormalize_NestedProperties(t *testing.T) {

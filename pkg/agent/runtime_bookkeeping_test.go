@@ -8,6 +8,7 @@ import (
 	"time"
 
 	fantasy "charm.land/fantasy"
+	"github.com/ZanzyTHEbar/dragonscale/internal/testcmp"
 	pkgroot "github.com/ZanzyTHEbar/dragonscale/pkg"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/bus"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/config"
@@ -275,6 +276,14 @@ func uniqueRunStateSteps(rows []memsqlc.AgentRunState) []int64 {
 	return steps
 }
 
+func toolResultSteps(rows []memsqlc.AgentToolResult) []int64 {
+	steps := make([]int64, 0, len(rows))
+	for _, row := range rows {
+		steps = append(steps, row.StepIndex)
+	}
+	return steps
+}
+
 func TestIntegration_RuntimeBookkeeping_PersistsTransitionsAndMetrics(t *testing.T) {
 	t.Parallel()
 
@@ -322,7 +331,7 @@ func TestIntegration_RuntimeBookkeeping_PersistsTransitionsAndMetrics(t *testing
 
 	completion := completions[len(completions)-1]
 	require.NotNil(t, completion.ToolCalls)
-	assert.Equal(t, int64(2), *completion.ToolCalls)
+	testcmp.AssertEqual(t, int64(2), *completion.ToolCalls)
 
 	transitions, err := al.queries.ListAgentStateTransitionsByRunID(ctx, memsqlc.ListAgentStateTransitionsByRunIDParams{
 		RunID: completion.RunID,
@@ -330,7 +339,7 @@ func TestIntegration_RuntimeBookkeeping_PersistsTransitionsAndMetrics(t *testing
 	})
 	require.NoError(t, err)
 	assert.NotEmpty(t, transitions)
-	assert.Equal(t, []int64{0, 1, 2}, uniqueTransitionSteps(transitions))
+	testcmp.AssertEqual(t, []int64{0, 1, 2}, uniqueTransitionSteps(transitions))
 
 	toolResults, err := al.queries.ListAgentToolResultsByRunID(ctx, memsqlc.ListAgentToolResultsByRunIDParams{
 		RunID: completion.RunID,
@@ -338,8 +347,7 @@ func TestIntegration_RuntimeBookkeeping_PersistsTransitionsAndMetrics(t *testing
 	})
 	require.NoError(t, err)
 	require.Len(t, toolResults, 2)
-	assert.Equal(t, int64(0), toolResults[0].StepIndex)
-	assert.Equal(t, int64(1), toolResults[1].StepIndex)
+	testcmp.AssertEqual(t, []int64{0, 1}, toolResultSteps(toolResults))
 
 	runStates, err := al.queries.ListAgentRunStatesByRunID(ctx, memsqlc.ListAgentRunStatesByRunIDParams{
 		RunID: completion.RunID,
@@ -347,7 +355,7 @@ func TestIntegration_RuntimeBookkeeping_PersistsTransitionsAndMetrics(t *testing
 	})
 	require.NoError(t, err)
 	require.Len(t, runStates, 3)
-	assert.Equal(t, []int64{0, 1, 3}, uniqueRunStateSteps(runStates))
+	testcmp.AssertEqual(t, []int64{0, 1, 3}, uniqueRunStateSteps(runStates))
 }
 
 func TestIntegration_RuntimeBookkeeping_UsesAgentStepForMultipleToolCalls(t *testing.T) {
@@ -397,7 +405,7 @@ func TestIntegration_RuntimeBookkeeping_UsesAgentStepForMultipleToolCalls(t *tes
 
 	completion := completions[len(completions)-1]
 	require.NotNil(t, completion.ToolCalls)
-	assert.Equal(t, int64(2), *completion.ToolCalls)
+	testcmp.AssertEqual(t, int64(2), *completion.ToolCalls)
 
 	toolResults, err := al.queries.ListAgentToolResultsByRunID(ctx, memsqlc.ListAgentToolResultsByRunIDParams{
 		RunID: completion.RunID,
@@ -405,8 +413,7 @@ func TestIntegration_RuntimeBookkeeping_UsesAgentStepForMultipleToolCalls(t *tes
 	})
 	require.NoError(t, err)
 	require.Len(t, toolResults, 2)
-	assert.Equal(t, int64(0), toolResults[0].StepIndex)
-	assert.Equal(t, int64(0), toolResults[1].StepIndex)
+	testcmp.AssertEqual(t, []int64{0, 0}, toolResultSteps(toolResults))
 
 	runStates, err := al.queries.ListAgentRunStatesByRunID(ctx, memsqlc.ListAgentRunStatesByRunIDParams{
 		RunID: completion.RunID,
@@ -414,7 +421,7 @@ func TestIntegration_RuntimeBookkeeping_UsesAgentStepForMultipleToolCalls(t *tes
 	})
 	require.NoError(t, err)
 	require.Len(t, runStates, 2)
-	assert.Equal(t, []int64{0, 2}, uniqueRunStateSteps(runStates))
+	testcmp.AssertEqual(t, []int64{0, 2}, uniqueRunStateSteps(runStates))
 }
 
 func TestIntegration_RuntimeBookkeeping_FailedRunIsTerminalized(t *testing.T) {
@@ -458,7 +465,7 @@ func TestIntegration_RuntimeBookkeeping_FailedRunIsTerminalized(t *testing.T) {
 		ConversationID: convID,
 	})
 	require.NoError(t, err)
-	assert.Equal(t, "failed", run.Status)
+	testcmp.AssertEqual(t, "failed", run.Status)
 	assert.Contains(t, string(run.MetadataJson), "synthetic generate failure")
 	assert.Contains(t, string(run.MetadataJson), `"reason":"failed"`)
 }
@@ -482,16 +489,16 @@ func TestIntegration_RuntimeBookkeeping_SubagentRunIsTerminalized(t *testing.T) 
 	}
 
 	msgBus := bus.NewMessageBus()
-	al := mustNewAgentLoop(t, cfg, msgBus, newMockLanguageModel("subagent final response"))
+	al := mustNewAgentLoop(t, cfg, msgBus, newMockLanguageModel(t, "subagent final response"))
 
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
 
 	runLoop := MakeUnifiedRunLoopFunc(al)
-	result, err := runLoop(ctx, tools.ToolLoopConfig{Model: newMockLanguageModel("subagent final response"), MaxIterations: 3}, "", "subagent task", "test", "chat1")
+	result, err := runLoop(ctx, tools.ToolLoopConfig{Model: newMockLanguageModel(t, "subagent final response"), MaxIterations: 3}, "", "subagent task", "test", "chat1")
 	require.NoError(t, err)
 	require.NotNil(t, result)
-	assert.Equal(t, "subagent final response", result.Content)
+	testcmp.AssertEqual(t, "subagent final response", result.Content)
 
 	conversations, err := al.queries.ListAgentConversations(ctx, memsqlc.ListAgentConversationsParams{Limit: 10})
 	require.NoError(t, err)
@@ -502,7 +509,7 @@ func TestIntegration_RuntimeBookkeeping_SubagentRunIsTerminalized(t *testing.T) 
 	})
 	require.NoError(t, err)
 	require.False(t, latestRun.ID.IsZero())
-	assert.Equal(t, "completed", latestRun.Status)
+	testcmp.AssertEqual(t, "completed", latestRun.Status)
 }
 
 func TestIntegration_RuntimeBookkeeping_SubagentFailedRunIsTerminalized(t *testing.T) {
@@ -542,7 +549,7 @@ func TestIntegration_RuntimeBookkeeping_SubagentFailedRunIsTerminalized(t *testi
 	})
 	require.NoError(t, err)
 	require.False(t, latestRun.ID.IsZero())
-	assert.Equal(t, "failed", latestRun.Status)
+	testcmp.AssertEqual(t, "failed", latestRun.Status)
 	assert.Contains(t, string(latestRun.MetadataJson), "synthetic generate failure")
 }
 
@@ -565,14 +572,14 @@ func TestIntegration_RuntimeBookkeeping_SubagentUsesDelegatedParentSession(t *te
 	}
 
 	msgBus := bus.NewMessageBus()
-	al := mustNewAgentLoop(t, cfg, msgBus, newMockLanguageModel("subagent final response"))
+	al := mustNewAgentLoop(t, cfg, msgBus, newMockLanguageModel(t, "subagent final response"))
 
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
 
 	runLoop := MakeUnifiedRunLoopFunc(al)
 	parentCtx := tools.WithSessionKey(ctx, "parent-session")
-	_, err = runLoop(parentCtx, tools.ToolLoopConfig{Model: newMockLanguageModel("subagent final response"), MaxIterations: 3}, "", "subagent task", "test", "chat1")
+	_, err = runLoop(parentCtx, tools.ToolLoopConfig{Model: newMockLanguageModel(t, "subagent final response"), MaxIterations: 3}, "", "subagent task", "test", "chat1")
 	require.NoError(t, err)
 
 	conversations, err := al.queries.ListAgentConversations(ctx, memsqlc.ListAgentConversationsParams{Limit: 10})
@@ -612,8 +619,8 @@ func TestIntegration_RuntimeBookkeeping_SubagentPersistsTransitionsAndMetrics(t 
 	result, err := runLoop(ctx, tools.ToolLoopConfig{Model: &multiToolCallingModel{}, Tools: al.tools, Bus: msgBus, MaxIterations: 10}, "", "Use the echo tool twice", "test", "chat1")
 	require.NoError(t, err)
 	require.NotNil(t, result)
-	assert.Equal(t, "Final response after two tools", result.Content)
-	assert.Equal(t, 2, result.ToolCalls)
+	testcmp.AssertEqual(t, "Final response after two tools", result.Content)
+	testcmp.AssertEqual(t, 2, result.ToolCalls)
 
 	completions, err := al.queries.GetCompletedTasks(ctx, memsqlc.GetCompletedTasksParams{
 		AgentID: pkgroot.NAME,
@@ -624,9 +631,9 @@ func TestIntegration_RuntimeBookkeeping_SubagentPersistsTransitionsAndMetrics(t 
 
 	completion := completions[len(completions)-1]
 	require.NotNil(t, completion.ToolCalls)
-	assert.Equal(t, int64(2), *completion.ToolCalls)
+	testcmp.AssertEqual(t, int64(2), *completion.ToolCalls)
 	require.NotNil(t, completion.Errors)
-	assert.Equal(t, int64(0), *completion.Errors)
+	testcmp.AssertEqual(t, int64(0), *completion.Errors)
 
 	transitions, err := al.queries.ListAgentStateTransitionsByRunID(ctx, memsqlc.ListAgentStateTransitionsByRunIDParams{
 		RunID: completion.RunID,
@@ -634,7 +641,7 @@ func TestIntegration_RuntimeBookkeeping_SubagentPersistsTransitionsAndMetrics(t 
 	})
 	require.NoError(t, err)
 	assert.NotEmpty(t, transitions)
-	assert.Equal(t, []int64{0, 1, 2}, uniqueTransitionSteps(transitions))
+	testcmp.AssertEqual(t, []int64{0, 1, 2}, uniqueTransitionSteps(transitions))
 
 	toolResults, err := al.queries.ListAgentToolResultsByRunID(ctx, memsqlc.ListAgentToolResultsByRunIDParams{
 		RunID: completion.RunID,
@@ -642,8 +649,7 @@ func TestIntegration_RuntimeBookkeeping_SubagentPersistsTransitionsAndMetrics(t 
 	})
 	require.NoError(t, err)
 	require.Len(t, toolResults, 2)
-	assert.Equal(t, int64(0), toolResults[0].StepIndex)
-	assert.Equal(t, int64(1), toolResults[1].StepIndex)
+	testcmp.AssertEqual(t, []int64{0, 1}, toolResultSteps(toolResults))
 
 	runStates, err := al.queries.ListAgentRunStatesByRunID(ctx, memsqlc.ListAgentRunStatesByRunIDParams{
 		RunID: completion.RunID,
@@ -651,7 +657,7 @@ func TestIntegration_RuntimeBookkeeping_SubagentPersistsTransitionsAndMetrics(t 
 	})
 	require.NoError(t, err)
 	require.Len(t, runStates, 3)
-	assert.Equal(t, []int64{0, 1, 3}, uniqueRunStateSteps(runStates))
+	testcmp.AssertEqual(t, []int64{0, 1, 3}, uniqueRunStateSteps(runStates))
 }
 
 func TestIntegration_RuntimeBookkeeping_SubagentUsesAgentStepForMultipleToolCalls(t *testing.T) {
@@ -684,8 +690,8 @@ func TestIntegration_RuntimeBookkeeping_SubagentUsesAgentStepForMultipleToolCall
 	result, err := runLoop(ctx, tools.ToolLoopConfig{Model: &sameStepMultiToolModel{}, Tools: al.tools, Bus: msgBus, MaxIterations: 10}, "", "Use two echo tool calls in one step", "test", "chat1")
 	require.NoError(t, err)
 	require.NotNil(t, result)
-	assert.Equal(t, "Final response after parallel tools", result.Content)
-	assert.Equal(t, 2, result.ToolCalls)
+	testcmp.AssertEqual(t, "Final response after parallel tools", result.Content)
+	testcmp.AssertEqual(t, 2, result.ToolCalls)
 
 	completions, err := al.queries.GetCompletedTasks(ctx, memsqlc.GetCompletedTasksParams{
 		AgentID: pkgroot.NAME,
@@ -696,7 +702,7 @@ func TestIntegration_RuntimeBookkeeping_SubagentUsesAgentStepForMultipleToolCall
 
 	completion := completions[len(completions)-1]
 	require.NotNil(t, completion.ToolCalls)
-	assert.Equal(t, int64(2), *completion.ToolCalls)
+	testcmp.AssertEqual(t, int64(2), *completion.ToolCalls)
 
 	toolResults, err := al.queries.ListAgentToolResultsByRunID(ctx, memsqlc.ListAgentToolResultsByRunIDParams{
 		RunID: completion.RunID,
@@ -704,8 +710,7 @@ func TestIntegration_RuntimeBookkeeping_SubagentUsesAgentStepForMultipleToolCall
 	})
 	require.NoError(t, err)
 	require.Len(t, toolResults, 2)
-	assert.Equal(t, int64(0), toolResults[0].StepIndex)
-	assert.Equal(t, int64(0), toolResults[1].StepIndex)
+	testcmp.AssertEqual(t, []int64{0, 0}, toolResultSteps(toolResults))
 
 	runStates, err := al.queries.ListAgentRunStatesByRunID(ctx, memsqlc.ListAgentRunStatesByRunIDParams{
 		RunID: completion.RunID,
@@ -713,7 +718,7 @@ func TestIntegration_RuntimeBookkeeping_SubagentUsesAgentStepForMultipleToolCall
 	})
 	require.NoError(t, err)
 	require.Len(t, runStates, 2)
-	assert.Equal(t, []int64{0, 2}, uniqueRunStateSteps(runStates))
+	testcmp.AssertEqual(t, []int64{0, 2}, uniqueRunStateSteps(runStates))
 }
 
 func TestIntegration_RuntimeBookkeeping_SubagentRecoversFinalContent(t *testing.T) {
@@ -745,7 +750,7 @@ func TestIntegration_RuntimeBookkeeping_SubagentRecoversFinalContent(t *testing.
 	result, err := runLoop(ctx, tools.ToolLoopConfig{Model: &emptyFinalAfterToolModel{}, Tools: al.tools, Bus: msgBus, MaxIterations: 10}, "", "Recover the final content from the tool result", "test", "chat1")
 	require.NoError(t, err)
 	require.NotNil(t, result)
-	assert.Equal(t, "Echo: recovered final", result.Content)
+	testcmp.AssertEqual(t, "Echo: recovered final", result.Content)
 }
 
 func TestIntegration_RuntimeBookkeeping_SubagentPersistsAuditEntries(t *testing.T) {

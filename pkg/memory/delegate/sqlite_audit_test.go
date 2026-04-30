@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ZanzyTHEbar/dragonscale/internal/testcmp"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/ids"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/memory"
-	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -68,7 +68,7 @@ func TestLibSQLDelegate_InsertAuditEntry(t *testing.T) {
 
 			count, err := d.CountAuditEntries(ctx, tt.entry.AgentID)
 			require.NoError(t, err)
-			assert.Empty(t, cmp.Diff(1, count))
+			testcmp.AssertEqual(t, 1, count)
 		})
 	}
 }
@@ -97,9 +97,9 @@ func TestLibSQLDelegate_ListAuditEntries_PreservesOutcomeMetadata(t *testing.T) 
 	entries, err := d.ListAuditEntries(ctx, "a1", 10)
 	require.NoError(t, err)
 	require.Len(t, entries, 1)
-	assert.Equal(t, "call-exec", entries[0].ToolCallID)
+	testcmp.AssertEqual(t, "call-exec", entries[0].ToolCallID)
 	assert.False(t, entries[0].Success)
-	assert.Equal(t, "permission denied", entries[0].ErrorMsg)
+	testcmp.AssertEqual(t, "permission denied", entries[0].ErrorMsg)
 }
 
 func TestLibSQLDelegate_GetRecentAuditEntries_HandlesMixedLegacyAndExplicitRows(t *testing.T) {
@@ -143,14 +143,14 @@ func TestLibSQLDelegate_GetRecentAuditEntries_HandlesMixedLegacyAndExplicitRows(
 	legacy, ok := byTool["legacy_read"]
 	require.True(t, ok, "legacy row missing")
 	assert.True(t, legacy.Success)
-	assert.Equal(t, "", legacy.ErrorMsg)
+	testcmp.AssertEqual(t, "", legacy.ErrorMsg)
 
 	explicitEntry, ok := byTool["explicit_write"]
 	require.True(t, ok, "explicit row missing")
 	assert.False(t, explicitEntry.Success)
-	assert.Equal(t, "write denied", explicitEntry.ErrorMsg)
-	assert.Equal(t, "call-explicit-write", explicitEntry.ToolCallID)
-	assert.Equal(t, `{"path":"new.txt"}`, explicitEntry.ToolInput)
+	testcmp.AssertEqual(t, "write denied", explicitEntry.ErrorMsg)
+	testcmp.AssertEqual(t, "call-explicit-write", explicitEntry.ToolCallID)
+	testcmp.AssertEqual(t, `{"path":"new.txt"}`, explicitEntry.ToolInput)
 }
 
 func TestLibSQLDelegate_GetRecentAuditEntries_PrefersSecureBusRowsOverLegacyToolRows(t *testing.T) {
@@ -192,10 +192,10 @@ func TestLibSQLDelegate_GetRecentAuditEntries_PrefersSecureBusRowsOverLegacyTool
 	entries, err := d.GetRecentAuditEntries(ctx, now.Add(-time.Minute))
 	require.NoError(t, err)
 	require.Len(t, entries, 1)
-	assert.Equal(t, "echo", entries[0].ToolName)
-	assert.Equal(t, toolCallID, entries[0].ToolCallID)
-	assert.Equal(t, sessionKey, entries[0].SessionID)
-	assert.Equal(t, `{"text":"hello"}`, entries[0].ToolInput)
+	testcmp.AssertEqual(t, "echo", entries[0].ToolName)
+	testcmp.AssertEqual(t, toolCallID, entries[0].ToolCallID)
+	testcmp.AssertEqual(t, sessionKey, entries[0].SessionID)
+	testcmp.AssertEqual(t, `{"text":"hello"}`, entries[0].ToolInput)
 	assert.True(t, entries[0].Success)
 }
 
@@ -239,10 +239,10 @@ func TestLibSQLDelegate_GetRecentAuditEntries_PrefersSecureBusRowsButBackfillsLe
 	entries, err := d.GetRecentAuditEntries(ctx, now.Add(-time.Minute))
 	require.NoError(t, err)
 	require.Len(t, entries, 1)
-	assert.Equal(t, "echo", entries[0].ToolName)
-	assert.Equal(t, `{"text":"boom"}`, entries[0].ToolInput)
+	testcmp.AssertEqual(t, "echo", entries[0].ToolName)
+	testcmp.AssertEqual(t, `{"text":"boom"}`, entries[0].ToolInput)
 	assert.False(t, entries[0].Success)
-	assert.Equal(t, "tool execution denied", entries[0].ErrorMsg)
+	testcmp.AssertEqual(t, "tool execution denied", entries[0].ErrorMsg)
 }
 
 func TestLibSQLDelegate_GetRecentAuditEntries_PreservesLegacyRowsWithoutSecureBusTwin(t *testing.T) {
@@ -270,10 +270,10 @@ func TestLibSQLDelegate_GetRecentAuditEntries_PreservesLegacyRowsWithoutSecureBu
 	entries, err := d.GetRecentAuditEntries(ctx, now.Add(-time.Minute))
 	require.NoError(t, err)
 	require.Len(t, entries, 1)
-	assert.Equal(t, "write_file", entries[0].ToolName)
-	assert.Equal(t, `{"path":"x"}`, entries[0].ToolInput)
+	testcmp.AssertEqual(t, "write_file", entries[0].ToolName)
+	testcmp.AssertEqual(t, `{"path":"x"}`, entries[0].ToolInput)
 	assert.False(t, entries[0].Success)
-	assert.Equal(t, "permission denied", entries[0].ErrorMsg)
+	testcmp.AssertEqual(t, "permission denied", entries[0].ErrorMsg)
 }
 
 func TestLibSQLDelegate_GetRecentAuditEntries_DoesNotDedupAcrossAgents(t *testing.T) {
@@ -322,10 +322,10 @@ func TestLibSQLDelegate_GetRecentAuditEntries_DoesNotDedupAcrossAgents(t *testin
 	}
 	require.Contains(t, byAgent, "agent-a")
 	require.Contains(t, byAgent, "agent-b")
-	assert.Equal(t, `{"text":"from-a"}`, byAgent["agent-a"].ToolInput)
-	assert.Equal(t, "", byAgent["agent-b"].ToolInput)
-	assert.Equal(t, toolCallID, byAgent["agent-a"].ToolCallID)
-	assert.Equal(t, toolCallID, byAgent["agent-b"].ToolCallID)
+	testcmp.AssertEqual(t, `{"text":"from-a"}`, byAgent["agent-a"].ToolInput)
+	testcmp.AssertEqual(t, "", byAgent["agent-b"].ToolInput)
+	testcmp.AssertEqual(t, toolCallID, byAgent["agent-a"].ToolCallID)
+	testcmp.AssertEqual(t, toolCallID, byAgent["agent-b"].ToolCallID)
 }
 
 func TestLibSQLDelegate_ListAuditEntries(t *testing.T) {
@@ -442,7 +442,7 @@ func TestLibSQLDelegate_ListAuditEntriesByAction(t *testing.T) {
 				for i := range wantActions {
 					wantActions[i] = tt.wantAction
 				}
-				assert.Empty(t, cmp.Diff(wantActions, actions))
+				testcmp.AssertEqual(t, wantActions, actions)
 			}
 		})
 	}
@@ -503,14 +503,14 @@ func TestLibSQLDelegate_PruneOldAuditEntries(t *testing.T) {
 
 	count, err := d.CountAuditEntries(ctx, "a1")
 	require.NoError(t, err)
-	assert.Empty(t, cmp.Diff(2, count))
+	testcmp.AssertEqual(t, 2, count)
 
 	// Prune entries created before "now + 1 minute" (should remove all)
 	require.NoError(t, d.PruneOldAuditEntries(ctx, "a1", time.Now().Add(time.Minute)))
 
 	count, err = d.CountAuditEntries(ctx, "a1")
 	require.NoError(t, err)
-	assert.Empty(t, cmp.Diff(0, count))
+	testcmp.AssertEqual(t, 0, count)
 }
 
 func TestLibSQLDelegate_CountAuditEntriesByAction(t *testing.T) {
@@ -550,7 +550,7 @@ func TestLibSQLDelegate_CountAuditEntriesByAction(t *testing.T) {
 			}
 			count, err := d.CountAuditEntriesByAction(ctx, tt.agentID, tt.action)
 			require.NoError(t, err)
-			assert.Empty(t, cmp.Diff(tt.want, count))
+			testcmp.AssertEqual(t, tt.want, count)
 		})
 	}
 }
