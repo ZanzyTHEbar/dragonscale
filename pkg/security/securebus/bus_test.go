@@ -109,6 +109,9 @@ func TestBus_SuccessfulToolExec(t *testing.T) {
 	assert.False(t, resp.IsError)
 	assert.Empty(t, cmp.Diff("hello world", resp.Result))
 	assert.Empty(t, cmp.Diff(1, bus.AuditLog().Len()))
+	events := bus.AuditLog().Events()
+	require.Len(t, events, 1)
+	assert.Empty(t, events[0].ExecutionError)
 }
 
 func TestBus_UnknownTool(t *testing.T) {
@@ -151,10 +154,15 @@ func TestBus_LeakDetection(t *testing.T) {
 	resp := bus.Execute(t.Context(), req)
 
 	assert.True(t, resp.LeakDetected, "should detect API key in output")
+	assert.False(t, resp.IsError)
 	assert.NotContains(t, resp.Result, apiKey, "raw API key must not appear in response")
 
 	leakEvents := bus.AuditLog().LeakEvents()
 	assert.Len(t, leakEvents, 1)
+	assert.True(t, leakEvents[0].LeakDetected)
+	assert.False(t, leakEvents[0].IsError)
+	assert.NotEmpty(t, leakEvents[0].ExecutionError)
+	assert.Contains(t, leakEvents[0].ExecutionError, "[REDACTED:AWS_ACCESS_KEY]")
 	assert.NotContains(t, leakEvents[0].ExecutionError, apiKey)
 }
 
@@ -179,6 +187,7 @@ func TestBus_LeakDetection_RedactsAuditInputAndError(t *testing.T) {
 	require.Len(t, events, 1)
 	assert.NotContains(t, events[0].ToolInput, apiKey)
 	assert.NotContains(t, events[0].ExecutionError, apiKey)
+	assert.Contains(t, events[0].ExecutionError, "[REDACTED:AWS_ACCESS_KEY]")
 	assert.True(t, events[0].LeakDetected)
 }
 
@@ -341,6 +350,97 @@ func TestBus_PolicyViolation_RecursionDepth(t *testing.T) {
 	events := bus.AuditLog().Events()
 	require.Len(t, events, 1)
 	assert.NotEmpty(t, events[0].PolicyViolation)
+}
+
+func TestBus_PolicyViolation_NetworkTargetBeforeExecution(t *testing.T) {
+	t.Parallel()
+	called := false
+	capLookup := func(name string) (tools.ToolCapabilities, bool) {
+		if name == "web_fetch" {
+			return tools.ToolCapabilities{Network: []tools.EndpointRule{{Pattern: "http://**"}, {Pattern: "https://**"}}}, true
+		}
+		return tools.ZeroCapabilities(), false
+	}
+	executor := func(ctx context.Context, name string, args map[string]interface{}) *tools.ToolResult {
+		called = true
+		return &tools.ToolResult{ForLLM: "should not run"}
+	}
+	bus := securebus.New(securebus.DefaultBusConfig(), nil, capLookup, executor)
+	defer bus.Close()
+
+	req := itr.NewToolExecRequest("req-net-policy", "sess", "tc-net-policy", "web_fetch", makeArgsJSON(map[string]interface{}{
+		"url": "http://127.0.0.1:8080/internal",
+	}))
+	resp := bus.Execute(t.Context(), req)
+
+	assert.True(t, resp.IsError)
+	assert.False(t, called, "policy violation should happen before tool execution")
+	assert.Contains(t, resp.Result, "policy violation")
+	events := bus.AuditLog().Events()
+	require.Len(t, events, 1)
+	assert.NotEmpty(t, events[0].PolicyViolation)
+}
+
+func TestBus_PolicyViolation_FilesystemTargetBeforeExecution(t *testing.T) {
+	t.Parallel()
+	workspace := t.TempDir()
+	outside := t.TempDir() + "/secret.txt"
+	called := false
+	capLookup := func(name string) (tools.ToolCapabilities, bool) {
+		if name == "read_file" {
+			return tools.ToolCapabilities{Filesystem: []tools.PathRule{{Pattern: "**", Mode: "r"}}}, true
+		}
+		return tools.ZeroCapabilities(), false
+	}
+	executor := func(ctx context.Context, name string, args map[string]interface{}) *tools.ToolResult {
+		called = true
+		return &tools.ToolResult{ForLLM: "should not run"}
+	}
+	cfg := securebus.DefaultBusConfig()
+	cfg.Policy.AllowedWorkspace = workspace
+	bus := securebus.New(cfg, nil, capLookup, executor)
+	defer bus.Close()
+
+	req := itr.NewToolExecRequest("req-fs-policy", "sess", "tc-fs-policy", "read_file", makeArgsJSON(map[string]interface{}{
+		"path": outside,
+	}))
+	resp := bus.Execute(t.Context(), req)
+
+	assert.True(t, resp.IsError)
+	assert.False(t, called, "policy violation should happen before tool execution")
+	assert.Contains(t, resp.Result, "outside allowed workspace")
+	events := bus.AuditLog().Events()
+	require.Len(t, events, 1)
+	assert.NotEmpty(t, events[0].PolicyViolation)
+}
+
+func TestBus_AllowsRelativeFilesystemTargetInsideWorkspace(t *testing.T) {
+	t.Parallel()
+	workspace := t.TempDir()
+	called := false
+	capLookup := func(name string) (tools.ToolCapabilities, bool) {
+		if name == "read_file" {
+			return tools.ToolCapabilities{Filesystem: []tools.PathRule{{Pattern: "**", Mode: "r"}}}, true
+		}
+		return tools.ZeroCapabilities(), false
+	}
+	executor := func(ctx context.Context, name string, args map[string]interface{}) *tools.ToolResult {
+		called = true
+		return &tools.ToolResult{ForLLM: "ok"}
+	}
+	cfg := securebus.DefaultBusConfig()
+	cfg.Policy.AllowedWorkspace = workspace
+	bus := securebus.New(cfg, nil, capLookup, executor)
+	defer bus.Close()
+
+	req := itr.NewToolExecRequest("req-fs-allowed", "sess", "tc-fs-allowed", "read_file", makeArgsJSON(map[string]interface{}{
+		"path": "docs/readme.md",
+	}))
+	resp := bus.Execute(t.Context(), req)
+
+	assert.False(t, resp.IsError)
+	assert.True(t, called)
+	assert.Equal(t, "ok", resp.Result)
 }
 
 func TestBus_AuditLog_FilterBySession(t *testing.T) {

@@ -4,12 +4,14 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"regexp"
 	"strings"
 	"time"
 
+	"github.com/ZanzyTHEbar/dragonscale/pkg/security"
 	jsonv2 "github.com/go-json-experiment/json"
 	"github.com/go-json-experiment/json/jsontext"
 )
@@ -356,7 +358,11 @@ func (t *WebSearchTool) Execute(ctx context.Context, args map[string]interface{}
 }
 
 type WebFetchTool struct {
-	maxChars int
+	maxChars     int
+	client       *http.Client
+	validateURL  func(string) error
+	lookupIPAddr func(context.Context, string) ([]net.IPAddr, error)
+	dialContext  func(context.Context, string, string) (net.Conn, error)
 }
 
 func NewWebFetchTool(maxChars int) *WebFetchTool {
@@ -395,7 +401,8 @@ func (t *WebFetchTool) Parameters() map[string]interface{} {
 }
 
 // Capabilities declares that WebFetchTool requires broad network access.
-// SSRF validation is applied within the SecureBus before any request is made.
+// SecureBus capability enforcement can apply SSRF validation before requests
+// are made; Execute also validates the initial URL and every redirect target.
 func (t *WebFetchTool) Capabilities() ToolCapabilities {
 	return ToolCapabilities{
 		Network: []EndpointRule{
@@ -423,6 +430,9 @@ func (t *WebFetchTool) Execute(ctx context.Context, args map[string]interface{})
 	if parsedURL.Host == "" {
 		return ErrorResult("missing domain in URL")
 	}
+	if err := t.validateFetchURL(urlStr); err != nil {
+		return ErrorResult(fmt.Sprintf("blocked URL: %v", err))
+	}
 
 	maxChars := t.maxChars
 	if mc, ok := args["maxChars"].(float64); ok {
@@ -438,21 +448,7 @@ func (t *WebFetchTool) Execute(ctx context.Context, args map[string]interface{})
 
 	req.Header.Set("User-Agent", userAgent)
 
-	client := &http.Client{
-		Timeout: 60 * time.Second,
-		Transport: &http.Transport{
-			MaxIdleConns:        10,
-			IdleConnTimeout:     30 * time.Second,
-			DisableCompression:  false,
-			TLSHandshakeTimeout: 15 * time.Second,
-		},
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			if len(via) >= 5 {
-				return fmt.Errorf("stopped after 5 redirects")
-			}
-			return nil
-		},
-	}
+	client := t.fetchClient()
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -511,6 +507,94 @@ func (t *WebFetchTool) Execute(ctx context.Context, args map[string]interface{})
 		ForLLM:  llmContent,
 		ForUser: string(resultJSON),
 	}
+}
+
+func (t *WebFetchTool) validateFetchURL(rawURL string) error {
+	if t.validateURL != nil {
+		return t.validateURL(rawURL)
+	}
+	return security.ValidateURL(rawURL)
+}
+
+func (t *WebFetchTool) fetchClient() *http.Client {
+	var base *http.Client
+	if t.client != nil {
+		base = t.client
+	} else {
+		base = &http.Client{
+			Timeout:   60 * time.Second,
+			Transport: t.safeTransport(),
+		}
+	}
+
+	client := *base
+	originalCheckRedirect := client.CheckRedirect
+	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		if len(via) >= 5 {
+			return fmt.Errorf("stopped after 5 redirects")
+		}
+		if err := t.validateFetchURL(req.URL.String()); err != nil {
+			return fmt.Errorf("redirect blocked: %w", err)
+		}
+		if originalCheckRedirect != nil {
+			return originalCheckRedirect(req, via)
+		}
+		return nil
+	}
+	return &client
+}
+
+func (t *WebFetchTool) safeTransport() *http.Transport {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.MaxIdleConns = 10
+	transport.IdleConnTimeout = 30 * time.Second
+	transport.DisableCompression = false
+	transport.TLSHandshakeTimeout = 15 * time.Second
+	transport.Proxy = nil
+	transport.DialContext = t.safeDialContext
+	return transport
+}
+
+func (t *WebFetchTool) safeDialContext(ctx context.Context, network, address string) (net.Conn, error) {
+	host, port, err := net.SplitHostPort(address)
+	if err != nil {
+		return nil, fmt.Errorf("invalid dial address %q: %w", address, err)
+	}
+
+	if security.IsBlockedHost(host) {
+		return nil, fmt.Errorf("%w: host %q is blocked", security.ErrBlockedURL, host)
+	}
+
+	ips, err := t.lookupHostIPAddrs(ctx, host)
+	if err != nil {
+		return nil, fmt.Errorf("%w: DNS resolution failed for %q: %v", security.ErrBlockedURL, host, err)
+	}
+	if len(ips) == 0 {
+		return nil, fmt.Errorf("%w: DNS resolution returned no IPs for %q", security.ErrBlockedURL, host)
+	}
+
+	for _, ip := range ips {
+		if security.IsBlockedIP(ip.IP) {
+			return nil, fmt.Errorf("%w: resolved IP %s is in a blocked range", security.ErrBlockedURL, ip.IP.String())
+		}
+	}
+
+	return t.dialValidatedAddress(ctx, network, net.JoinHostPort(ips[0].IP.String(), port))
+}
+
+func (t *WebFetchTool) lookupHostIPAddrs(ctx context.Context, host string) ([]net.IPAddr, error) {
+	if t.lookupIPAddr != nil {
+		return t.lookupIPAddr(ctx, host)
+	}
+	return net.DefaultResolver.LookupIPAddr(ctx, host)
+}
+
+func (t *WebFetchTool) dialValidatedAddress(ctx context.Context, network, address string) (net.Conn, error) {
+	if t.dialContext != nil {
+		return t.dialContext(ctx, network, address)
+	}
+	dialer := &net.Dialer{}
+	return dialer.DialContext(ctx, network, address)
 }
 
 func formatWebFetchLLMContent(urlStr string, status int, extractor string, truncated bool, text string, isHTML bool, rawHTML string) string {

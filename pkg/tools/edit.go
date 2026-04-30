@@ -7,7 +7,7 @@ import (
 )
 
 // EditFileTool edits a file by replacing old_text with new_text.
-// The old_text must exist exactly in the file.
+// The old_text must be non-empty and exist exactly once in the file.
 type EditFileTool struct {
 	fs fileSystem
 }
@@ -22,7 +22,7 @@ func (t *EditFileTool) Name() string {
 }
 
 func (t *EditFileTool) Description() string {
-	return "Edit a file by replacing old_text with new_text. The old_text must exist exactly once in the file. Example: {\"path\":\"edit_target.txt\",\"old_text\":\"world\",\"new_text\":\"dragonscale\"}."
+	return "Edit a file by replacing old_text with new_text. The old_text must be non-empty and must exist exactly once in the file. Example: {\"path\":\"edit_target.txt\",\"old_text\":\"world\",\"new_text\":\"dragonscale\"}."
 }
 
 func (t *EditFileTool) Parameters() map[string]interface{} {
@@ -35,7 +35,7 @@ func (t *EditFileTool) Parameters() map[string]interface{} {
 			},
 			"old_text": map[string]interface{}{
 				"type":        "string",
-				"description": "The exact text to find and replace",
+				"description": "The non-empty exact text to find and replace",
 			},
 			"new_text": map[string]interface{}{
 				"type":        "string",
@@ -77,6 +77,10 @@ func (t *EditFileTool) Execute(ctx context.Context, args map[string]interface{})
 }
 
 func editFile(sysFs fileSystem, path, oldText, newText string) error {
+	if oldText == "" {
+		return fmt.Errorf("old_text must not be empty")
+	}
+
 	content, err := sysFs.ReadFile(path)
 	if err != nil {
 		return err
@@ -91,6 +95,10 @@ func editFile(sysFs fileSystem, path, oldText, newText string) error {
 }
 
 func replaceEditContent(content []byte, oldText, newText string) ([]byte, error) {
+	if oldText == "" {
+		return nil, fmt.Errorf("old_text must not be empty")
+	}
+
 	contentStr := string(content)
 
 	if !strings.Contains(contentStr, oldText) {

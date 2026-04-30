@@ -7,6 +7,8 @@ import (
 	"strings"
 )
 
+type hostLookupFunc func(string) ([]string, error)
+
 // ErrBlockedURL is returned when a URL targets a blocked network.
 var ErrBlockedURL = fmt.Errorf("URL targets a blocked network")
 
@@ -14,6 +16,10 @@ var ErrBlockedURL = fmt.Errorf("URL targets a blocked network")
 // IPs, cloud metadata endpoints, and loopback addresses that could be used
 // for SSRF attacks.
 func ValidateURL(rawURL string) error {
+	return validateURLWithLookup(rawURL, net.LookupHost)
+}
+
+func validateURLWithLookup(rawURL string, lookupHost hostLookupFunc) error {
 	parsed, err := url.Parse(rawURL)
 	if err != nil {
 		return fmt.Errorf("invalid URL: %w", err)
@@ -29,11 +35,11 @@ func ValidateURL(rawURL string) error {
 		return fmt.Errorf("%w: empty hostname", ErrBlockedURL)
 	}
 
-	if isBlockedHost(host) {
+	if IsBlockedHost(host) {
 		return fmt.Errorf("%w: host %q is blocked", ErrBlockedURL, host)
 	}
 
-	ips, err := net.LookupHost(host)
+	ips, err := lookupHost(host)
 	if err != nil {
 		return fmt.Errorf("%w: DNS resolution failed for %q: %v", ErrBlockedURL, host, err)
 	}
@@ -43,7 +49,7 @@ func ValidateURL(rawURL string) error {
 		if ip == nil {
 			continue
 		}
-		if isBlockedIP(ip) {
+		if IsBlockedIP(ip) {
 			return fmt.Errorf("%w: resolved IP %s is in a blocked range", ErrBlockedURL, ipStr)
 		}
 	}
@@ -51,8 +57,8 @@ func ValidateURL(rawURL string) error {
 	return nil
 }
 
-// isBlockedHost checks hostnames that are always blocked regardless of resolution.
-func isBlockedHost(host string) bool {
+// IsBlockedHost checks hostnames that are always blocked regardless of resolution.
+func IsBlockedHost(host string) bool {
 	lower := strings.ToLower(host)
 
 	blockedHosts := []string{
@@ -81,9 +87,13 @@ func isBlockedHost(host string) bool {
 	return false
 }
 
-// isBlockedIP returns true if the IP is in a private, loopback, link-local,
+func isBlockedHost(host string) bool {
+	return IsBlockedHost(host)
+}
+
+// IsBlockedIP returns true if the IP is in a private, loopback, link-local,
 // or otherwise blocked range.
-func isBlockedIP(ip net.IP) bool {
+func IsBlockedIP(ip net.IP) bool {
 	if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() ||
 		ip.IsLinkLocalMulticast() || ip.IsUnspecified() {
 		return true
@@ -113,4 +123,8 @@ func isBlockedIP(ip net.IP) bool {
 	}
 
 	return false
+}
+
+func isBlockedIP(ip net.IP) bool {
+	return IsBlockedIP(ip)
 }

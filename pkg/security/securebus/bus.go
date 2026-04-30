@@ -48,7 +48,7 @@ func DefaultBusConfig() BusConfig {
 //
 // Pipeline for each call:
 //  1. Decode request, extract tool capabilities
-//  2. Policy validation (depth, recursion limits)
+//  2. Policy validation (depth, recursion limits, explicit target capabilities)
 //  3. Secret injection into execution context
 //  4. Execute tool via ToolExecutor
 //  5. Scan output for leaks via Redactor
@@ -217,6 +217,15 @@ func (b *Bus) dispatch(ctx context.Context, req itr.ToolRequest) itr.ToolRespons
 			return itr.NewErrorResponse(req.ID, fmt.Sprintf("invalid args JSON: %v", err))
 		}
 	}
+	if err := b.policy.ValidateToolExecution(te, args, caps); err != nil {
+		event.IsError = true
+		event.PolicyViolation = err.Error()
+		event.DurationMS = time.Since(start).Milliseconds()
+		if err := b.audit.Append(event); err != nil {
+			log.Printf("securebus: audit append failed: %v", err)
+		}
+		return itr.NewErrorResponse(req.ID, "policy violation: "+err.Error())
+	}
 
 	// 4. Secret injection
 	injectedSecrets, injectedArgKeys, err := b.injectSecrets(ctx, caps.Secrets, args)
@@ -253,7 +262,7 @@ func (b *Bus) dispatch(ctx context.Context, req itr.ToolRequest) itr.ToolRespons
 		if result.IsError {
 			resp.IsError = true
 			event.ExecutionError = sanitizeAuditField(b.redactor, event.ExecutionError)
-		} else {
+		} else if !event.LeakDetected {
 			event.ExecutionError = ""
 		}
 	}

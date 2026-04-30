@@ -365,6 +365,49 @@ func TestFilesystemTool_ReadFile_RejectsSymlinkEscape(t *testing.T) {
 	}
 }
 
+func TestFilesystemTool_WriteFile_RejectsSymlinkEscape(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	workspace := filepath.Join(root, "workspace")
+	if err := os.MkdirAll(workspace, 0755); err != nil {
+		t.Fatalf("failed to create workspace: %v", err)
+	}
+
+	secret := filepath.Join(root, "secret.txt")
+	if err := os.WriteFile(secret, []byte("top secret"), 0644); err != nil {
+		t.Fatalf("failed to write secret file: %v", err)
+	}
+
+	link := filepath.Join(workspace, "leak.txt")
+	if err := os.Symlink(secret, link); err != nil {
+		t.Skipf("symlink not supported in this environment: %v", err)
+	}
+
+	tool := NewWriteFileTool(workspace, true)
+	result := tool.Execute(t.Context(), map[string]interface{}{
+		"path":    link,
+		"content": "updated",
+	})
+
+	if !result.IsError {
+		t.Fatal("expected symlink escape write to be blocked")
+	}
+	if !strings.Contains(result.ForLLM, "symlink resolves outside workspace") {
+		t.Fatalf("expected symlink escape error, got: %s", result.ForLLM)
+	}
+
+	content, err := os.ReadFile(secret)
+	if err != nil {
+		t.Fatalf("failed to read secret file: %v", err)
+	}
+	if string(content) != "top secret" {
+		t.Fatalf("expected target content to remain unchanged, got: %s", string(content))
+	}
+	if _, err := os.Lstat(link); err != nil {
+		t.Fatalf("expected symlink path to remain present: %v", err)
+	}
+}
+
 func TestValidatePath_NullByteRejection(t *testing.T) {
 	t.Parallel()
 	workspace := t.TempDir()

@@ -92,6 +92,31 @@ func TestValidateToolArgs(t *testing.T) {
 			args: map[string]interface{}{"anything": "goes"},
 		},
 		{
+			name: "closed schema without properties rejects extras",
+			schema: map[string]interface{}{
+				"type":                 "object",
+				"additionalProperties": false,
+			},
+			args:    map[string]interface{}{"anything": "goes"},
+			wantErr: "unexpected property \"anything\"",
+		},
+		{
+			name: "closed schema without properties accepts empty object",
+			schema: map[string]interface{}{
+				"type":                 "object",
+				"additionalProperties": false,
+			},
+			args: map[string]interface{}{},
+		},
+		{
+			name: "additionalProperties true without properties accepts extras",
+			schema: map[string]interface{}{
+				"type":                 "object",
+				"additionalProperties": true,
+			},
+			args: map[string]interface{}{"anything": "goes"},
+		},
+		{
 			name: "numeric minimum enforced",
 			schema: map[string]interface{}{
 				"type": "object",

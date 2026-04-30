@@ -2,10 +2,12 @@ package securebus
 
 import (
 	"fmt"
+	"net/url"
 	"path/filepath"
 	"strings"
 
 	"github.com/ZanzyTHEbar/dragonscale/pkg/itr"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/security"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/tools"
 )
 
@@ -57,10 +59,6 @@ type PolicyConfig struct {
 	// 0 disables the limit (not recommended).
 	MaxRecursionDepth uint8
 
-	// MaxTokensPerRequest is a soft cap on cost_tokens for a single request.
-	// 0 disables the cap.
-	MaxTokensPerRequest uint32
-
 	// AllowedWorkspace is the filesystem root all PathRule patterns are
 	// evaluated relative to. Empty string disables workspace restriction.
 	AllowedWorkspace string
@@ -74,8 +72,7 @@ type PolicyConfig struct {
 // DefaultPolicyConfig returns a secure-by-default configuration.
 func DefaultPolicyConfig() PolicyConfig {
 	return PolicyConfig{
-		MaxRecursionDepth:   10,
-		MaxTokensPerRequest: 0, // no hard cap; individual budgets set per call
+		MaxRecursionDepth: 10,
 		SSRFBlockedPrefixes: []string{
 			"http://169.254.", // AWS/GCP metadata
 			"http://10.",      // RFC 1918
@@ -95,12 +92,13 @@ func DefaultPolicyConfig() PolicyConfig {
 
 // PolicyEngine validates requests against a policy config and tool capabilities.
 type PolicyEngine struct {
-	cfg PolicyConfig
+	cfg         PolicyConfig
+	validateURL func(string) error
 }
 
 // NewPolicyEngine creates a PolicyEngine with the given configuration.
 func NewPolicyEngine(cfg PolicyConfig) *PolicyEngine {
-	return &PolicyEngine{cfg: cfg}
+	return &PolicyEngine{cfg: cfg, validateURL: security.ValidateURL}
 }
 
 // Validate returns an error if req violates any policy rule.
@@ -116,9 +114,84 @@ func (pe *PolicyEngine) Validate(req itr.ToolRequest, caps tools.ToolCapabilitie
 	return nil
 }
 
+// ValidateToolExecution checks explicit target arguments against a tool's
+// declared capabilities. It intentionally covers only target fields the
+// SecureBus can see safely before execution:
+//   - url: network endpoint checks
+//   - path: filesystem path checks for current first-party file tools
+//   - working_dir: filesystem path checks for exec working directory
+//
+// Tool-internal targets (for example URLs constructed inside web_search or
+// paths embedded inside shell commands) must still be enforced by the tool.
+func (pe *PolicyEngine) ValidateToolExecution(te itr.ToolExec, args map[string]interface{}, caps tools.ToolCapabilities) error {
+	if targetURL, ok := nonEmptyStringArg(args, "url"); ok {
+		if err := pe.ValidateNetwork(targetURL, caps.Network); err != nil {
+			return err
+		}
+	}
+
+	if targetPath, ok := nonEmptyStringArg(args, "path"); ok {
+		if mode := filesystemModeForTool(te.ToolName); mode != "" {
+			if err := pe.ValidateFilesystem(pe.filesystemPolicyTarget(targetPath), mode, caps.Filesystem); err != nil {
+				return err
+			}
+		}
+	}
+
+	if te.ToolName == "exec" {
+		if workingDir, ok := nonEmptyStringArg(args, "working_dir"); ok {
+			if err := pe.ValidateFilesystem(pe.filesystemPolicyTarget(workingDir), "rw", caps.Filesystem); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+func nonEmptyStringArg(args map[string]interface{}, key string) (string, bool) {
+	val, ok := args[key].(string)
+	if !ok || strings.TrimSpace(val) == "" {
+		return "", false
+	}
+	return val, true
+}
+
+func filesystemModeForTool(toolName string) string {
+	switch toolName {
+	case "read_file", "list_dir":
+		return "r"
+	case "write_file", "append_file":
+		return "w"
+	case "edit_file":
+		return "rw"
+	default:
+		return ""
+	}
+}
+
+func (pe *PolicyEngine) filesystemPolicyTarget(targetPath string) string {
+	if pe.cfg.AllowedWorkspace == "" || filepath.IsAbs(targetPath) {
+		return targetPath
+	}
+	return filepath.Join(pe.cfg.AllowedWorkspace, targetPath)
+}
+
 // ValidateNetwork checks whether targetURL is permitted given the tool's
 // EndpointRules and the global SSRF blocklist.
 func (pe *PolicyEngine) ValidateNetwork(targetURL string, rules []tools.EndpointRule) error {
+	parsed, err := url.Parse(targetURL)
+	if err != nil {
+		return fmt.Errorf("network access denied: invalid URL %q: %w", targetURL, err)
+	}
+	scheme := strings.ToLower(parsed.Scheme)
+	if scheme != "http" && scheme != "https" {
+		return fmt.Errorf("network access denied: URL %q uses unsupported scheme %q", targetURL, scheme)
+	}
+	if len(rules) == 0 {
+		return fmt.Errorf("network access denied: tool declares no EndpointRules")
+	}
+
 	// Global SSRF check first — highest priority.
 	for _, prefix := range pe.cfg.SSRFBlockedPrefixes {
 		if strings.HasPrefix(targetURL, prefix) {
@@ -126,23 +199,34 @@ func (pe *PolicyEngine) ValidateNetwork(targetURL string, rules []tools.Endpoint
 		}
 	}
 
-	// If no rules declared, deny all network access.
-	if len(rules) == 0 {
-		return fmt.Errorf("network access denied: tool declares no EndpointRules")
-	}
-
-	// Must match at least one permit rule.
+	matchedRule := false
 	for _, rule := range rules {
 		if globstarMatch(rule.Pattern, targetURL) {
-			return nil
+			matchedRule = true
+			break
 		}
 	}
-	return fmt.Errorf("network access denied: URL %q does not match any permitted endpoint pattern", targetURL)
+	if !matchedRule {
+		return fmt.Errorf("network access denied: URL %q does not match any permitted endpoint pattern", targetURL)
+	}
+
+	validateURL := pe.validateURL
+	if validateURL == nil {
+		validateURL = security.ValidateURL
+	}
+	if err := validateURL(targetURL); err != nil {
+		return fmt.Errorf("network access denied: URL %q matches SSRF blocklist: %w", targetURL, err)
+	}
+	return nil
 }
 
 // ValidateFilesystem checks whether targetPath is permitted given PathRules.
-// targetPath should be an absolute path; it is compared against patterns
-// rooted at AllowedWorkspace.
+// targetPath should be an absolute path; it is compared lexically against
+// patterns rooted at AllowedWorkspace.
+//
+// This helper is not the filesystem security boundary and does not resolve
+// symlinks or eliminate TOCTOU races. Tools that touch the filesystem must
+// still enforce path confinement at open/read/write time.
 func (pe *PolicyEngine) ValidateFilesystem(targetPath, mode string, rules []tools.PathRule) error {
 	if len(rules) == 0 {
 		return fmt.Errorf("filesystem access denied: tool declares no PathRules")

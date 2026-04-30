@@ -47,17 +47,20 @@ func validateToolArgsWithAllowlist(schema map[string]interface{}, args map[strin
 		return err
 	}
 
-	propsRaw, ok := schema["properties"]
-	if !ok {
+	additional := allowsAdditional(schema)
+
+	propsRaw, hasProps := schema["properties"]
+	if !hasProps && additional {
 		return nil
 	}
 
 	props, ok := asStringKeyMap(propsRaw)
-	if !ok {
+	if !ok && additional {
 		return nil
 	}
-
-	additional := allowsAdditional(schema)
+	if props == nil {
+		props = map[string]interface{}{}
+	}
 
 	for key, val := range args {
 		propSchemaRaw, known := props[key]
