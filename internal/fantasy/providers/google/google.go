@@ -3,6 +3,7 @@ package google
 import (
 	"cmp"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
@@ -10,11 +11,10 @@ import (
 	"reflect"
 	"strings"
 
-	jsonv2 "github.com/go-json-experiment/json"
-
 	"charm.land/fantasy"
 	"charm.land/fantasy/object"
 	"charm.land/fantasy/providers/anthropic"
+	"charm.land/fantasy/providers/internal/httpheaders"
 	"charm.land/fantasy/schema"
 	"cloud.google.com/go/auth"
 	"github.com/charmbracelet/x/exp/slice"
@@ -37,6 +37,7 @@ type options struct {
 	name           string
 	baseURL        string
 	headers        map[string]string
+	userAgent      string
 	client         *http.Client
 	backend        genai.Backend
 	project        string
@@ -63,10 +64,6 @@ func New(opts ...Option) (fantasy.Provider, error) {
 
 	options.name = cmp.Or(options.name, Name)
 
-	if options.backend == genai.BackendVertexAI && (options.project == "" || options.location == "") {
-		return nil, errors.New("google: WithVertex requires non-empty project and location")
-	}
-
 	return &provider{
 		options: options,
 	}, nil
@@ -90,8 +87,10 @@ func WithGeminiAPIKey(apiKey string) Option {
 }
 
 // WithVertex configures the Google provider to use Vertex AI.
-// Both project and location are validated when New() is called.
 func WithVertex(project, location string) Option {
+	if project == "" || location == "" {
+		panic("project and location must be provided")
+	}
 	return func(o *options) {
 		o.backend = genai.BackendVertexAI
 		o.apiKey = ""
@@ -135,6 +134,14 @@ func WithToolCallIDFunc(f ToolCallIDFunc) Option {
 	}
 }
 
+// WithUserAgent sets an explicit User-Agent header, overriding the default and any
+// value set via WithHeaders.
+func WithUserAgent(ua string) Option {
+	return func(o *options) {
+		o.userAgent = ua
+	}
+}
+
 // WithObjectMode sets the object generation mode for the Google provider.
 func WithObjectMode(om fantasy.ObjectMode) Option {
 	return func(o *options) {
@@ -157,11 +164,15 @@ type languageModel struct {
 // LanguageModel implements fantasy.Provider.
 func (a *provider) LanguageModel(ctx context.Context, modelID string) (fantasy.LanguageModel, error) {
 	if strings.Contains(modelID, "anthropic") || strings.Contains(modelID, "claude") {
-		p, err := anthropic.New(
+		anthropicOpts := []anthropic.Option{
 			anthropic.WithVertex(a.options.project, a.options.location),
 			anthropic.WithHTTPClient(a.options.client),
 			anthropic.WithSkipAuth(a.options.skipAuth),
-		)
+		}
+		if a.options.userAgent != "" {
+			anthropicOpts = append(anthropicOpts, anthropic.WithUserAgent(a.options.userAgent))
+		}
+		p, err := anthropic.New(anthropicOpts...)
 		if err != nil {
 			return nil, err
 		}
@@ -169,7 +180,7 @@ func (a *provider) LanguageModel(ctx context.Context, modelID string) (fantasy.L
 	}
 
 	cc := &genai.ClientConfig{
-		HTTPClient: a.options.client,
+		HTTPClient: wrapHTTPClient(a.options.client),
 		Backend:    a.options.backend,
 		APIKey:     a.options.apiKey,
 		Project:    a.options.project,
@@ -183,15 +194,16 @@ func (a *provider) LanguageModel(ctx context.Context, modelID string) (fantasy.L
 		}
 	}
 
-	if a.options.baseURL != "" || len(a.options.headers) > 0 {
-		headers := http.Header{}
-		for k, v := range a.options.headers {
-			headers.Add(k, v)
-		}
-		cc.HTTPOptions = genai.HTTPOptions{
-			BaseURL: a.options.baseURL,
-			Headers: headers,
-		}
+	defaultUA := httpheaders.DefaultUserAgent(fantasy.Version)
+	resolved := httpheaders.ResolveHeaders(a.options.headers, a.options.userAgent, defaultUA)
+
+	headers := http.Header{}
+	for k, v := range resolved {
+		headers.Set(k, v)
+	}
+	cc.HTTPOptions = genai.HTTPOptions{
+		BaseURL: a.options.baseURL,
+		Headers: headers,
 	}
 	client, err := genai.NewClient(ctx, cc)
 	if err != nil {
@@ -223,10 +235,7 @@ func (g languageModel) prepareParams(call fantasy.Call) (*genai.GenerateContentC
 		}
 	}
 
-	systemInstructions, content, warnings, err := toGooglePrompt(call.Prompt)
-	if err != nil {
-		return nil, nil, nil, err
-	}
+	systemInstructions, content, warnings := toGooglePrompt(call.Prompt)
 
 	if providerOptions.ThinkingConfig != nil {
 		if providerOptions.ThinkingConfig.IncludeThoughts != nil &&
@@ -246,7 +255,15 @@ func (g languageModel) prepareParams(call fantasy.Call) (*genai.GenerateContentC
 				Type:    fantasy.CallWarningTypeOther,
 				Message: "The 'thinking_budget' option can not be under 128 and will be set to 128 by default",
 			})
-			providerOptions.ThinkingConfig.ThinkingBudget = fantasy.Opt(int64(128))
+			providerOptions.ThinkingConfig.ThinkingBudget = new(int64(128))
+		}
+
+		if providerOptions.ThinkingConfig.ThinkingLevel != nil &&
+			providerOptions.ThinkingConfig.ThinkingBudget != nil {
+			return nil, nil, nil, &fantasy.Error{
+				Title:   "invalid argument",
+				Message: "thinking_level and thinking_budget are mutually exclusive",
+			}
 		}
 	}
 
@@ -304,6 +321,9 @@ func (g languageModel) prepareParams(call fantasy.Call) (*genai.GenerateContentC
 			tmp := int32(*providerOptions.ThinkingConfig.ThinkingBudget) //nolint: gosec
 			config.ThinkingConfig.ThinkingBudget = &tmp
 		}
+		if providerOptions.ThinkingConfig.ThinkingLevel != nil {
+			config.ThinkingConfig.ThinkingLevel = genai.ThinkingLevel(*providerOptions.ThinkingConfig.ThinkingLevel)
+		}
 	}
 	for _, safetySetting := range providerOptions.SafetySettings {
 		config.SafetySettings = append(config.SafetySettings, &genai.SafetySetting{
@@ -316,21 +336,18 @@ func (g languageModel) prepareParams(call fantasy.Call) (*genai.GenerateContentC
 	}
 
 	if len(call.Tools) > 0 {
-		functionDecls, providerToolsList, toolChoice, toolWarnings := toGoogleTools(call.Tools, call.ToolChoice)
+		tools, toolChoice, toolWarnings := toGoogleTools(call.Tools, call.ToolChoice)
 		config.ToolConfig = toolChoice
-		if len(functionDecls) > 0 {
-			config.Tools = append(config.Tools, &genai.Tool{
-				FunctionDeclarations: functionDecls,
-			})
-		}
-		config.Tools = append(config.Tools, providerToolsList...)
+		config.Tools = append(config.Tools, &genai.Tool{
+			FunctionDeclarations: tools,
+		})
 		warnings = append(warnings, toolWarnings...)
 	}
 
 	return config, content, warnings, nil
 }
 
-func toGooglePrompt(prompt fantasy.Prompt) (*genai.Content, []*genai.Content, []fantasy.CallWarning, error) {
+func toGooglePrompt(prompt fantasy.Prompt) (*genai.Content, []*genai.Content, []fantasy.CallWarning) { //nolint: unparam
 	var systemInstructions *genai.Content
 	var content []*genai.Content
 	var warnings []fantasy.CallWarning
@@ -340,10 +357,8 @@ func toGooglePrompt(prompt fantasy.Prompt) (*genai.Content, []*genai.Content, []
 		switch msg.Role {
 		case fantasy.MessageRoleSystem:
 			if finishedSystemBlock {
-				warnings = append(warnings, fantasy.CallWarning{
-					Type:    fantasy.CallWarningTypeOther,
-					Message: "google: additional system message after user/assistant messages was skipped",
-				})
+				// skip multiple system messages that are separated by user/assistant messages
+				// TODO: see if we need to send error here?
 				continue
 			}
 			finishedSystemBlock = true
@@ -436,7 +451,7 @@ func toGooglePrompt(prompt fantasy.Prompt) (*genai.Content, []*genai.Content, []
 					}
 
 					var result map[string]any
-					err := jsonv2.Unmarshal([]byte(toolCall.Input), &result)
+					err := json.Unmarshal([]byte(toolCall.Input), &result)
 					if err != nil {
 						continue
 					}
@@ -522,14 +537,15 @@ func toGooglePrompt(prompt fantasy.Prompt) (*genai.Content, []*genai.Content, []
 				})
 			}
 		default:
-			return nil, nil, nil, fmt.Errorf("google: unsupported message role: %s", msg.Role)
+			panic("unsupported message role: " + msg.Role)
 		}
 	}
-	return systemInstructions, content, warnings, nil
+	return systemInstructions, content, warnings
 }
 
 // Generate implements fantasy.LanguageModel.
 func (g *languageModel) Generate(ctx context.Context, call fantasy.Call) (*fantasy.Response, error) {
+	ctx = withCallUA(ctx, call)
 	config, contents, warnings, err := g.prepareParams(call)
 	if err != nil {
 		return nil, err
@@ -565,6 +581,7 @@ func (g *languageModel) Provider() string {
 
 // Stream implements fantasy.LanguageModel.
 func (g *languageModel) Stream(ctx context.Context, call fantasy.Call) (fantasy.StreamResponse, error) {
+	ctx = withCallUA(ctx, call)
 	config, contents, warnings, err := g.prepareParams(call)
 	if err != nil {
 		return nil, err
@@ -758,7 +775,7 @@ func (g *languageModel) Stream(ctx context.Context, call fantasy.Call) (fantasy.
 								return
 							}
 						}
-						args, err := jsonv2.Marshal(part.FunctionCall.Args)
+						args, err := json.Marshal(part.FunctionCall.Args)
 						if err != nil {
 							yield(fantasy.StreamPart{
 								Type:  fantasy.StreamPartTypeError,
@@ -891,6 +908,7 @@ func (g *languageModel) StreamObject(ctx context.Context, call fantasy.ObjectCal
 }
 
 func (g *languageModel) generateObjectWithJSONMode(ctx context.Context, call fantasy.ObjectCall) (*fantasy.ObjectResponse, error) {
+	ctx = withObjectCallUA(ctx, call)
 	// Convert our Schema to Google's JSON Schema format
 	jsonSchemaMap := schema.ToMap(call.Schema)
 
@@ -973,6 +991,7 @@ func (g *languageModel) generateObjectWithJSONMode(ctx context.Context, call fan
 }
 
 func (g *languageModel) streamObjectWithJSONMode(ctx context.Context, call fantasy.ObjectCall) (fantasy.ObjectStreamResponse, error) {
+	ctx = withObjectCallUA(ctx, call)
 	// Convert our Schema to Google's JSON Schema format
 	jsonSchemaMap := schema.ToMap(call.Schema)
 
@@ -1130,10 +1149,9 @@ func (g *languageModel) streamObjectWithJSONMode(ctx context.Context, call fanta
 	}, nil
 }
 
-func toGoogleTools(tools []fantasy.Tool, toolChoice *fantasy.ToolChoice) (functionDecls []*genai.FunctionDeclaration, providerTools []*genai.Tool, googleToolChoice *genai.ToolConfig, warnings []fantasy.CallWarning) {
+func toGoogleTools(tools []fantasy.Tool, toolChoice *fantasy.ToolChoice) (googleTools []*genai.FunctionDeclaration, googleToolChoice *genai.ToolConfig, warnings []fantasy.CallWarning) {
 	for _, tool := range tools {
-		switch tool.GetType() {
-		case fantasy.ToolTypeFunction:
+		if tool.GetType() == fantasy.ToolTypeFunction {
 			ft, ok := tool.(fantasy.FunctionTool)
 			if !ok {
 				continue
@@ -1158,34 +1176,18 @@ func toGoogleTools(tools []fantasy.Tool, toolChoice *fantasy.ToolChoice) (functi
 					Required:   required,
 				},
 			}
-			functionDecls = append(functionDecls, declaration)
-
-		case fantasy.ToolTypeProviderDefined:
-			pt, ok := tool.(fantasy.ProviderDefinedTool)
-			if !ok {
-				continue
-			}
-			t := toGoogleProviderTool(pt)
-			if t != nil {
-				providerTools = append(providerTools, t)
-			} else {
-				warnings = append(warnings, fantasy.CallWarning{
-					Type:    fantasy.CallWarningTypeUnsupportedTool,
-					Tool:    tool,
-					Message: "provider-defined tool ID not recognised by Google provider: " + pt.ID,
-				})
-			}
-
-		default:
-			warnings = append(warnings, fantasy.CallWarning{
-				Type:    fantasy.CallWarningTypeUnsupportedTool,
-				Tool:    tool,
-				Message: "tool type not supported by Google provider",
-			})
+			googleTools = append(googleTools, declaration)
+			continue
 		}
+		// TODO: handle provider tool calls
+		warnings = append(warnings, fantasy.CallWarning{
+			Type:    fantasy.CallWarningTypeUnsupportedTool,
+			Tool:    tool,
+			Message: "tool is not supported",
+		})
 	}
 	if toolChoice == nil {
-		return functionDecls, providerTools, googleToolChoice, warnings
+		return googleTools, googleToolChoice, warnings
 	}
 	switch *toolChoice {
 	case fantasy.ToolChoiceAuto:
@@ -1216,43 +1218,7 @@ func toGoogleTools(tools []fantasy.Tool, toolChoice *fantasy.ToolChoice) (functi
 			},
 		}
 	}
-	return functionDecls, providerTools, googleToolChoice, warnings
-}
-
-// toGoogleProviderTool maps a ProviderDefinedTool ID to the corresponding genai.Tool.
-// IDs follow the convention "google.<tool-name>".  Returns nil for unknown IDs.
-func toGoogleProviderTool(pt fantasy.ProviderDefinedTool) *genai.Tool {
-	switch pt.ID {
-	case "google.google_search":
-		t := &genai.Tool{GoogleSearch: &genai.GoogleSearch{}}
-		if domains, ok := pt.Args["exclude_domains"].([]string); ok {
-			t.GoogleSearch.ExcludeDomains = domains
-		}
-		return t
-
-	case "google.google_search_retrieval":
-		t := &genai.Tool{GoogleSearchRetrieval: &genai.GoogleSearchRetrieval{}}
-		if cfg, ok := pt.Args["dynamic_retrieval_config"].(map[string]any); ok {
-			t.GoogleSearchRetrieval.DynamicRetrievalConfig = &genai.DynamicRetrievalConfig{}
-			if mode, ok := cfg["mode"].(string); ok {
-				t.GoogleSearchRetrieval.DynamicRetrievalConfig.Mode = genai.DynamicRetrievalConfigMode(mode)
-			}
-			if threshold, ok := cfg["dynamic_threshold"].(float64); ok {
-				f32 := float32(threshold)
-				t.GoogleSearchRetrieval.DynamicRetrievalConfig.DynamicThreshold = &f32
-			}
-		}
-		return t
-
-	case "google.code_execution":
-		return &genai.Tool{CodeExecution: &genai.ToolCodeExecution{}}
-
-	case "google.url_context":
-		return &genai.Tool{URLContext: &genai.URLContext{}}
-
-	default:
-		return nil
-	}
+	return googleTools, googleToolChoice, warnings
 }
 
 func convertSchemaProperties(parameters map[string]any) map[string]*genai.Schema {
@@ -1388,7 +1354,7 @@ func (g languageModel) mapResponse(response *genai.GenerateContentResponse, warn
 				content = append(content, fantasy.TextContent{Text: part.Text})
 			}
 		case part.FunctionCall != nil:
-			input, err := jsonv2.Marshal(part.FunctionCall.Args)
+			input, err := json.Marshal(part.FunctionCall.Args)
 			if err != nil {
 				return nil, err
 			}

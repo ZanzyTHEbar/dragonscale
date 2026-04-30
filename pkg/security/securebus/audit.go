@@ -13,6 +13,7 @@ type AuditEvent struct {
 	ToolCallID   string    `json:"tool_call_id,omitempty"`
 	ToolName     string    `json:"tool_name,omitempty"`
 	CommandType  string    `json:"command_type"`
+	ToolInput    string    `json:"tool_input,omitempty"`
 	Depth        uint8     `json:"depth,omitempty"`
 	At           time.Time `json:"at"`
 	DurationMS   int64     `json:"duration_ms"`
@@ -23,6 +24,7 @@ type AuditEvent struct {
 	// Capability grants observed at execution time.
 	SecretsAccessed []string `json:"secrets_accessed,omitempty"`
 	PolicyViolation string   `json:"policy_violation,omitempty"`
+	ExecutionError  string   `json:"execution_error,omitempty"`
 }
 
 // AuditLog is a thread-safe, in-memory append-only audit log.

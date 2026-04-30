@@ -2,8 +2,8 @@ package fantasy
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
-	jsonv2 "github.com/go-json-experiment/json"
 	"reflect"
 
 	"charm.land/fantasy/schema"
@@ -38,6 +38,7 @@ type ToolResponse struct {
 	MediaType string `json:"media_type,omitempty"`
 	Metadata  string `json:"metadata,omitempty"`
 	IsError   bool   `json:"is_error"`
+	StopTurn  bool   `json:"stop_turn,omitempty"`
 }
 
 // NewTextResponse creates a text response.
@@ -78,7 +79,7 @@ func NewMediaResponse(data []byte, mediaType string) ToolResponse {
 // WithResponseMetadata adds metadata to a response.
 func WithResponseMetadata(response ToolResponse, metadata any) ToolResponse {
 	if metadata != nil {
-		metadataBytes, err := jsonv2.Marshal(metadata)
+		metadataBytes, err := json.Marshal(metadata)
 		if err != nil {
 			return response
 		}
@@ -167,7 +168,7 @@ func (w *funcToolWrapper[TInput]) Info() ToolInfo {
 
 func (w *funcToolWrapper[TInput]) Run(ctx context.Context, params ToolCall) (ToolResponse, error) {
 	var input TInput
-	if err := jsonv2.Unmarshal([]byte(params.Input), &input); err != nil {
+	if err := json.Unmarshal([]byte(params.Input), &input); err != nil {
 		return NewTextErrorResponse(fmt.Sprintf("invalid parameters: %s", err)), nil
 	}
 

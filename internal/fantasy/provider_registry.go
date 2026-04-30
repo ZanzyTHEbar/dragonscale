@@ -1,16 +1,15 @@
 package fantasy
 
 import (
+	"encoding/json"
 	"fmt"
-	jsonv2 "github.com/go-json-experiment/json"
-	"github.com/go-json-experiment/json/jsontext"
 	"sync"
 )
 
 // providerDataJSON is the serialized wrapper used by the registry.
 type providerDataJSON struct {
-	Type string         `json:"type"`
-	Data jsontext.Value `json:"data"`
+	Type string          `json:"type"`
+	Data json.RawMessage `json:"data"`
 }
 
 // UnmarshalFunc converts raw JSON into a ProviderOptionsData implementation.
@@ -30,7 +29,7 @@ func RegisterProviderType(typeID string, unmarshalFn UnmarshalFunc) {
 // unmarshalProviderData routes a typed payload to the correct constructor.
 func unmarshalProviderData(data []byte) (ProviderOptionsData, error) {
 	var pj providerDataJSON
-	if err := jsonv2.Unmarshal(data, &pj); err != nil {
+	if err := json.Unmarshal(data, &pj); err != nil {
 		return nil, err
 	}
 
@@ -44,7 +43,7 @@ func unmarshalProviderData(data []byte) (ProviderOptionsData, error) {
 }
 
 // unmarshalProviderDataMap is a helper for unmarshaling maps of provider data.
-func unmarshalProviderDataMap(data map[string]jsontext.Value) (map[string]ProviderOptionsData, error) {
+func unmarshalProviderDataMap(data map[string]json.RawMessage) (map[string]ProviderOptionsData, error) {
 	result := make(map[string]ProviderOptionsData)
 	for provider, rawData := range data {
 		providerData, err := unmarshalProviderData(rawData)
@@ -57,12 +56,12 @@ func unmarshalProviderDataMap(data map[string]jsontext.Value) (map[string]Provid
 }
 
 // UnmarshalProviderOptions unmarshals a map of provider options by type.
-func UnmarshalProviderOptions(data map[string]jsontext.Value) (ProviderOptions, error) {
+func UnmarshalProviderOptions(data map[string]json.RawMessage) (ProviderOptions, error) {
 	return unmarshalProviderDataMap(data)
 }
 
 // UnmarshalProviderMetadata unmarshals a map of provider metadata by type.
-func UnmarshalProviderMetadata(data map[string]jsontext.Value) (ProviderMetadata, error) {
+func UnmarshalProviderMetadata(data map[string]json.RawMessage) (ProviderMetadata, error) {
 	return unmarshalProviderDataMap(data)
 }
 
@@ -76,14 +75,14 @@ func UnmarshalProviderMetadata(data map[string]jsontext.Value) (ProviderMetadata
 //	    return fantasy.MarshalProviderType(TypeProviderOptions, plain(o))
 //	}
 func MarshalProviderType[T any](typeID string, data T) ([]byte, error) {
-	rawData, err := jsonv2.Marshal(data)
+	rawData, err := json.Marshal(data)
 	if err != nil {
 		return nil, err
 	}
 
-	return jsonv2.Marshal(providerDataJSON{
+	return json.Marshal(providerDataJSON{
 		Type: typeID,
-		Data: jsontext.Value(rawData),
+		Data: json.RawMessage(rawData),
 	})
 }
 
@@ -103,5 +102,5 @@ func MarshalProviderType[T any](typeID string, data T) ([]byte, error) {
 //	    return nil
 //	}
 func UnmarshalProviderType[T any](data []byte, target *T) error {
-	return jsonv2.Unmarshal(data, target)
+	return json.Unmarshal(data, target)
 }

@@ -2,7 +2,7 @@
 	test lint hooks fmt deps update-deps sqlc-check flatc-check sqlc-vet \
 	fantasy-check fantasy-diff fantasy-sync fantasy-patch test-integration check run \
 	devcontainer-up devcontainer-build devcontainer-generate devcontainer-verify \
-	eval-build eval eval-fixtures eval-view eval-clean eval-compare eval-test
+	eval-build eval eval-fixtures eval-view eval-proof-full eval-clean eval-compare eval-test
 
 # Build variables
 BINARY_NAME=dragonscale
@@ -235,6 +235,10 @@ eval-fixtures:
 ## eval-view: Open the promptfoo results viewer
 eval-view:
 	@DRAGONSCALE_PROMPTFOO_ARGS="$(DRAGONSCALE_PROMPTFOO_ARGS)" $(OPSCTL_EVAL) $(OPSCTL_EVAL_ARGS) eval-view
+
+## eval-proof-full: Run local provider-backed full eval proof with threshold and artifacts
+eval-proof-full:
+	@PROMPTFOO_PASS_RATE_THRESHOLD="$${PROMPTFOO_PASS_RATE_THRESHOLD:-100}" SKIP_DEVCONTAINER_WRAPPER=1 DEVCONTAINER_EXEC= DRAGONSCALE_PROMPTFOO_ARGS="$(DRAGONSCALE_PROMPTFOO_ARGS)" $(CGO_ENV) $(GO) run ./cmd/opsctl $(OPSCTL_EVAL_ARGS) eval-proof-full
 
 eval-clean:
 	@DRAGONSCALE_PROMPTFOO_ARGS="$(DRAGONSCALE_PROMPTFOO_ARGS)" $(OPSCTL_EVAL) $(OPSCTL_EVAL_ARGS) eval-clean

@@ -14,7 +14,7 @@ func TestFilesystemTool_ReadFile_Success(t *testing.T) {
 	testFile := filepath.Join(tmpDir, "test.txt")
 	os.WriteFile(testFile, []byte("test content"), 0644)
 
-	tool := &ReadFileTool{}
+	tool := NewReadFileTool("", false)
 	ctx := t.Context()
 	args := map[string]interface{}{
 		"path": testFile,
@@ -42,7 +42,7 @@ func TestFilesystemTool_ReadFile_Success(t *testing.T) {
 // TestFilesystemTool_ReadFile_NotFound verifies error handling for missing file
 func TestFilesystemTool_ReadFile_NotFound(t *testing.T) {
 	t.Parallel()
-	tool := &ReadFileTool{}
+	tool := NewReadFileTool("", false)
 	ctx := t.Context()
 	args := map[string]interface{}{
 		"path": "/nonexistent_file_12345.txt",
@@ -64,7 +64,7 @@ func TestFilesystemTool_ReadFile_NotFound(t *testing.T) {
 // TestFilesystemTool_ReadFile_MissingPath verifies error handling for missing path
 func TestFilesystemTool_ReadFile_MissingPath(t *testing.T) {
 	t.Parallel()
-	tool := &ReadFileTool{}
+	tool := NewReadFileTool("", false)
 	ctx := t.Context()
 	args := map[string]interface{}{}
 
@@ -87,7 +87,7 @@ func TestFilesystemTool_WriteFile_Success(t *testing.T) {
 	tmpDir := t.TempDir()
 	testFile := filepath.Join(tmpDir, "newfile.txt")
 
-	tool := &WriteFileTool{}
+	tool := NewWriteFileTool("", false)
 	ctx := t.Context()
 	args := map[string]interface{}{
 		"path":    testFile,
@@ -127,7 +127,7 @@ func TestFilesystemTool_WriteFile_CreateDir(t *testing.T) {
 	tmpDir := t.TempDir()
 	testFile := filepath.Join(tmpDir, "subdir", "newfile.txt")
 
-	tool := &WriteFileTool{}
+	tool := NewWriteFileTool("", false)
 	ctx := t.Context()
 	args := map[string]interface{}{
 		"path":    testFile,
@@ -154,7 +154,7 @@ func TestFilesystemTool_WriteFile_CreateDir(t *testing.T) {
 // TestFilesystemTool_WriteFile_MissingPath verifies error handling for missing path
 func TestFilesystemTool_WriteFile_MissingPath(t *testing.T) {
 	t.Parallel()
-	tool := &WriteFileTool{}
+	tool := NewWriteFileTool("", false)
 	ctx := t.Context()
 	args := map[string]interface{}{
 		"content": "test",
@@ -171,7 +171,7 @@ func TestFilesystemTool_WriteFile_MissingPath(t *testing.T) {
 // TestFilesystemTool_WriteFile_MissingContent verifies error handling for missing content
 func TestFilesystemTool_WriteFile_MissingContent(t *testing.T) {
 	t.Parallel()
-	tool := &WriteFileTool{}
+	tool := NewWriteFileTool("", false)
 	ctx := t.Context()
 	args := map[string]interface{}{
 		"path": "/tmp/test.txt",
@@ -198,7 +198,7 @@ func TestFilesystemTool_ListDir_Success(t *testing.T) {
 	os.WriteFile(filepath.Join(tmpDir, "file2.txt"), []byte("content"), 0644)
 	os.Mkdir(filepath.Join(tmpDir, "subdir"), 0755)
 
-	tool := &ListDirTool{}
+	tool := NewListDirTool("", false)
 	ctx := t.Context()
 	args := map[string]interface{}{
 		"path": tmpDir,
@@ -223,7 +223,7 @@ func TestFilesystemTool_ListDir_Success(t *testing.T) {
 // TestFilesystemTool_ListDir_NotFound verifies error handling for non-existent directory
 func TestFilesystemTool_ListDir_NotFound(t *testing.T) {
 	t.Parallel()
-	tool := &ListDirTool{}
+	tool := NewListDirTool("", false)
 	ctx := t.Context()
 	args := map[string]interface{}{
 		"path": "/nonexistent_directory_12345",
@@ -245,7 +245,7 @@ func TestFilesystemTool_ListDir_NotFound(t *testing.T) {
 // TestFilesystemTool_ListDir_DefaultPath verifies default to current directory
 func TestFilesystemTool_ListDir_DefaultPath(t *testing.T) {
 	t.Parallel()
-	tool := &ListDirTool{}
+	tool := NewListDirTool("", false)
 	ctx := t.Context()
 	args := map[string]interface{}{}
 
@@ -258,6 +258,82 @@ func TestFilesystemTool_ListDir_DefaultPath(t *testing.T) {
 }
 
 // Block paths that look inside workspace but point outside via symlink.
+func TestFilesystemTool_ReadFile_AllowsSymlinkInsideWorkspace(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	workspace := filepath.Join(root, "workspace")
+	if err := os.MkdirAll(workspace, 0755); err != nil {
+		t.Fatalf("failed to create workspace: %v", err)
+	}
+
+	target := filepath.Join(workspace, "target.txt")
+	if err := os.WriteFile(target, []byte("workspace data"), 0644); err != nil {
+		t.Fatalf("failed to write target file: %v", err)
+	}
+
+	link := filepath.Join(workspace, "link.txt")
+	if err := os.Symlink(target, link); err != nil {
+		t.Skipf("symlink not supported in this environment: %v", err)
+	}
+
+	tool := NewReadFileTool(workspace, true)
+	result := tool.Execute(t.Context(), map[string]interface{}{
+		"path": "link.txt",
+	})
+
+	if result.IsError {
+		t.Fatalf("expected in-workspace symlink read to succeed, got: %s", result.ForLLM)
+	}
+	if !strings.Contains(result.ForLLM, "workspace data") {
+		t.Fatalf("expected symlink read content, got: %s", result.ForLLM)
+	}
+}
+
+func TestFilesystemTool_WriteFile_AllowsSymlinkInsideWorkspace(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	workspace := filepath.Join(root, "workspace")
+	if err := os.MkdirAll(workspace, 0755); err != nil {
+		t.Fatalf("failed to create workspace: %v", err)
+	}
+
+	target := filepath.Join(workspace, "target.txt")
+	if err := os.WriteFile(target, []byte("old"), 0644); err != nil {
+		t.Fatalf("failed to write target file: %v", err)
+	}
+
+	link := filepath.Join(workspace, "link.txt")
+	if err := os.Symlink(target, link); err != nil {
+		t.Skipf("symlink not supported in this environment: %v", err)
+	}
+
+	tool := NewWriteFileTool(workspace, true)
+	result := tool.Execute(t.Context(), map[string]interface{}{
+		"path":    "link.txt",
+		"content": "updated",
+	})
+
+	if result.IsError {
+		t.Fatalf("expected in-workspace symlink write to succeed, got: %s", result.ForLLM)
+	}
+
+	content, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatalf("failed to read target file: %v", err)
+	}
+	if string(content) != "updated" {
+		t.Fatalf("expected target content to be updated, got: %s", string(content))
+	}
+
+	info, err := os.Lstat(link)
+	if err != nil {
+		t.Fatalf("failed to stat symlink: %v", err)
+	}
+	if info.Mode()&os.ModeSymlink == 0 {
+		t.Fatal("expected link path to remain a symlink")
+	}
+}
+
 func TestFilesystemTool_ReadFile_RejectsSymlinkEscape(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
@@ -286,6 +362,49 @@ func TestFilesystemTool_ReadFile_RejectsSymlinkEscape(t *testing.T) {
 	}
 	if !strings.Contains(result.ForLLM, "symlink resolves outside workspace") {
 		t.Fatalf("expected symlink escape error, got: %s", result.ForLLM)
+	}
+}
+
+func TestFilesystemTool_WriteFile_RejectsSymlinkEscape(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	workspace := filepath.Join(root, "workspace")
+	if err := os.MkdirAll(workspace, 0755); err != nil {
+		t.Fatalf("failed to create workspace: %v", err)
+	}
+
+	secret := filepath.Join(root, "secret.txt")
+	if err := os.WriteFile(secret, []byte("top secret"), 0644); err != nil {
+		t.Fatalf("failed to write secret file: %v", err)
+	}
+
+	link := filepath.Join(workspace, "leak.txt")
+	if err := os.Symlink(secret, link); err != nil {
+		t.Skipf("symlink not supported in this environment: %v", err)
+	}
+
+	tool := NewWriteFileTool(workspace, true)
+	result := tool.Execute(t.Context(), map[string]interface{}{
+		"path":    link,
+		"content": "updated",
+	})
+
+	if !result.IsError {
+		t.Fatal("expected symlink escape write to be blocked")
+	}
+	if !strings.Contains(result.ForLLM, "symlink resolves outside workspace") {
+		t.Fatalf("expected symlink escape error, got: %s", result.ForLLM)
+	}
+
+	content, err := os.ReadFile(secret)
+	if err != nil {
+		t.Fatalf("failed to read secret file: %v", err)
+	}
+	if string(content) != "top secret" {
+		t.Fatalf("expected target content to remain unchanged, got: %s", string(content))
+	}
+	if _, err := os.Lstat(link); err != nil {
+		t.Fatalf("expected symlink path to remain present: %v", err)
 	}
 }
 

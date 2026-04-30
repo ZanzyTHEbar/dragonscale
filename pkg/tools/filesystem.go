@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -48,6 +49,9 @@ func validatePath(path, workspace string, restrict bool) (string, error) {
 	}
 
 	if workspace == "" {
+		if restrict {
+			return "", fmt.Errorf("workspace is not defined")
+		}
 		return path, nil
 	}
 
@@ -113,18 +117,310 @@ func resolveExistingAncestor(path string) (string, error) {
 	}
 }
 
+func resolveExistingAncestorPair(path string) (string, string, error) {
+	for current := filepath.Clean(path); ; current = filepath.Dir(current) {
+		if resolved, err := filepath.EvalSymlinks(current); err == nil {
+			return current, resolved, nil
+		} else if !os.IsNotExist(err) {
+			return "", "", err
+		}
+		if filepath.Dir(current) == current {
+			return "", "", os.ErrNotExist
+		}
+	}
+}
+
 func isWithinWorkspace(candidate, workspace string) bool {
 	rel, err := filepath.Rel(filepath.Clean(workspace), filepath.Clean(candidate))
 	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(os.PathSeparator))
 }
 
-type ReadFileTool struct {
+func restrictedRelPath(path, workspace string) (string, error) {
+	absPath, err := validatePath(path, workspace, true)
+	if err != nil {
+		return "", err
+	}
+
+	absWorkspace, err := filepath.Abs(workspace)
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve workspace path: %w", err)
+	}
+	workspaceRoot := absWorkspace
+	if resolved, err := filepath.EvalSymlinks(absWorkspace); err == nil {
+		workspaceRoot = resolved
+	}
+
+	canonicalPath := absPath
+	if resolved, err := filepath.EvalSymlinks(absPath); err == nil {
+		canonicalPath = resolved
+	} else if os.IsNotExist(err) {
+		ancestorPath, ancestorResolved, err := resolveExistingAncestorPair(filepath.Dir(absPath))
+		if err != nil {
+			return "", fmt.Errorf("failed to resolve path: %w", err)
+		}
+		suffix, err := filepath.Rel(ancestorPath, absPath)
+		if err != nil {
+			return "", fmt.Errorf("failed to resolve relative path: %w", err)
+		}
+		canonicalPath = filepath.Join(ancestorResolved, suffix)
+	} else {
+		return "", fmt.Errorf("failed to resolve path: %w", err)
+	}
+
+	relPath, err := filepath.Rel(workspaceRoot, canonicalPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve relative path: %w", err)
+	}
+	relPath = filepath.Clean(relPath)
+	if relPath == "." {
+		return relPath, nil
+	}
+	if !filepath.IsLocal(relPath) {
+		return "", fmt.Errorf("access denied: path is outside the workspace")
+	}
+	return relPath, nil
+}
+
+type fileSystem interface {
+	ReadFile(path string) ([]byte, error)
+	WriteFile(path string, data []byte) error
+	AppendFile(path string, data []byte) error
+	ReadDir(path string) ([]os.DirEntry, error)
+}
+
+func newFileSystem(workspace string, restrict bool) fileSystem {
+	if restrict {
+		return &sandboxFs{workspace: workspace}
+	}
+	return &hostFs{}
+}
+
+type hostFs struct{}
+
+func defaultFileSystem(fs fileSystem) fileSystem {
+	if fs != nil {
+		return fs
+	}
+	return &hostFs{}
+}
+
+func (h *hostFs) ReadFile(path string) ([]byte, error) {
+	resolvedPath, err := validatePath(path, "", false)
+	if err != nil {
+		return nil, err
+	}
+
+	content, err := os.ReadFile(resolvedPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read file: %w", err)
+	}
+	return content, nil
+}
+
+func hostWritePerm(path string) (os.FileMode, error) {
+	perm := os.FileMode(0o644)
+	if info, err := os.Stat(path); err == nil {
+		perm = info.Mode().Perm()
+	} else if !os.IsNotExist(err) {
+		return 0, fmt.Errorf("failed to inspect file: %w", err)
+	}
+	return perm, nil
+}
+
+func (h *hostFs) WriteFile(path string, data []byte) error {
+	resolvedPath, err := validatePath(path, "", false)
+	if err != nil {
+		return err
+	}
+
+	dir := filepath.Dir(resolvedPath)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return fmt.Errorf("failed to create directory: %w", err)
+	}
+
+	perm, err := hostWritePerm(resolvedPath)
+	if err != nil {
+		return err
+	}
+
+	f, err := os.OpenFile(resolvedPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, perm)
+	if err != nil {
+		return fmt.Errorf("failed to write file: %w", err)
+	}
+	defer f.Close()
+
+	if _, err := f.Write(data); err != nil {
+		return fmt.Errorf("failed to write file: %w", err)
+	}
+	return nil
+}
+
+func (h *hostFs) AppendFile(path string, data []byte) error {
+	resolvedPath, err := validatePath(path, "", false)
+	if err != nil {
+		return err
+	}
+
+	dir := filepath.Dir(resolvedPath)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return fmt.Errorf("failed to create directory: %w", err)
+	}
+
+	f, err := os.OpenFile(resolvedPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return fmt.Errorf("failed to open file: %w", err)
+	}
+	defer f.Close()
+
+	if _, err := f.Write(data); err != nil {
+		return fmt.Errorf("failed to append to file: %w", err)
+	}
+	return nil
+}
+
+func (h *hostFs) ReadDir(path string) ([]os.DirEntry, error) {
+	resolvedPath, err := validatePath(path, "", false)
+	if err != nil {
+		return nil, err
+	}
+	return os.ReadDir(resolvedPath)
+}
+
+type sandboxFs struct {
 	workspace string
-	restrict  bool
+}
+
+func (s *sandboxFs) open(path string) (*os.Root, string, error) {
+	if strings.TrimSpace(s.workspace) == "" {
+		return nil, "", fmt.Errorf("workspace is not defined")
+	}
+
+	workspace, err := filepath.Abs(s.workspace)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to resolve workspace path: %w", err)
+	}
+	if resolved, err := filepath.EvalSymlinks(workspace); err == nil {
+		workspace = resolved
+	}
+
+	relPath, err := restrictedRelPath(path, s.workspace)
+	if err != nil {
+		return nil, "", err
+	}
+
+	root, err := os.OpenRoot(workspace)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to open workspace: %w", err)
+	}
+	return root, relPath, nil
+}
+
+func (s *sandboxFs) ReadFile(path string) ([]byte, error) {
+	root, relPath, err := s.open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer root.Close()
+
+	content, err := root.ReadFile(relPath)
+	if err != nil {
+		if os.IsPermission(err) || strings.Contains(err.Error(), "escapes from parent") {
+			return nil, fmt.Errorf("failed to read file: access denied: %w", err)
+		}
+		if os.IsNotExist(err) || strings.Contains(strings.ToLower(err.Error()), "no such file") {
+			return nil, fmt.Errorf("failed to read file: file not found: %w", err)
+		}
+		return nil, fmt.Errorf("failed to read file: %w", err)
+	}
+	return content, nil
+}
+
+func sandboxWritePerm(root *os.Root, relPath string) (os.FileMode, error) {
+	perm := os.FileMode(0o644)
+	if info, err := root.Stat(relPath); err == nil {
+		perm = info.Mode().Perm()
+	} else if !os.IsNotExist(err) {
+		return 0, fmt.Errorf("failed to inspect file: %w", err)
+	}
+	return perm, nil
+}
+
+func (s *sandboxFs) WriteFile(path string, data []byte) error {
+	root, relPath, err := s.open(path)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+
+	dir := filepath.Dir(relPath)
+	if dir != "." {
+		if err := root.MkdirAll(dir, 0o755); err != nil {
+			return fmt.Errorf("failed to create directory: %w", err)
+		}
+	}
+
+	perm, err := sandboxWritePerm(root, relPath)
+	if err != nil {
+		return err
+	}
+
+	f, err := root.OpenFile(relPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, perm)
+	if err != nil {
+		return fmt.Errorf("failed to write file: %w", err)
+	}
+	defer f.Close()
+
+	if _, err := f.Write(data); err != nil {
+		return fmt.Errorf("failed to write file: %w", err)
+	}
+	return nil
+}
+
+func (s *sandboxFs) AppendFile(path string, data []byte) error {
+	root, relPath, err := s.open(path)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+
+	dir := filepath.Dir(relPath)
+	if dir != "." {
+		if err := root.MkdirAll(dir, 0o755); err != nil {
+			return fmt.Errorf("failed to create directory: %w", err)
+		}
+	}
+
+	f, err := root.OpenFile(relPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		if os.IsPermission(err) || strings.Contains(err.Error(), "escapes from parent") {
+			return fmt.Errorf("failed to append to file: access denied: %w", err)
+		}
+		return fmt.Errorf("failed to open file: %w", err)
+	}
+	defer f.Close()
+
+	if _, err := f.Write(data); err != nil {
+		return fmt.Errorf("failed to append to file: %w", err)
+	}
+	return nil
+}
+
+func (s *sandboxFs) ReadDir(path string) ([]os.DirEntry, error) {
+	root, relPath, err := s.open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer root.Close()
+
+	return fs.ReadDir(root.FS(), relPath)
+}
+
+type ReadFileTool struct {
+	fs fileSystem
 }
 
 func NewReadFileTool(workspace string, restrict bool) *ReadFileTool {
-	return &ReadFileTool{workspace: workspace, restrict: restrict}
+	return &ReadFileTool{fs: newFileSystem(workspace, restrict)}
 }
 
 func (t *ReadFileTool) Name() string {
@@ -132,7 +428,7 @@ func (t *ReadFileTool) Name() string {
 }
 
 func (t *ReadFileTool) Description() string {
-	return "Read the contents of a file"
+	return "Read the contents of a regular workspace file. Use this to verify file state after writes or edits. For skills, use skill_read instead of read_file."
 }
 
 func (t *ReadFileTool) Parameters() map[string]interface{} {
@@ -161,26 +457,20 @@ func (t *ReadFileTool) Execute(ctx context.Context, args map[string]interface{})
 		return ErrorResult("path is required")
 	}
 
-	resolvedPath, err := validatePath(path, t.workspace, t.restrict)
+	content, err := defaultFileSystem(t.fs).ReadFile(path)
 	if err != nil {
 		return ErrorResult(err.Error())
-	}
-
-	content, err := os.ReadFile(resolvedPath)
-	if err != nil {
-		return ErrorResult(fmt.Sprintf("failed to read file: %v", err))
 	}
 
 	return NewToolResult(string(content))
 }
 
 type WriteFileTool struct {
-	workspace string
-	restrict  bool
+	fs fileSystem
 }
 
 func NewWriteFileTool(workspace string, restrict bool) *WriteFileTool {
-	return &WriteFileTool{workspace: workspace, restrict: restrict}
+	return &WriteFileTool{fs: newFileSystem(workspace, restrict)}
 }
 
 func (t *WriteFileTool) Name() string {
@@ -188,7 +478,7 @@ func (t *WriteFileTool) Name() string {
 }
 
 func (t *WriteFileTool) Description() string {
-	return "Write content to a file"
+	return "Create or fully overwrite a file with new content. Use edit_file for targeted replacements and append_file for adding content to the end."
 }
 
 func (t *WriteFileTool) Parameters() map[string]interface{} {
@@ -230,18 +520,8 @@ func (t *WriteFileTool) Execute(ctx context.Context, args map[string]interface{}
 		return ErrorResult(fmt.Sprintf("content too large: %d bytes (max %d)", len(content), maxWriteBytes))
 	}
 
-	resolvedPath, err := validatePath(path, t.workspace, t.restrict)
-	if err != nil {
+	if err := defaultFileSystem(t.fs).WriteFile(path, []byte(content)); err != nil {
 		return ErrorResult(err.Error())
-	}
-
-	dir := filepath.Dir(resolvedPath)
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return ErrorResult(fmt.Sprintf("failed to create directory: %v", err))
-	}
-
-	if err := os.WriteFile(resolvedPath, []byte(content), 0644); err != nil {
-		return ErrorResult(fmt.Sprintf("failed to write file: %v", err))
 	}
 
 	preview := strings.TrimSpace(content)
@@ -255,12 +535,11 @@ func (t *WriteFileTool) Execute(ctx context.Context, args map[string]interface{}
 }
 
 type ListDirTool struct {
-	workspace string
-	restrict  bool
+	fs fileSystem
 }
 
 func NewListDirTool(workspace string, restrict bool) *ListDirTool {
-	return &ListDirTool{workspace: workspace, restrict: restrict}
+	return &ListDirTool{fs: newFileSystem(workspace, restrict)}
 }
 
 func (t *ListDirTool) Name() string {
@@ -297,24 +576,19 @@ func (t *ListDirTool) Execute(ctx context.Context, args map[string]interface{}) 
 		path = "."
 	}
 
-	resolvedPath, err := validatePath(path, t.workspace, t.restrict)
-	if err != nil {
-		return ErrorResult(err.Error())
-	}
-
-	entries, err := os.ReadDir(resolvedPath)
+	entries, err := defaultFileSystem(t.fs).ReadDir(path)
 	if err != nil {
 		return ErrorResult(fmt.Sprintf("failed to read directory: %v", err))
 	}
 
-	result := ""
+	var result strings.Builder
 	for _, entry := range entries {
 		if entry.IsDir() {
-			result += "DIR:  " + entry.Name() + "\n"
+			result.WriteString("DIR:  " + entry.Name() + "\n")
 		} else {
-			result += "FILE: " + entry.Name() + "\n"
+			result.WriteString("FILE: " + entry.Name() + "\n")
 		}
 	}
 
-	return NewToolResult(result)
+	return NewToolResult(result.String())
 }

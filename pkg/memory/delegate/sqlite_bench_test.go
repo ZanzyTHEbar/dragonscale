@@ -84,7 +84,9 @@ func BenchmarkInsertAuditEntry(b *testing.B) {
 			SessionKey: "bench-sess",
 			Action:     "tool_call",
 			Target:     "read_file",
+			ToolCallID: "call-read-file",
 			Input:      `{"path": "/tmp/test"}`,
+			Success:    true,
 		})
 	}
 }

@@ -45,10 +45,10 @@
         const trace = JSON.parse(output);
         const out = (trace.output || '').toLowerCase();
         const dur = trace.metrics.total_duration_ms;
-        const notHung = dur < 130000;
+        const notHung = dur < 60000;
         const graceful = out.includes('timeout') || out.includes('cancel') || out.includes('too long') ||
                          out.includes('killed') || out.includes('error') || out.includes('interrupt') ||
-                         out.length > 5;
+                         out.includes('denied') || out.includes('not permitted') || out.includes('not allowed');
         return { pass: notHung && graceful, score: notHung ? 1.0 : 0.0, reason: `duration=${dur}ms, not_hung=${notHung}, response=${graceful}` };
 
 - description: "invalid tool args: schema validation rejection"

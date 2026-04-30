@@ -34,8 +34,9 @@ type RunLoopFunc func(ctx context.Context, config ToolLoopConfig, systemPrompt, 
 type delegationCtxKey string
 
 const (
-	delegationTaskIDKey delegationCtxKey = "delegation_task_id"
-	delegationDepthKey  delegationCtxKey = "delegation_depth"
+	delegationTaskIDKey  delegationCtxKey = "delegation_task_id"
+	delegationDepthKey   delegationCtxKey = "delegation_depth"
+	delegationSessionKey delegationCtxKey = "delegation_session_key"
 )
 
 func delegationTaskIDFromContext(ctx context.Context) string {
@@ -52,10 +53,28 @@ func delegationDepthFromContext(ctx context.Context) int {
 	return 0
 }
 
+func delegationSessionKeyFromContext(ctx context.Context) string {
+	if v, ok := ctx.Value(delegationSessionKey).(string); ok {
+		return strings.TrimSpace(v)
+	}
+	return ""
+}
+
+func DelegationSessionKeyFromContext(ctx context.Context) string {
+	return delegationSessionKeyFromContext(ctx)
+}
+
 func withDelegationContext(ctx context.Context, taskID string, depth int) context.Context {
 	ctx = context.WithValue(ctx, delegationTaskIDKey, taskID)
 	ctx = context.WithValue(ctx, delegationDepthKey, depth)
 	return ctx
+}
+
+func withDelegationSessionKey(ctx context.Context, sessionKey string) context.Context {
+	if strings.TrimSpace(sessionKey) == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, delegationSessionKey, sessionKey)
 }
 
 // DelegationAuditEvent captures lineage and outcomes for delegated work.
@@ -233,8 +252,9 @@ func (sm *SubagentManager) Spawn(ctx context.Context, task, label, delegatedScop
 		OriginChatID:   originChatID,
 	})
 
-	// Start task in background with context cancellation support
-	go sm.runTask(ctx, subagentTask, callback)
+	// Start task in background with context cancellation support.
+	taskCtx := withDelegationSessionKey(ctx, SessionKeyFromContext(ctx))
+	go sm.runTask(taskCtx, subagentTask, callback)
 
 	if label != "" {
 		return fmt.Sprintf("Spawned subagent '%s' for task: %s", label, task), nil
@@ -271,7 +291,7 @@ Complete the task independently and provide a clear summary of what was done.`
 	if runLoop == nil {
 		err = ErrRunLoopNotConfigured
 	} else {
-		taskCtx := withDelegationContext(ctx, task.ID, task.Depth)
+		taskCtx := withDelegationSessionKey(withDelegationContext(ctx, task.ID, task.Depth), delegationSessionKeyFromContext(ctx))
 		loopResult, err = runLoop(taskCtx, ToolLoopConfig{
 			Model:         sm.model,
 			ModelID:       sm.defaultModel,
@@ -449,6 +469,7 @@ func (t *SubagentTool) Execute(ctx context.Context, args map[string]interface{})
 	if t.manager == nil {
 		return ErrorResult("Subagent manager not configured").WithError(fmt.Errorf("manager is nil"))
 	}
+	originChannel, originChatID := ResolveExecutionTarget(ctx, t.originChannel, t.originChatID)
 
 	sm := t.manager
 	parentTaskID := delegationTaskIDFromContext(ctx)
@@ -499,7 +520,7 @@ func (t *SubagentTool) Execute(ctx context.Context, args map[string]interface{})
 	}()
 
 	taskID := fmt.Sprintf("subagent-sync-%d", time.Now().UnixNano())
-	taskCtx := withDelegationContext(ctx, taskID, childDepth)
+	taskCtx := withDelegationSessionKey(withDelegationContext(ctx, taskID, childDepth), SessionKeyFromContext(ctx))
 	sm.emitAudit(ctx, DelegationAuditEvent{
 		TaskID:         taskID,
 		ParentTaskID:   parentTaskID,
@@ -509,8 +530,8 @@ func (t *SubagentTool) Execute(ctx context.Context, args map[string]interface{})
 		Label:          label,
 		DelegatedScope: delegatedScope,
 		KeptWork:       keptWork,
-		OriginChannel:  t.originChannel,
-		OriginChatID:   t.originChatID,
+		OriginChannel:  originChannel,
+		OriginChatID:   originChatID,
 	})
 
 	runLoop := sm.getRunLoop()
@@ -523,7 +544,7 @@ func (t *SubagentTool) Execute(ctx context.Context, args map[string]interface{})
 		Tools:         tools,
 		Bus:           sm.bus,
 		MaxIterations: maxIter,
-	}, systemPrompt, task, t.originChannel, t.originChatID)
+	}, systemPrompt, task, originChannel, originChatID)
 
 	if err != nil {
 		sm.emitAudit(ctx, DelegationAuditEvent{
@@ -536,8 +557,8 @@ func (t *SubagentTool) Execute(ctx context.Context, args map[string]interface{})
 			DelegatedScope: delegatedScope,
 			KeptWork:       keptWork,
 			Error:          err.Error(),
-			OriginChannel:  t.originChannel,
-			OriginChatID:   t.originChatID,
+			OriginChannel:  originChannel,
+			OriginChatID:   originChatID,
 		})
 		return ErrorResult(fmt.Sprintf("Subagent execution failed: %v", err)).WithError(err)
 	}
@@ -567,8 +588,8 @@ func (t *SubagentTool) Execute(ctx context.Context, args map[string]interface{})
 		KeptWork:       keptWork,
 		Iterations:     loopResult.Iterations,
 		ResultChars:    len(loopResult.Content),
-		OriginChannel:  t.originChannel,
-		OriginChatID:   t.originChatID,
+		OriginChannel:  originChannel,
+		OriginChatID:   originChatID,
 	})
 
 	return &ToolResult{

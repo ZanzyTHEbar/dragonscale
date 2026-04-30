@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"sync"
 
 	"github.com/ZanzyTHEbar/dragonscale/pkg"
@@ -324,6 +325,11 @@ type OpenAIProviderConfig struct {
 	WebSearch bool `json:"web_search" env:"DRAGONSCALE_PROVIDERS_OPENAI_WEB_SEARCH"`
 }
 
+type providerEnvBinding struct {
+	name   string
+	target *ProviderConfig
+}
+
 type GatewayConfig struct {
 	Host string `json:"host" env:"DRAGONSCALE_GATEWAY_HOST"`
 	Port int    `json:"port" env:"DRAGONSCALE_GATEWAY_PORT"`
@@ -466,7 +472,7 @@ func DefaultConfig() *Config {
 			GitHubCopilot: ProviderConfig{},
 		},
 		Gateway: GatewayConfig{
-			Host: "0.0.0.0",
+			Host: "127.0.0.1",
 			Port: 18790,
 		},
 		Tools: ToolsConfig{
@@ -512,20 +518,20 @@ func LoadConfig(path string) (*Config, error) {
 	cfg := DefaultConfig()
 
 	data, err := os.ReadFile(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return cfg, nil
-		}
+	if err != nil && !os.IsNotExist(err) {
 		return nil, err
 	}
 
-	if err := jsonv2.Unmarshal(data, cfg); err != nil {
-		return nil, err
+	if err == nil {
+		if err := jsonv2.Unmarshal(data, cfg); err != nil {
+			return nil, err
+		}
 	}
 
 	if err := env.Parse(cfg); err != nil {
 		return nil, err
 	}
+	ApplyEnvOverrides(cfg)
 
 	if warnings := cfg.Validate(); len(warnings) > 0 {
 		for _, w := range warnings {
@@ -534,6 +540,83 @@ func LoadConfig(path string) (*Config, error) {
 	}
 
 	return cfg, nil
+}
+
+func ApplyEnvOverrides(cfg *Config) {
+	if cfg == nil {
+		return
+	}
+	applyProviderEnvOverrides(cfg)
+	applyProviderSpecificEnvOverrides(cfg)
+}
+
+func ApplyProviderEnvOverrides(cfg *Config) {
+	applyProviderEnvOverrides(cfg)
+}
+
+func applyProviderEnvOverrides(cfg *Config) {
+	if cfg == nil {
+		return
+	}
+
+	for _, binding := range providerEnvBindings(cfg) {
+		applyProviderEnv(binding.name, binding.target)
+	}
+}
+
+func applyProviderSpecificEnvOverrides(cfg *Config) {
+	if value, ok := os.LookupEnv("DRAGONSCALE_PROVIDERS_OPENAI_WEB_SEARCH"); ok {
+		if enabled, err := strconv.ParseBool(value); err == nil {
+			cfg.Providers.OpenAI.WebSearch = enabled
+		}
+	}
+}
+
+func providerEnvBindings(cfg *Config) []providerEnvBinding {
+	return []providerEnvBinding{
+		{name: "ANTHROPIC", target: &cfg.Providers.Anthropic},
+		{name: "OPENAI", target: &cfg.Providers.OpenAI.ProviderConfig},
+		{name: "OPENROUTER", target: &cfg.Providers.OpenRouter},
+		{name: "GROQ", target: &cfg.Providers.Groq},
+		{name: "ZHIPU", target: &cfg.Providers.Zhipu},
+		{name: "VLLM", target: &cfg.Providers.VLLM},
+		{name: "GEMINI", target: &cfg.Providers.Gemini},
+		{name: "NVIDIA", target: &cfg.Providers.Nvidia},
+		{name: "OLLAMA", target: &cfg.Providers.Ollama},
+		{name: "MOONSHOT", target: &cfg.Providers.Moonshot},
+		{name: "SHENGSUANYUN", target: &cfg.Providers.ShengSuanYun},
+		{name: "DEEPSEEK", target: &cfg.Providers.DeepSeek},
+		{name: "GITHUB_COPILOT", target: &cfg.Providers.GitHubCopilot},
+	}
+}
+
+func applyProviderEnv(name string, target *ProviderConfig) {
+	if target == nil {
+		return
+	}
+
+	prefix := "DRAGONSCALE_PROVIDERS_" + name + "_"
+
+	if value, ok := os.LookupEnv(prefix + "API_KEY"); ok {
+		target.APIKey = value
+	}
+	if value, ok := os.LookupEnv(prefix + "API_BASE"); ok {
+		target.APIBase = value
+	}
+	if value, ok := os.LookupEnv(prefix + "PROXY"); ok {
+		target.Proxy = value
+	}
+	if value, ok := os.LookupEnv(prefix + "AUTH_METHOD"); ok {
+		target.AuthMethod = value
+	}
+	if value, ok := os.LookupEnv(prefix + "CONNECT_MODE"); ok {
+		target.ConnectMode = value
+	}
+	if value, ok := os.LookupEnv(prefix + "TIMEOUT"); ok {
+		if timeout, err := strconv.Atoi(value); err == nil {
+			target.Timeout = timeout
+		}
+	}
 }
 
 // Validate checks configuration for common issues. Returns a list of
@@ -575,12 +658,14 @@ func (c *Config) Validate() []string {
 		warnings = append(warnings, fmt.Sprintf("agents.defaults.continuity_retention.failure_keep_messages=%d: should be > 0", continuity.FailureKeepMessages))
 	}
 
-	if c.Gateway.Port < 0 || c.Gateway.Port > 65535 {
+	if c.Gateway.Port <= 0 || c.Gateway.Port > 65535 {
 		warnings = append(warnings, fmt.Sprintf("gateway.port=%d: must be in range 1-65535", c.Gateway.Port))
 	}
 
 	if c.Heartbeat.Interval < 0 {
 		warnings = append(warnings, fmt.Sprintf("heartbeat.interval=%d: must be >= 0", c.Heartbeat.Interval))
+	} else if c.Heartbeat.Interval > 0 && c.Heartbeat.Interval < 5 {
+		warnings = append(warnings, fmt.Sprintf("heartbeat.interval=%d: values between 1 and 4 are clamped to 5 minutes", c.Heartbeat.Interval))
 	}
 
 	// Memory config validation (memory is always enabled)

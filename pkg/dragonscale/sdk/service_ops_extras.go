@@ -2,6 +2,7 @@ package sdk
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"io/fs"
@@ -14,14 +15,98 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/ZanzyTHEbar/dragonscale/pkg"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/config"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/ids"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/itr"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/logger"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/memory"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/memory/delegate"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/security"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/security/securebus"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/skills"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/tools"
 )
+
+type daemonAuditWriter interface {
+	InsertAuditEntry(ctx context.Context, entry *memory.AuditEntry) error
+}
+
+type daemonSecureBusAuditSink struct {
+	writer daemonAuditWriter
+}
+
+func newDaemonSecureBusAuditSink(writer daemonAuditWriter) securebus.AuditSink {
+	if writer == nil {
+		return nil
+	}
+	return &daemonSecureBusAuditSink{writer: writer}
+}
+
+func daemonShutdownSignals() []os.Signal {
+	return []os.Signal{os.Interrupt, syscall.SIGTERM}
+}
+
+func (s *daemonSecureBusAuditSink) Write(event securebus.AuditEvent) error {
+	if s == nil || s.writer == nil {
+		return nil
+	}
+	payload, err := json.Marshal(event)
+	if err != nil {
+		return err
+	}
+	target := strings.TrimSpace(event.ToolName)
+	if target == "" {
+		target = strings.TrimSpace(event.CommandType)
+	}
+	entry := &memory.AuditEntry{
+		ID:         ids.New(),
+		AgentID:    pkg.NAME,
+		SessionKey: strings.TrimSpace(event.SessionKey),
+		Action:     daemonSecureBusAuditAction(event),
+		Target:     target,
+		ToolCallID: strings.TrimSpace(event.ToolCallID),
+		Input:      strings.TrimSpace(event.ToolInput),
+		Output:     string(payload),
+		Success:    !event.IsError && strings.TrimSpace(event.PolicyViolation) == "",
+		ErrorMsg:   daemonSecureBusAuditError(event),
+		DurationMS: int(event.DurationMS),
+		CreatedAt:  event.At,
+	}
+	return s.writer.InsertAuditEntry(context.Background(), entry)
+}
+
+func daemonSecureBusAuditAction(event securebus.AuditEvent) string {
+	commandType := strings.TrimSpace(event.CommandType)
+	base := "securebus_event"
+	if commandType != "" {
+		base = "securebus_" + commandType
+	}
+	if strings.TrimSpace(event.PolicyViolation) != "" {
+		return base + "_policy_violation"
+	}
+	if event.LeakDetected {
+		return base + "_leak"
+	}
+	if event.IsError {
+		return base + "_error"
+	}
+	return base
+}
+
+func daemonSecureBusAuditError(event securebus.AuditEvent) string {
+	if msg := strings.TrimSpace(event.PolicyViolation); msg != "" {
+		return msg
+	}
+	return strings.TrimSpace(event.ExecutionError)
+}
+
+func newDaemonAuditDelegate(cfg *config.Config) (*delegate.LibSQLDelegate, error) {
+	if cfg == nil {
+		return nil, fmt.Errorf("config is required")
+	}
+	return delegate.NewFromConfig(cfg.Memory, cfg.DBPath())
+}
 
 func (s *Service) SkillsList(ctx context.Context, out io.Writer) error {
 	_ = ctx
@@ -381,6 +466,14 @@ func (s *Service) DaemonStart(ctx context.Context, out io.Writer) error {
 
 	socketPath := s.DaemonSocketPath()
 	pidPath := s.DaemonPIDPath()
+	if err := os.MkdirAll(filepath.Dir(socketPath), 0o700); err != nil {
+		return err
+	}
+	if pidDir := filepath.Dir(pidPath); pidDir != filepath.Dir(socketPath) {
+		if err := os.MkdirAll(pidDir, 0o700); err != nil {
+			return err
+		}
+	}
 
 	if pidData, err := os.ReadFile(pidPath); err == nil {
 		pidText := strings.TrimSpace(string(pidData))
@@ -393,6 +486,23 @@ func (s *Service) DaemonStart(ctx context.Context, out io.Writer) error {
 	cfg, err := s.LoadConfig()
 	if err != nil {
 		return err
+	}
+	baseCtx := ctx
+	if baseCtx == nil {
+		baseCtx = context.Background()
+	}
+	auditDelegate, err := newDaemonAuditDelegate(cfg)
+	if err != nil {
+		fmt.Fprintf(out, "Warning: daemon audit persistence unavailable: %v\n", err)
+		auditDelegate = nil
+	} else if err := auditDelegate.Init(baseCtx); err != nil {
+		fmt.Fprintf(out, "Warning: daemon audit persistence init failed: %v\n", err)
+		_ = auditDelegate.Close()
+		auditDelegate = nil
+	} else {
+		defer func() {
+			_ = auditDelegate.Close()
+		}()
 	}
 
 	svr, err := securebus.NewSocketTransportServer(socketPath)
@@ -412,11 +522,7 @@ func (s *Service) DaemonStart(ctx context.Context, out io.Writer) error {
 	toolRegistry := tools.NewToolRegistry()
 	registerDefaultTools(s, toolRegistry, cfg)
 
-	baseCtx := ctx
-	if baseCtx == nil {
-		baseCtx = context.Background()
-	}
-	daemonCtx, cancel := signal.NotifyContext(baseCtx, os.Interrupt)
+	daemonCtx, cancel := signal.NotifyContext(baseCtx, daemonShutdownSignals()...)
 	ctx = daemonCtx
 	defer cancel()
 
@@ -431,7 +537,12 @@ func (s *Service) DaemonStart(ctx context.Context, out io.Writer) error {
 		return toolRegistry.Execute(execCtx, name, args)
 	}
 
-	bus := securebus.New(securebus.DefaultBusConfig(), busStore, capabilityLookup, executeTool)
+	auditSink := newDaemonSecureBusAuditSink(auditDelegate)
+	busCfg := securebus.DefaultBusConfig()
+	if cfg.RestrictToSandbox() {
+		busCfg.Policy.AllowedWorkspace = cfg.SandboxPath()
+	}
+	bus := securebus.New(busCfg, busStore, capabilityLookup, executeTool, auditSink)
 	defer bus.Close()
 
 	srvErr := make(chan error, 1)

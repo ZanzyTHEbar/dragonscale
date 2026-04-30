@@ -2,7 +2,7 @@
 package vercel
 
 import (
-	jsonv2 "github.com/go-json-experiment/json"
+	"encoding/json"
 
 	"charm.land/fantasy"
 )
@@ -17,14 +17,14 @@ const (
 func init() {
 	fantasy.RegisterProviderType(TypeProviderOptions, func(data []byte) (fantasy.ProviderOptionsData, error) {
 		var v ProviderOptions
-		if err := jsonv2.Unmarshal(data, &v); err != nil {
+		if err := json.Unmarshal(data, &v); err != nil {
 			return nil, err
 		}
 		return &v, nil
 	})
 	fantasy.RegisterProviderType(TypeProviderMetadata, func(data []byte) (fantasy.ProviderOptionsData, error) {
 		var v ProviderMetadata
-		if err := jsonv2.Unmarshal(data, &v); err != nil {
+		if err := json.Unmarshal(data, &v); err != nil {
 			return nil, err
 		}
 		return &v, nil
@@ -52,58 +52,58 @@ const (
 // ReasoningOptions represents reasoning configuration for Vercel AI Gateway.
 type ReasoningOptions struct {
 	// Enabled enables reasoning output. When true, the model will provide its reasoning process.
-	Enabled *bool `json:"enabled,omitzero"`
+	Enabled *bool `json:"enabled,omitempty"`
 	// MaxTokens is the maximum number of tokens to allocate for reasoning.
 	// Cannot be used with Effort.
-	MaxTokens *int64 `json:"max_tokens,omitzero"`
+	MaxTokens *int64 `json:"max_tokens,omitempty"`
 	// Effort controls reasoning effort level.
 	// Mutually exclusive with MaxTokens.
-	Effort *ReasoningEffort `json:"effort,omitzero"`
+	Effort *ReasoningEffort `json:"effort,omitempty"`
 	// Exclude excludes reasoning content from the response but still generates it internally.
-	Exclude *bool `json:"exclude,omitzero"`
+	Exclude *bool `json:"exclude,omitempty"`
 }
 
 // GatewayProviderOptions represents provider routing preferences for Vercel AI Gateway.
 type GatewayProviderOptions struct {
 	// Order is the list of provider slugs to try in order (e.g. ["vertex", "anthropic"]).
-	Order []string `json:"order,omitzero"`
+	Order []string `json:"order,omitempty"`
 	// Models is the list of fallback models to try if the primary model fails.
-	Models []string `json:"models,omitzero"`
+	Models []string `json:"models,omitempty"`
 }
 
 // BYOKCredential represents a single provider credential for BYOK.
 type BYOKCredential struct {
-	APIKey string `json:"apiKey,omitzero"`
+	APIKey string `json:"apiKey,omitempty"`
 }
 
 // BYOKOptions represents Bring Your Own Key options for Vercel AI Gateway.
 type BYOKOptions struct {
-	Anthropic map[string][]BYOKCredential `json:"anthropic,omitzero"`
-	OpenAI    map[string][]BYOKCredential `json:"openai,omitzero"`
-	Vertex    map[string][]BYOKCredential `json:"vertex,omitzero"`
-	Bedrock   map[string][]BYOKCredential `json:"bedrock,omitzero"`
+	Anthropic map[string][]BYOKCredential `json:"anthropic,omitempty"`
+	OpenAI    map[string][]BYOKCredential `json:"openai,omitempty"`
+	Vertex    map[string][]BYOKCredential `json:"vertex,omitempty"`
+	Bedrock   map[string][]BYOKCredential `json:"bedrock,omitempty"`
 }
 
 // ProviderOptions represents additional options for Vercel AI Gateway provider.
 type ProviderOptions struct {
 	// Reasoning configuration for models that support extended thinking.
-	Reasoning *ReasoningOptions `json:"reasoning,omitzero"`
+	Reasoning *ReasoningOptions `json:"reasoning,omitempty"`
 	// ProviderOptions for gateway routing preferences.
-	ProviderOptions *GatewayProviderOptions `json:"providerOptions,omitzero"`
+	ProviderOptions *GatewayProviderOptions `json:"providerOptions,omitempty"`
 	// BYOK for request-scoped provider credentials.
-	BYOK *BYOKOptions `json:"byok,omitzero"`
+	BYOK *BYOKOptions `json:"byok,omitempty"`
 	// User is a unique identifier representing your end-user.
-	User *string `json:"user,omitzero"`
+	User *string `json:"user,omitempty"`
 	// LogitBias modifies the likelihood of specified tokens appearing in the completion.
-	LogitBias map[string]int64 `json:"logit_bias,omitzero"`
+	LogitBias map[string]int64 `json:"logit_bias,omitempty"`
 	// LogProbs returns the log probabilities of the tokens.
-	LogProbs *bool `json:"logprobs,omitzero"`
+	LogProbs *bool `json:"logprobs,omitempty"`
 	// TopLogProbs is the number of top log probabilities to return.
-	TopLogProbs *int64 `json:"top_logprobs,omitzero"`
+	TopLogProbs *int64 `json:"top_logprobs,omitempty"`
 	// ParallelToolCalls enables parallel function calling during tool use.
-	ParallelToolCalls *bool `json:"parallel_tool_calls,omitzero"`
+	ParallelToolCalls *bool `json:"parallel_tool_calls,omitempty"`
 	// ExtraBody for additional request body fields.
-	ExtraBody map[string]any `json:"extra_body,omitzero"`
+	ExtraBody map[string]any `json:"extra_body,omitempty"`
 }
 
 // Options implements the ProviderOptionsData interface for ProviderOptions.
@@ -128,7 +128,7 @@ func (o *ProviderOptions) UnmarshalJSON(data []byte) error {
 
 // ProviderMetadata represents metadata from Vercel AI Gateway provider.
 type ProviderMetadata struct {
-	Provider string `json:"provider,omitzero"`
+	Provider string `json:"provider,omitempty"`
 }
 
 // Options implements the ProviderOptionsData interface for ProviderMetadata.
@@ -153,25 +153,27 @@ func (m *ProviderMetadata) UnmarshalJSON(data []byte) error {
 
 // ReasoningDetail represents a reasoning detail from Vercel AI Gateway.
 type ReasoningDetail struct {
-	ID        string `json:"id,omitzero"`
-	Type      string `json:"type,omitzero"`
-	Text      string `json:"text,omitzero"`
-	Data      string `json:"data,omitzero"`
-	Format    string `json:"format,omitzero"`
-	Summary   string `json:"summary,omitzero"`
-	Signature string `json:"signature,omitzero"`
+	ID        string `json:"id,omitempty"`
+	Type      string `json:"type,omitempty"`
+	Text      string `json:"text,omitempty"`
+	Data      string `json:"data,omitempty"`
+	Format    string `json:"format,omitempty"`
+	Summary   string `json:"summary,omitempty"`
+	Signature string `json:"signature,omitempty"`
 	Index     int    `json:"index"`
 }
 
 // ReasoningData represents reasoning data from Vercel AI Gateway response.
 type ReasoningData struct {
-	Reasoning        string            `json:"reasoning,omitzero"`
-	ReasoningDetails []ReasoningDetail `json:"reasoning_details,omitzero"`
+	Reasoning        string            `json:"reasoning,omitempty"`
+	ReasoningDetails []ReasoningDetail `json:"reasoning_details,omitempty"`
 }
 
 // ReasoningEffortOption creates a pointer to a ReasoningEffort value.
+//
+//go:fix inline
 func ReasoningEffortOption(e ReasoningEffort) *ReasoningEffort {
-	return &e
+	return new(e)
 }
 
 // NewProviderOptions creates new provider options for Vercel.

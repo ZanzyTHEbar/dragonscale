@@ -281,8 +281,8 @@ func NewRegistry(_ string) []app.Task {
 		NewShellTask("fmt", "Format Go code", staticGoScript("fmt ./..."), nil),
 		NewCommandTask("lint", "Run all linting checks", lintSpecs, nil, nil),
 		NewShellTask("hooks", "Install git hooks", hooksScript, nil),
-		NewShellTask("deps", "Download dependencies", staticGoScript("mod download && mod verify"), nil),
-		NewShellTask("update-deps", "Update dependencies", staticGoScript("get -u ./... && mod tidy"), nil),
+		NewShellTask("deps", "Download dependencies", staticGoScript("mod download && $GO mod verify"), nil),
+		NewShellTask("update-deps", "Update dependencies", staticGoScript("get -u ./... && $GO mod tidy"), nil),
 		NewShellTask("sqlc-check", "Verify sqlc generation is idempotent", sqlcCheckScript, nil),
 		NewShellTask("flatc-check", "Verify flatc generation is idempotent", flatcCheckScript, nil),
 		NewShellTask("sqlc-vet", "Run sqlc vet rules", sqlcVetScript, nil),
@@ -301,9 +301,10 @@ func NewRegistry(_ string) []app.Task {
 		NewCommandTask("eval", "Run the eval suite", evalRunSpecs, nil, nil),
 		NewCommandTask("eval-fixtures", "Prepare eval fixture workspace", evalFixturesSpecs, nil, nil),
 		NewCommandTask("eval-view", "Open the promptfoo results viewer", evalViewSpecs, nil, nil),
-		NewShellTask("eval-clean", "Cleanup eval artifacts", simpleScript("rm -rf eval/results eval/bin"), nil),
-		NewShellTask("eval-compare", "Run A/B comparison of current branch vs main", simpleScript("cd eval && DEVCONTAINER_EXEC= EVAL_NPM_CMD=\"npx --yes\" ./scripts/compare.sh --repeat 3"), nil),
-		NewShellTask("eval-test", "Run Go-native component evals", staticGoScript("-v ./eval/go_evals/..."), nil),
+		NewShellTask("eval-proof-full", "Run local full eval proof with threshold and artifacts", evalProofFullScript, nil),
+		NewShellTask("eval-clean", "Cleanup eval artifacts", evalCleanScript, nil),
+		NewShellTask("eval-compare", "Run A/B comparison of current branch vs main", evalCompareScript, nil),
+		NewShellTask("eval-test", "Run Go-native component evals", evalTestScript, nil),
 	}
 	return tasks
 }
@@ -333,6 +334,15 @@ func defaultEnv(c *app.Context) []string {
 	appendIfSet("DRAGONSCALE_EVAL_CONFIG", cEnv(c, "DRAGONSCALE_EVAL_CONFIG", ""))
 	appendIfSet("DRAGONSCALE_EVAL_DEBUG", cEnv(c, "DRAGONSCALE_EVAL_DEBUG", ""))
 	appendIfSet("DRAGONSCALE_PROMPTFOO_ARGS", cEnv(c, "DRAGONSCALE_PROMPTFOO_ARGS", ""))
+	appendIfSet("PROMPTFOO_PASS_RATE_THRESHOLD", cEnv(c, "PROMPTFOO_PASS_RATE_THRESHOLD", ""))
+	appendIfSet("OPENROUTER_API_KEY", cEnv(c, "OPENROUTER_API_KEY", ""))
+	appendIfSet("OPENAI_API_KEY", cEnv(c, "OPENAI_API_KEY", ""))
+	appendIfSet("DRAGONSCALE_PROVIDERS_OPENROUTER_API_KEY", cEnv(c, "DRAGONSCALE_PROVIDERS_OPENROUTER_API_KEY", ""))
+	appendIfSet("DRAGONSCALE_PROVIDERS_OPENROUTER_API_BASE", cEnv(c, "DRAGONSCALE_PROVIDERS_OPENROUTER_API_BASE", ""))
+	appendIfSet("DRAGONSCALE_PROVIDERS_OPENAI_API_KEY", cEnv(c, "DRAGONSCALE_PROVIDERS_OPENAI_API_KEY", ""))
+	appendIfSet("DRAGONSCALE_PROVIDERS_OPENAI_API_BASE", cEnv(c, "DRAGONSCALE_PROVIDERS_OPENAI_API_BASE", ""))
+	appendIfSet("DRAGONSCALE_AGENTS_DEFAULTS_PROVIDER", cEnv(c, "DRAGONSCALE_AGENTS_DEFAULTS_PROVIDER", ""))
+	appendIfSet("DRAGONSCALE_AGENTS_DEFAULTS_MODEL", cEnv(c, "DRAGONSCALE_AGENTS_DEFAULTS_MODEL", ""))
 	appendIfSet("VERSION", cEnv(c, "VERSION", ""))
 	appendIfSet("FANTASY_VERSION", cEnv(c, "FANTASY_VERSION", ""))
 	appendIfSet("NAME", cEnv(c, "NAME", ""))
@@ -579,8 +589,10 @@ func flatcCheckScript(*app.Context) string {
 		"before=\"$(mktemp)\"\nafter=\"$(mktemp)\"\n" +
 		"snapshot() { git -c safe.directory=\"$repo\" diff --binary -- pkg/itr/itrfb/ pkg/tools/mapopsfb/; git -c safe.directory=\"$repo\" ls-files --others --exclude-standard -- pkg/itr/itrfb/ pkg/tools/mapopsfb/ | LC_ALL=C sort | while IFS= read -r f; do [ -f \"$f\" ] && sha256sum \"$f\"; done; };\n" +
 		"snapshot > \"$before\"\n" +
-		"$GO generate ./pkg/itr ./pkg/tools\nsnapshot > \"$after\"\n" +
-		"if ! cmp -s \"$before\" \"$after\"; then echo \"::error::FlatBuffers generated code is stale. Run 'go generate ./pkg/itr ./pkg/tools' and commit.\"; rm -f \"$before\" \"$after\"; exit 1; fi\nrm -f \"$before\" \"$after\"\n"
+		"(cd pkg/itr && flatc --go -o . ./commands.fbs)\n" +
+		"(cd pkg/tools && flatc --go -o . ./map_payloads.fbs)\n" +
+		"snapshot > \"$after\"\n" +
+		"if ! cmp -s \"$before\" \"$after\"; then echo \"::error::FlatBuffers generated code is stale. Run 'go generate ./pkg/itr ./pkg/tools' with the pinned flatc from scripts/install-flatc.sh and commit.\"; rm -f \"$before\" \"$after\"; exit 1; fi\nrm -f \"$before\" \"$after\"\n"
 }
 
 func sqlcVetScript(*app.Context) string {
@@ -711,14 +723,15 @@ func evalBuildSpecs(c *app.Context) []runner.CommandSpec {
 		version, commit, buildTime, goVersion,
 	)
 	return []runner.CommandSpec{
-		{Name: goBinary, Args: []string{"generate", "./..."}},
-		{Name: "mkdir", Args: []string{"-p", "eval/bin"}},
+		{Name: goBinary, Args: []string{"generate", "./..."}, Dir: evalTaskRoot(c)},
+		{Name: "mkdir", Args: []string{"-p", "eval/bin"}, Dir: evalTaskRoot(c)},
 		{
 			Name: goBinary,
 			Args: append(
 				append(append([]string{"build"}, goFlags...), "-ldflags", ldFlags),
 				"-o", filepath.Join("eval", "bin", "eval-runner"), "./eval/cmd/eval-runner",
 			),
+			Dir: evalTaskRoot(c),
 		},
 	}
 }
@@ -727,32 +740,50 @@ func evalRunSpecs(c *app.Context) []runner.CommandSpec {
 	cfgPath := cEnv(c, "DRAGONSCALE_EVAL_CONFIG", "./configs/default.json")
 	baseCfg := cEnv(c, "DRAGONSCALE_EVAL_BASE_CONFIG", "")
 	debug := cEnv(c, "DRAGONSCALE_EVAL_DEBUG", "") != ""
-	promptfooArgs := strings.Fields(cEnv(c, "DRAGONSCALE_PROMPTFOO_ARGS", "--no-cache --no-progress-bar"))
+	promptfooArgs := strings.Fields(cEnv(c, "DRAGONSCALE_PROMPTFOO_ARGS", "--no-cache --no-progress-bar -j 1"))
 	if len(promptfooArgs) == 0 {
-		promptfooArgs = []string{"--no-cache", "--no-progress-bar"}
+		promptfooArgs = []string{"--no-cache", "--no-progress-bar", "-j", "1"}
 	}
 
-	var specs []runner.CommandSpec
+	specs := append([]runner.CommandSpec{}, maybeEvalBuildSpecs(c)...)
+	if hasEvalSourceTree(c) {
+		specs = append(specs, evalFixturesSpecs(c)...)
+	}
 	if debug && strings.TrimSpace(baseCfg) != "" {
 		specs = append(specs, runner.CommandSpec{
 			Name: "echo",
 			Args: []string{fmt.Sprintf("DRAGONSCALE_EVAL_BASE_CONFIG=%s", baseCfg)},
+			Dir:  evalTaskRoot(c),
 		})
 	}
 	if debug {
 		specs = append(specs, runner.CommandSpec{
 			Name: "echo",
 			Args: []string{fmt.Sprintf("DRAGONSCALE_EVAL_CONFIG=%s", cfgPath)},
+			Dir:  evalTaskRoot(c),
 		})
 	}
 	args := append([]string{"--yes", "promptfoo", "eval", "--config", "promptfooconfig.yaml"}, promptfooArgs...)
 	specs = append(specs, runner.CommandSpec{
 		Name: "npx",
 		Args: args,
-		Dir:  filepath.Join(c.Root, "eval"),
+		Dir:  evalWorkspaceDir(c),
 		Env:  []string{fmt.Sprintf("DRAGONSCALE_EVAL_CONFIG=%s", cfgPath)},
 	})
 	return specs
+}
+
+func evalProofFullScript(_ *app.Context) string {
+	return strings.Join([]string{
+		"set -euo pipefail",
+		"mkdir -p eval/results",
+		": > eval/results/make-eval.log",
+		"export PROMPTFOO_PASS_RATE_THRESHOLD=\"${PROMPTFOO_PASS_RATE_THRESHOLD:-100}\"",
+		"echo \"[eval-proof-full] starting local make eval\" | tee -a eval/results/make-eval.log",
+		"echo \"[eval-proof-full] promptfoo pass-rate threshold: ${PROMPTFOO_PASS_RATE_THRESHOLD}%\" | tee -a eval/results/make-eval.log",
+		"echo \"[eval-proof-full] provider auth defaults: OpenRouter via OPENROUTER_API_KEY, then OpenAI via OPENAI_API_KEY\" | tee -a eval/results/make-eval.log",
+		"SKIP_DEVCONTAINER_WRAPPER=1 DEVCONTAINER_EXEC= make eval 2>&1 | tee -a eval/results/make-eval.log",
+	}, "\n")
 }
 
 func evalFixturesSpecs(c *app.Context) []runner.CommandSpec {
@@ -774,16 +805,17 @@ func evalFixturesSpecs(c *app.Context) []runner.CommandSpec {
 	sourceFixture := filepath.Join("eval", "fixtures", "sample_data.txt")
 
 	specs := []runner.CommandSpec{
-		{Name: "mkdir", Args: []string{"-p", sandbox}},
-		{Name: "rm", Args: append([]string{"-f"}, files...)},
-		{Name: "rm", Args: []string{"-rf", project}},
-		{Name: "mkdir", Args: []string{"-p", skills}},
-		{Name: "bash", Args: []string{"-lc", fmt.Sprintf("printf '%%s\\n%%s\\n' \"dragonscale eval fixture — hello from the eval harness\" \"This is line two of the fixture file.\" > %q", fixture)}},
-		{Name: "cp", Args: []string{"-f", sourceFixture, shared}},
+		{Name: "mkdir", Args: []string{"-p", sandbox}, Dir: evalTaskRoot(c)},
+		{Name: "rm", Args: append([]string{"-f"}, files...), Dir: evalTaskRoot(c)},
+		{Name: "rm", Args: []string{"-rf", project}, Dir: evalTaskRoot(c)},
+		{Name: "mkdir", Args: []string{"-p", skills}, Dir: evalTaskRoot(c)},
+		{Name: "bash", Args: []string{"-lc", fmt.Sprintf("printf '%%s\\n%%s\\n' \"dragonscale eval fixture — hello from the eval harness\" \"This is line two of the fixture file.\" > %q", fixture)}, Dir: evalTaskRoot(c)},
+		{Name: "cp", Args: []string{"-f", sourceFixture, shared}, Dir: evalTaskRoot(c)},
 	}
 	specs = append(specs, runner.CommandSpec{
 		Name: "bash",
 		Args: []string{"-lc", "if [ -d eval/fixtures/skills ]; then cp -rf eval/fixtures/skills/. " + strconv.Quote(skills) + "; fi"},
+		Dir:  evalTaskRoot(c),
 	})
 	return specs
 }
@@ -793,7 +825,7 @@ func evalViewSpecs(c *app.Context) []runner.CommandSpec {
 		{
 			Name: "npx",
 			Args: []string{"--yes", "promptfoo", "view"},
-			Dir:  filepath.Join(c.Root, "eval"),
+			Dir:  evalWorkspaceDir(c),
 		},
 	}
 }
@@ -804,4 +836,46 @@ func outputOrDefault(command string) string {
 		return "dev"
 	}
 	return strings.TrimSpace(string(output))
+}
+
+func evalTaskRoot(c *app.Context) string {
+	if c != nil && strings.TrimSpace(c.Root) != "" {
+		return c.Root
+	}
+	if wd, err := os.Getwd(); err == nil {
+		return wd
+	}
+	return "."
+}
+
+func evalWorkspaceDir(c *app.Context) string {
+	return filepath.Join(evalTaskRoot(c), "eval")
+}
+
+func evalRunnerBinaryPath(c *app.Context) string {
+	return filepath.Join(evalWorkspaceDir(c), "bin", "eval-runner")
+}
+
+func hasEvalSourceTree(c *app.Context) bool {
+	_, err := os.Stat(filepath.Join(evalWorkspaceDir(c), "cmd", "eval-runner", "main.go"))
+	return err == nil
+}
+
+func maybeEvalBuildSpecs(c *app.Context) []runner.CommandSpec {
+	if !hasEvalSourceTree(c) {
+		return nil
+	}
+	return evalBuildSpecs(c)
+}
+
+func evalCompareScript(c *app.Context) string {
+	return "cd " + shellSingleQuote(evalWorkspaceDir(c)) + " && DEVCONTAINER_EXEC= EVAL_NPM_CMD=\"npx --yes\" ./scripts/compare.sh --repeat 3\n"
+}
+
+func evalTestScript(c *app.Context) string {
+	return "cd " + shellSingleQuote(evalTaskRoot(c)) + " && $GO test -v ./eval/go_evals/...\n"
+}
+
+func evalCleanScript(c *app.Context) string {
+	return "rm -rf " + shellSingleQuote(filepath.Join(evalWorkspaceDir(c), "results")) + " " + shellSingleQuote(filepath.Join(evalWorkspaceDir(c), "bin")) + "\n"
 }

@@ -1,10 +1,11 @@
 package openai
 
 import (
+	"cmp"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
-	jsonv2 "github.com/go-json-experiment/json"
 	"io"
 	"reflect"
 	"strings"
@@ -12,11 +13,11 @@ import (
 	"charm.land/fantasy"
 	"charm.land/fantasy/object"
 	"charm.land/fantasy/schema"
+	"github.com/charmbracelet/openai-go"
+	"github.com/charmbracelet/openai-go/packages/param"
+	"github.com/charmbracelet/openai-go/shared"
 	xjson "github.com/charmbracelet/x/json"
 	"github.com/google/uuid"
-	"github.com/openai/openai-go/v2"
-	"github.com/openai/openai-go/v2/packages/param"
-	"github.com/openai/openai-go/v2/shared"
 )
 
 type languageModel struct {
@@ -246,7 +247,7 @@ func (o languageModel) Generate(ctx context.Context, call fantasy.Call) (*fantas
 	if err != nil {
 		return nil, err
 	}
-	response, err := o.client.Chat.Completions.New(ctx, *params)
+	response, err := o.client.Chat.Completions.New(ctx, *params, callUARequestOptions(call)...)
 	if err != nil {
 		return nil, toProviderErr(err)
 	}
@@ -314,7 +315,7 @@ func (o languageModel) Stream(ctx context.Context, call fantasy.Call) (fantasy.S
 		IncludeUsage: openai.Bool(true),
 	}
 
-	stream := o.client.Chat.Completions.NewStreaming(ctx, *params)
+	stream := o.client.Chat.Completions.NewStreaming(ctx, *params, callUARequestOptions(call)...)
 	isActiveText := false
 	toolCalls := make(map[int64]streamToolCall)
 
@@ -410,20 +411,18 @@ func (o languageModel) Stream(ctx context.Context, call fantasy.Call) (fantasy.S
 								toolCalls[toolCallDelta.Index] = existingToolCall
 							}
 						} else {
-							var err error
+							// Some provider like Ollama may send empty tool calls or miss some fields.
+							// We'll skip when we don't have enough info and also assume sane defaults.
+							if toolCallDelta.Function.Name == "" && toolCallDelta.Function.Arguments == "" {
+								continue
+							}
+							toolCallDelta.Type = cmp.Or(toolCallDelta.Type, "function")
+							toolCallDelta.ID = cmp.Or(toolCallDelta.ID, fmt.Sprintf("tool-call-%d", toolCallDelta.Index))
+
 							if toolCallDelta.Type != "function" {
-								err = &fantasy.Error{Title: "invalid provider response", Message: "expected 'function' type."}
-							}
-							if toolCallDelta.ID == "" {
-								err = &fantasy.Error{Title: "invalid provider response", Message: "expected 'id' to be a string."}
-							}
-							if toolCallDelta.Function.Name == "" {
-								err = &fantasy.Error{Title: "invalid provider response", Message: "expected 'function.name' to be a string."}
-							}
-							if err != nil {
 								yield(fantasy.StreamPart{
 									Type:  fantasy.StreamPartTypeError,
-									Error: toProviderErr(stream.Err()),
+									Error: &fantasy.Error{Title: "invalid provider response", Message: "expected 'function' type."},
 								})
 								return
 							}
@@ -453,7 +452,7 @@ func (o languageModel) Stream(ctx context.Context, call fantasy.Call) (fantasy.S
 								if xjson.IsValid(toolCalls[toolCallDelta.Index].arguments) {
 									if !yield(fantasy.StreamPart{
 										Type: fantasy.StreamPartTypeToolInputEnd,
-										ID:   toolCallDelta.ID,
+										ID:   exTc.id,
 									}) {
 										return
 									}
@@ -511,6 +510,28 @@ func (o languageModel) Stream(ctx context.Context, call fantasy.Call) (fantasy.S
 					ID:   "0",
 				}) {
 					return
+				}
+			}
+
+			// Handle tool calls that finish with empty arguments (e.g., Copilot).
+			// Normalize empty args to "{}" and emit the tool call if valid.
+			for idx, tc := range toolCalls {
+				if tc.hasFinished {
+					continue
+				}
+				if tc.arguments == "" {
+					tc.arguments = "{}"
+					toolCalls[idx] = tc
+				}
+				if xjson.IsValid(tc.arguments) {
+					if !yield(fantasy.StreamPart{Type: fantasy.StreamPartTypeToolInputEnd, ID: tc.id}) {
+						return
+					}
+					if !yield(fantasy.StreamPart{Type: fantasy.StreamPartTypeToolCall, ID: tc.id, ToolCallName: tc.name, ToolCallInput: tc.arguments}) {
+						return
+					}
+					tc.hasFinished = true
+					toolCalls[idx] = tc
 				}
 			}
 
@@ -642,7 +663,7 @@ func parseAnnotationsFromDelta(delta openai.ChatCompletionChunkChoiceDelta) []op
 
 	// Parse the raw JSON to extract annotations
 	var deltaData map[string]any
-	if err := jsonv2.Unmarshal([]byte(delta.RawJSON()), &deltaData); err != nil {
+	if err := json.Unmarshal([]byte(delta.RawJSON()), &deltaData); err != nil {
 		return annotations
 	}
 
@@ -733,11 +754,10 @@ func (o languageModel) generateObjectWithJSONMode(ctx context.Context, call fant
 		},
 	}
 
-	response, err := o.client.Chat.Completions.New(ctx, *params)
+	response, err := o.client.Chat.Completions.New(ctx, *params, objectCallUARequestOptions(call)...)
 	if err != nil {
 		return nil, toProviderErr(err)
 	}
-
 	if len(response.Choices) == 0 {
 		usage, _ := o.usageFunc(*response)
 		return nil, &fantasy.NoObjectGeneratedError{
@@ -818,7 +838,7 @@ func (o languageModel) streamObjectWithJSONMode(ctx context.Context, call fantas
 		IncludeUsage: openai.Bool(true),
 	}
 
-	stream := o.client.Chat.Completions.NewStreaming(ctx, *params)
+	stream := o.client.Chat.Completions.NewStreaming(ctx, *params, objectCallUARequestOptions(call)...)
 
 	return func(yield func(fantasy.ObjectStreamPart) bool) {
 		if len(warnings) > 0 {

@@ -57,15 +57,17 @@ type msgPersistItem struct {
 }
 
 type SessionManager struct {
-	sessions map[string]*Session      // primary store (always authoritative)
-	lru      *cache.LRU[string, bool] // tracks access order; value is just a presence flag
-	mu       sync.RWMutex
-	storage  string
-	cfg      SessionManagerConfig
-	delegate memory.MemoryDelegate
-	agentID  string
-	msgChan  chan msgPersistItem // async message persistence; nil when delegate is nil
-	msgDone  chan struct{}       // closed when the persist worker exits
+	sessions  map[string]*Session      // primary store (always authoritative)
+	lru       *cache.LRU[string, bool] // tracks access order; value is just a presence flag
+	mu        sync.RWMutex
+	msgMu     sync.RWMutex
+	storage   string
+	cfg       SessionManagerConfig
+	delegate  memory.MemoryDelegate
+	agentID   string
+	msgChan   chan msgPersistItem // async message persistence; nil when delegate is nil
+	msgDone   chan struct{}       // closed when the persist worker exits
+	msgClosed bool
 }
 
 func NewSessionManager(storage string, opts ...SessionOption) *SessionManager {
@@ -220,6 +222,16 @@ func (sm *SessionManager) loadSessionsFromDelegate() {
 				if item.CreatedAt.After(session.Updated) {
 					session.Updated = item.CreatedAt
 				}
+			}
+		}
+
+		if summaries, err := sm.delegate.ListSummaries(ctx, sm.agentID, sessionKey, 1); err == nil && len(summaries) > 0 {
+			session.Summary = summaries[0].Content
+			if summaries[0].CreatedAt.After(session.Updated) {
+				session.Updated = summaries[0].CreatedAt
+			}
+			if session.Created.IsZero() || summaries[0].CreatedAt.Before(session.Created) {
+				session.Created = summaries[0].CreatedAt
 			}
 		}
 
@@ -379,15 +391,19 @@ func (sm *SessionManager) msgPersistWorker() {
 }
 
 func (sm *SessionManager) enqueuePersistItem(item msgPersistItem) (ok bool) {
-	if sm.msgChan == nil {
+	sm.msgMu.RLock()
+	if sm.msgChan == nil || sm.msgClosed {
+		sm.msgMu.RUnlock()
 		return false
 	}
+	ch := sm.msgChan
 	defer func() {
+		sm.msgMu.RUnlock()
 		if recover() != nil {
 			ok = false
 		}
 	}()
-	sm.msgChan <- item
+	ch <- item
 	return true
 }
 
@@ -602,15 +618,34 @@ func (sm *SessionManager) Flush() {
 
 // Close drains the async message persistence channel and waits for completion.
 func (sm *SessionManager) Close() {
-	if sm.msgChan != nil {
-		close(sm.msgChan)
-		<-sm.msgDone
+	sm.msgMu.Lock()
+	if sm.msgChan == nil || sm.msgClosed {
+		sm.msgMu.Unlock()
+		return
 	}
+	sm.msgClosed = true
+	ch := sm.msgChan
+	done := sm.msgDone
+	close(ch)
+	sm.msgMu.Unlock()
+
+	<-done
 }
 
 func (sm *SessionManager) Save(key string) error {
 	if sm.delegate != nil {
-		return nil
+		sm.Flush()
+
+		sm.mu.RLock()
+		stored, ok := sm.sessions[key]
+		if !ok {
+			sm.mu.RUnlock()
+			return nil
+		}
+		snapshot := snapshotSession(stored)
+		sm.mu.RUnlock()
+
+		return sm.persistSummaryToDelegate(key, &snapshot)
 	}
 	if sm.storage == "" {
 		return nil
@@ -638,6 +673,34 @@ func (sm *SessionManager) Save(key string) error {
 	sm.mu.RUnlock()
 
 	return sm.writeSessionToDisk(key, &snapshot)
+}
+
+func (sm *SessionManager) persistSummaryToDelegate(key string, session *Session) error {
+	if sm.delegate == nil || session == nil {
+		return nil
+	}
+
+	summary := strings.TrimSpace(session.Summary)
+	if summary == "" {
+		return nil
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	existing, err := sm.delegate.ListSummaries(ctx, sm.agentID, key, 1)
+	if err == nil && len(existing) > 0 && strings.TrimSpace(existing[0].Content) == summary {
+		return nil
+	}
+
+	return sm.delegate.InsertSummary(ctx, &memory.MemorySummary{
+		ID:         ids.New(),
+		AgentID:    sm.agentID,
+		SessionKey: key,
+		Content:    summary,
+		FromMsgIdx: 0,
+		ToMsgIdx:   len(session.Messages),
+	})
 }
 
 // saveSessionLocked saves a session to disk. Caller must hold sm.mu.
@@ -764,6 +827,38 @@ func (sm *SessionManager) SetHistory(key string, history []messages.Message) {
 		session.Messages = msgs
 		session.Updated = time.Now()
 	}
+}
+
+// ReplaceHistory atomically ensures a session exists and replaces its history
+// and summary in a single critical section.
+func (sm *SessionManager) ReplaceHistory(key string, history []messages.Message, summary string) {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+
+	session, ok := sm.sessions[key]
+	if !ok {
+		if sm.storage != "" {
+			if loaded := sm.loadSessionFromDisk(key); loaded != nil {
+				session = loaded
+				sm.sessions[key] = session
+			}
+		}
+		if session == nil {
+			session = &Session{
+				Key:      key,
+				Messages: []messages.Message{},
+				Created:  time.Now(),
+			}
+			sm.sessions[key] = session
+		}
+	}
+
+	msgs := make([]messages.Message, len(history))
+	copy(msgs, history)
+	session.Messages = msgs
+	session.Summary = summary
+	session.Updated = time.Now()
+	sm.touchLRU(key)
 }
 
 func toolCallsJSON(msg messages.Message) string {

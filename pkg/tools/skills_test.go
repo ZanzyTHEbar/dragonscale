@@ -98,6 +98,30 @@ func TestSkillReadTool(t *testing.T) {
 		assert.Contains(t, result.ForLLM, "position-sizing")
 	})
 
+	t.Run("normalizes path-like skill names", func(t *testing.T) {
+		result := tool.Execute(t.Context(), map[string]interface{}{"name": ".assets/risk-management/SKILL.md"})
+		assert.False(t, result.IsError)
+		assert.Contains(t, result.ForLLM, "# Skill: risk-management")
+	})
+
+	t.Run("trims punctuation wrappers around skill names", func(t *testing.T) {
+		result := tool.Execute(t.Context(), map[string]interface{}{"name": ":\trisk-management:"})
+		assert.False(t, result.IsError)
+		assert.Contains(t, result.ForLLM, "# Skill: risk-management")
+	})
+
+	t.Run("accepts alias argument names", func(t *testing.T) {
+		result := tool.Execute(t.Context(), map[string]interface{}{"skill_name": "risk-management"})
+		assert.False(t, result.IsError)
+		assert.Contains(t, result.ForLLM, "# Skill: risk-management")
+	})
+
+	t.Run("falls back from descriptive query when unique", func(t *testing.T) {
+		result := tool.Execute(t.Context(), map[string]interface{}{"query": "engineering"})
+		assert.False(t, result.IsError)
+		assert.Contains(t, result.ForLLM, "# Skill: code-review")
+	})
+
 	t.Run("error on missing skill", func(t *testing.T) {
 		result := tool.Execute(t.Context(), map[string]interface{}{"name": "nonexistent"})
 		assert.True(t, result.IsError)

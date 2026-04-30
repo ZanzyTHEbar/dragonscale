@@ -7,22 +7,13 @@ import (
 	"github.com/qmuntal/stateless"
 )
 
-// reactFSM is a thin wrapper around a stateless.StateMachine that emits
-// transitions to a log and an optional observer.
-//
-// The FSM drives both Agent.Generate (non-streaming) and Agent.Stream
-// (streaming). In the streaming path, LLMResponded/ToolsValidated/ToolsExecuted
-// are fired in sequence after processStepStream returns, since that function
-// handles all three phases internally. Both paths emit the full state sequence
-// so transition observers receive identical events regardless of execution mode.
+// reactFSM emits ReAct loop transitions without affecting agent behavior.
 type reactFSM struct {
 	sm       *stateless.StateMachine
 	log      *ReActTransitionLog
 	observer ReActTransitionObserver
 
-	// stepIndex is a pointer to the current step index for the in-flight call.
-	// It is intentionally owned by the caller; transitions capture its value at
-	// emission time.
+	// stepIndex is owned by the caller; transitions capture its value at emission.
 	stepIndex *int
 }
 
@@ -34,24 +25,21 @@ func newReActFSM(observer ReActTransitionObserver, stepIndex *int) *reactFSM {
 		stepIndex: stepIndex,
 	}
 
-	// Be permissive: instrumentation should not break core behavior.
+	// Instrumentation should never break core agent behavior.
 	f.sm.OnUnhandledTrigger(func(context.Context, stateless.State, stateless.Trigger, []string) error {
 		return nil
 	})
 
-	// Emit transitions.
 	f.sm.OnTransitioned(func(ctx context.Context, tr stateless.Transition) {
-		t := ReActTransition{
-			At: time.Now().UTC(),
-		}
+		t := ReActTransition{At: time.Now().UTC()}
 		if from, ok := tr.Source.(ReActState); ok {
 			t.From = from
 		}
 		if to, ok := tr.Destination.(ReActState); ok {
 			t.To = to
 		}
-		if trig, ok := tr.Trigger.(ReActTrigger); ok {
-			t.Trigger = trig
+		if trigger, ok := tr.Trigger.(ReActTrigger); ok {
+			t.Trigger = trigger
 		}
 		if f.stepIndex != nil {
 			t.StepIndex = *f.stepIndex
@@ -63,9 +51,7 @@ func newReActFSM(observer ReActTransitionObserver, stepIndex *int) *reactFSM {
 		}
 	})
 
-	// State graph for Generate().
 	f.configure()
-
 	return f
 }
 

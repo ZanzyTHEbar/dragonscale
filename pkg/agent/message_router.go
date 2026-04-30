@@ -4,10 +4,12 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/ZanzyTHEbar/dragonscale/pkg/bus"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/constants"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/logger"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/tools"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/utils"
 )
 
@@ -24,6 +26,9 @@ func (al *AgentLoop) ProcessDirect(ctx context.Context, content, sessionKey stri
 }
 
 func (al *AgentLoop) ProcessDirectWithChannel(ctx context.Context, content, sessionKey, channel, chatID string) (string, error) {
+	roundTracker := tools.NewMessageSendTracker()
+	ctx = tools.WithMessageSendTracker(ctx, roundTracker)
+
 	msg := bus.InboundMessage{
 		Channel:    channel,
 		SenderID:   "cron",
@@ -32,18 +37,32 @@ func (al *AgentLoop) ProcessDirectWithChannel(ctx context.Context, content, sess
 		SessionKey: sessionKey,
 	}
 
-	return al.processMessage(ctx, msg)
+	response, err := al.processMessage(ctx, msg)
+	if err != nil || response == "" || roundTracker.Sent() {
+		return response, err
+	}
+	al.bus.PublishOutbound(bus.OutboundMessage{Channel: channel, ChatID: chatID, Content: response})
+	return response, nil
 }
 
 // ProcessDirectStreaming processes a message with streaming token delivery.
 // Text deltas are published to the bus as StreamDelta messages in real time.
 func (al *AgentLoop) ProcessDirectStreaming(ctx context.Context, content, sessionKey, channel, chatID string) (string, error) {
+	roundTracker := tools.NewMessageSendTracker()
+	ctx = tools.WithMessageSendTracker(ctx, roundTracker)
+
 	msg := bus.InboundMessage{
 		Channel:    channel,
 		SenderID:   "user",
 		ChatID:     chatID,
 		Content:    content,
 		SessionKey: sessionKey,
+	}
+
+	if msg.SessionKey != "" && msg.SessionKey != "heartbeat" && !strings.HasPrefix(msg.SessionKey, "heartbeat:") {
+		if err := al.state.SetLastSessionKeyForTarget(ctx, msg.Channel, msg.ChatID, msg.SessionKey); err != nil {
+			logger.WarnCF("agent", "Failed to record last session key", map[string]interface{}{"error": err.Error(), "session_key": msg.SessionKey})
+		}
 	}
 
 	return al.runAgentLoop(ctx, processOptions{
@@ -63,15 +82,18 @@ func (al *AgentLoop) ProcessDirectStreaming(ctx context.Context, content, sessio
 // It injects the active session's summary so the agent has awareness of
 // recent user conversation context.
 func (al *AgentLoop) ProcessHeartbeat(ctx context.Context, content, channel, chatID string) (string, error) {
-	if v := al.activeSessionKey.Load(); v != nil {
-		if key, ok := v.(string); ok && key != "" {
-			if summary := al.sessions.GetSummary(key); summary != "" {
-				content = content + "\n\n## Recent User Context\n" + summary
-			}
+	sourceSessionKey := ""
+	if al.state != nil {
+		sourceSessionKey = al.state.GetLastSessionKeyForTarget(channel, chatID)
+	}
+	if sourceSessionKey != "" {
+		if summary := al.sessions.GetSummary(sourceSessionKey); summary != "" {
+			content = content + "\n\n## Recent User Context\n" + summary
 		}
 	}
+	heartbeatSessionKey := fmt.Sprintf("heartbeat:%d", time.Now().UnixNano())
 	return al.runAgentLoop(ctx, processOptions{
-		SessionKey:    "heartbeat",
+		SessionKey:    heartbeatSessionKey,
 		Channel:       channel,
 		ChatID:        chatID,
 		UserMessage:   content,
@@ -108,6 +130,11 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 	}
 
 	// Process as user message
+	if msg.SessionKey != "" && msg.SessionKey != "heartbeat" && !strings.HasPrefix(msg.SessionKey, "heartbeat:") {
+		if err := al.state.SetLastSessionKeyForTarget(ctx, msg.Channel, msg.ChatID, msg.SessionKey); err != nil {
+			logger.WarnCF("agent", "Failed to record last session key", map[string]interface{}{"error": err.Error(), "session_key": msg.SessionKey})
+		}
+	}
 	return al.runAgentLoop(ctx, processOptions{
 		SessionKey:    msg.SessionKey,
 		Channel:       msg.Channel,

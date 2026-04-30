@@ -27,11 +27,15 @@ CREATE TABLE IF NOT EXISTS recall_items (
     tags TEXT NOT NULL DEFAULT '',
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    suppressed_at DATETIME, -- soft delete timestamp (T2.4)
+    suppressed_at DATETIME,
+    -- soft delete timestamp (T2.4)
     -- RL (Memelord) support columns
-    rl_weight REAL DEFAULT 1.0, -- current weight for credit assignment
-    rl_credit REAL, -- accumulated credit for this memory
-    self_report_score INTEGER, -- self-reported usefulness score
+    rl_weight REAL DEFAULT 1.0,
+    -- current weight for credit assignment
+    rl_credit REAL,
+    -- accumulated credit for this memory
+    self_report_score INTEGER,
+    -- self-reported usefulness score
     task_retrieval_count INTEGER DEFAULT 0 -- how many times retrieved for tasks
 );
 CREATE INDEX IF NOT EXISTS idx_recall_agent_session ON recall_items(agent_id, session_key);
@@ -96,13 +100,17 @@ CREATE TABLE IF NOT EXISTS agent_audit_log (
     session_key TEXT NOT NULL DEFAULT '',
     action TEXT NOT NULL,
     target TEXT NOT NULL DEFAULT '',
+    tool_call_id TEXT NOT NULL DEFAULT '',
     input TEXT,
     output TEXT,
+    success BOOLEAN NOT NULL DEFAULT TRUE,
+    error_msg TEXT NOT NULL DEFAULT '',
     duration_ms INTEGER,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_audit_agent_time ON agent_audit_log(agent_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_audit_action ON agent_audit_log(action);
+CREATE INDEX IF NOT EXISTS idx_audit_tool_call_id ON agent_audit_log(tool_call_id);
 -- ============================================================================
 -- Agent Runtime State Tables
 -- ============================================================================
@@ -422,7 +430,6 @@ CREATE TABLE IF NOT EXISTS memory_edges (
 CREATE INDEX IF NOT EXISTS idx_memory_edges_from ON memory_edges(from_id);
 CREATE INDEX IF NOT EXISTS idx_memory_edges_to ON memory_edges(to_id);
 CREATE INDEX IF NOT EXISTS idx_memory_edges_type ON memory_edges(edge_type);
-
 -- ============================================================================
 -- RL (Reinforcement Learning) Support Tables
 -- ============================================================================
@@ -438,7 +445,6 @@ CREATE TABLE IF NOT EXISTS task_baselines (
     m2_user_corrections REAL DEFAULT 0,
     updated_at DATETIME
 );
-
 -- Task completions: record of completed agent runs for RL analysis
 CREATE TABLE IF NOT EXISTS task_completions (
     id BLOB PRIMARY KEY,
@@ -455,7 +461,6 @@ CREATE TABLE IF NOT EXISTS task_completions (
 );
 CREATE INDEX IF NOT EXISTS idx_task_completions_agent_created ON task_completions(agent_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_task_completions_run ON task_completions(run_id);
-
 -- Task retrievals: links memories retrieved during task execution for RL credit assignment
 CREATE TABLE IF NOT EXISTS task_retrievals (
     id BLOB PRIMARY KEY,

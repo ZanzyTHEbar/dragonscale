@@ -91,7 +91,7 @@ func TestDefaultConfig_Gateway(t *testing.T) {
 	t.Parallel()
 	cfg := DefaultConfig()
 
-	if cfg.Gateway.Host != "0.0.0.0" {
+	if cfg.Gateway.Host != "127.0.0.1" {
 		t.Error("Gateway host should have default value")
 	}
 	if cfg.Gateway.Port == 0 {
@@ -223,7 +223,7 @@ func TestConfig_Complete(t *testing.T) {
 	if cfg.Agents.Defaults.MaxToolIterations == 0 {
 		t.Error("MaxToolIterations should not be zero")
 	}
-	if cfg.Gateway.Host != "0.0.0.0" {
+	if cfg.Gateway.Host != "127.0.0.1" {
 		t.Error("Gateway host should have default value")
 	}
 	if cfg.Gateway.Port == 0 {
@@ -372,5 +372,100 @@ func TestLoadConfig_OpenAIWebSearchCanBeDisabled(t *testing.T) {
 	}
 	if cfg.Providers.OpenAI.WebSearch {
 		t.Fatal("OpenAI codex web search should be false when disabled in config file")
+	}
+}
+
+func TestLoadConfig_GatewayHostEnvOverride(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.json")
+	if err := os.WriteFile(configPath, []byte(`{"gateway":{"host":"0.0.0.0"}}`), 0o600); err != nil {
+		t.Fatalf("WriteFile() error: %v", err)
+	}
+	t.Setenv("DRAGONSCALE_GATEWAY_HOST", "0.0.0.0")
+
+	cfg, err := LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error: %v", err)
+	}
+	if cfg.Gateway.Host != "0.0.0.0" {
+		t.Fatalf("expected env override host 0.0.0.0, got %q", cfg.Gateway.Host)
+	}
+}
+
+func TestLoadConfig_GatewayHostEnvOverrideWithoutConfigFile(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "missing.json")
+	t.Setenv("DRAGONSCALE_GATEWAY_HOST", "0.0.0.0")
+
+	cfg, err := LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error: %v", err)
+	}
+	if cfg.Gateway.Host != "0.0.0.0" {
+		t.Fatalf("expected env-only override host 0.0.0.0, got %q", cfg.Gateway.Host)
+	}
+}
+
+func TestLoadConfig_ProviderEnvOverride(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.json")
+	if err := os.WriteFile(configPath, []byte(`{"providers":{"openai":{"api_key":"file-key","timeout":15}}}`), 0o600); err != nil {
+		t.Fatalf("WriteFile() error: %v", err)
+	}
+	t.Setenv("DRAGONSCALE_PROVIDERS_OPENAI_API_KEY", "env-key")
+	t.Setenv("DRAGONSCALE_PROVIDERS_OPENAI_API_BASE", "https://example.invalid/v1")
+	t.Setenv("DRAGONSCALE_PROVIDERS_OPENAI_TIMEOUT", "45")
+
+	cfg, err := LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error: %v", err)
+	}
+	if cfg.Providers.OpenAI.APIKey != "env-key" {
+		t.Fatalf("expected env override api key, got %q", cfg.Providers.OpenAI.APIKey)
+	}
+	if cfg.Providers.OpenAI.APIBase != "https://example.invalid/v1" {
+		t.Fatalf("expected env override api base, got %q", cfg.Providers.OpenAI.APIBase)
+	}
+	if cfg.Providers.OpenAI.Timeout != 45 {
+		t.Fatalf("expected env override timeout 45, got %d", cfg.Providers.OpenAI.Timeout)
+	}
+}
+
+func TestLoadConfig_OpenAIWebSearchEnvOverride(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.json")
+	if err := os.WriteFile(configPath, []byte(`{"providers":{"openai":{"web_search":false}}}`), 0o600); err != nil {
+		t.Fatalf("WriteFile() error: %v", err)
+	}
+	t.Setenv("DRAGONSCALE_PROVIDERS_OPENAI_WEB_SEARCH", "true")
+
+	cfg, err := LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error: %v", err)
+	}
+	if !cfg.Providers.OpenAI.WebSearch {
+		t.Fatal("expected env override to re-enable OpenAI web_search")
+	}
+}
+
+func TestValidate_GatewayPortZeroWarns(t *testing.T) {
+	t.Parallel()
+	cfg := DefaultConfig()
+	cfg.Gateway.Port = 0
+
+	warnings := strings.Join(cfg.Validate(), "\n")
+	if !strings.Contains(warnings, "gateway.port=0") {
+		t.Fatalf("expected gateway port warning for zero, got: %s", warnings)
+	}
+}
+
+func TestValidate_HeartbeatIntervalBelowMinimumWarns(t *testing.T) {
+	t.Parallel()
+	cfg := DefaultConfig()
+	cfg.Heartbeat.Interval = 1
+
+	warnings := strings.Join(cfg.Validate(), "\n")
+	if !strings.Contains(warnings, "clamped to 5 minutes") {
+		t.Fatalf("expected heartbeat clamp warning, got: %s", warnings)
 	}
 }

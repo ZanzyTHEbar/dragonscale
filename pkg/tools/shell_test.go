@@ -72,7 +72,7 @@ func TestShellTool_Timeout(t *testing.T) {
 
 	ctx := t.Context()
 	args := map[string]interface{}{
-		"command": "sleep 10",
+		"command": "sh -c 'sleep 10'",
 	}
 
 	result := tool.Execute(ctx, args)
@@ -85,6 +85,55 @@ func TestShellTool_Timeout(t *testing.T) {
 	// Should mention timeout
 	if !strings.Contains(result.ForLLM, "timed out") && !strings.Contains(result.ForUser, "timed out") {
 		t.Errorf("Expected timeout message, got ForLLM: %s, ForUser: %s", result.ForLLM, result.ForUser)
+	}
+}
+
+func TestShellTool_RejectsNoOpPlaceholder(t *testing.T) {
+	t.Parallel()
+	tool := NewExecTool("", false)
+
+	result := tool.Execute(t.Context(), map[string]interface{}{
+		"command": ":",
+	})
+
+	if !result.IsError {
+		t.Fatal("expected placeholder command to be rejected")
+	}
+	if !strings.Contains(result.ForLLM, "no-op placeholder") {
+		t.Fatalf("expected no-op placeholder error, got %q", result.ForLLM)
+	}
+}
+
+func TestShellTool_NormalizesLeadingGarbage(t *testing.T) {
+	t.Parallel()
+	tool := NewExecTool("", false)
+
+	result := tool.Execute(t.Context(), map[string]interface{}{
+		"command": "}\techo normalized-shell-command",
+	})
+
+	if result.IsError {
+		t.Fatalf("expected normalized command to succeed, got %q", result.ForLLM)
+	}
+	if !strings.Contains(result.ForLLM, "normalized-shell-command") {
+		t.Fatalf("expected normalized command output, got %q", result.ForLLM)
+	}
+}
+
+func TestShellTool_ShortCircuitsSleepBeyondTimeoutBudget(t *testing.T) {
+	t.Parallel()
+	tool := NewExecTool("", false)
+	tool.SetTimeout(8 * time.Second)
+
+	result := tool.Execute(t.Context(), map[string]interface{}{
+		"command": "sleep 120",
+	})
+
+	if !result.IsError {
+		t.Fatal("expected oversized sleep command to be rejected")
+	}
+	if !strings.Contains(result.ForLLM, "exceeds timeout budget") {
+		t.Fatalf("expected timeout-budget denial, got %q", result.ForLLM)
 	}
 }
 

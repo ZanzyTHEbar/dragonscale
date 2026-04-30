@@ -68,6 +68,37 @@ func (q *Queries) GetAgentConversation(ctx context.Context, arg GetAgentConversa
 	return i, err
 }
 
+const GetLatestAgentConversationByTitle = `-- name: GetLatestAgentConversationByTitle :one
+SELECT id, title, created_at, updated_at
+FROM agent_conversations
+WHERE title = ?
+ORDER BY created_at DESC
+LIMIT 1
+`
+
+type GetLatestAgentConversationByTitleParams struct {
+	Title *string `db:"title" json:"title"`
+}
+
+// GetLatestAgentConversationByTitle
+//
+//	SELECT id, title, created_at, updated_at
+//	FROM agent_conversations
+//	WHERE title = ?
+//	ORDER BY created_at DESC
+//	LIMIT 1
+func (q *Queries) GetLatestAgentConversationByTitle(ctx context.Context, arg GetLatestAgentConversationByTitleParams) (AgentConversation, error) {
+	row := q.db.QueryRowContext(ctx, GetLatestAgentConversationByTitle, arg.Title)
+	var i AgentConversation
+	err := row.Scan(
+		&i.ID,
+		&i.Title,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const ListAgentConversations = `-- name: ListAgentConversations :many
 SELECT id, title, created_at, updated_at
 FROM agent_conversations

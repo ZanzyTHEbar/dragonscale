@@ -4,8 +4,8 @@ package object
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
-	jsonv2 "github.com/go-json-experiment/json"
 	"reflect"
 
 	"charm.land/fantasy"
@@ -120,6 +120,7 @@ func GenerateWithTool(
 		TopK:             call.TopK,
 		PresencePenalty:  call.PresencePenalty,
 		FrequencyPenalty: call.FrequencyPenalty,
+		UserAgent:        call.UserAgent,
 		ProviderOptions:  call.ProviderOptions,
 	})
 	if err != nil {
@@ -171,7 +172,7 @@ func GenerateWithText(
 	model fantasy.LanguageModel,
 	call fantasy.ObjectCall,
 ) (*fantasy.ObjectResponse, error) {
-	jsonSchemaBytes, err := jsonv2.Marshal(call.Schema)
+	jsonSchemaBytes, err := json.Marshal(call.Schema)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal schema: %w", err)
 	}
@@ -212,6 +213,7 @@ func GenerateWithText(
 		TopK:             call.TopK,
 		PresencePenalty:  call.PresencePenalty,
 		FrequencyPenalty: call.FrequencyPenalty,
+		UserAgent:        call.UserAgent,
 		ProviderOptions:  call.ProviderOptions,
 	})
 	if err != nil {
@@ -294,6 +296,7 @@ func StreamWithTool(
 		TopK:             call.TopK,
 		PresencePenalty:  call.PresencePenalty,
 		FrequencyPenalty: call.FrequencyPenalty,
+		UserAgent:        call.UserAgent,
 		ProviderOptions:  call.ProviderOptions,
 	})
 	if err != nil {
@@ -462,7 +465,7 @@ func StreamWithText(
 	call fantasy.ObjectCall,
 ) (fantasy.ObjectStreamResponse, error) {
 	jsonSchemaMap := schema.ToMap(call.Schema)
-	jsonSchemaBytes, err := jsonv2.Marshal(jsonSchemaMap)
+	jsonSchemaBytes, err := json.Marshal(jsonSchemaMap)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal schema: %w", err)
 	}
@@ -503,6 +506,7 @@ func StreamWithText(
 		TopK:             call.TopK,
 		PresencePenalty:  call.PresencePenalty,
 		FrequencyPenalty: call.FrequencyPenalty,
+		UserAgent:        call.UserAgent,
 		ProviderOptions:  call.ProviderOptions,
 	})
 	if err != nil {
@@ -603,12 +607,12 @@ func StreamWithText(
 }
 
 func unmarshal(obj any, target any) error {
-	jsonBytes, err := jsonv2.Marshal(obj)
+	jsonBytes, err := json.Marshal(obj)
 	if err != nil {
 		return fmt.Errorf("failed to marshal object: %w", err)
 	}
 
-	if err := jsonv2.Unmarshal(jsonBytes, target); err != nil {
+	if err := json.Unmarshal(jsonBytes, target); err != nil {
 		return fmt.Errorf("failed to unmarshal into target type: %w", err)
 	}
 

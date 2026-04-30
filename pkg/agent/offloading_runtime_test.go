@@ -19,7 +19,7 @@ type staticToolRuntime struct {
 	results []fantasy.ToolResultContent
 }
 
-func (s staticToolRuntime) Execute(_ context.Context, _ []fantasy.AgentTool, calls []fantasy.ToolCallContent, _ func(fantasy.ToolResultContent) error) ([]fantasy.ToolResultContent, error) {
+func (s staticToolRuntime) Execute(_ context.Context, _ []fantasy.AgentTool, _ []fantasy.ExecutableProviderTool, calls []fantasy.ToolCallContent, _ func(fantasy.ToolResultContent) error) ([]fantasy.ToolResultContent, error) {
 	if len(s.results) > 0 {
 		return s.results, nil
 	}
@@ -82,7 +82,7 @@ func TestOffloading_SmallResult_KeptInline(t *testing.T) {
 	ctx := t.Context()
 
 	calls := makeCalls(1)
-	results, err := r.Execute(ctx, nil, calls, nil)
+	results, err := r.Execute(ctx, nil, nil, calls, nil)
 	require.NoError(t, err)
 	require.Len(t, results, 1)
 
@@ -115,7 +115,7 @@ func TestOffloading_LargeResult_Truncated(t *testing.T) {
 	calls[0].ToolCallID = "call-a"
 	calls[0].ToolName = "big_tool"
 
-	results, err := r.Execute(ctx, nil, calls, nil)
+	results, err := r.Execute(ctx, nil, nil, calls, nil)
 	require.NoError(t, err)
 	require.Len(t, results, 1)
 
@@ -157,7 +157,7 @@ func TestOffloading_DBMetadata_Inserted(t *testing.T) {
 	ctx := t.Context()
 
 	calls := makeCalls(2)
-	_, err := r.Execute(ctx, nil, calls, nil)
+	_, err := r.Execute(ctx, nil, nil, calls, nil)
 	require.NoError(t, err)
 
 	// Verification: the KV scan is the best cross-check here because the
@@ -183,7 +183,7 @@ func TestOffloading_NilKV_Errors(t *testing.T) {
 		RunID:          run.ID,
 	}
 
-	_, err = r.Execute(t.Context(), nil, makeCalls(1), nil)
+	_, err = r.Execute(t.Context(), nil, nil, makeCalls(1), nil)
 	assert.Error(t, err, "nil KV should fail")
 }
 
@@ -199,7 +199,7 @@ func TestOffloading_NilQueries_Errors(t *testing.T) {
 		RunID:          ids.New(),
 	}
 
-	_, err := r.Execute(t.Context(), nil, makeCalls(1), nil)
+	_, err := r.Execute(t.Context(), nil, nil, makeCalls(1), nil)
 	assert.Error(t, err, "nil queries should fail")
 }
 
@@ -208,7 +208,7 @@ func TestOffloading_NilQueries_Errors(t *testing.T) {
 func TestOffloading_EmptyToolCalls_ReturnsNil(t *testing.T) {
 	t.Parallel()
 	r, _, _, _ := makeOffloader(t, nil, 1000, 500)
-	results, err := r.Execute(t.Context(), nil, nil, nil)
+	results, err := r.Execute(t.Context(), nil, nil, nil, nil)
 	require.NoError(t, err)
 	assert.Nil(t, results, "no tool calls should produce no results")
 }
@@ -221,7 +221,7 @@ func TestOffloading_MultipleCalls_AllStoredInKV(t *testing.T) {
 	ctx := t.Context()
 
 	calls := makeCalls(3)
-	_, err := r.Execute(ctx, nil, calls, nil)
+	_, err := r.Execute(ctx, nil, nil, calls, nil)
 	require.NoError(t, err)
 
 	keys, err := kv.Scan(ctx, "tool_results/")
@@ -277,7 +277,7 @@ func TestChunkString(t *testing.T) {
 
 			r, _, _, kv := makeOffloader(t, base, effectiveThreshold, tt.chunkSize)
 			calls := []fantasy.ToolCallContent{{ToolCallID: "c", ToolName: "t"}}
-			_, err := r.Execute(t.Context(), nil, calls, nil)
+			_, err := r.Execute(t.Context(), nil, nil, calls, nil)
 			require.NoError(t, err)
 
 			keys, err := kv.Scan(t.Context(), "tool_results/")

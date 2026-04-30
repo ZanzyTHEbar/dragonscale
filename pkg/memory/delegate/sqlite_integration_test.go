@@ -156,8 +156,10 @@ func TestEndToEnd_SessionAndAuditFlow(t *testing.T) {
 		SessionKey: sessionKey,
 		Action:     "tool_call",
 		Target:     "weather_api",
+		ToolCallID: "call-weather-api",
 		Input:      `{"location":"here"}`,
 		Output:     `{"temp":72}`,
+		Success:    true,
 		DurationMS: 150,
 	}
 	require.NoError(t, d.InsertAuditEntry(ctx, auditEntry))

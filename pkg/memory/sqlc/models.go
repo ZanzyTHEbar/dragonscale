@@ -18,8 +18,11 @@ type AgentAuditLog struct {
 	SessionKey string    `db:"session_key" json:"session_key"`
 	Action     string    `db:"action" json:"action"`
 	Target     string    `db:"target" json:"target"`
+	ToolCallID string    `db:"tool_call_id" json:"tool_call_id"`
 	Input      *string   `db:"input" json:"input"`
 	Output     *string   `db:"output" json:"output"`
+	Success    bool      `db:"success" json:"success"`
+	ErrorMsg   string    `db:"error_msg" json:"error_msg"`
 	DurationMs *int64    `db:"duration_ms" json:"duration_ms"`
 	CreatedAt  time.Time `db:"created_at" json:"created_at"`
 }

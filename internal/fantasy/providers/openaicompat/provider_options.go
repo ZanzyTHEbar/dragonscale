@@ -2,7 +2,7 @@
 package openaicompat
 
 import (
-	jsonv2 "github.com/go-json-experiment/json"
+	"encoding/json"
 
 	"charm.land/fantasy"
 	"charm.land/fantasy/providers/openai"
@@ -17,7 +17,7 @@ const (
 func init() {
 	fantasy.RegisterProviderType(TypeProviderOptions, func(data []byte) (fantasy.ProviderOptionsData, error) {
 		var v ProviderOptions
-		if err := jsonv2.Unmarshal(data, &v); err != nil {
+		if err := json.Unmarshal(data, &v); err != nil {
 			return nil, err
 		}
 		return &v, nil
@@ -31,8 +31,18 @@ type ProviderOptions struct {
 }
 
 // ReasoningData represents reasoning data for OpenAI-compatible provider.
+// Some providers use "reasoning_content" (e.g. Avian), others use "reasoning" (e.g. Moonshot AI/Kimi).
 type ReasoningData struct {
 	ReasoningContent string `json:"reasoning_content"`
+	Reasoning        string `json:"reasoning"`
+}
+
+// GetReasoningContent returns the reasoning text from whichever field is populated.
+func (r ReasoningData) GetReasoningContent() string {
+	if r.ReasoningContent != "" {
+		return r.ReasoningContent
+	}
+	return r.Reasoning
 }
 
 // Options implements the ProviderOptions interface.

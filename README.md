@@ -83,9 +83,9 @@ flowchart TB
 
     subgraph Security["Security"]
         VLT[Vault XChaCha20] --> SS[SecretStore]
-        SS --> KR[Keyring / Env / File]
+        SS --> KR[Env key / planned keyring-file]
         RED[Redactor] --> SB
-        ZKP[Schnorr ZKP] -.-> SOCK[Daemon Socket]
+        ZKP[Planned ZKP] -.-> SOCK[Daemon Socket]
     end
 
     subgraph Bus["Message Bus"]
@@ -118,16 +118,16 @@ flowchart TB
 
 | Decision | Rationale |
 |----------|-----------|
-| **Isolated Tool Runtime** | All tool calls route through a `SecureBus` that enforces capability manifests, injects secrets, scans output for leaks, and writes audit logs. The LLM never sees raw secrets. See [ADR-001](docs/adr/001-isolated-tool-runtime.md). |
+| **Isolated Tool Runtime** | All tool calls route through a `SecureBus` that mediates execution, applies recursion-depth policy, performs `arg:` secret injection, scans LLM-facing output for leaks, and writes audit logs. Broader network/filesystem capability enforcement plus daemon/WASM isolation remain follow-on work. See [ADR-001](docs/adr/001-isolated-tool-runtime.md). |
 | **DAG executor** | LLMCompiler-style parallel tool dispatch. The planner builds a dependency DAG in a single inference pass; the executor dispatches independent nodes concurrently. Joiner synthesizes results. Replanning on failure. Falls back to ReAct for simple single-tool cases. |
 | **Vendored Fantasy SDK** | `charm.land/fantasy` vendored into `internal/fantasy/` via `go.mod` replace directive. Enables direct modification for streaming hooks, tool call repair, and progressive disclosure. |
-| **MemGPT + Observational Memory** | Working context (hot), recall items (warm), archival chunks (cold, embedded + indexed), plus observational memory (compressed conversation history with priority-tagged observations and temporal reasoning). DAG-based context budget compression manages token allocation across tiers. |
-| **Progressive tool disclosure** | Agent sees only `tool_search` and `tool_call` meta-tools. Discovers actual tools on demand via fuzzy search. Cuts system prompt tokens for large registries. |
+| **MemGPT + Projection Kernel** | Working context (hot), recall items (warm), archival chunks (cold, embedded + indexed), observational memory, immutable messages, DAG snapshots, runtime checkpoints, and an active-context projection builder that assembles the live turn context. Semantic ContextTree scoring and RLM reduction now participate in the hot path. |
+| **Progressive tool disclosure** | Gateway tools stay visible, and the agent gets a small query-aware direct toolset for the current request. Wider discovery still flows through `tool_search` / `tool_call` and dynamic promotion, which keeps prompt size down without hiding obvious direct actions. |
 | **libSQL over modernc/sqlite** | Native F32_BLOB for vector storage, `libsql_vector_idx` for ANN search, FTS5 for full-text. Single database, no external vector DB dependency. |
 | **BLOB primary keys** | 16-byte UUIDv7 stored as BLOB. Compact, byte-comparable, monotonically sortable by creation time. |
-| **XChaCha20-Poly1305 vault** | Secrets encrypted at rest with AES-256-GCM or XChaCha20-Poly1305. Master key from OS keyring, env var, or file. Schnorr ZKP for daemon-mode authentication. |
-| **Goose migrations** | Schema managed by `pressly/goose/v3`. 10 versioned migrations covering core schema, FTS5, vector indexes, KV store, documents, audit log, conversations, runtime state, jobs, and conversation graphs. |
-| **FlatBuffers command protocol** | Zero-copy serialized `ToolRequest`/`ToolResponse` for the ITR command vocabulary. Same binary format across in-process channels, Unix sockets (daemon mode), and wazero WASM host calls. |
+| **XChaCha20-Poly1305 vault** | Secrets are encrypted at rest with XChaCha20-Poly1305. The current user-facing master-key flow is env-backed via `DRAGONSCALE_MASTER_KEY`; richer keyring/file-backed flows remain roadmap work. |
+| **Goose migrations** | Schema managed by `pressly/goose/v3`. 17 versioned migrations currently cover core schema, FTS5, vector indexes, KV store, documents, audit log outcomes, conversations, runtime state, DAG/checkpoint data, map operators, memory edges, soft delete, immutable messages, and RL/task-completion tables. |
+| **FlatBuffers command protocol** | Zero-copy serialized `ToolRequest`/`ToolResponse` for the ITR command vocabulary. The binary format is live on the in-process command path today and is designed to extend to socket/WASM transports as those optional surfaces mature. |
 
 ## Project Layout
 
@@ -160,7 +160,7 @@ pkg/
 ├── memory/                # Memory system
 │   ├── dag/               # DAG-based context budget compression
 │   ├── delegate/          # libSQL storage backend (FTS5, vector, capabilities)
-│   ├── migrations/        # Goose versioned schema migrations (001–010)
+│   ├── migrations/        # Goose versioned schema migrations (001–017)
 │   ├── observation/       # Observational memory (observer, reflector, store)
 │   ├── sqlc/              # sqlc config + generated code
 │   └── store/             # MemoryStore, retrieval, chunking, scoring, queuing
@@ -174,7 +174,7 @@ pkg/
 ├── tools/                 # Tool registry, meta-tools, built-in tools, CapableTool
 ├── voice/                 # Groq Whisper voice transcription
 └── worker/                # Background job worker
-skills/                    # Built-in skills (weather, tmux, summarize, github, hardware)
+cmd/dragonscale/workspace/skills/ # Embedded builtin skills packaged with the CLI
 config/                    # Example configuration files
 ```
 
@@ -220,7 +220,6 @@ Edit `~/.dragonscale/config.json`:
     }
   },
   "tools": {
-    "progressive_disclosure": true,
     "web": {
       "duckduckgo": { "enabled": true, "max_results": 5 }
     }
@@ -251,7 +250,8 @@ docker compose logs -f dragonscale-gateway
 
 ## Secret Management
 
-DragonScale encrypts secrets at rest with XChaCha20-Poly1305. The master key is sourced from an environment variable, OS keyring, or file.
+DragonScale encrypts secrets at rest with XChaCha20-Poly1305 and stores them in `~/.dragonscale/secrets.json`.
+Today the supported operator flow is env-backed: `dragonscale secret init` prints a hex key, and secret operations expect `DRAGONSCALE_MASTER_KEY` to be set.
 
 ```bash
 dragonscale secret init           # Generate a master key
@@ -261,17 +261,17 @@ dragonscale secret delete <name>  # Remove a secret
 ```
 
 > [!WARNING]
-> This is a security-sensitive operation. The master key is used to encrypt and decrypt secrets. If you lose it, you will not be able to decrypt secrets.
-> You should should NEVER store the master key in a file or environment variable if possible.
+> This is a security-sensitive operation. The master key is used to encrypt and decrypt secrets. If you lose it, you will not be able to decrypt existing secrets.
+> Treat the printed key like a root credential: do not commit it, paste it into logs, or leave it in shell history.
 
 
 Set the master key: `export DRAGONSCALE_MASTER_KEY=<hex>`
 
-Tools declare which secrets they need via `CapableTool.Capabilities()`. The SecureBus injects secrets into tool execution context at runtime — the LLM never sees them. Tool output is scanned for leaked patterns before it reaches the agent loop.
+Tools declare which secrets they need via `CapableTool.Capabilities()`. The SecureBus centrally supports `arg:` secret injection today, and it scans LLM-facing tool output for leaked patterns before results reach the agent loop. `env:` / `header:` injection modes remain tool-specific follow-up work.
 
 ## Daemon Mode
 
-For non-embedded deployments, the SecureBus can run in a separate privileged daemon process. The agent connects as an unprivileged client over a Unix domain socket.
+DragonScale can start a standalone SecureBus daemon over a Unix domain socket for operator workflows, but the main `agent` / `gateway` runtime still uses in-process SecureBus today. Treat daemon mode as an optional deployment surface; socket-client integration and ZKP auth remain follow-on work.
 
 ```bash
 dragonscale daemon start          # Start daemon (foreground, Ctrl+C to stop)
@@ -422,7 +422,7 @@ API key links: [OpenRouter](https://openrouter.ai/keys) · [Anthropic](https://c
 
 ## Memory System
 
-DragonScale implements a multi-tier memory system combining MemGPT-style tiered storage with observational memory compression:
+DragonScale implements a multi-tier memory system combining MemGPT-style storage with immutable history, DAG snapshots, semantic context selection, and active-context projection:
 
 | Tier | Purpose | Storage | Search |
 |------|---------|---------|--------|
@@ -430,11 +430,11 @@ DragonScale implements a multi-tier memory system combining MemGPT-style tiered 
 | **Recall Memory** | Session-scoped conversation items | Rows with metadata + timestamps | FTS5 + BM25 |
 | **Archival Memory** | Long-term knowledge, chunked + embedded | F32_BLOB embeddings + FTS5 index | Vector ANN + FTS5 fusion (RRF) |
 | **Observational Memory** | Compressed conversation history | Priority-tagged observations with 3-date model | Prefix-cacheable block |
-| **DAG Compression** | Hierarchical context summaries | Tree nodes with lossless pointers to originals | Budget-allocated traversal |
+| **DAG Snapshots** | Persistent hierarchical summaries + recovery | Snapshot/node/edge tables with lossless refs | Projection tier + DAG tools |
 
-The agent interacts with memory through a unified `memory` tool. Large tool results are automatically offloaded to archival memory. Retrieval uses Reciprocal Rank Fusion (RRF) to combine vector similarity and full-text relevance, with recency decay and metadata pre-filtering.
+The agent interacts with memory through a unified `memory` tool. Large tool results are automatically offloaded to archival memory. Retrieval uses Reciprocal Rank Fusion (RRF) to combine vector similarity and full-text relevance, with recency decay and metadata pre-filtering. Turn assembly now flows through `ActiveContextProjection`, which can combine recent immutable history, semantic ContextTree-selected recall, DAG projection segments, and RLM-reduced long-context slices before prompt rendering.
 
-Schema is managed by Goose with 10 versioned migrations.
+Schema is managed by Goose with 17 versioned migrations.
 
 ## CLI Reference
 
@@ -468,7 +468,7 @@ The SecureBus mediates all tool execution. Tools declare capabilities via the `C
 
 The pipeline: capability check → secret injection → tool execution → leak scanning → audit log.
 
-See [ADR-001](docs/adr/001-isolated-tool-runtime.md) for the full design including DAG executor convergence, RLM integration, and the FlatBuffers command protocol.
+See [ADR-001](docs/adr/001-isolated-tool-runtime.md) for the layered design, current rollout status, and the FlatBuffers command protocol.
 
 ## Development
 
@@ -494,7 +494,7 @@ go run ./cmd/opsctl help
 
 ### Devcontainer (flatc + sqlc ready)
 
-If your host is missing `flatc`/`sqlc`, use the project devcontainer.
+If your host is missing `flatc`/`sqlc`, use the project devcontainer. The devcontainer installs the pinned `flatc` compiler version used by CI.
 
 ```bash
 make devcontainer-build
@@ -526,6 +526,8 @@ Schema/codegen mapping:
 
 Generated files are committed. After schema changes, regenerate and commit updated generated output.
 
+CI and the devcontainer install `flatc` through `scripts/install-flatc.sh`, pinned to the same FlatBuffers version as `go.mod`. The pinned installer currently uses the upstream Linux amd64 FlatBuffers binary release, matching GitHub-hosted CI runners.
+
 ### sqlc
 
 Memory queries are generated by sqlc. After modifying SQL files:
@@ -549,6 +551,9 @@ A promptfoo-based evaluation harness lives in `eval/`:
 ```bash
 cd eval && go run ./cmd/eval-runner
 ```
+
+`make eval` auto-builds `eval/bin/eval-runner` when it is missing.
+`make eval-compare` builds the comparison binary for `main` in a temporary git worktree so the current checkout is never stashed or switched underneath the user.
 
 ### Syncing Upstream
 

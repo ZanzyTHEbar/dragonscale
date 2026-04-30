@@ -16,12 +16,16 @@ RUN apt-get update \
 		build-essential \
 		ca-certificates \
 		curl \
-		flatbuffers-compiler \
 		git \
 		jq \
 		make \
 		pkg-config \
+		unzip \
 	&& rm -rf /var/lib/apt/lists/*
+
+COPY scripts/install-flatc.sh /tmp/install-flatc.sh
+RUN bash /tmp/install-flatc.sh /usr/local/bin \
+	&& rm -f /tmp/install-flatc.sh
 
 COPY --from=go-tools /usr/local/go /usr/local/go
 COPY --from=go-tools /go/bin/sqlc /usr/local/bin/sqlc

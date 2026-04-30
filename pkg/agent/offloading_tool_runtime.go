@@ -16,23 +16,6 @@ import (
 
 const defaultToolMaxConcurrency = 4
 
-type ctxStepIndexKey struct{}
-
-func WithStepIndex(ctx context.Context, stepIndex int) context.Context {
-	return context.WithValue(ctx, ctxStepIndexKey{}, stepIndex)
-}
-
-func StepIndexFromCtx(ctx context.Context) int {
-	v := ctx.Value(ctxStepIndexKey{})
-	if v == nil {
-		return 0
-	}
-	if i, ok := v.(int); ok {
-		return i
-	}
-	return 0
-}
-
 // OffloadingToolRuntime wraps a base ToolRuntime and applies tool result
 // offloading policy:
 //   - Always offload full results to KV delegate.
@@ -52,23 +35,63 @@ type OffloadingToolRuntime struct {
 	ChunkChars     int
 }
 
-func (r OffloadingToolRuntime) Execute(ctx context.Context, tools []fantasy.AgentTool, toolCalls []fantasy.ToolCallContent, _ func(result fantasy.ToolResultContent) error) ([]fantasy.ToolResultContent, error) {
+type persistedToolResult struct {
+	ToolCall fantasy.ToolCallContent
+	Result   fantasy.ToolResultContent
+}
+
+func (r OffloadingToolRuntime) Execute(ctx context.Context, tools []fantasy.AgentTool, execProviderTools []fantasy.ExecutableProviderTool, toolCalls []fantasy.ToolCallContent, _ func(result fantasy.ToolResultContent) error) ([]fantasy.ToolResultContent, error) {
 	if len(toolCalls) == 0 {
 		return nil, nil
+	}
+	if err := r.validatePersistenceConfig(); err != nil {
+		return nil, err
 	}
 	if r.Base == nil {
 		r.Base = fantasy.DAGToolRuntime{MaxConcurrency: defaultToolMaxConcurrency}
 	}
-	if r.KV == nil {
-		return nil, dserrors.New(dserrors.CodeFailedPrecondition, "KV delegate is nil")
+
+	stepIndex := fantasy.StepIndexFromCtx(ctx)
+
+	results, err := r.Base.Execute(ctx, tools, execProviderTools, toolCalls, nil)
+	if err != nil {
+		return nil, err
 	}
-	if r.Queries == nil {
-		return nil, dserrors.New(dserrors.CodeFailedPrecondition, "db queries is nil")
-	}
-	if r.ConversationID.IsZero() || r.RunID.IsZero() {
-		return nil, dserrors.New(dserrors.CodeInvalidArgument, "conversation_id/run_id is required")
+	if len(results) != len(toolCalls) {
+		return nil, dserrors.New(dserrors.CodeFailedPrecondition, "tool runtime returned mismatched results length")
 	}
 
+	entries := make([]persistedToolResult, len(results))
+	for i := range results {
+		entries[i] = persistedToolResult{ToolCall: toolCalls[i], Result: results[i]}
+	}
+
+	results, err = r.persistResults(ctx, stepIndex, entries)
+	if err != nil {
+		return nil, err
+	}
+
+	return results, nil
+}
+
+func (r OffloadingToolRuntime) PersistResults(ctx context.Context, stepIndex int, toolCalls []fantasy.ToolCallContent, results []fantasy.ToolResultContent) ([]fantasy.ToolResultContent, error) {
+	if err := r.validatePersistenceConfig(); err != nil {
+		return nil, err
+	}
+	if len(toolCalls) != len(results) {
+		return nil, dserrors.New(dserrors.CodeInvalidArgument, "toolCalls/results length mismatch")
+	}
+	entries := make([]persistedToolResult, len(results))
+	for i := range results {
+		entries[i] = persistedToolResult{ToolCall: toolCalls[i], Result: results[i]}
+	}
+	return r.persistResults(ctx, stepIndex, entries)
+}
+
+func (r OffloadingToolRuntime) persistResults(ctx context.Context, stepIndex int, entries []persistedToolResult) ([]fantasy.ToolResultContent, error) {
+	if len(entries) == 0 {
+		return nil, nil
+	}
 	threshold := r.ThresholdChars
 	if threshold <= 0 {
 		threshold = 4_000
@@ -77,16 +100,10 @@ func (r OffloadingToolRuntime) Execute(ctx context.Context, tools []fantasy.Agen
 	if chunkChars <= 0 {
 		chunkChars = 2_000
 	}
-
-	stepIndex := StepIndexFromCtx(ctx)
-
-	results, err := r.Base.Execute(ctx, tools, toolCalls, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	for i := range results {
-		tc := toolCalls[i]
+	results := make([]fantasy.ToolResultContent, len(entries))
+	for i, entry := range entries {
+		results[i] = entry.Result
+		tc := entry.ToolCall
 		res := results[i]
 
 		fullKey := toolResultFullKey(r.ConversationID, r.RunID, stepIndex, tc.ToolCallID)
@@ -162,6 +179,19 @@ func (r OffloadingToolRuntime) Execute(ctx context.Context, tools []fantasy.Agen
 	}
 
 	return results, nil
+}
+
+func (r OffloadingToolRuntime) validatePersistenceConfig() error {
+	if r.KV == nil {
+		return dserrors.New(dserrors.CodeFailedPrecondition, "KV delegate is nil")
+	}
+	if r.Queries == nil {
+		return dserrors.New(dserrors.CodeFailedPrecondition, "db queries is nil")
+	}
+	if r.ConversationID.IsZero() || r.RunID.IsZero() {
+		return dserrors.New(dserrors.CodeInvalidArgument, "conversation_id/run_id is required")
+	}
+	return nil
 }
 
 func toolResultFullKey(conversationID, runID ids.UUID, stepIndex int, toolCallID string) string {
