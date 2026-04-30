@@ -293,6 +293,7 @@ func NewRegistry(_ string) []app.Task {
 		NewShellTask("update-deps", "Update dependencies", staticGoScript("get -u ./... && $GO mod tidy"), nil),
 		NewShellTask("sqlc-check", "Verify sqlc generation is idempotent", sqlcCheckScript, nil),
 		NewShellTask("flatc-check", "Verify flatc generation is idempotent", flatcCheckScript, nil),
+		NewShellTask("mockgen-check", "Verify mockgen generation is idempotent", mockgenCheckScript, nil),
 		NewShellTask("sqlc-vet", "Run sqlc vet rules", sqlcVetScript, nil),
 		NewShellTask("fantasy-check", "Compare vendored Fantasy SDK against upstream", simpleScript("./scripts/sync-fantasy.sh --check"), nil),
 		NewShellTask("fantasy-diff", "Show diff between vendored and upstream", fantasyDiffScript, nil),
@@ -620,6 +621,19 @@ func flatcCheckScript(*app.Context) string {
 		"if ! cmp -s \"$before\" \"$after\"; then echo \"::error::FlatBuffers generated code is stale. Run 'go generate ./pkg/itr ./pkg/tools' with the pinned flatc from scripts/install-flatc.sh and commit.\"; rm -f \"$before\" \"$after\"; exit 1; fi\nrm -f \"$before\" \"$after\"\n"
 }
 
+func mockgenCheckScript(*app.Context) string {
+	return scriptHeader() +
+		"repo=\"$PWD\"\n" +
+		"before=\"$(mktemp)\"\nafter=\"$(mktemp)\"\n" +
+		"trap 'rm -f \"$before\" \"$after\"' EXIT\n" +
+		"snapshot() { git -c safe.directory=\"$repo\" diff --binary -- ':(glob)**/mock_*_test.go'; git -c safe.directory=\"$repo\" ls-files --others --exclude-standard -- ':(glob)**/mock_*_test.go' | LC_ALL=C sort | while IFS= read -r f; do [ -f \"$f\" ] && sha256sum \"$f\"; done; };\n" +
+		"snapshot > \"$before\"\n" +
+		"$GO generate -run mockgen ./...\n" +
+		"(cd internal/fantasy && $GO generate -run mockgen ./...)\n" +
+		"snapshot > \"$after\"\n" +
+		"if ! cmp -s \"$before\" \"$after\"; then echo \"::error::mockgen generated mocks are stale. Run '$GO generate -run mockgen ./...' and '(cd internal/fantasy && $GO generate -run mockgen ./...)', then commit.\"; exit 1; fi\n"
+}
+
 func sqlcVetScript(*app.Context) string {
 	return "sqlc vet -f pkg/memory/sqlc/sqlc.yaml\n"
 }
@@ -711,7 +725,7 @@ func devcontainerGenerateSpecs(c *app.Context) []runner.CommandSpec {
 				"--yes", "@devcontainers/cli", "exec",
 				"--workspace-folder", root, "--",
 				"bash", "-lc",
-				fmt.Sprintf("%s generate ./pkg/itr ./pkg/tools && sqlc generate -f pkg/memory/sqlc/sqlc.yaml", goBinary),
+				fmt.Sprintf("%s generate ./pkg/itr ./pkg/tools && sqlc generate -f pkg/memory/sqlc/sqlc.yaml && %s generate -run mockgen ./... && (cd internal/fantasy && %s generate -run mockgen ./...)", goBinary, goBinary, goBinary),
 			},
 		},
 	}
@@ -725,7 +739,7 @@ func devcontainerVerifySpecs(c *app.Context) []runner.CommandSpec {
 			Args: []string{
 				"--yes", "@devcontainers/cli", "exec",
 				"--workspace-folder", root, "--",
-				"bash", "-lc", "make flatc-check sqlc-check",
+				"bash", "-lc", "make flatc-check sqlc-check mockgen-check",
 			},
 		},
 	}

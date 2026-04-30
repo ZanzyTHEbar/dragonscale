@@ -494,11 +494,11 @@ go run ./cmd/opsctl build
 go run ./cmd/opsctl help
 ```
 
-Docker-backed integration tests are opt-in and isolated from the default suite. `make test-containers` sets `DRAGONSCALE_RUN_CONTAINER_TESTS=1`, runs the memory integration packages, and starts a pinned Ollama container for an `/api/tags` readiness smoke test. Set `DRAGONSCALE_OLLAMA_CONTAINER_MODEL=nomic-embed-text` to also pull a model and exercise `/api/embed`; this can take several minutes on a cold Docker host. Override the image with `DRAGONSCALE_OLLAMA_CONTAINER_IMAGE` if needed.
+Docker-backed integration tests are opt-in, host-only, and isolated from the default suite. `make test-containers` requires host Docker access and a usable host Go toolchain; it sets `DRAGONSCALE_RUN_CONTAINER_TESTS=1`, runs the memory integration packages, and starts a pinned Ollama container for an `/api/tags` readiness smoke test. Set `DRAGONSCALE_OLLAMA_CONTAINER_MODEL=nomic-embed-text` to also pull a model and exercise `/api/embed`; this can take several minutes on a cold Docker host. Override the image with `DRAGONSCALE_OLLAMA_CONTAINER_IMAGE` if needed.
 
 ### Devcontainer (flatc + sqlc ready)
 
-If your host is missing `flatc`/`sqlc`, use the project devcontainer. The devcontainer installs the pinned `flatc` compiler version used by CI.
+If your host is missing `flatc`/`sqlc` or the pinned generator tooling, use the project devcontainer. The devcontainer installs the pinned `flatc` compiler version used by CI.
 
 ```bash
 make devcontainer-build
@@ -508,8 +508,8 @@ make devcontainer-verify
 ```
 
 These targets use `npx @devcontainers/cli`.
-- `devcontainer-generate`: runs generation inside the container (`go generate` for FlatBuffers + `sqlc generate`).
-- `devcontainer-verify`: verifies generators are idempotent for the current branch state (`make flatc-check sqlc-check`).
+- `devcontainer-generate`: runs generation inside the container (`go generate` for FlatBuffers/mockgen + `sqlc generate`).
+- `devcontainer-verify`: verifies generators are idempotent for the current branch state (`make flatc-check sqlc-check mockgen-check`).
 
 ### FlatBuffers
 
@@ -541,8 +541,20 @@ sqlc generate -f pkg/memory/sqlc/sqlc.yaml
 make sqlc-check
 ```
 
-CI enforces generated code consistency through `make flatc-check` and `make sqlc-check`.
-Both checks compare pre/post generation fingerprints (tracked diffs + untracked file hashes) on their target directories, so they work in active (dirty) worktrees while still failing when generated output is stale.
+### mockgen
+
+Test mocks are generated with `go.uber.org/mock/mockgen`. After changing interfaces used by generated mocks:
+
+```bash
+go generate -run mockgen ./...
+(cd internal/fantasy && go generate -run mockgen ./...)
+make mockgen-check
+```
+
+The nested `internal/fantasy` module must be generated separately because root `go generate ./...` does not traverse nested Go modules.
+
+CI enforces generated code consistency through `make flatc-check`, `make sqlc-check`, and `make mockgen-check`.
+These checks compare pre/post generation fingerprints (tracked diffs + untracked file hashes) on their target generated files/directories, so they work in active (dirty) worktrees while still failing when generated output is stale.
 
 ### Migrations
 

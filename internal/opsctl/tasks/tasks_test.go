@@ -54,6 +54,7 @@ func TestNewRegistryContainsCoreTasks(t *testing.T) {
 		"hooks",
 		"install",
 		"lint",
+		"mockgen-check",
 		"run",
 		"sqlc-check",
 		"sqlc-vet",
@@ -107,6 +108,29 @@ func TestFlatcCheckUsesSchemaLocalFlatcCommands(t *testing.T) {
 	require.Contains(t, script, "(cd pkg/tools && flatc --go -o . ./map_payloads.fbs)")
 	require.NotContains(t, script, "$GO generate ./pkg/itr ./pkg/tools")
 	require.Contains(t, script, "pkg/itr/itrfb/ pkg/tools/mapopsfb/")
+}
+
+func TestMockgenCheckUsesMockgenOnlyGeneration(t *testing.T) {
+	t.Parallel()
+
+	script := mockgenCheckScript(nil)
+	require.Contains(t, script, "$GO generate -run mockgen ./...")
+	require.Contains(t, script, "(cd internal/fantasy && $GO generate -run mockgen ./...)")
+	require.Contains(t, script, ":(glob)**/mock_*_test.go")
+	require.Contains(t, script, "trap 'rm -f")
+	require.NotContains(t, script, "$GO generate ./...")
+	require.NotContains(t, script, "flatc")
+	require.NotContains(t, script, "sqlc generate")
+}
+
+func TestDevcontainerVerifyTaskIncludesGeneratedCodeChecks(t *testing.T) {
+	t.Parallel()
+
+	specs := devcontainerVerifySpecs(&app.Context{Root: "/repo"})
+	require.Len(t, specs, 1)
+	joined := strings.Join(specs[0].Args, " ")
+
+	require.Contains(t, joined, "make flatc-check sqlc-check mockgen-check")
 }
 
 func TestFullEvalWorkflowUsesPromptfooThresholdGate(t *testing.T) {
@@ -553,6 +577,8 @@ func TestDevcontainerGenerateTaskUsesNpxExecCommand(t *testing.T) {
 	require.Contains(t, fake.Calls[0].Args, "exec")
 	require.Contains(t, fake.Calls[0].Args, "bash")
 	require.Contains(t, strings.Join(fake.Calls[0].Args, " "), "go generate ./pkg/itr ./pkg/tools")
+	require.Contains(t, strings.Join(fake.Calls[0].Args, " "), "go generate -run mockgen ./...")
+	require.Contains(t, strings.Join(fake.Calls[0].Args, " "), "cd internal/fantasy")
 }
 
 func TestEvalTaskBuildsPromptfooCommandWithDefaultConfig(t *testing.T) {
@@ -819,6 +845,16 @@ func TestTestContainersTaskOptsIntoContainerTests(t *testing.T) {
 	require.Contains(t, script, "-timeout 20m")
 	require.Contains(t, script, "./pkg/memory/...")
 	require.NotContains(t, script, "devcontainer exec")
+}
+
+func TestContainerTestScriptQuotesOllamaOptions(t *testing.T) {
+	script := containerTestScript(&app.Context{ExtraEnv: map[string]string{
+		"DRAGONSCALE_OLLAMA_CONTAINER_IMAGE": "registry.example/ollama:tag'quoted",
+		"DRAGONSCALE_OLLAMA_CONTAINER_MODEL": "nomic'embed",
+	}})
+
+	require.Contains(t, script, `export DRAGONSCALE_OLLAMA_CONTAINER_IMAGE='registry.example/ollama:tag'"'"'quoted'`)
+	require.Contains(t, script, `export DRAGONSCALE_OLLAMA_CONTAINER_MODEL='nomic'"'"'embed'`)
 }
 
 func projectCommandSpecs(specs []runner.CommandSpec) []runner.CommandSpec {

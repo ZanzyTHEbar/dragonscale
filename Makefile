@@ -1,5 +1,5 @@
 .PHONY: all build generate build-all install uninstall uninstall-all clean help \
-	test lint hooks fmt deps update-deps sqlc-check flatc-check sqlc-vet \
+	test lint hooks fmt deps update-deps sqlc-check flatc-check mockgen-check sqlc-vet \
 	fantasy-check fantasy-diff fantasy-sync fantasy-patch test-integration test-containers check run \
 	devcontainer-up devcontainer-build devcontainer-generate devcontainer-verify \
 	eval-build eval eval-fixtures eval-view eval-proof-full eval-clean eval-compare eval-test
@@ -162,6 +162,10 @@ sqlc-check: $(OPSCTL_BIN)
 ## flatc-check: Verify FlatBuffers generation is idempotent for current tree
 flatc-check: $(OPSCTL_BIN)
 	@$(OPSCTL) flatc-check
+
+## mockgen-check: Verify mockgen generation is idempotent for current tree
+mockgen-check: $(OPSCTL_BIN)
+	@$(OPSCTL) mockgen-check
 
 ## sqlc-vet: Run sqlc vet rules (no-unbounded-delete, one-select-requires-limit-1)
 sqlc-vet: $(OPSCTL_BIN)
