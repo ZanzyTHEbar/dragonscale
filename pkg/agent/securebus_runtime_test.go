@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -64,6 +65,29 @@ func (t *countingTool) Execute(_ context.Context, args map[string]interface{}) *
 		text = t.text
 	}
 	return &tools.ToolResult{ForLLM: text, IsError: t.err}
+}
+
+type secureBusPolicyTool struct {
+	calls atomic.Int32
+	name  string
+	text  string
+	caps  tools.ToolCapabilities
+}
+
+func (t *secureBusPolicyTool) Name() string        { return t.name }
+func (t *secureBusPolicyTool) Description() string { return t.name }
+func (t *secureBusPolicyTool) Parameters() map[string]interface{} {
+	return map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"path": map[string]interface{}{"type": "string"},
+		},
+	}
+}
+func (t *secureBusPolicyTool) Capabilities() tools.ToolCapabilities { return t.caps }
+func (t *secureBusPolicyTool) Execute(_ context.Context, _ map[string]interface{}) *tools.ToolResult {
+	t.calls.Add(1)
+	return &tools.ToolResult{ForLLM: t.text}
 }
 
 func makeSecureBusRuntimeFixture(t *testing.T, tool tools.Tool, policy securebus.PolicyConfig) (SecureBusToolRuntime, *sqlc.Queries, KVDelegate, ids.UUID) {
@@ -277,6 +301,7 @@ func TestSecureBusToolRuntime_ExecutesToolExactlyOnce(t *testing.T) {
 	results, err := runtime.Execute(
 		fantasy.WithStepIndex(t.Context(), 0),
 		nil,
+		nil,
 		[]fantasy.ToolCallContent{{ToolCallID: "call-1", ToolName: "echo", Input: `{"text":"hello"}`}},
 		nil,
 	)
@@ -294,6 +319,7 @@ func TestSecureBusToolRuntime_ExecutesEachToolCallOnce(t *testing.T) {
 
 	results, err := runtime.Execute(
 		fantasy.WithStepIndex(t.Context(), 0),
+		nil,
 		nil,
 		[]fantasy.ToolCallContent{
 			{ToolCallID: "call-1", ToolName: "echo", Input: `{"text":"one"}`},
@@ -318,6 +344,7 @@ func TestSecureBusToolRuntime_LeakRedactionIsPersisted(t *testing.T) {
 	results, err := runtime.Execute(
 		fantasy.WithStepIndex(t.Context(), 0),
 		nil,
+		nil,
 		[]fantasy.ToolCallContent{{ToolCallID: "call-1", ToolName: "echo", Input: `{"text":"ignored"}`}},
 		nil,
 	)
@@ -338,6 +365,89 @@ func TestSecureBusToolRuntime_LeakRedactionIsPersisted(t *testing.T) {
 	persisted, err := kv.Get(t.Context(), rows[0].FullKey)
 	require.NoError(t, err)
 	assert.NotContains(t, string(persisted), secret)
+
+	row := waitForSecureBusAuditEvent(t, q, runtime.SessionKey, "securebus_tool_exec_leak", "call-1")
+	assert.True(t, row.Success)
+	assert.NotContains(t, row.ErrorMsg, secret)
+	assert.Contains(t, row.ErrorMsg, "[REDACTED:AWS_ACCESS_KEY]")
+	require.NotNil(t, row.Output)
+	assert.NotContains(t, *row.Output, secret)
+
+	var payload securebus.AuditEvent
+	require.NoError(t, json.Unmarshal([]byte(*row.Output), &payload))
+	assert.True(t, payload.LeakDetected)
+	assert.False(t, payload.IsError)
+	assert.NotContains(t, payload.ExecutionError, secret)
+	assert.Contains(t, payload.ExecutionError, "[REDACTED:AWS_ACCESS_KEY]")
+}
+
+func TestSecureBusToolRuntime_EnforcesFilesystemPolicyAndPersistsAuditEvents(t *testing.T) {
+	t.Parallel()
+
+	workspace := t.TempDir()
+	policy := securebus.DefaultPolicyConfig()
+	policy.AllowedWorkspace = workspace
+	tool := &secureBusPolicyTool{
+		name: "read_file",
+		text: "workspace file contents",
+		caps: tools.ToolCapabilities{Filesystem: []tools.PathRule{{
+			Pattern: "**",
+			Mode:    "r",
+		}}},
+	}
+	runtime, q, _, _ := makeSecureBusRuntimeFixture(t, tool, policy)
+
+	allowedInput, err := json.Marshal(map[string]string{"path": "docs/readme.md"})
+	require.NoError(t, err)
+	allowedResults, err := runtime.Execute(
+		fantasy.WithStepIndex(t.Context(), 0),
+		nil,
+		nil,
+		[]fantasy.ToolCallContent{{ToolCallID: "call-allow", ToolName: "read_file", Input: string(allowedInput)}},
+		nil,
+	)
+	require.NoError(t, err)
+	require.Len(t, allowedResults, 1)
+	allowedText, ok := allowedResults[0].Result.(fantasy.ToolResultOutputContentText)
+	require.True(t, ok)
+	assert.Equal(t, "workspace file contents", allowedText.Text)
+	assert.Equal(t, int32(1), tool.calls.Load())
+
+	allowedAudit := waitForSecureBusAuditEvent(t, q, runtime.SessionKey, "securebus_tool_exec", "call-allow")
+	assert.True(t, allowedAudit.Success)
+	require.NotNil(t, allowedAudit.Output)
+	var allowedPayload securebus.AuditEvent
+	require.NoError(t, json.Unmarshal([]byte(*allowedAudit.Output), &allowedPayload))
+	assert.False(t, allowedPayload.IsError)
+	assert.Empty(t, allowedPayload.PolicyViolation)
+	assert.Equal(t, "read_file", allowedPayload.ToolName)
+
+	outsidePath := filepath.Join(t.TempDir(), "secret.txt")
+	deniedInput, err := json.Marshal(map[string]string{"path": outsidePath})
+	require.NoError(t, err)
+	deniedResults, err := runtime.Execute(
+		fantasy.WithStepIndex(t.Context(), 1),
+		nil,
+		nil,
+		[]fantasy.ToolCallContent{{ToolCallID: "call-deny", ToolName: "read_file", Input: string(deniedInput)}},
+		nil,
+	)
+	require.NoError(t, err)
+	require.Len(t, deniedResults, 1)
+	deniedError, ok := deniedResults[0].Result.(fantasy.ToolResultOutputContentError)
+	require.True(t, ok)
+	assert.Equal(t, "policy violation: filesystem access denied", deniedError.Error.Error())
+	assert.Equal(t, int32(1), tool.calls.Load(), "policy deny must happen before tool execution")
+
+	deniedAudit := waitForSecureBusAuditEvent(t, q, runtime.SessionKey, "securebus_tool_exec_policy_violation", "call-deny")
+	assert.False(t, deniedAudit.Success)
+	assert.Contains(t, deniedAudit.ErrorMsg, "filesystem access denied")
+	require.NotNil(t, deniedAudit.Output)
+	var deniedPayload securebus.AuditEvent
+	require.NoError(t, json.Unmarshal([]byte(*deniedAudit.Output), &deniedPayload))
+	assert.True(t, deniedPayload.IsError)
+	assert.Contains(t, deniedPayload.PolicyViolation, "filesystem access denied")
+	assert.Equal(t, "read_file", deniedPayload.ToolName)
 }
 
 func TestSecureBusToolRuntime_PersistsToolExecutionErrorResult(t *testing.T) {
@@ -348,6 +458,7 @@ func TestSecureBusToolRuntime_PersistsToolExecutionErrorResult(t *testing.T) {
 
 	results, err := runtime.Execute(
 		fantasy.WithStepIndex(t.Context(), 2),
+		nil,
 		nil,
 		[]fantasy.ToolCallContent{{ToolCallID: "call-1", ToolName: "echo", Input: `{"text":"hello"}`}},
 		nil,
@@ -381,6 +492,7 @@ func TestSecureBusToolRuntime_PersistsInvalidArgsErrorResult(t *testing.T) {
 	results, err := runtime.Execute(
 		fantasy.WithStepIndex(t.Context(), 0),
 		nil,
+		nil,
 		[]fantasy.ToolCallContent{{ToolCallID: "call-1", ToolName: "echo", Input: `{"text":`}},
 		nil,
 	)
@@ -404,6 +516,30 @@ func TestSecureBusToolRuntime_PersistsInvalidArgsErrorResult(t *testing.T) {
 	assert.Contains(t, string(persisted), "policy violation")
 }
 
+func TestSecureBusToolRuntime_RejectsExecutableProviderTools(t *testing.T) {
+	t.Parallel()
+
+	tool := &countingTool{}
+	runtime, _, _, _ := makeSecureBusRuntimeFixture(t, tool, securebus.DefaultPolicyConfig())
+	providerTool := fantasy.NewExecutableProviderTool(
+		fantasy.ProviderDefinedTool{ID: "provider.local", Name: "provider_local"},
+		func(_ context.Context, _ fantasy.ToolCall) (fantasy.ToolResponse, error) {
+			return fantasy.NewTextResponse("should not run"), nil
+		},
+	)
+
+	_, err := runtime.Execute(
+		fantasy.WithStepIndex(t.Context(), 0),
+		nil,
+		[]fantasy.ExecutableProviderTool{providerTool},
+		[]fantasy.ToolCallContent{{ToolCallID: "provider-call", ToolName: "provider_local", Input: `{}`}},
+		nil,
+	)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "does not execute provider-defined tool")
+	assert.Equal(t, int32(0), tool.calls.Load())
+}
+
 func TestSecureBusToolRuntime_PersistsBusNativeAuditEvent(t *testing.T) {
 	t.Parallel()
 
@@ -412,6 +548,7 @@ func TestSecureBusToolRuntime_PersistsBusNativeAuditEvent(t *testing.T) {
 
 	_, err := runtime.Execute(
 		fantasy.WithStepIndex(t.Context(), 0),
+		nil,
 		nil,
 		[]fantasy.ToolCallContent{{ToolCallID: "call-1", ToolName: "echo", Input: `{"text":"hello"}`}},
 		nil,
@@ -464,6 +601,7 @@ func TestSecureBusToolRuntime_PersistsBusNativeToolErrorAuditEvent(t *testing.T)
 	_, err := runtime.Execute(
 		fantasy.WithStepIndex(t.Context(), 0),
 		nil,
+		nil,
 		[]fantasy.ToolCallContent{{ToolCallID: "call-error", ToolName: "echo", Input: `{"text":"hello"}`}},
 		nil,
 	)
@@ -490,6 +628,7 @@ func TestSecureBusToolRuntime_PersistsBusNativeLeakAuditEvent(t *testing.T) {
 
 	_, err := runtime.Execute(
 		fantasy.WithStepIndex(t.Context(), 0),
+		nil,
 		nil,
 		[]fantasy.ToolCallContent{{ToolCallID: "call-leak", ToolName: "echo", Input: `{"text":"hello"}`}},
 		nil,

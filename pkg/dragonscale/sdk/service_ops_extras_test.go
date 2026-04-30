@@ -1,6 +1,7 @@
 package sdk
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -8,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -37,6 +39,14 @@ func (t *daemonStaticTool) Execute(_ context.Context, _ map[string]any) *tools.T
 type daemonCountingTool struct {
 	text string
 	err  bool
+}
+
+func TestDaemonShutdownSignalsIncludeStopSignal(t *testing.T) {
+	t.Parallel()
+
+	signals := daemonShutdownSignals()
+	require.Contains(t, signals, os.Interrupt)
+	require.Contains(t, signals, syscall.SIGTERM)
 }
 
 func (t *daemonCountingTool) Name() string        { return "echo" }
@@ -367,4 +377,74 @@ func TestServiceDaemonStart_PersistsSocketAuditRow(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("daemon did not stop after context cancellation")
 	}
+}
+
+func TestServiceDaemonStart_ShutsDownAndCleansRuntimeFiles(t *testing.T) {
+	tmpDir := t.TempDir()
+	homeDir := filepath.Join(tmpDir, "home")
+	xdgConfig := filepath.Join(tmpDir, "xdg-config")
+	xdgData := filepath.Join(tmpDir, "xdg-data")
+	require.NoError(t, os.MkdirAll(homeDir, 0o700))
+	require.NoError(t, os.MkdirAll(xdgConfig, 0o700))
+	require.NoError(t, os.MkdirAll(xdgData, 0o700))
+	t.Setenv("HOME", homeDir)
+	t.Setenv("XDG_CONFIG_HOME", xdgConfig)
+	t.Setenv("XDG_DATA_HOME", xdgData)
+
+	cfgPath, err := config.DefaultConfigPath()
+	require.NoError(t, err)
+	cfg := config.DefaultConfig()
+	cfg.Memory.DBPath = filepath.Join(tmpDir, "daemon-lifecycle.db")
+	require.NoError(t, config.SaveConfig(cfgPath, cfg))
+
+	svc := NewService()
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	started := make(chan struct{})
+	errCh := make(chan error, 1)
+	go func() {
+		close(started)
+		errCh <- svc.DaemonStart(ctx, io.Discard)
+	}()
+	<-started
+
+	socketPath := svc.DaemonSocketPath()
+	pidPath := svc.DaemonPIDPath()
+	require.Eventually(t, func() bool {
+		select {
+		case err := <-errCh:
+			require.NoError(t, err)
+			return false
+		default:
+		}
+
+		if _, err := os.Stat(socketPath); err != nil {
+			return false
+		}
+		if _, err := os.Stat(pidPath); err != nil {
+			return false
+		}
+		return true
+	}, 5*time.Second, 50*time.Millisecond)
+
+	pidData, err := os.ReadFile(pidPath)
+	require.NoError(t, err)
+	pidText := strings.TrimSpace(string(pidData))
+	require.Equal(t, fmt.Sprintf("%d", os.Getpid()), pidText)
+
+	var statusOut bytes.Buffer
+	require.NoError(t, svc.DaemonStatus(t.Context(), &statusOut))
+	require.Contains(t, statusOut.String(), "Daemon running with PID "+pidText)
+
+	cancel()
+	select {
+	case err := <-errCh:
+		require.NoError(t, err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("daemon did not stop after context cancellation")
+	}
+
+	require.NoFileExists(t, pidPath)
+	require.NoFileExists(t, socketPath)
 }

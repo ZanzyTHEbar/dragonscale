@@ -43,6 +43,10 @@ func newDaemonSecureBusAuditSink(writer daemonAuditWriter) securebus.AuditSink {
 	return &daemonSecureBusAuditSink{writer: writer}
 }
 
+func daemonShutdownSignals() []os.Signal {
+	return []os.Signal{os.Interrupt, syscall.SIGTERM}
+}
+
 func (s *daemonSecureBusAuditSink) Write(event securebus.AuditEvent) error {
 	if s == nil || s.writer == nil {
 		return nil
@@ -518,7 +522,7 @@ func (s *Service) DaemonStart(ctx context.Context, out io.Writer) error {
 	toolRegistry := tools.NewToolRegistry()
 	registerDefaultTools(s, toolRegistry, cfg)
 
-	daemonCtx, cancel := signal.NotifyContext(baseCtx, os.Interrupt)
+	daemonCtx, cancel := signal.NotifyContext(baseCtx, daemonShutdownSignals()...)
 	ctx = daemonCtx
 	defer cancel()
 
@@ -534,7 +538,11 @@ func (s *Service) DaemonStart(ctx context.Context, out io.Writer) error {
 	}
 
 	auditSink := newDaemonSecureBusAuditSink(auditDelegate)
-	bus := securebus.New(securebus.DefaultBusConfig(), busStore, capabilityLookup, executeTool, auditSink)
+	busCfg := securebus.DefaultBusConfig()
+	if cfg.RestrictToSandbox() {
+		busCfg.Policy.AllowedWorkspace = cfg.SandboxPath()
+	}
+	bus := securebus.New(busCfg, busStore, capabilityLookup, executeTool, auditSink)
 	defer bus.Close()
 
 	srvErr := make(chan error, 1)

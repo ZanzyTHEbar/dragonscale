@@ -42,7 +42,7 @@ func setupSearchFixture(t *testing.T) (fantasy.AgentTool, agent.KVDelegate, stri
 		{ToolCallID: "c2", ToolName: "beta"},
 		{ToolCallID: "c3", ToolName: "alpha"},
 	}
-	_, err = r.Execute(t.Context(), nil, calls, nil)
+	_, err = r.Execute(t.Context(), nil, nil, calls, nil)
 	require.NoError(t, err)
 
 	tool := agent.NewToolResultSearchTool(q, kv)
@@ -204,7 +204,7 @@ func TestToolResultSearch_LineView(t *testing.T) {
 		RunID:          run.ID,
 		ThresholdChars: 100000,
 	}
-	_, err = r.Execute(t.Context(), nil, []fantasy.ToolCallContent{{ToolCallID: "lv1", ToolName: "liner"}}, nil)
+	_, err = r.Execute(t.Context(), nil, nil, []fantasy.ToolCallContent{{ToolCallID: "lv1", ToolName: "liner"}}, nil)
 	require.NoError(t, err)
 
 	tool := agent.NewToolResultSearchTool(q, kv)
@@ -263,7 +263,7 @@ func TestToolResultSearch_ChunkView(t *testing.T) {
 		ThresholdChars: 10,
 		ChunkChars:     20,
 	}
-	_, err = r.Execute(t.Context(), nil, []fantasy.ToolCallContent{{ToolCallID: "cv1", ToolName: "chunker"}}, nil)
+	_, err = r.Execute(t.Context(), nil, nil, []fantasy.ToolCallContent{{ToolCallID: "cv1", ToolName: "chunker"}}, nil)
 	require.NoError(t, err)
 
 	tool := agent.NewToolResultSearchTool(q, kv)

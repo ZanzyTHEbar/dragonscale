@@ -40,7 +40,7 @@ type persistedToolResult struct {
 	Result   fantasy.ToolResultContent
 }
 
-func (r OffloadingToolRuntime) Execute(ctx context.Context, tools []fantasy.AgentTool, toolCalls []fantasy.ToolCallContent, _ func(result fantasy.ToolResultContent) error) ([]fantasy.ToolResultContent, error) {
+func (r OffloadingToolRuntime) Execute(ctx context.Context, tools []fantasy.AgentTool, execProviderTools []fantasy.ExecutableProviderTool, toolCalls []fantasy.ToolCallContent, _ func(result fantasy.ToolResultContent) error) ([]fantasy.ToolResultContent, error) {
 	if len(toolCalls) == 0 {
 		return nil, nil
 	}
@@ -53,7 +53,7 @@ func (r OffloadingToolRuntime) Execute(ctx context.Context, tools []fantasy.Agen
 
 	stepIndex := fantasy.StepIndexFromCtx(ctx)
 
-	results, err := r.Base.Execute(ctx, tools, toolCalls, nil)
+	results, err := r.Base.Execute(ctx, tools, execProviderTools, toolCalls, nil)
 	if err != nil {
 		return nil, err
 	}

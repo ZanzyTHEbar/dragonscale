@@ -585,6 +585,9 @@ func (al *AgentLoop) SetSecureBus(b *securebus.Bus) {
 // (policy, leak scanning, audit) remains active.
 // The returned Bus must be closed on shutdown.
 func (al *AgentLoop) SetupSecureBus(ss *security.SecretStore, cfg securebus.BusConfig) *securebus.Bus {
+	if cfg.Policy.AllowedWorkspace == "" && al.cfg != nil && al.cfg.RestrictToSandbox() {
+		cfg.Policy.AllowedWorkspace = al.cfg.SandboxPath()
+	}
 	capLookup := func(name string) (tools.ToolCapabilities, bool) {
 		t, ok := al.tools.Get(name)
 		if !ok {

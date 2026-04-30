@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -56,6 +57,7 @@ type SecureBusToolRuntime struct {
 func (r SecureBusToolRuntime) Execute(
 	ctx context.Context,
 	_ []fantasy.AgentTool,
+	execProviderTools []fantasy.ExecutableProviderTool,
 	toolCalls []fantasy.ToolCallContent,
 	onResult func(fantasy.ToolResultContent) error,
 ) ([]fantasy.ToolResultContent, error) {
@@ -71,6 +73,10 @@ func (r SecureBusToolRuntime) Execute(
 
 	results := make([]fantasy.ToolResultContent, 0, len(toolCalls))
 	stepIndex := fantasy.StepIndexFromCtx(ctx)
+	execProviderToolMap := make(map[string]fantasy.ExecutableProviderTool, len(execProviderTools))
+	for _, tool := range execProviderTools {
+		execProviderToolMap[tool.GetName()] = tool
+	}
 
 	var finalState *runtimeStepState
 	defer func() {
@@ -110,6 +116,9 @@ func (r SecureBusToolRuntime) Execute(
 				}
 			}
 			continue
+		}
+		if _, ok := execProviderToolMap[tc.ToolName]; ok {
+			return results, fmt.Errorf("secure bus runtime does not execute provider-defined tool %q", tc.ToolName)
 		}
 
 		reqID := ids.New().String()
@@ -280,13 +289,17 @@ func repairToolCallInput(tc fantasy.ToolCallContent, userPrompt string) fantasy.
 }
 
 func executeFantasyTool(ctx context.Context, tool fantasy.AgentTool, toolCall fantasy.ToolCallContent) (fantasy.ToolResultContent, error) {
+	return executeFantasyRun(ctx, tool.Run, toolCall)
+}
+
+func executeFantasyRun(ctx context.Context, run func(context.Context, fantasy.ToolCall) (fantasy.ToolResponse, error), toolCall fantasy.ToolCallContent) (fantasy.ToolResultContent, error) {
 	result := fantasy.ToolResultContent{
 		ToolCallID:       toolCall.ToolCallID,
 		ToolName:         toolCall.ToolName,
 		ProviderExecuted: false,
 	}
 
-	response, err := tool.Run(ctx, fantasy.ToolCall{
+	response, err := run(ctx, fantasy.ToolCall{
 		ID:    toolCall.ToolCallID,
 		Name:  toolCall.ToolName,
 		Input: toolCall.Input,
@@ -296,6 +309,7 @@ func executeFantasyTool(ctx context.Context, tool fantasy.AgentTool, toolCall fa
 	}
 
 	result.ClientMetadata = response.Metadata
+	result.StopTurn = response.StopTurn
 	if response.IsError {
 		result.Result = fantasy.ToolResultOutputContentError{Error: errors.New(response.Content)}
 		return result, nil
@@ -304,7 +318,7 @@ func executeFantasyTool(ctx context.Context, tool fantasy.AgentTool, toolCall fa
 	switch response.Type {
 	case "image", "media":
 		result.Result = fantasy.ToolResultOutputContentMedia{
-			Data:      string(response.Data),
+			Data:      base64.StdEncoding.EncodeToString(response.Data),
 			MediaType: response.MediaType,
 			Text:      response.Content,
 		}
