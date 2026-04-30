@@ -372,6 +372,11 @@ func TestEvalRunSpecsPreservesEvalConfig(t *testing.T) {
 	require.Contains(t, content, "PROMPTFOO_ARGS=\"${DRAGONSCALE_PROMPTFOO_ARGS:---no-cache --no-progress-bar -j 1}\"")
 	require.Contains(t, content, "git -C \"$PROJECT_ROOT\" worktree add --force --detach")
 	require.Contains(t, content, "TEMP_CONFIG")
+
+	promptfooConfig := readRepoFile(t, "eval/promptfooconfig.yaml")
+	require.NotContains(t, promptfooConfig, "DRAGONSCALE_EVAL_CONFIG:")
+	reverifyConfig := readRepoFile(t, "eval/reverify-two-cases.yaml")
+	require.NotContains(t, reverifyConfig, "DRAGONSCALE_EVAL_CONFIG:")
 }
 
 func TestEvalRunSpecsUsesBaseConfigWhenSetAndDebugEnabled(t *testing.T) {

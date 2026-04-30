@@ -185,7 +185,7 @@ The comparison flow uses a temporary git worktree for `main`, so the active chec
 
 ## Environment Variables
 
-- `DRAGONSCALE_EVAL_CONFIG` - Optional overlay config path applied on top of user base config.
+- `DRAGONSCALE_EVAL_CONFIG` - Optional overlay config path applied on top of user base config, for example `DRAGONSCALE_EVAL_CONFIG=./configs/custom.json make eval`.
 - `DRAGONSCALE_EVAL_BASE_CONFIG` - Optional explicit base config path for eval runs.
 - `DRAGONSCALE_EVAL_HOST_HOME` - Optional path to a host-style home directory used for host-mounted config discovery (commonly `/host_home` when set by devcontainer via `.devcontainer/devcontainer.json`).
 - Base config discovery order: `DRAGONSCALE_EVAL_BASE_CONFIG` (if set and valid), then `{DRAGONSCALE_EVAL_HOST_HOME}/.config/dragonscale/config.json` (if host home is set), then XDG at `~/.config/dragonscale/config.json`.
@@ -194,4 +194,6 @@ The comparison flow uses a temporary git worktree for `main`, so the active chec
   - Convenience aliases: `OPENROUTER_API_KEY`, `OPENAI_API_KEY`
   - Optional model/provider overrides: `DRAGONSCALE_AGENTS_DEFAULTS_PROVIDER`, `DRAGONSCALE_AGENTS_DEFAULTS_MODEL`
 - When no provider-backed base config is found, eval defaults to OpenRouter first (`openai/gpt-4o-mini`) when an OpenRouter key is present, then OpenAI (`gpt-4o-mini`) when an OpenAI key is present.
+- `promptfooconfig.yaml` intentionally does not set provider-level `DRAGONSCALE_EVAL_CONFIG`; opsctl supplies the default/override so promptfoo does not overwrite caller-provided config before launching `eval-runner`.
+- For direct promptfoo runs that bypass `make eval`/opsctl, set the overlay explicitly, for example `cd eval && DRAGONSCALE_EVAL_CONFIG=./configs/default.json npx promptfoo eval -c reverify-two-cases.yaml`.
 - Do not commit provider config files containing API keys. CI should continue to use the `DRAGONSCALE_EVAL_BASE_CONFIG` secret-materialization workflow.

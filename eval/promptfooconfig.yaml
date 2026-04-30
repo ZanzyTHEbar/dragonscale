@@ -11,8 +11,6 @@ providers:
     label: "dragonscale"
     config:
       timeout: 180000
-    env:
-      DRAGONSCALE_EVAL_CONFIG: "./configs/default.json"
 
 # Default assertions applied to every test case
 defaultTest:
