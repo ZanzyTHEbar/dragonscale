@@ -22,11 +22,12 @@ const (
 )
 
 type shellTask struct {
-	name        string
-	description string
-	script      func(*app.Context) string
-	env         func(*app.Context) []string
-	prepare     func(*app.Context) error
+	name                 string
+	description          string
+	script               func(*app.Context) string
+	env                  func(*app.Context) []string
+	prepare              func(*app.Context) error
+	skipDevcontainerWrap bool
 }
 
 func (t shellTask) Name() string {
@@ -50,7 +51,10 @@ func (t shellTask) Run(ctx context.Context, rnr runner.Runner, c *app.Context) (
 	}
 
 	script := t.script(c)
-	fullScript := applyDevcontainerWrapper(script, c)
+	fullScript := script
+	if !t.skipDevcontainerWrap {
+		fullScript = applyDevcontainerWrapper(script, c)
+	}
 	workDir := c.Root
 	if c.Cwd != "" {
 		workDir = c.Cwd
@@ -258,6 +262,10 @@ func NewShellTask(name, description string, script func(*app.Context) string, en
 	return shellTask{name: name, description: description, script: script, env: env}
 }
 
+func NewHostShellTask(name, description string, script func(*app.Context) string, env func(*app.Context) []string) shellTask {
+	return shellTask{name: name, description: description, script: script, env: env, skipDevcontainerWrap: true}
+}
+
 func NewCommandTask(name, description string, specs func(*app.Context) []runner.CommandSpec, env func(*app.Context) []string, prepare func(*app.Context) error) commandTask {
 	return commandTask{name: name, description: description, specs: specs, env: env, prepare: prepare}
 }
@@ -291,7 +299,7 @@ func NewRegistry(_ string) []app.Task {
 		NewShellTask("fantasy-sync", "Full sync of vendored Fantasy SDK", fantasySyncScript, nil),
 		NewShellTask("fantasy-patch", "Save local modifications as a patch", fantasyPatchScript, nil),
 		NewShellTask("test-integration", "Run integration tests", staticGoScript("test -tags integration -count=1 -timeout 120s -v ./pkg/memory/..."), nil),
-		NewShellTask("test-containers", "Run memory integration tests plus Docker-backed smoke tests", containerTestScript, nil),
+		NewHostShellTask("test-containers", "Run memory integration tests plus Docker-backed smoke tests", containerTestScript, nil),
 		NewCommandTask("check", "Run deps, formatting, linting and tests", checkSpecs, nil, nil),
 		NewShellTask("run", "Build and run dragonscale", runScript, runTaskEnv),
 		NewCommandTask("devcontainer-build", "Build the local devcontainer image via npx", devcontainerBuildSpecs, nil, nil),
@@ -461,8 +469,17 @@ func staticGoScript(rest string) func(*app.Context) string {
 	}
 }
 
-func containerTestScript(*app.Context) string {
-	return scriptHeader() + "DRAGONSCALE_RUN_CONTAINER_TESTS=1 $GO test -tags 'integration containers' -count=1 -timeout 20m -v ./pkg/memory/...\n"
+func containerTestScript(c *app.Context) string {
+	var script strings.Builder
+	script.WriteString(scriptHeader())
+	if image := cEnv(c, "DRAGONSCALE_OLLAMA_CONTAINER_IMAGE", ""); image != "" {
+		fmt.Fprintf(&script, "export DRAGONSCALE_OLLAMA_CONTAINER_IMAGE=%s\n", shellSingleQuote(image))
+	}
+	if model := cEnv(c, "DRAGONSCALE_OLLAMA_CONTAINER_MODEL", ""); model != "" {
+		fmt.Fprintf(&script, "export DRAGONSCALE_OLLAMA_CONTAINER_MODEL=%s\n", shellSingleQuote(model))
+	}
+	script.WriteString("DRAGONSCALE_RUN_CONTAINER_TESTS=1 $GO test -tags 'integration containers' -count=1 -timeout 20m -v ./pkg/memory/...\n")
+	return script.String()
 }
 
 func generateScript(c *app.Context) string {

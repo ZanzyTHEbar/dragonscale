@@ -798,7 +798,14 @@ func TestGenerateTaskIncludesNestedFantasyMocks(t *testing.T) {
 }
 
 func TestTestContainersTaskOptsIntoContainerTests(t *testing.T) {
-	ctx := &app.Context{Root: t.TempDir()}
+	ctx := &app.Context{
+		Root: t.TempDir(),
+		ExtraEnv: map[string]string{
+			"DEVCONTAINER_EXEC":                  "echo devcontainer exec",
+			"DRAGONSCALE_OLLAMA_CONTAINER_IMAGE": "ollama/ollama:0.12.6",
+			"DRAGONSCALE_OLLAMA_CONTAINER_MODEL": "nomic-embed-text",
+		},
+	}
 	fake := &runner.FakeRunner{Result: runner.CommandResult{ExitCode: 0}}
 	task := findTaskByName(t, NewRegistry(ctx.Root), "test-containers")
 
@@ -806,9 +813,12 @@ func TestTestContainersTaskOptsIntoContainerTests(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, fake.Calls, 1)
 	script := strings.Join(fake.Calls[0].Args, " ")
+	require.Contains(t, script, "export DRAGONSCALE_OLLAMA_CONTAINER_IMAGE='ollama/ollama:0.12.6'")
+	require.Contains(t, script, "export DRAGONSCALE_OLLAMA_CONTAINER_MODEL='nomic-embed-text'")
 	require.Contains(t, script, "DRAGONSCALE_RUN_CONTAINER_TESTS=1 $GO test -tags 'integration containers'")
 	require.Contains(t, script, "-timeout 20m")
 	require.Contains(t, script, "./pkg/memory/...")
+	require.NotContains(t, script, "devcontainer exec")
 }
 
 func projectCommandSpecs(specs []runner.CommandSpec) []runner.CommandSpec {
