@@ -45,7 +45,9 @@ func TestOllamaContainerReadiness(t *testing.T) {
 	t.Cleanup(func() {
 		terminateCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
-		require.NoError(t, container.Terminate(terminateCtx))
+		if err := container.Terminate(terminateCtx); err != nil {
+			t.Logf("terminate Ollama container: %v", err)
+		}
 	})
 
 	baseURL, err := container.Endpoint(ctx, "http")
