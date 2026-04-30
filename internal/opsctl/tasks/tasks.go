@@ -301,6 +301,7 @@ func NewRegistry(_ string) []app.Task {
 		NewCommandTask("eval", "Run the eval suite", evalRunSpecs, nil, nil),
 		NewCommandTask("eval-fixtures", "Prepare eval fixture workspace", evalFixturesSpecs, nil, nil),
 		NewCommandTask("eval-view", "Open the promptfoo results viewer", evalViewSpecs, nil, nil),
+		NewShellTask("eval-proof-full", "Run local full eval proof with threshold and artifacts", evalProofFullScript, nil),
 		NewShellTask("eval-clean", "Cleanup eval artifacts", evalCleanScript, nil),
 		NewShellTask("eval-compare", "Run A/B comparison of current branch vs main", evalCompareScript, nil),
 		NewShellTask("eval-test", "Run Go-native component evals", evalTestScript, nil),
@@ -333,6 +334,15 @@ func defaultEnv(c *app.Context) []string {
 	appendIfSet("DRAGONSCALE_EVAL_CONFIG", cEnv(c, "DRAGONSCALE_EVAL_CONFIG", ""))
 	appendIfSet("DRAGONSCALE_EVAL_DEBUG", cEnv(c, "DRAGONSCALE_EVAL_DEBUG", ""))
 	appendIfSet("DRAGONSCALE_PROMPTFOO_ARGS", cEnv(c, "DRAGONSCALE_PROMPTFOO_ARGS", ""))
+	appendIfSet("PROMPTFOO_PASS_RATE_THRESHOLD", cEnv(c, "PROMPTFOO_PASS_RATE_THRESHOLD", ""))
+	appendIfSet("OPENROUTER_API_KEY", cEnv(c, "OPENROUTER_API_KEY", ""))
+	appendIfSet("OPENAI_API_KEY", cEnv(c, "OPENAI_API_KEY", ""))
+	appendIfSet("DRAGONSCALE_PROVIDERS_OPENROUTER_API_KEY", cEnv(c, "DRAGONSCALE_PROVIDERS_OPENROUTER_API_KEY", ""))
+	appendIfSet("DRAGONSCALE_PROVIDERS_OPENROUTER_API_BASE", cEnv(c, "DRAGONSCALE_PROVIDERS_OPENROUTER_API_BASE", ""))
+	appendIfSet("DRAGONSCALE_PROVIDERS_OPENAI_API_KEY", cEnv(c, "DRAGONSCALE_PROVIDERS_OPENAI_API_KEY", ""))
+	appendIfSet("DRAGONSCALE_PROVIDERS_OPENAI_API_BASE", cEnv(c, "DRAGONSCALE_PROVIDERS_OPENAI_API_BASE", ""))
+	appendIfSet("DRAGONSCALE_AGENTS_DEFAULTS_PROVIDER", cEnv(c, "DRAGONSCALE_AGENTS_DEFAULTS_PROVIDER", ""))
+	appendIfSet("DRAGONSCALE_AGENTS_DEFAULTS_MODEL", cEnv(c, "DRAGONSCALE_AGENTS_DEFAULTS_MODEL", ""))
 	appendIfSet("VERSION", cEnv(c, "VERSION", ""))
 	appendIfSet("FANTASY_VERSION", cEnv(c, "FANTASY_VERSION", ""))
 	appendIfSet("NAME", cEnv(c, "NAME", ""))
@@ -579,8 +589,10 @@ func flatcCheckScript(*app.Context) string {
 		"before=\"$(mktemp)\"\nafter=\"$(mktemp)\"\n" +
 		"snapshot() { git -c safe.directory=\"$repo\" diff --binary -- pkg/itr/itrfb/ pkg/tools/mapopsfb/; git -c safe.directory=\"$repo\" ls-files --others --exclude-standard -- pkg/itr/itrfb/ pkg/tools/mapopsfb/ | LC_ALL=C sort | while IFS= read -r f; do [ -f \"$f\" ] && sha256sum \"$f\"; done; };\n" +
 		"snapshot > \"$before\"\n" +
-		"$GO generate ./pkg/itr ./pkg/tools\nsnapshot > \"$after\"\n" +
-		"if ! cmp -s \"$before\" \"$after\"; then echo \"::error::FlatBuffers generated code is stale. Run 'go generate ./pkg/itr ./pkg/tools' and commit.\"; rm -f \"$before\" \"$after\"; exit 1; fi\nrm -f \"$before\" \"$after\"\n"
+		"(cd pkg/itr && flatc --go -o . ./commands.fbs)\n" +
+		"(cd pkg/tools && flatc --go -o . ./map_payloads.fbs)\n" +
+		"snapshot > \"$after\"\n" +
+		"if ! cmp -s \"$before\" \"$after\"; then echo \"::error::FlatBuffers generated code is stale. Run 'go generate ./pkg/itr ./pkg/tools' with the pinned flatc from scripts/install-flatc.sh and commit.\"; rm -f \"$before\" \"$after\"; exit 1; fi\nrm -f \"$before\" \"$after\"\n"
 }
 
 func sqlcVetScript(*app.Context) string {
@@ -759,6 +771,19 @@ func evalRunSpecs(c *app.Context) []runner.CommandSpec {
 		Env:  []string{fmt.Sprintf("DRAGONSCALE_EVAL_CONFIG=%s", cfgPath)},
 	})
 	return specs
+}
+
+func evalProofFullScript(_ *app.Context) string {
+	return strings.Join([]string{
+		"set -euo pipefail",
+		"mkdir -p eval/results",
+		": > eval/results/make-eval.log",
+		"export PROMPTFOO_PASS_RATE_THRESHOLD=\"${PROMPTFOO_PASS_RATE_THRESHOLD:-100}\"",
+		"echo \"[eval-proof-full] starting local make eval\" | tee -a eval/results/make-eval.log",
+		"echo \"[eval-proof-full] promptfoo pass-rate threshold: ${PROMPTFOO_PASS_RATE_THRESHOLD}%\" | tee -a eval/results/make-eval.log",
+		"echo \"[eval-proof-full] provider auth defaults: OpenRouter via OPENROUTER_API_KEY, then OpenAI via OPENAI_API_KEY\" | tee -a eval/results/make-eval.log",
+		"SKIP_DEVCONTAINER_WRAPPER=1 DEVCONTAINER_EXEC= make eval 2>&1 | tee -a eval/results/make-eval.log",
+	}, "\n")
 }
 
 func evalFixturesSpecs(c *app.Context) []runner.CommandSpec {

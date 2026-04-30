@@ -1,0 +1,94 @@
+name: eval-proof-full
+
+on:
+  workflow_dispatch:
+
+jobs:
+  eval-full:
+    runs-on: ubuntu-latest
+    env:
+      PROMPTFOO_PASS_RATE_THRESHOLD: "100"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Prepare eval artifact paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p eval/results
+          : > eval/results/make-eval.log
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install pinned flatc
+        run: |
+          bash scripts/install-flatc.sh "$RUNNER_TEMP/flatc-bin"
+          echo "$RUNNER_TEMP/flatc-bin" >> "$GITHUB_PATH"
+
+      - name: Materialize eval base config
+        shell: bash
+        env:
+          DRAGONSCALE_EVAL_BASE_CONFIG_SECRET: ${{ secrets.DRAGONSCALE_EVAL_BASE_CONFIG }}
+        run: |
+          set -euo pipefail
+          if [ -z "${DRAGONSCALE_EVAL_BASE_CONFIG_SECRET:-}" ]; then
+            echo "Missing DRAGONSCALE_EVAL_BASE_CONFIG secret." >> eval/results/make-eval.log
+            echo "::error::Missing DRAGONSCALE_EVAL_BASE_CONFIG secret. Full eval requires a provider-backed base config."
+            exit 1
+          fi
+          mkdir -p "$RUNNER_TEMP/dragonscale-eval"
+          base_config_path="$RUNNER_TEMP/dragonscale-eval/base-config.json"
+          umask 077
+          printf '%s' "$DRAGONSCALE_EVAL_BASE_CONFIG_SECRET" > "$base_config_path"
+          chmod 600 "$base_config_path"
+          if [ ! -s "$base_config_path" ]; then
+            echo "Materialized eval base config file is empty." >> eval/results/make-eval.log
+            echo "::error::Materialized eval base config file is empty."
+            exit 1
+          fi
+          echo "DRAGONSCALE_EVAL_BASE_CONFIG=$base_config_path" >> "$GITHUB_ENV"
+
+      - name: Validate eval base config path
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ ! -f "${DRAGONSCALE_EVAL_BASE_CONFIG:-}" ]; then
+            echo "Materialized DRAGONSCALE_EVAL_BASE_CONFIG path does not exist." >> eval/results/make-eval.log
+            echo "::error::Materialized DRAGONSCALE_EVAL_BASE_CONFIG path does not exist."
+            exit 1
+          fi
+
+      - name: Run full eval proof
+        shell: bash
+        env:
+          DRAGONSCALE_PROMPTFOO_ARGS: --no-cache --no-progress-bar -j 1
+        run: |
+          set -euo pipefail
+          echo "[eval-proof-full] starting make eval" | tee -a eval/results/make-eval.log
+          echo "[eval-proof-full] promptfoo pass-rate threshold: ${PROMPTFOO_PASS_RATE_THRESHOLD}%" | tee -a eval/results/make-eval.log
+          SKIP_DEVCONTAINER_WRAPPER=1 make DEVCONTAINER_EXEC= eval 2>&1 | tee -a eval/results/make-eval.log
+
+      - name: Upload full eval log artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: full-eval-log-${{ github.run_id }}-${{ github.run_attempt }}
+          path: eval/results/make-eval.log
+          if-no-files-found: error
+
+      - name: Upload full eval result artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: full-eval-result-${{ github.run_id }}-${{ github.run_attempt }}
+          path: eval/results/latest.json
+          if-no-files-found: warn

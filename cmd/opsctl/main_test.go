@@ -9,123 +9,164 @@ import (
 	"testing"
 
 	"github.com/ZanzyTHEbar/dragonscale/internal/opsctl/format"
+	"github.com/ZanzyTHEbar/dragonscale/internal/testcmp"
 	"github.com/stretchr/testify/require"
 )
 
 func TestParseOutputMode(t *testing.T) {
-	mode, err := parseOutputMode(false, false, "")
-	require.NoError(t, err)
-	require.Equal(t, "text", string(mode))
+	t.Parallel()
 
-	mode, err = parseOutputMode(true, false, "text")
-	require.NoError(t, err)
-	require.Equal(t, "raw", string(mode))
+	tests := []struct {
+		name    string
+		raw     bool
+		json    bool
+		format  string
+		want    format.OutputMode
+		wantErr bool
+	}{
+		{name: "default", want: format.OutputText},
+		{name: "raw overrides format", raw: true, format: "text", want: format.OutputRaw},
+		{name: "raw overrides json", raw: true, json: true, format: "text", want: format.OutputRaw},
+		{name: "json flag", json: true, format: "text", want: format.OutputJSON},
+		{name: "invalid format", format: "invalid", wantErr: true},
+	}
 
-	mode, err = parseOutputMode(true, true, "text")
-	require.NoError(t, err)
-	require.Equal(t, "raw", string(mode))
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 
-	mode, err = parseOutputMode(false, true, "text")
-	require.NoError(t, err)
-	require.Equal(t, "json", string(mode))
-
-	_, err = parseOutputMode(false, false, "invalid")
-	require.Error(t, err)
+			mode, err := parseOutputMode(tt.raw, tt.json, tt.format)
+			if tt.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			testcmp.RequireEqual(t, tt.want, mode)
+		})
+	}
 }
 
 func TestParseOutputModePriority(t *testing.T) {
 	t.Parallel()
 
-	mode, err := parseOutputMode(true, true, "json")
-	require.NoError(t, err)
-	require.Equal(t, format.OutputRaw, mode)
+	tests := []struct {
+		name   string
+		raw    bool
+		json   bool
+		format string
+		want   format.OutputMode
+	}{
+		{name: "raw overrides json and format", raw: true, json: true, format: "json", want: format.OutputRaw},
+		{name: "json overrides format", json: true, format: "text", want: format.OutputJSON},
+		{name: "raw overrides format", raw: true, format: "json", want: format.OutputRaw},
+		{name: "format used without flags", format: "json", want: format.OutputJSON},
+	}
 
-	mode, err = parseOutputMode(false, true, "text")
-	require.NoError(t, err)
-	require.Equal(t, format.OutputJSON, mode)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 
-	mode, err = parseOutputMode(true, false, "json")
-	require.NoError(t, err)
-	require.Equal(t, format.OutputRaw, mode)
-
-	mode, err = parseOutputMode(false, false, "json")
-	require.NoError(t, err)
-	require.Equal(t, format.OutputJSON, mode)
+			mode, err := parseOutputMode(tt.raw, tt.json, tt.format)
+			require.NoError(t, err)
+			testcmp.RequireEqual(t, tt.want, mode)
+		})
+	}
 }
 
-func TestRunPrintsUsageWithoutArgs(t *testing.T) {
-	out := &bytes.Buffer{}
-	errOut := &bytes.Buffer{}
-	code := run([]string{}, out, errOut)
-	require.Equal(t, 0, code)
-	require.Contains(t, out.String(), "Usage:")
-	require.Contains(t, out.String(), "Tasks:")
-	require.Equal(t, "", errOut.String())
-}
+func TestRunInvalidAndHelpCases(t *testing.T) {
+	tests := []struct {
+		name        string
+		args        func(t *testing.T) []string
+		wantCode    int
+		wantOut     []string
+		wantErrOut  []string
+		emptyOut    bool
+		emptyErrOut bool
+	}{
+		{
+			name:        "usage without args",
+			args:        func(t *testing.T) []string { return []string{} },
+			wantCode:    0,
+			wantOut:     []string{"Usage:", "Tasks:"},
+			emptyErrOut: true,
+		},
+		{
+			name:       "unknown command",
+			args:       func(t *testing.T) []string { return []string{"not-a-real-command"} },
+			wantCode:   2,
+			wantErrOut: []string{"unknown command: not-a-real-command"},
+			emptyOut:   true,
+		},
+		{
+			name:       "invalid format",
+			args:       func(t *testing.T) []string { return []string{"--format=bad", "help"} },
+			wantCode:   2,
+			wantErrOut: []string{"invalid --format value \"bad\""},
+		},
+		{
+			name: "invalid root",
+			args: func(t *testing.T) []string {
+				return []string{"--root", filepath.Join(t.TempDir(), "missing"), "help"}
+			},
+			wantCode:   2,
+			wantErrOut: []string{"invalid --root"},
+			emptyOut:   true,
+		},
+		{
+			name: "invalid cwd",
+			args: func(t *testing.T) []string {
+				root := t.TempDir()
+				missing := filepath.Join(root, "does-not-exist")
+				return []string{"--root", root, "--cwd", missing, "build"}
+			},
+			wantCode:   2,
+			wantErrOut: []string{"invalid --cwd"},
+			emptyOut:   true,
+		},
+		{
+			name:        "help alias",
+			args:        func(t *testing.T) []string { return []string{"--help"} },
+			wantCode:    0,
+			wantOut:     []string{"Usage:"},
+			emptyErrOut: true,
+		},
+		{
+			name:        "help includes all alias",
+			args:        func(t *testing.T) []string { return []string{"help"} },
+			wantCode:    0,
+			wantOut:     []string{"all", "build"},
+			emptyErrOut: true,
+		},
+	}
 
-func TestRunUnknownCommand(t *testing.T) {
-	out := &bytes.Buffer{}
-	errOut := &bytes.Buffer{}
-	code := run([]string{"not-a-real-command"}, out, errOut)
-	require.Equal(t, 2, code)
-	require.Contains(t, errOut.String(), "unknown command: not-a-real-command")
-	require.Equal(t, "", out.String())
-}
-
-func TestRunInvalidFormat(t *testing.T) {
-	out := &bytes.Buffer{}
-	errOut := &bytes.Buffer{}
-	code := run([]string{"--format=bad", "help"}, out, errOut)
-	require.Equal(t, 2, code)
-	require.Contains(t, errOut.String(), "invalid --format value \"bad\"")
-}
-
-func TestRunInvalidRoot(t *testing.T) {
-	out := &bytes.Buffer{}
-	errOut := &bytes.Buffer{}
-	root := filepath.Join(t.TempDir(), "missing")
-	code := run([]string{"--root", root, "help"}, out, errOut)
-	require.Equal(t, 2, code)
-	require.Contains(t, errOut.String(), "invalid --root")
-	require.Equal(t, "", out.String())
-}
-
-func TestRunInvalidCwd(t *testing.T) {
-	out := &bytes.Buffer{}
-	errOut := &bytes.Buffer{}
-	root := t.TempDir()
-	missing := filepath.Join(root, "does-not-exist")
-	code := run([]string{"--root", root, "--cwd", missing, "build"}, out, errOut)
-	require.Equal(t, 2, code)
-	require.Contains(t, errOut.String(), "invalid --cwd")
-	require.Equal(t, "", out.String())
-}
-
-func TestRunHelpAlias(t *testing.T) {
-	out := &bytes.Buffer{}
-	errOut := &bytes.Buffer{}
-	code := run([]string{"--help"}, out, errOut)
-	require.Equal(t, 0, code)
-	require.Contains(t, out.String(), "Usage:")
-	require.Equal(t, "", errOut.String())
-}
-
-func TestRunHelpIncludesAllAlias(t *testing.T) {
-	out := &bytes.Buffer{}
-	errOut := &bytes.Buffer{}
-	code := run([]string{"help"}, out, errOut)
-	require.Equal(t, 0, code)
-	require.Equal(t, "", errOut.String())
-	require.Contains(t, out.String(), "all")
-	require.Contains(t, out.String(), "build")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			out := &bytes.Buffer{}
+			errOut := &bytes.Buffer{}
+			code := run(tt.args(t), out, errOut)
+			testcmp.RequireEqual(t, tt.wantCode, code)
+			for _, want := range tt.wantOut {
+				require.Contains(t, out.String(), want)
+			}
+			for _, want := range tt.wantErrOut {
+				require.Contains(t, errOut.String(), want)
+			}
+			if tt.emptyOut {
+				testcmp.RequireEqual(t, "", out.String())
+			}
+			if tt.emptyErrOut {
+				testcmp.RequireEqual(t, "", errOut.String())
+			}
+		})
+	}
 }
 
 func TestRunHelpIncludesGlobalOutputFlags(t *testing.T) {
 	out := &bytes.Buffer{}
 	errOut := &bytes.Buffer{}
 	code := run([]string{"--help"}, out, errOut)
-	require.Equal(t, 0, code)
-	require.Equal(t, "", errOut.String())
+	testcmp.RequireEqual(t, 0, code)
+	testcmp.RequireEqual(t, "", errOut.String())
 	require.Contains(t, out.String(), "--format")
 	require.Contains(t, out.String(), "--json")
 	require.Contains(t, out.String(), "--raw")
@@ -140,23 +181,34 @@ func TestRunHelpIncludesSkipDevcontainerWrapperEnv(t *testing.T) {
 	out := &bytes.Buffer{}
 	errOut := &bytes.Buffer{}
 	code := run([]string{"--help"}, out, errOut)
-	require.Equal(t, 0, code)
-	require.Equal(t, "", errOut.String())
+	testcmp.RequireEqual(t, 0, code)
+	testcmp.RequireEqual(t, "", errOut.String())
 	require.Contains(t, out.String(), "SKIP_DEVCONTAINER_WRAPPER")
 }
 
-func TestDefaultRunEnvKeysIncludesPromptfooArgs(t *testing.T) {
+func TestDefaultRunEnvKeysIncludesExpectedKeys(t *testing.T) {
 	t.Parallel()
 
 	keys := defaultRunEnvKeys()
-	require.Contains(t, keys, "DRAGONSCALE_PROMPTFOO_ARGS")
-}
+	for _, key := range []string{
+		"DRAGONSCALE_PROMPTFOO_ARGS",
+		"PROMPTFOO_PASS_RATE_THRESHOLD",
+		"OPENROUTER_API_KEY",
+		"OPENAI_API_KEY",
+		"DRAGONSCALE_PROVIDERS_OPENROUTER_API_KEY",
+		"DRAGONSCALE_PROVIDERS_OPENROUTER_API_BASE",
+		"DRAGONSCALE_PROVIDERS_OPENAI_API_KEY",
+		"DRAGONSCALE_PROVIDERS_OPENAI_API_BASE",
+		"DRAGONSCALE_AGENTS_DEFAULTS_PROVIDER",
+		"DRAGONSCALE_AGENTS_DEFAULTS_MODEL",
+		"SKIP_DEVCONTAINER_WRAPPER",
+	} {
+		t.Run(key, func(t *testing.T) {
+			t.Parallel()
 
-func TestDefaultRunEnvKeysIncludesSkipDevcontainerWrapper(t *testing.T) {
-	t.Parallel()
-
-	keys := defaultRunEnvKeys()
-	require.Contains(t, keys, "SKIP_DEVCONTAINER_WRAPPER")
+			require.Contains(t, keys, key)
+		})
+	}
 }
 
 func TestMakefilePhonyTargetsAreAvailableInOpsctl(t *testing.T) {
@@ -164,8 +216,8 @@ func TestMakefilePhonyTargetsAreAvailableInOpsctl(t *testing.T) {
 	out := &bytes.Buffer{}
 	errOut := &bytes.Buffer{}
 	code := run([]string{"--help"}, out, errOut)
-	require.Equal(t, 0, code)
-	require.Equal(t, "", errOut.String())
+	testcmp.RequireEqual(t, 0, code)
+	testcmp.RequireEqual(t, "", errOut.String())
 
 	tasks := parseOpsctlHelpTasks(t, out.String())
 	for _, target := range makeTargets {
@@ -176,7 +228,7 @@ func TestMakefilePhonyTargetsAreAvailableInOpsctl(t *testing.T) {
 func TestMakefileAllTargetIsAliasToBuild(t *testing.T) {
 	makefile, err := findProjectMakefile()
 	require.NoError(t, err)
-	require.Equal(t, []string{"build"}, parseMakeTargetPrereqs(t, makefile, "all"))
+	testcmp.RequireEqual(t, []string{"build"}, parseMakeTargetPrereqs(t, makefile, "all"))
 }
 
 func TestMakeAllTargetRunsOpsctlBuild(t *testing.T) {
@@ -199,6 +251,21 @@ func TestMakeEvalTestHostModeClearsDevcontainerExec(t *testing.T) {
 	})
 	require.Contains(t, output, "cmd:--no-color --format raw eval-test")
 	require.NotContains(t, output, "@devcontainers/cli")
+}
+
+func TestMakeEvalProofFullRunsOuterOpsctlLocally(t *testing.T) {
+	t.Parallel()
+
+	makefile, err := findProjectMakefile()
+	require.NoError(t, err)
+	raw, err := os.ReadFile(makefile)
+	require.NoError(t, err)
+	content := string(raw)
+
+	require.Contains(t, content, "eval-proof-full:")
+	require.Contains(t, content, "SKIP_DEVCONTAINER_WRAPPER=1 DEVCONTAINER_EXEC=")
+	require.Contains(t, content, "$(CGO_ENV) $(GO) run ./cmd/opsctl $(OPSCTL_EVAL_ARGS) eval-proof-full")
+	require.NotContains(t, content, "$(OPSCTL_EVAL) $(OPSCTL_EVAL_ARGS) eval-proof-full")
 }
 
 func parseMakefilePhonyTargets(t *testing.T) []string {

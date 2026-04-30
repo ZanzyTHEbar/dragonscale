@@ -56,10 +56,24 @@ PR CI now runs the Go-native eval suite as the low-flake smoke proof job.
   - `coverage.txt`
   - `coverage-summary.txt`
 
-The full promptfoo harness remains a richer local/manual verification surface for now:
+The full promptfoo harness remains a richer non-PR verification surface for now:
 
 - Local/manual: `make eval`
+- Local provider-backed proof equivalent to the GitHub workflow: `OPENROUTER_API_KEY=sk-or-v1-... SKIP_DEVCONTAINER_WRAPPER=1 make DEVCONTAINER_EXEC= eval-proof-full`
 - Local/manual comparison: `make eval-compare`
+
+A standalone GitHub Actions workflow now exists for full eval proof runs without widening PR gating:
+
+- Workflow: `eval-proof-full`
+- Trigger: `workflow_dispatch`
+- Command: `SKIP_DEVCONTAINER_WRAPPER=1 make DEVCONTAINER_EXEC= eval`
+- Workflow environment also pins Node with `actions/setup-node` and uses fixed promptfoo args.
+- Fixed promptfoo args in workflow: `--no-cache --no-progress-bar -j 1`
+- Threshold gate: `PROMPTFOO_PASS_RATE_THRESHOLD=100`, so promptfoo exits non-zero unless every eval assertion passes.
+- Required secret: `DRAGONSCALE_EVAL_BASE_CONFIG` (the workflow materializes this secret into a temporary base-config file with restrictive permissions and points `DRAGONSCALE_EVAL_BASE_CONFIG` at that path during the run)
+- Uploaded artifacts:
+  - `eval/results/make-eval.log` (always uploaded for diagnostics)
+  - `eval/results/latest.json` (uploaded whenever promptfoo produces it, including threshold failures)
 
 This keeps the PR proof deterministic while preserving the larger promptfoo suite for deeper branch verification.
 
@@ -175,3 +189,9 @@ The comparison flow uses a temporary git worktree for `main`, so the active chec
 - `DRAGONSCALE_EVAL_BASE_CONFIG` - Optional explicit base config path for eval runs.
 - `DRAGONSCALE_EVAL_HOST_HOME` - Optional path to a host-style home directory used for host-mounted config discovery (commonly `/host_home` when set by devcontainer via `.devcontainer/devcontainer.json`).
 - Base config discovery order: `DRAGONSCALE_EVAL_BASE_CONFIG` (if set and valid), then `{DRAGONSCALE_EVAL_HOST_HOME}/.config/dragonscale/config.json` (if host home is set), then XDG at `~/.config/dragonscale/config.json`.
+- Provider auth for local provider-backed eval:
+  - Preferred DragonScale vars: `DRAGONSCALE_PROVIDERS_OPENROUTER_API_KEY`, `DRAGONSCALE_PROVIDERS_OPENAI_API_KEY`
+  - Convenience aliases: `OPENROUTER_API_KEY`, `OPENAI_API_KEY`
+  - Optional model/provider overrides: `DRAGONSCALE_AGENTS_DEFAULTS_PROVIDER`, `DRAGONSCALE_AGENTS_DEFAULTS_MODEL`
+- When no provider-backed base config is found, eval defaults to OpenRouter first (`openai/gpt-4o-mini`) when an OpenRouter key is present, then OpenAI (`gpt-4o-mini`) when an OpenAI key is present.
+- Do not commit provider config files containing API keys. CI should continue to use the `DRAGONSCALE_EVAL_BASE_CONFIG` secret-materialization workflow.
