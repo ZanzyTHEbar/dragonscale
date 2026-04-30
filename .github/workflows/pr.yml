@@ -54,10 +54,10 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Install flatc
+      - name: Install pinned flatc
         run: |
-          sudo apt-get update
-          sudo apt-get install -y flatbuffers-compiler
+          bash scripts/install-flatc.sh "$RUNNER_TEMP/flatc-bin"
+          echo "$RUNNER_TEMP/flatc-bin" >> "$GITHUB_PATH"
 
       - name: Check FlatBuffers generated code
         run: make flatc-check
@@ -74,10 +74,10 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Install flatc
+      - name: Install pinned flatc
         run: |
-          sudo apt-get update
-          sudo apt-get install -y flatbuffers-compiler
+          bash scripts/install-flatc.sh "$RUNNER_TEMP/flatc-bin"
+          echo "$RUNNER_TEMP/flatc-bin" >> "$GITHUB_PATH"
 
       - name: Run go generate
         run: go generate ./...
@@ -97,10 +97,10 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Install flatc
+      - name: Install pinned flatc
         run: |
-          sudo apt-get update
-          sudo apt-get install -y flatbuffers-compiler
+          bash scripts/install-flatc.sh "$RUNNER_TEMP/flatc-bin"
+          echo "$RUNNER_TEMP/flatc-bin" >> "$GITHUB_PATH"
 
       - name: Run go generate
         run: go generate ./...

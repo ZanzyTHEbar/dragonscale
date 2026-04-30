@@ -17,11 +17,19 @@ func GetRootAsMapRunSpec(buf []byte, offset flatbuffers.UOffsetT) *MapRunSpec {
 	return x
 }
 
+func FinishMapRunSpecBuffer(builder *flatbuffers.Builder, offset flatbuffers.UOffsetT) {
+	builder.Finish(offset)
+}
+
 func GetSizePrefixedRootAsMapRunSpec(buf []byte, offset flatbuffers.UOffsetT) *MapRunSpec {
 	n := flatbuffers.GetUOffsetT(buf[offset+flatbuffers.SizeUint32:])
 	x := &MapRunSpec{}
 	x.Init(buf, n+offset+flatbuffers.SizeUint32)
 	return x
+}
+
+func FinishSizePrefixedMapRunSpecBuffer(builder *flatbuffers.Builder, offset flatbuffers.UOffsetT) {
+	builder.FinishSizePrefixed(offset)
 }
 
 func (rcv *MapRunSpec) Init(buf []byte, i flatbuffers.UOffsetT) {

@@ -494,7 +494,7 @@ go run ./cmd/opsctl help
 
 ### Devcontainer (flatc + sqlc ready)
 
-If your host is missing `flatc`/`sqlc`, use the project devcontainer.
+If your host is missing `flatc`/`sqlc`, use the project devcontainer. The devcontainer installs the pinned `flatc` compiler version used by CI.
 
 ```bash
 make devcontainer-build
@@ -525,6 +525,8 @@ Schema/codegen mapping:
 - `pkg/tools/generate_flatbuffers.go`
 
 Generated files are committed. After schema changes, regenerate and commit updated generated output.
+
+CI and the devcontainer install `flatc` through `scripts/install-flatc.sh`, pinned to the same FlatBuffers version as `go.mod`. The pinned installer currently uses the upstream Linux amd64 FlatBuffers binary release, matching GitHub-hosted CI runners.
 
 ### sqlc
 
