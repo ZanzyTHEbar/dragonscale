@@ -289,11 +289,26 @@ The Fantasy SDK handles provider routing. Configure any supported provider:
 
 | Provider | Config Key | Notes |
 |----------|-----------|-------|
+| OpenCode Go | `opencode-go` | Low-cost subscription ($10/mo) for open coding models |
+| OpenCode Zen | `opencode-zen` | Pay-as-you-go AI gateway with curated models |
 | OpenRouter | `openrouter` | Access to all models via single API key |
 | Anthropic | `anthropic` | Claude direct |
 | OpenAI | `openai` | GPT direct |
 | Google Gemini | `gemini` | Gemini direct |
 | Groq | `groq` | Fast inference + Whisper voice transcription |
+
+**OpenCode Go / Zen** share a single credentials block in `config.json`:
+
+```json
+"providers": {
+  "opencode": { "api_key": "oc-...", "api_base": "" }
+}
+```
+
+Set `agents.defaults.provider` to `opencode-go` or `opencode-zen` to select the subscription tier.
+API keys and billing: [OpenCode Auth](https://opencode.ai/auth).
+
+**ChatGPT Plus/Pro subscriptions** are not directly supported. DragonScale currently requires a standard API key. OpenCode Go and OpenCode Zen are the closest subscription-based alternatives. For OpenAI models specifically, use a standard [OpenAI Platform API key](https://platform.openai.com) with provider `openai`.
 
 API key links: [OpenRouter](https://openrouter.ai/keys) · [Anthropic](https://console.anthropic.com) · [OpenAI](https://platform.openai.com) · [Gemini](https://aistudio.google.com/api-keys) · [Groq](https://console.groq.com)
 
