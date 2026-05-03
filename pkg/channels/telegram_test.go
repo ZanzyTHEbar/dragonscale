@@ -2,6 +2,7 @@ package channels
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -59,7 +60,6 @@ func newTestTelegramChannel(t *testing.T, allowList []string) (*TelegramChannel,
 	return &TelegramChannel{
 		BaseChannel:  NewBaseChannel("telegram", nil, msgBus, allowList),
 		bot:          bot,
-		chatIDs:      make(map[string]int64),
 		placeholders: sync.Map{},
 		stopThinking: sync.Map{},
 	}, msgBus, caller
@@ -149,5 +149,58 @@ func TestTelegramChannelHandleMessage_RejectsDisallowedCompoundSender(t *testing
 	}
 	if caller.callCount() != 0 {
 		t.Fatalf("Telegram API call count = %d, want 0", caller.callCount())
+	}
+}
+
+func TestTelegramChannelHandleMessage_TracksChatIDsConcurrently(t *testing.T) {
+	ch, _, _ := newTestTelegramChannel(t, nil)
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+	defer cancel()
+
+	const messages = 50
+	errCh := make(chan error, messages)
+	var wg sync.WaitGroup
+	for i := 0; i < messages; i++ {
+		i := i
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			userID := int64(1000 + i)
+			chatID := int64(7000 + i)
+			if err := ch.handleMessage(ctx, &telego.Message{
+				MessageID: i + 1,
+				From: &telego.User{
+					ID:       userID,
+					Username: fmt.Sprintf("user%d", i),
+				},
+				Chat: telego.Chat{ID: chatID, Type: "private"},
+				Text: fmt.Sprintf("hello %d", i),
+			}); err != nil {
+				errCh <- err
+			}
+		}()
+	}
+	wg.Wait()
+	close(errCh)
+	for err := range errCh {
+		if err != nil {
+			t.Fatalf("handleMessage returned error: %v", err)
+		}
+	}
+
+	seen := 0
+	ch.chatIDs.Range(func(key, value interface{}) bool {
+		seen++
+		senderID, ok := key.(string)
+		if !ok || senderID == "" {
+			t.Errorf("stored sender key = %#v, want non-empty string", key)
+		}
+		if _, ok := value.(int64); !ok {
+			t.Errorf("stored chat ID for %q = %#v, want int64", senderID, value)
+		}
+		return true
+	})
+	if seen != messages {
+		t.Fatalf("tracked chat IDs = %d, want %d", seen, messages)
 	}
 }
