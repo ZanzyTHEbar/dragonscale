@@ -3,6 +3,7 @@ package cortex
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -28,12 +29,21 @@ func expectUpdateTaskBaseline(store *MockRLStore, updatedBaseline **TaskBaseline
 	)
 }
 
-func expectUpdateMemoryWeights(store *MockRLStore, updatedWeights *[]updatedWeight, times int, err error) {
+func expectUpdateMemoryWeights(store *MockRLStore, updatedWeights *[]updatedWeight, expectedMemoryIDs []ids.UUID, times int, err error) {
+	// Track expected occurrences using a count map so duplicate IDs are handled correctly.
+	remaining := make(map[ids.UUID]int)
+	for _, id := range expectedMemoryIDs {
+		remaining[id]++
+	}
 	store.EXPECT().UpdateMemoryWeight(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(
 		func(_ context.Context, memoryID ids.UUID, weight, credit float64) error {
 			if err != nil {
 				return err
 			}
+			if remaining[memoryID] <= 0 {
+				panic(fmt.Sprintf("unexpected memory ID %s updated (not in expected set or already exhausted)", memoryID))
+			}
+			remaining[memoryID]--
 			*updatedWeights = append(*updatedWeights, updatedWeight{memoryID, weight, credit})
 			return nil
 		},
@@ -90,7 +100,7 @@ func TestRLTask_Execute_NoTasks(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	store := NewMockRLStore(ctrl)
 	store.EXPECT().GetTaskBaseline(gomock.Any(), "test-agent").Return(&TaskBaseline{Count: 10}, nil)
-	store.EXPECT().GetCompletedTasks(gomock.Any(), "test-agent", gomock.Any()).Return([]TaskRecord{}, nil)
+	store.EXPECT().GetCompletedTasks(gomock.Any(), "test-agent", gomock.Eq(time.Time{})).Return([]TaskRecord{}, nil)
 	task := NewRLTask(store, "test-agent")
 
 	ctx := context.Background()
@@ -138,9 +148,9 @@ func TestRLTask_Execute_UpdatesWeights(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	store := NewMockRLStore(ctrl)
 	store.EXPECT().GetTaskBaseline(gomock.Any(), "test-agent").Return(baseline, nil)
-	store.EXPECT().GetCompletedTasks(gomock.Any(), "test-agent", gomock.Any()).Return(tasks, nil)
+	store.EXPECT().GetCompletedTasks(gomock.Any(), "test-agent", gomock.Eq(time.Time{})).Return(tasks, nil)
 	expectRetrievedMemories(store, "task-1", memories)
-	expectUpdateMemoryWeights(store, &updatedWeights, 2, nil)
+	expectUpdateMemoryWeights(store, &updatedWeights, []ids.UUID{memoryID1, memoryID2}, 2, nil)
 	expectUpdateTaskBaseline(store, &updatedBaseline, nil)
 
 	task := NewRLTask(store, "test-agent")
@@ -187,9 +197,9 @@ func TestRLTask_Execute_ColdStart(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	store := NewMockRLStore(ctrl)
 	store.EXPECT().GetTaskBaseline(gomock.Any(), "test-agent").Return(nil, nil)
-	store.EXPECT().GetCompletedTasks(gomock.Any(), "test-agent", gomock.Any()).Return(tasks, nil)
+	store.EXPECT().GetCompletedTasks(gomock.Any(), "test-agent", gomock.Eq(time.Time{})).Return(tasks, nil)
 	expectRetrievedMemories(store, "task-1", memories)
-	expectUpdateMemoryWeights(store, &updatedWeights, 1, nil)
+	expectUpdateMemoryWeights(store, &updatedWeights, []ids.UUID{memoryID}, 1, nil)
 	expectUpdateTaskBaseline(store, &updatedBaseline, nil)
 
 	task := NewRLTask(store, "test-agent")
@@ -242,9 +252,9 @@ func TestRLTask_Execute_MultipleMemories(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	store := NewMockRLStore(ctrl)
 	store.EXPECT().GetTaskBaseline(gomock.Any(), "test-agent").Return(baseline, nil)
-	store.EXPECT().GetCompletedTasks(gomock.Any(), "test-agent", gomock.Any()).Return(tasks, nil)
+	store.EXPECT().GetCompletedTasks(gomock.Any(), "test-agent", gomock.Eq(time.Time{})).Return(tasks, nil)
 	expectRetrievedMemories(store, "task-1", memories)
-	expectUpdateMemoryWeights(store, &updatedWeights, 3, nil)
+	expectUpdateMemoryWeights(store, &updatedWeights, []ids.UUID{memoryID1, memoryID2, memoryID3}, 3, nil)
 	expectUpdateTaskBaseline(store, &updatedBaseline, nil)
 
 	task := NewRLTask(store, "test-agent")
@@ -294,9 +304,9 @@ func TestRLTask_Execute_IncompleteTask(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	store := NewMockRLStore(ctrl)
 	store.EXPECT().GetTaskBaseline(gomock.Any(), "test-agent").Return(baseline, nil)
-	store.EXPECT().GetCompletedTasks(gomock.Any(), "test-agent", gomock.Any()).Return(tasks, nil)
+	store.EXPECT().GetCompletedTasks(gomock.Any(), "test-agent", gomock.Eq(time.Time{})).Return(tasks, nil)
 	expectRetrievedMemories(store, "task-1", memories)
-	expectUpdateMemoryWeights(store, &updatedWeights, 1, nil)
+	expectUpdateMemoryWeights(store, &updatedWeights, []ids.UUID{memoryID}, 1, nil)
 	expectUpdateTaskBaseline(store, &updatedBaseline, nil)
 
 	task := NewRLTask(store, "test-agent")
@@ -341,7 +351,7 @@ func TestRLTask_Execute_UpdateBaselineError(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	store := NewMockRLStore(ctrl)
 	store.EXPECT().GetTaskBaseline(gomock.Any(), "test-agent").Return(baseline, nil)
-	store.EXPECT().GetCompletedTasks(gomock.Any(), "test-agent", gomock.Any()).Return(tasks, nil)
+	store.EXPECT().GetCompletedTasks(gomock.Any(), "test-agent", gomock.Eq(time.Time{})).Return(tasks, nil)
 	expectRetrievedMemories(store, "task-1", nil)
 	expectUpdateTaskBaseline(store, &updatedBaseline, errors.New("update failed"))
 	task := NewRLTask(store, "test-agent")
@@ -360,7 +370,7 @@ func TestRLTask_Execute_GetRetrievedMemoriesError(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	store := NewMockRLStore(ctrl)
 	store.EXPECT().GetTaskBaseline(gomock.Any(), "test-agent").Return(baseline, nil)
-	store.EXPECT().GetCompletedTasks(gomock.Any(), "test-agent", gomock.Any()).Return(tasks, nil)
+	store.EXPECT().GetCompletedTasks(gomock.Any(), "test-agent", gomock.Eq(time.Time{})).Return(tasks, nil)
 	store.EXPECT().GetRetrievedMemories(gomock.Any(), "task-1").Return(nil, errors.New("memory lookup failed"))
 	expectUpdateTaskBaseline(store, &updatedBaseline, nil)
 	task := NewRLTask(store, "test-agent")
@@ -387,9 +397,9 @@ func TestRLTask_Execute_UpdateMemoryWeightError(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	store := NewMockRLStore(ctrl)
 	store.EXPECT().GetTaskBaseline(gomock.Any(), "test-agent").Return(baseline, nil)
-	store.EXPECT().GetCompletedTasks(gomock.Any(), "test-agent", gomock.Any()).Return(tasks, nil)
+	store.EXPECT().GetCompletedTasks(gomock.Any(), "test-agent", gomock.Eq(time.Time{})).Return(tasks, nil)
 	expectRetrievedMemories(store, "task-1", memories)
-	expectUpdateMemoryWeights(store, &updatedWeights, 2, errors.New("weight update failed"))
+	expectUpdateMemoryWeights(store, &updatedWeights, []ids.UUID{memoryID1, memoryID2}, 2, errors.New("weight update failed"))
 	expectUpdateTaskBaseline(store, &updatedBaseline, nil)
 	task := NewRLTask(store, "test-agent")
 
@@ -413,7 +423,7 @@ func TestRLTask_Execute_NoMemoriesForTask(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	store := NewMockRLStore(ctrl)
 	store.EXPECT().GetTaskBaseline(gomock.Any(), "test-agent").Return(baseline, nil)
-	store.EXPECT().GetCompletedTasks(gomock.Any(), "test-agent", gomock.Any()).Return(tasks, nil)
+	store.EXPECT().GetCompletedTasks(gomock.Any(), "test-agent", gomock.Eq(time.Time{})).Return(tasks, nil)
 	expectRetrievedMemories(store, "task-1", []RetrievedMemoryRecord{})
 	expectUpdateTaskBaseline(store, &updatedBaseline, nil)
 	task := NewRLTask(store, "test-agent")
@@ -452,10 +462,10 @@ func TestRLTask_Execute_MultipleTasks(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	store := NewMockRLStore(ctrl)
 	store.EXPECT().GetTaskBaseline(gomock.Any(), "test-agent").Return(baseline, nil)
-	store.EXPECT().GetCompletedTasks(gomock.Any(), "test-agent", gomock.Any()).Return(tasks, nil)
+	store.EXPECT().GetCompletedTasks(gomock.Any(), "test-agent", gomock.Eq(time.Time{})).Return(tasks, nil)
 	expectRetrievedMemories(store, "task-1", memories)
 	expectRetrievedMemories(store, "task-2", memories)
-	expectUpdateMemoryWeights(store, &updatedWeights, 4, nil)
+	expectUpdateMemoryWeights(store, &updatedWeights, []ids.UUID{memoryID1, memoryID2, memoryID1, memoryID2}, 4, nil)
 	expectUpdateTaskBaseline(store, &updatedBaseline, nil)
 
 	task := NewRLTask(store, "test-agent")
@@ -492,9 +502,9 @@ func TestRLTask_Execute_NoSelfReportScore(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	store := NewMockRLStore(ctrl)
 	store.EXPECT().GetTaskBaseline(gomock.Any(), "test-agent").Return(baseline, nil)
-	store.EXPECT().GetCompletedTasks(gomock.Any(), "test-agent", gomock.Any()).Return(tasks, nil)
+	store.EXPECT().GetCompletedTasks(gomock.Any(), "test-agent", gomock.Eq(time.Time{})).Return(tasks, nil)
 	expectRetrievedMemories(store, "task-1", memories)
-	expectUpdateMemoryWeights(store, &updatedWeights, 1, nil)
+	expectUpdateMemoryWeights(store, &updatedWeights, []ids.UUID{memoryID}, 1, nil)
 	expectUpdateTaskBaseline(store, &updatedBaseline, nil)
 
 	task := NewRLTask(store, "test-agent")
@@ -530,7 +540,7 @@ func TestRLTask_processTask_SingleMemory(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	store := NewMockRLStore(ctrl)
 	store.EXPECT().GetRetrievedMemories(gomock.Any(), "task-1").Return(memories, nil)
-	expectUpdateMemoryWeights(store, &updatedWeights, 1, nil)
+	expectUpdateMemoryWeights(store, &updatedWeights, []ids.UUID{memoryID}, 1, nil)
 
 	task := NewRLTask(store, "test-agent")
 
