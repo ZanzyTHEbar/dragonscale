@@ -9,8 +9,31 @@ import (
 
 	jsonv2 "github.com/go-json-experiment/json"
 
+	"github.com/ZanzyTHEbar/dragonscale/pkg/ids"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/itr"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/logger"
 )
+
+// SecureBusDispatchFn is an optional hook that lets tool_call re-enter the
+// SecureBus for each target tool, so the nested call gets the same
+// policy/secret/leak/audit treatment as a direct call.
+type SecureBusDispatchFn func(ctx context.Context, req itr.ToolRequest) itr.ToolResponse
+
+type ctxKeySecureBusDispatcher struct{}
+
+// WithSecureBusDispatcher stores a bus dispatcher in ctx so tool_call can
+// route target-tool executions through SecureBus.
+func WithSecureBusDispatcher(ctx context.Context, fn SecureBusDispatchFn) context.Context {
+	return context.WithValue(ctx, ctxKeySecureBusDispatcher{}, fn)
+}
+
+// secureBusDispatcherFromContext extracts a SecureBus dispatch hook from ctx.
+func secureBusDispatcherFromContext(ctx context.Context) SecureBusDispatchFn {
+	if fn, ok := ctx.Value(ctxKeySecureBusDispatcher{}).(SecureBusDispatchFn); ok {
+		return fn
+	}
+	return nil
+}
 
 type ctxKeyResources struct{}
 
@@ -115,6 +138,21 @@ func (t *ToolCallTool) Execute(ctx context.Context, args map[string]interface{})
 		} else if len(resources) > 0 {
 			ctx = context.WithValue(ctx, ctxKeyResources{}, resources)
 		}
+	}
+
+	// When running under SecureBus, re-enter the bus for the target tool so
+	// it gets the full policy/secret/leak/audit treatment.
+	if busDispatcher := secureBusDispatcherFromContext(ctx); busDispatcher != nil {
+		argsJSON, err := jsonv2.Marshal(toolArgs)
+		if err != nil {
+			return ErrorResult(fmt.Sprintf("failed to marshal tool arguments: %v", err))
+		}
+		req := itr.NewToolExecRequest(ids.New().String(), SessionKeyFromContext(ctx), "", toolName, string(argsJSON))
+		resp := busDispatcher(ctx, req)
+		if resp.IsError {
+			return ErrorResult(resp.Result)
+		}
+		return &ToolResult{ForLLM: resp.Result}
 	}
 
 	channel, chatID := ResolveExecutionTarget(ctx, t.channel, t.chatID)

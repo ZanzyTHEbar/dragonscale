@@ -670,3 +670,102 @@ func TestSecureBusAuditSink_WriteReturnsErrorWhenEnqueueFails(t *testing.T) {
 	testcmp.AssertEqual(t, "echo", captured.Target)
 	testcmp.AssertEqual(t, "call-drop", captured.ToolCallID)
 }
+
+func TestToolCallReentersSecureBusForNestedTarget(t *testing.T) {
+	t.Parallel()
+
+	workspace := t.TempDir()
+	policy := securebus.DefaultPolicyConfig()
+	policy.AllowedWorkspace = workspace
+
+	// Register tool_call and a filesystem-capable target tool.
+	registry := tools.NewToolRegistry()
+	target := &secureBusPolicyTool{
+		name: "read_file",
+		text: "workspace file contents",
+		caps: tools.ToolCapabilities{Filesystem: []tools.PathRule{{Pattern: "**", Mode: "r"}}},
+	}
+	registry.Register(target)
+	registry.RegisterMetaTools()
+	_, registered := registry.Get("tool_call")
+	require.True(t, registered)
+
+	// Auditing setup.
+	db := newSecureBusTestDB(t)
+	q := db.delegate.Queries()
+	auditCh := make(chan *memory.AuditEntry, 16)
+	auditDone := make(chan struct{})
+	al := &AgentLoop{memDelegate: db.delegate, auditChan: auditCh, auditDone: auditDone}
+	go al.auditWorker(t.Context(), auditCh, auditDone)
+	t.Cleanup(func() {
+		close(auditCh)
+		<-auditDone
+	})
+
+	capLookup := func(name string) (tools.ToolCapabilities, bool) {
+		tl, ok := registry.Get(name)
+		if !ok {
+			return tools.ZeroCapabilities(), false
+		}
+		return tools.ExtractCapabilities(tl), true
+	}
+
+	auditSink := newSecureBusAuditSink(al.enqueueAuditEntry)
+
+	var bus *securebus.Bus
+	executor := func(ctx context.Context, name string, args map[string]interface{}) *tools.ToolResult {
+		if bus != nil {
+			ctx = tools.WithSecureBusDispatcher(ctx, bus.Execute)
+		}
+		channel, chatID := tools.ExecutionTargetFromContext(ctx)
+		return registry.ExecuteWithContext(ctx, name, args, channel, chatID, nil)
+	}
+	bus = securebus.New(securebus.BusConfig{Policy: policy, Workers: 1}, nil, capLookup, executor, auditSink)
+	t.Cleanup(bus.Close)
+
+	sessionKey := "toolcall-bus-test"
+	execCtx := tools.WithSessionKey(t.Context(), sessionKey)
+
+	// ── Allow path: tool_call -> read_file inside workspace ──
+	allowedInput, err := json.Marshal(map[string]interface{}{
+		"tool_name": "read_file",
+		"arguments": map[string]interface{}{"path": "docs/readme.md"},
+	})
+	require.NoError(t, err)
+	req := itr.NewToolExecRequest(ids.New().String(), sessionKey, "call-allow", "tool_call", string(allowedInput))
+	resp := bus.Execute(execCtx, req)
+	require.False(t, resp.IsError, "expected allow, got: %s", resp.Result)
+	require.Equal(t, "workspace file contents", resp.Result)
+
+	// Audit row for the nested read_file should be persisted.
+	waitForSecureBusAuditEvent(t, q, sessionKey, "securebus_tool_exec", "call-allow")
+
+	// ── Deny path: tool_call -> read_file outside workspace ──
+	outsidePath := filepath.Join(t.TempDir(), "secret.txt")
+	deniedInput, err := json.Marshal(map[string]interface{}{
+		"tool_name": "read_file",
+		"arguments": map[string]interface{}{"path": outsidePath},
+	})
+	require.NoError(t, err)
+	req = itr.NewToolExecRequest(ids.New().String(), sessionKey, "call-deny", "tool_call", string(deniedInput))
+	resp = bus.Execute(execCtx, req)
+	require.True(t, resp.IsError)
+	require.Contains(t, resp.Result, "policy violation: filesystem access denied")
+
+	// Audit row for the policy violation must exist (the nested read_file
+	// request uses the bus entry point which records its own audit row with
+	// the given session key).
+	var row sqlc.AgentAuditLog
+	require.Eventually(t, func() bool {
+		rows := listAuditEntriesBySession(t, q, sessionKey)
+		for _, r := range rows {
+			if r.Action == "securebus_tool_exec_policy_violation" {
+				row = r
+				return true
+			}
+		}
+		return false
+	}, 2*time.Second, 50*time.Millisecond)
+	require.False(t, row.Success)
+	require.Contains(t, row.ErrorMsg, "filesystem access denied")
+}

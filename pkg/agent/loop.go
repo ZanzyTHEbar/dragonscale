@@ -613,6 +613,10 @@ func (al *AgentLoop) SetupSecureBus(ss *security.SecretStore, cfg securebus.BusC
 				})
 			}
 		}
+		// Let tool_call re-enter SecureBus for target tools.
+		if al.secureBus != nil {
+			ctx = tools.WithSecureBusDispatcher(ctx, al.secureBus.Execute)
+		}
 		return al.tools.ExecuteWithContext(ctx, name, args, channel, chatID, asyncCallback)
 	}
 	auditSink := newSecureBusAuditSink(al.enqueueAuditEntry)

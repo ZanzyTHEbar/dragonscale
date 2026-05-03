@@ -2,10 +2,13 @@ package tools
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/ZanzyTHEbar/dragonscale/pkg/itr"
 )
 
 func TestToolCallTool_Name(t *testing.T) {
@@ -441,4 +444,92 @@ func (c *callbackCaptureTool) Execute(ctx context.Context, _ map[string]interfac
 		callback(ctx, &ToolResult{ForLLM: "done", ForUser: fmt.Sprintf("async completion on %s:%s", c.lastChannel, c.lastChatID)})
 	}
 	return AsyncResult("spawned")
+}
+
+func TestToolCallTool_RoutesThroughBusDispatcher(t *testing.T) {
+	t.Parallel()
+
+	r := NewToolRegistry()
+	r.Register(&stubTool{name: "read_file", desc: "Read a file"})
+	tc := NewToolCallTool(r)
+
+	var dispatchedReq *itr.ToolRequest
+	dispatcher := func(ctx context.Context, req itr.ToolRequest) itr.ToolResponse {
+		dispatchedReq = &req
+		return itr.ToolResponse{ID: req.ID, Result: "bus-handled read_file"}
+	}
+
+	ctx := WithSecureBusDispatcher(t.Context(), dispatcher)
+	result := tc.Execute(ctx, map[string]interface{}{
+		"tool_name": "read_file",
+		"arguments": map[string]interface{}{"path": "/tmp/test.txt"},
+	})
+
+	if result.IsError {
+		t.Fatalf("unexpected error: %s", result.ForLLM)
+	}
+	if result.ForLLM != "bus-handled read_file" {
+		t.Fatalf("expected 'bus-handled read_file', got %s", result.ForLLM)
+	}
+	if dispatchedReq == nil {
+		t.Fatal("dispatcher was not called")
+	}
+	exec, ok := dispatchedReq.Payload.(itr.ToolExec)
+	if !ok {
+		t.Fatalf("expected ToolExec payload, got %T", dispatchedReq.Payload)
+	}
+	if exec.ToolName != "read_file" {
+		t.Fatalf("expected tool_name=read_file, got %s", exec.ToolName)
+	}
+	argsJSON, err := json.Marshal(map[string]interface{}{"path": "/tmp/test.txt"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if exec.ArgsJSON != string(argsJSON) {
+		t.Fatalf("expected args %s, got %s", string(argsJSON), exec.ArgsJSON)
+	}
+}
+
+func TestToolCallTool_BusDispatcherPropagatesErrors(t *testing.T) {
+	t.Parallel()
+
+	r := NewToolRegistry()
+	r.Register(&stubTool{name: "read_file", desc: "Read a file"})
+	tc := NewToolCallTool(r)
+
+	dispatcher := func(ctx context.Context, req itr.ToolRequest) itr.ToolResponse {
+		return itr.ToolResponse{ID: req.ID, Result: "policy violation: access denied", IsError: true}
+	}
+
+	ctx := WithSecureBusDispatcher(t.Context(), dispatcher)
+	result := tc.Execute(ctx, map[string]interface{}{
+		"tool_name": "read_file",
+	})
+
+	if !result.IsError {
+		t.Fatal("expected policy violation error")
+	}
+	if result.ForLLM != "policy violation: access denied" {
+		t.Fatalf("expected policy error, got %s", result.ForLLM)
+	}
+}
+
+func TestToolCallTool_UsesDirectRegistryWhenNoBusDispatcher(t *testing.T) {
+	t.Parallel()
+
+	r := NewToolRegistry()
+	r.Register(&stubTool{name: "read_file", desc: "Read a file"})
+	tc := NewToolCallTool(r)
+
+	// No bus dispatcher in context — should fall through to direct registry.
+	result := tc.Execute(t.Context(), map[string]interface{}{
+		"tool_name": "read_file",
+	})
+
+	if result.IsError {
+		t.Fatalf("unexpected error: %s", result.ForLLM)
+	}
+	if result.ForLLM != "executed read_file" {
+		t.Fatalf("expected direct registry execution, got %s", result.ForLLM)
+	}
 }
