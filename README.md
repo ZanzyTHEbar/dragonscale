@@ -199,9 +199,9 @@ make build
 ./bin/dragonscale onboard
 ```
 
-The onboard wizard initializes config, workspace, and optionally sets up encrypted secret storage.
+The onboard wizard initializes config, identity files, builtin skills, and the sandbox.
 
-Edit `~/.dragonscale/config.json`:
+Edit `~/.config/dragonscale/config.json` (or `$XDG_CONFIG_HOME/dragonscale/config.json`):
 
 ```json
 {
@@ -244,13 +244,17 @@ dragonscale gateway
 
 ```bash
 cp config/config.example.json config/config.json
+# Edit config/config.json, or copy .env.example to .env and fill DRAGONSCALE_* variables.
 docker compose --profile gateway up -d
 docker compose logs -f dragonscale-gateway
 ```
 
+The Compose profile mounts config at `/home/dragonscale/.config/dragonscale/config.json`, passes documented `DRAGONSCALE_*` variables through to the container, and persists runtime data under `/home/dragonscale/.local/share/dragonscale`.
+The default example routes `anthropic/claude-sonnet-4-20250514` through OpenRouter, so set `DRAGONSCALE_PROVIDERS_OPENROUTER_API_KEY`; for direct Anthropic, set provider `anthropic` and model `claude-sonnet-4-20250514` instead. Optional `.env` loading requires a modern Docker Compose v2 release that supports `env_file.required`.
+
 ## Secret Management
 
-DragonScale encrypts secrets at rest with XChaCha20-Poly1305 and stores them in `~/.dragonscale/secrets.json`.
+DragonScale encrypts secrets at rest with XChaCha20-Poly1305 and stores them in `~/.config/dragonscale/secrets.json` by default.
 Today the supported operator flow is env-backed: `dragonscale secret init` prints a hex key, and secret operations expect `DRAGONSCALE_MASTER_KEY` to be set.
 
 ```bash
@@ -317,7 +321,7 @@ API key links: [OpenRouter](https://openrouter.ai/keys) · [Anthropic](https://c
     "telegram": {
       "enabled": true,
       "token": "YOUR_BOT_TOKEN",
-      "allowFrom": ["YOUR_USER_ID"]
+      "allow_from": ["YOUR_USER_ID"]
     }
   }
 }
@@ -340,7 +344,7 @@ API key links: [OpenRouter](https://openrouter.ai/keys) · [Anthropic](https://c
     "discord": {
       "enabled": true,
       "token": "YOUR_BOT_TOKEN",
-      "allowFrom": ["YOUR_USER_ID"]
+      "allow_from": ["YOUR_USER_ID"]
     }
   }
 }
@@ -454,12 +458,12 @@ Schema is managed by Goose with 17 versioned migrations.
 
 ## Security
 
-### Workspace Sandbox
+### Sandbox
 
-File and command access is restricted to the configured workspace by default. The `exec` tool blocks dangerous commands regardless of sandbox setting.
+File and command access is restricted to the configured sandbox by default. The `exec` tool blocks dangerous commands regardless of sandbox setting.
 
 ```json
-{ "agents": { "defaults": { "restrict_to_workspace": false } } }
+{ "agents": { "defaults": { "restrict_to_sandbox": false } } }
 ```
 
 ### Isolated Tool Runtime (ITR)
@@ -475,7 +479,7 @@ See [ADR-001](docs/adr/001-isolated-tool-runtime.md) for the layered design, cur
 ```bash
 make build          # Build for current platform (output: bin/)
 make build-all      # Build for current Linux/CGO target (Linux host required, glibc runtime)
-make install        # Install to ~/.local/bin + copy skills
+make install        # Install the binary to ~/.local/bin
 make fmt            # go fmt ./...
 make deps           # go get -u + go mod tidy
 make test-integration # Run integration-tagged tests without Docker

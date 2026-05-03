@@ -2,6 +2,7 @@ package tasks
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -97,6 +98,81 @@ func TestFlatcInstallSurfacesUsePinnedInstaller(t *testing.T) {
 		content := readRepoFile(t, path)
 		require.Contains(t, content, "scripts/install-flatc.sh", path)
 		require.NotContains(t, content, "flatbuffers-compiler", path)
+	}
+}
+
+func TestDeploymentFilesUseSupportedLinuxGlibcContract(t *testing.T) {
+	t.Parallel()
+
+	dockerfile := readRepoFile(t, "Dockerfile")
+	dockerfileLower := strings.ToLower(dockerfile)
+	require.Contains(t, dockerfile, "FROM golang:1.26.2-bookworm AS builder")
+	require.Contains(t, dockerfile, "FROM debian:bookworm-slim")
+	require.Contains(t, dockerfile, "CGO_ENABLED=1 GOOS=linux make build")
+	require.Contains(t, dockerfile, "curl -fsS http://localhost:18790/health")
+	require.NotContains(t, dockerfileLower, "alpine")
+	require.NotContains(t, dockerfile, "dragonscale onboard")
+
+	dockerfileGoreleaser := readRepoFile(t, "Dockerfile.goreleaser")
+	require.Contains(t, dockerfileGoreleaser, "FROM debian:bookworm-slim")
+	require.Contains(t, dockerfileGoreleaser, "USER dragonscale")
+	require.Contains(t, dockerfileGoreleaser, "XDG_CONFIG_HOME=/home/dragonscale/.config")
+	require.NotContains(t, strings.ToLower(dockerfileGoreleaser), "alpine")
+
+	compose := readRepoFile(t, "docker-compose.yml")
+	require.Contains(t, compose, "/home/dragonscale/.config/dragonscale/config.json")
+	require.Contains(t, compose, "/home/dragonscale/.local/share/dragonscale")
+	require.Contains(t, compose, "path: .env")
+	require.Contains(t, compose, "required: false")
+	require.Contains(t, compose, "DRAGONSCALE_GATEWAY_HOST: 0.0.0.0")
+	require.Contains(t, compose, `"18790:18790"`)
+	require.NotContains(t, compose, "/home/dragonscale/.dragonscale")
+	require.NotContains(t, compose, ":-}")
+
+	goreleaser := readRepoFile(t, ".goreleaser.yaml")
+	require.Contains(t, goreleaser, "CGO_ENABLED=1")
+	require.Contains(t, goreleaser, "- linux")
+	require.Contains(t, goreleaser, "- amd64")
+	for _, unsupported := range []string{"CGO_ENABLED=0", "- windows", "- darwin", "- freebsd", "- riscv64", "- s390x", "- mips64", "- arm64"} {
+		require.NotContains(t, goreleaser, unsupported)
+	}
+}
+
+func TestExampleConfigUsesCurrentSchemaAndBlankSecrets(t *testing.T) {
+	t.Parallel()
+
+	content := readRepoFile(t, "config/config.example.json")
+	var raw map[string]any
+	require.NoError(t, json.Unmarshal([]byte(content), &raw))
+
+	agents, ok := raw["agents"].(map[string]any)
+	require.True(t, ok)
+	defaults, ok := agents["defaults"].(map[string]any)
+	require.True(t, ok)
+	require.Contains(t, defaults, "sandbox")
+	require.Contains(t, defaults, "restrict_to_sandbox")
+	require.NotContains(t, defaults, "workspace")
+	require.NotContains(t, defaults, "restrict_to_workspace")
+
+	for _, stale := range []string{"~/.dragonscale", "YOUR_", "sk-or-v1-", "gsk_", "nvapi-", "sk-xxx", "pplx-xxx"} {
+		require.NotContains(t, content, stale)
+	}
+}
+
+func TestEnvExampleUsesRuntimeEnvNames(t *testing.T) {
+	t.Parallel()
+
+	content := readRepoFile(t, ".env.example")
+	for _, name := range []string{
+		"DRAGONSCALE_AGENTS_DEFAULTS_PROVIDER",
+		"DRAGONSCALE_AGENTS_DEFAULTS_MODEL",
+		"DRAGONSCALE_PROVIDERS_OPENROUTER_API_KEY",
+		"DRAGONSCALE_TOOLS_WEB_BRAVE_API_KEY",
+	} {
+		require.Contains(t, content, name)
+	}
+	for _, legacy := range []string{"# OPENROUTER_API_KEY=", "# OPENAI_API_KEY=", "# BRAVE_SEARCH_API_KEY=", "# TELEGRAM_BOT_TOKEN=", "# DISCORD_BOT_TOKEN="} {
+		require.NotContains(t, content, legacy)
 	}
 }
 

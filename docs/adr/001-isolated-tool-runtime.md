@@ -216,7 +216,7 @@ This schema serves four purposes: (1) zero-copy reads eliminate serialization ov
 
 ### Layer 3: Secret Store + Keyring Integration
 
-The `SecretStore` maps logical secret names to encrypted ciphertext, persisted today to `~/.dragonscale/secrets.json`. The `Vault` handles encryption/decryption.
+The `SecretStore` maps logical secret names to encrypted ciphertext, persisted today to `~/.config/dragonscale/secrets.json` by default. The `Vault` handles encryption/decryption.
 
 Current shipped master-key behavior is env-backed (`DRAGONSCALE_MASTER_KEY`) with an in-memory fallback for contexts that do not need persisted secret access. Richer OS-keyring, passphrase, or file-backed key management remains planned work.
 

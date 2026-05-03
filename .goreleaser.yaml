@@ -10,7 +10,7 @@ before:
 builds:
   - id: dragonscale
     env:
-      - CGO_ENABLED=0
+      - CGO_ENABLED=1
     tags:
       - stdjson
     ldflags:
@@ -21,20 +21,9 @@ builds:
       - -X main.goVersion={{ .Env.GOVERSION }}
     goos:
       - linux
-      - windows
-      - darwin
-      - freebsd
     goarch:
       - amd64
-      - arm64
-      - riscv64
-      - s390x
-      - mips64
-      - arm
     main: ./cmd/dragonscale
-    ignore:
-      - goos: windows
-        goarch: arm
 
 dockers_v2:
   - id: dragonscale
@@ -49,8 +38,6 @@ dockers_v2:
       - "latest"
     platforms:
       - linux/amd64
-      - linux/arm64
-      - linux/riscv64
 
 archives:
   - formats: [tar.gz]
@@ -62,10 +49,6 @@ archives:
       {{- else if eq .Arch "386" }}i386
       {{- else }}{{ .Arch }}{{ end }}
       {{- if .Arm }}v{{ .Arm }}{{ end }}
-    # use zip for windows archives
-    format_overrides:
-      - goos: windows
-        formats: [zip]
 
 changelog:
   sort: asc

@@ -1,10 +1,20 @@
-FROM alpine:3.21
+FROM debian:bookworm-slim
 
 ARG TARGETPLATFORM
 
-RUN apk add --no-cache ca-certificates tzdata
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates tzdata \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd --gid 1000 dragonscale \
+    && useradd --uid 1000 --gid 1000 --create-home --shell /usr/sbin/nologin dragonscale \
+    && install -d -o dragonscale -g dragonscale /home/dragonscale/.config/dragonscale /home/dragonscale/.local/share/dragonscale /home/dragonscale/.cache
 
 COPY $TARGETPLATFORM/dragonscale /usr/local/bin/dragonscale
+
+USER dragonscale
+ENV XDG_CONFIG_HOME=/home/dragonscale/.config \
+    XDG_DATA_HOME=/home/dragonscale/.local/share \
+    XDG_CACHE_HOME=/home/dragonscale/.cache
 
 ENTRYPOINT ["dragonscale"]
 CMD ["gateway"]

@@ -10,9 +10,14 @@ services:
     container_name: dragonscale-agent
     profiles:
       - agent
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      TZ: ${TZ:-UTC}
     volumes:
-      - ./config/config.json:/home/dragonscale/.dragonscale/config.json:ro
-      - dragonscale-workspace:/home/dragonscale/.dragonscale/workspace
+      - ./config/config.json:/home/dragonscale/.config/dragonscale/config.json:ro
+      - dragonscale-data:/home/dragonscale/.local/share/dragonscale
     entrypoint: ["dragonscale", "agent"]
     stdin_open: true
     tty: true
@@ -29,12 +34,20 @@ services:
     restart: unless-stopped
     profiles:
       - gateway
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DRAGONSCALE_GATEWAY_HOST: 0.0.0.0
+      TZ: ${TZ:-UTC}
+    ports:
+      - "18790:18790"
     volumes:
       # Configuration file
-      - ./config/config.json:/home/dragonscale/.dragonscale/config.json:ro
-      # Persistent workspace (sessions, memory, logs)
-      - dragonscale-workspace:/home/dragonscale/.dragonscale/workspace
+      - ./config/config.json:/home/dragonscale/.config/dragonscale/config.json:ro
+      # Persistent XDG data (sandbox, sessions, memory, logs, installed skills)
+      - dragonscale-data:/home/dragonscale/.local/share/dragonscale
     command: ["gateway"]
 
 volumes:
-  dragonscale-workspace:
+  dragonscale-data:
