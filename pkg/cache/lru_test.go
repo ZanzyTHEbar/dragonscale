@@ -512,7 +512,11 @@ func TestLRU_ConcurrentAccess(t *testing.T) {
 
 func TestLRU_ConcurrentTags(t *testing.T) {
 	t.Parallel()
-	c := New[string, int](Options[string, int]{MaxSize: 100})
+	// MaxSize:0 (unlimited) keeps all entries so tag distribution is
+	// deterministic regardless of goroutine scheduling order. With a
+	// bounded cache, LRU eviction survivors depend on which goroutine
+	// wrote last, making the post-invalidation assertion flaky.
+	c := New[string, int](Options[string, int]{MaxSize: 0})
 
 	var wg sync.WaitGroup
 	const goroutines = 20
@@ -531,12 +535,12 @@ func TestLRU_ConcurrentTags(t *testing.T) {
 
 	wg.Wait()
 
-	// Invalidate one tag
+	// goroutines 0,5,10,15 write tag-0 (4 × 100 = 400 of 2000 entries).
 	c.InvalidateByTag("tag-0")
 
-	// Should still have entries from other tags
-	if c.Len() == 0 {
-		t.Fatal("expected some entries to remain after partial tag invalidation")
+	// The remaining 16 goroutines × 100 = 1600 entries must survive.
+	if remaining := c.Len(); remaining != 1600 {
+		t.Fatalf("expected 1600 entries after invalidating tag-0, got %d", remaining)
 	}
 }
 
