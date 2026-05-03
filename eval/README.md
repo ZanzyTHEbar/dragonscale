@@ -179,14 +179,15 @@ python eval/scripts/generate_long_context_cases.py --count 12 --seed 20260221
 
 ## A/B Comparison
 
-`make eval-compare` builds both your current branch and `main`, then runs the identical test suite against both. Results show a side-by-side comparison matrix with per-test scores.
+`make eval-compare` builds both your current branch and a base ref (default `origin/main`), then runs the identical test suite against both. Results show a side-by-side comparison matrix with per-test scores.
 
-The comparison flow uses a temporary git worktree for `main`, so the active checkout is never stashed or branch-switched underneath the user.
+The comparison flow uses a temporary git worktree for the base ref, so the active checkout is never stashed or branch-switched underneath the user. Override the base ref with `DRAGONSCALE_EVAL_BASE_REF` (e.g. `DRAGONSCALE_EVAL_BASE_REF=origin/develop make eval-compare`).
 
 ## Environment Variables
 
 - `DRAGONSCALE_EVAL_CONFIG` - Optional overlay config path applied on top of user base config, for example `DRAGONSCALE_EVAL_CONFIG=./configs/custom.json make eval`.
 - `DRAGONSCALE_EVAL_BASE_CONFIG` - Optional explicit base config path for eval runs.
+- `DRAGONSCALE_EVAL_BASE_REF` - Git ref to compare against in `make eval-compare` (default `origin/main`). The ref is fetched before building.
 - `DRAGONSCALE_EVAL_HOST_HOME` - Optional path to a host-style home directory used for host-mounted config discovery (commonly `/host_home` when set by devcontainer via `.devcontainer/devcontainer.json`).
 - Base config discovery order: `DRAGONSCALE_EVAL_BASE_CONFIG` (if set and valid), then `{DRAGONSCALE_EVAL_HOST_HOME}/.config/dragonscale/config.json` (if host home is set), then XDG at `~/.config/dragonscale/config.json`.
 - Provider auth for local provider-backed eval:

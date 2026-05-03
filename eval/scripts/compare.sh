@@ -3,6 +3,10 @@ set -euo pipefail
 
 # compare.sh - Build both branches and run eval comparison
 # Usage: ./eval/scripts/compare.sh [--repeat N]
+#
+# Environment:
+#   DRAGONSCALE_EVAL_BASE_REF   Git ref to compare against (default: origin/main).
+#                               The ref is fetched before building.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 EVAL_DIR="$(dirname "$SCRIPT_DIR")"
@@ -15,6 +19,7 @@ read -r -a PROMPTFOO_ARGS_ARR <<< "${PROMPTFOO_ARGS}"
 export DEVCONTAINER_EXEC=""
 TEMP_CONFIG="$(mktemp "${SCRIPT_DIR}/promptfoo-compare-XXXXXX.yaml")"
 TEMP_WORKTREE=""
+BASE_REF="${DRAGONSCALE_EVAL_BASE_REF:-origin/main}"
 
 cleanup_compare_config() {
   rm -f "$TEMP_CONFIG"
@@ -39,10 +44,12 @@ echo "[1/4] Building eval-runner from current branch..."
 make DEVCONTAINER_EXEC= eval-build 2>&1 | tail -1
 cp "$EVAL_DIR/bin/eval-runner" "$EVAL_DIR/bin/eval-runner-branch"
 
-# 2. Build main branch eval-runner in an isolated worktree
-echo "[2/4] Building eval-runner from main branch..."
-TEMP_WORKTREE="$(mktemp -d "${TMPDIR:-/tmp}/dragonscale-eval-main-XXXXXX")"
-git -C "$PROJECT_ROOT" worktree add --force --detach "$TEMP_WORKTREE" main >/dev/null
+# 2. Build base ref eval-runner in an isolated worktree
+echo "[2/4] Building eval-runner from ${BASE_REF}..."
+TEMP_WORKTREE="$(mktemp -d "${TMPDIR:-/tmp}/dragonscale-eval-base-XXXXXX")"
+# Fetch the remote ref so it is current even when the local branch is stale/missing.
+git -C "$PROJECT_ROOT" fetch origin "${BASE_REF#origin/}" >/dev/null 2>&1 || true
+git -C "$PROJECT_ROOT" worktree add --force --detach "$TEMP_WORKTREE" "$BASE_REF" >/dev/null
 make -C "$TEMP_WORKTREE" DEVCONTAINER_EXEC= eval-build 2>&1 | tail -1
 cp "$TEMP_WORKTREE/eval/bin/eval-runner" "$EVAL_DIR/bin/eval-runner-main"
 
@@ -78,7 +85,7 @@ providers:
       DRAGONSCALE_EVAL_CONFIG: "${EVAL_CONFIG}"
       DRAGONSCALE_EVAL_BASE_CONFIG: "${EVAL_BASE_CONFIG}"
   - id: "exec:./bin/eval-runner-main"
-    label: "main"
+    label: "${BASE_REF}"
     config:
       timeout: 120000
     env:
