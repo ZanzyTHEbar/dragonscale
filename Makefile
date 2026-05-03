@@ -26,7 +26,6 @@ MAKEFILE_DIR := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 DEVCONTAINER_WORKSPACE ?= $(MAKEFILE_DIR)
 
 # Go command execution can optionally run through the devcontainer to match build env.
-HAS_NPX := $(shell command -v npx >/dev/null 2>&1; echo $$?)
 DEVCONTAINER_EXEC ?= 
 IN_DOCKER := $(strip $(shell [ -f /.dockerenv ] && echo 1))
 DEVCONTAINER_CLI := npx --yes @devcontainers/cli
@@ -35,9 +34,7 @@ DEVCONTAINER_EXEC_CMD := $(DEVCONTAINER_CLI) exec --workspace-folder "$(DEVCONTA
 CGO_ENV=CGO_ENABLED=$(CGO_ENABLED)
 ifeq ($(strip $(DEVCONTAINER_EXEC)),)
 ifneq ($(strip $(IN_DOCKER)),1)
-ifneq ($(strip $(shell test -d "$(DEVCONTAINER_WORKSPACE)/.devcontainer" && echo ok)),)
-	DEVCONTAINER_EXEC := $(DEVCONTAINER_UP_CMD) && $(DEVCONTAINER_EXEC_CMD)
-else ifeq ($(HAS_NPX),0)
+ifneq ($(strip $(shell test -d "$(DEVCONTAINER_WORKSPACE)/.devcontainer" && command -v npx >/dev/null 2>&1 && echo ok)),)
 	DEVCONTAINER_EXEC := $(DEVCONTAINER_UP_CMD) && $(DEVCONTAINER_EXEC_CMD)
 endif
 endif
