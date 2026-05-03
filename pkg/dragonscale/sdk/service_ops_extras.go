@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"net"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -486,8 +487,12 @@ func (s *Service) DaemonStart(ctx context.Context, out io.Writer) error {
 			} else if sigErr := p.Signal(syscall.Signal(0)); sigErr != nil {
 				fmt.Fprintf(out, `Warning: stale pid file cleaned up (pid %d not alive)\n`, pid)
 			} else {
-				fmt.Fprintf(out, `Daemon already running with PID %d\n`, pid)
-				return nil
+				if !daemonSocketAcceptsConnection(socketPath, time.Second) {
+					fmt.Fprintf(out, `Warning: stale pid/socket files cleaned up (pid %d alive but daemon socket unavailable)\n`, pid)
+				} else {
+					fmt.Fprintf(out, `Daemon already running with PID %d\n`, pid)
+					return nil
+				}
 			}
 			// Stale pid; clean up.
 			_ = os.Remove(pidPath)
@@ -586,6 +591,30 @@ func (s *Service) DaemonStart(ctx context.Context, out io.Writer) error {
 	}
 
 	return nil
+}
+
+func daemonSocketAcceptsConnection(socketPath string, timeout time.Duration) bool {
+	deadline := time.Now().Add(timeout)
+	for {
+		remaining := time.Until(deadline)
+		if remaining <= 0 {
+			return false
+		}
+		dialTimeout := 200 * time.Millisecond
+		if remaining < dialTimeout {
+			dialTimeout = remaining
+		}
+		dialer := net.Dialer{Timeout: dialTimeout}
+		conn, err := dialer.Dial("unix", socketPath)
+		if err == nil {
+			_ = conn.Close()
+			return true
+		}
+		if time.Until(deadline) <= 50*time.Millisecond {
+			return false
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
 }
 
 func (s *Service) DaemonStop(ctx context.Context, out io.Writer) error {

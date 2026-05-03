@@ -354,6 +354,22 @@ func TestResourcesFromContext_Empty(t *testing.T) {
 	}
 }
 
+func TestExecutionContextValuesCanBeCleared(t *testing.T) {
+	t.Parallel()
+
+	ctx := WithSessionKey(t.Context(), "session-1")
+	ctx = WithToolCallID(ctx, "call-1")
+	ctx = WithSessionKey(ctx, "")
+	ctx = WithToolCallID(ctx, "")
+
+	if got := SessionKeyFromContext(ctx); got != "" {
+		t.Fatalf("expected cleared session key, got %q", got)
+	}
+	if got := ToolCallIDFromContext(ctx); got != "" {
+		t.Fatalf("expected cleared tool_call id, got %q", got)
+	}
+}
+
 // --- test helpers ---
 
 // resourceAwareTool implements both Tool and ResourceProvider
@@ -460,6 +476,8 @@ func TestToolCallTool_RoutesThroughBusDispatcher(t *testing.T) {
 	}
 
 	ctx := WithSecureBusDispatcher(t.Context(), dispatcher)
+	ctx = WithSessionKey(ctx, "session-1")
+	ctx = WithToolCallID(ctx, "outer-call-1")
 	result := tc.Execute(ctx, map[string]interface{}{
 		"tool_name": "read_file",
 		"arguments": map[string]interface{}{"path": "/tmp/test.txt"},
@@ -487,6 +505,12 @@ func TestToolCallTool_RoutesThroughBusDispatcher(t *testing.T) {
 	}
 	if exec.ArgsJSON != string(argsJSON) {
 		t.Fatalf("expected args %s, got %s", string(argsJSON), exec.ArgsJSON)
+	}
+	if dispatchedReq.SessionKey != "session-1" {
+		t.Fatalf("expected session key propagation, got %q", dispatchedReq.SessionKey)
+	}
+	if dispatchedReq.ToolCallID != "outer-call-1" {
+		t.Fatalf("expected tool_call id propagation, got %q", dispatchedReq.ToolCallID)
 	}
 }
 

@@ -147,7 +147,7 @@ func (t *ToolCallTool) Execute(ctx context.Context, args map[string]interface{})
 		if err != nil {
 			return ErrorResult(fmt.Sprintf("failed to marshal tool arguments: %v", err))
 		}
-		req := itr.NewToolExecRequest(ids.New().String(), SessionKeyFromContext(ctx), "", toolName, string(argsJSON))
+		req := itr.NewToolExecRequest(ids.New().String(), SessionKeyFromContext(ctx), ToolCallIDFromContext(ctx), toolName, string(argsJSON))
 		resp := busDispatcher(ctx, req)
 		if resp.IsError {
 			return ErrorResult(resp.Result)

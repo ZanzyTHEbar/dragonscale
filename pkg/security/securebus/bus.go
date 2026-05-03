@@ -226,6 +226,8 @@ func (b *Bus) dispatch(ctx context.Context, req itr.ToolRequest) itr.ToolRespons
 		}
 		return itr.NewErrorResponse(req.ID, "policy violation: "+err.Error())
 	}
+	ctx = tools.WithSessionKey(ctx, req.SessionKey)
+	ctx = tools.WithToolCallID(ctx, req.ToolCallID)
 
 	// 4. Secret injection
 	injectedSecrets, injectedArgKeys, err := b.injectSecrets(ctx, caps.Secrets, args)

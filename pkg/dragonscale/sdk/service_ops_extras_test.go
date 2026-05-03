@@ -513,3 +513,64 @@ func TestServiceDaemonStart_CleansStalePidFile(t *testing.T) {
 		t.Fatal("daemon did not stop after context cancellation")
 	}
 }
+
+func TestServiceDaemonStart_StartsWhenLivePidHasNoSocket(t *testing.T) {
+	tmpDir := t.TempDir()
+	homeDir := filepath.Join(tmpDir, "home")
+	xdgConfig := filepath.Join(tmpDir, "xdg-config")
+	xdgData := filepath.Join(tmpDir, "xdg-data")
+	require.NoError(t, os.MkdirAll(homeDir, 0o700))
+	require.NoError(t, os.MkdirAll(xdgConfig, 0o700))
+	require.NoError(t, os.MkdirAll(xdgData, 0o700))
+	t.Setenv("HOME", homeDir)
+	t.Setenv("XDG_CONFIG_HOME", xdgConfig)
+	t.Setenv("XDG_DATA_HOME", xdgData)
+
+	cfgPath, err := config.DefaultConfigPath()
+	require.NoError(t, err)
+	cfg := config.DefaultConfig()
+	cfg.Memory.DBPath = filepath.Join(tmpDir, "daemon-live-pid-no-socket.db")
+	require.NoError(t, config.SaveConfig(cfgPath, cfg))
+
+	svc := NewService()
+
+	pidPath := svc.DaemonPIDPath()
+	socketPath := svc.DaemonSocketPath()
+	require.NoError(t, os.MkdirAll(filepath.Dir(pidPath), 0o700))
+	require.NoError(t, os.MkdirAll(filepath.Dir(socketPath), 0o700))
+	require.NoError(t, os.WriteFile(pidPath, []byte(fmt.Sprintf("%d\n", os.Getpid())), 0o600))
+	require.NoFileExists(t, socketPath)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	var out bytes.Buffer
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- svc.DaemonStart(ctx, &out)
+	}()
+
+	require.Eventually(t, func() bool {
+		select {
+		case err := <-errCh:
+			require.NoError(t, err)
+			return false
+		default:
+		}
+		_, socketErr := os.Stat(socketPath)
+		return socketErr == nil
+	}, 5*time.Second, 50*time.Millisecond)
+
+	pidData, err := os.ReadFile(pidPath)
+	require.NoError(t, err)
+	require.Equal(t, fmt.Sprintf("%d", os.Getpid()), strings.TrimSpace(string(pidData)))
+
+	cancel()
+	select {
+	case err := <-errCh:
+		require.NoError(t, err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("daemon did not stop after context cancellation")
+	}
+	require.Contains(t, out.String(), "stale pid/socket files cleaned up")
+}

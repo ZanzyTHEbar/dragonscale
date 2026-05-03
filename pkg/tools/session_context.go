@@ -11,6 +11,7 @@ type ctxExecutionTarget struct{}
 type ctxAsyncCallback struct{}
 type ctxInjectedArgKeys struct{}
 type ctxMessageSendTracker struct{}
+type ctxToolCallID struct{}
 
 type executionTarget struct {
 	channel string
@@ -22,18 +23,30 @@ type MessageSendTracker struct {
 }
 
 // WithSessionKey annotates the execution context with the session key that
-// session-scoped tools should use for this call tree.
+// session-scoped tools should use for this call tree. Passing an empty value
+// intentionally clears any inherited session key for child calls.
 func WithSessionKey(ctx context.Context, sessionKey string) context.Context {
-	if strings.TrimSpace(sessionKey) == "" {
-		return ctx
-	}
-	return context.WithValue(ctx, ctxSessionKey{}, sessionKey)
+	return context.WithValue(ctx, ctxSessionKey{}, strings.TrimSpace(sessionKey))
 }
 
 // SessionKeyFromContext returns the session key previously attached via
 // WithSessionKey. Missing values are treated as empty.
 func SessionKeyFromContext(ctx context.Context) string {
 	v, _ := ctx.Value(ctxSessionKey{}).(string)
+	return strings.TrimSpace(v)
+}
+
+// WithToolCallID annotates the execution context with the current LLM
+// tool_call.id so nested dispatch paths can preserve audit correlation. Passing
+// an empty value intentionally clears any inherited tool_call.id for child calls.
+func WithToolCallID(ctx context.Context, toolCallID string) context.Context {
+	return context.WithValue(ctx, ctxToolCallID{}, strings.TrimSpace(toolCallID))
+}
+
+// ToolCallIDFromContext returns the current LLM tool_call.id, if one was
+// attached to the execution context.
+func ToolCallIDFromContext(ctx context.Context) string {
+	v, _ := ctx.Value(ctxToolCallID{}).(string)
 	return strings.TrimSpace(v)
 }
 

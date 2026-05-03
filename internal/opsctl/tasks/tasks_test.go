@@ -452,8 +452,13 @@ func TestEvalCompareTaskDisablesNestedDevcontainerExecution(t *testing.T) {
 	compareScript, err := os.ReadFile(filepath.Clean(filepath.Join("..", "..", "..", "eval", "scripts", "compare.sh")))
 	require.NoError(t, err)
 	content := string(compareScript)
+	require.Contains(t, content, "Local Git ref or fetchable <remote>/<branch>")
 	require.Contains(t, content, "export DEVCONTAINER_EXEC=\"\"")
 	require.Contains(t, content, "make DEVCONTAINER_EXEC= eval-build")
+	require.Contains(t, content, "resolve_base_ref")
+	require.Contains(t, content, "fetch --prune")
+	require.Contains(t, content, "rev-parse --verify")
+	require.NotContains(t, content, "fetch origin \"${BASE_REF#origin/}\" >/dev/null 2>&1 || true")
 	require.Contains(t, content, "git -C \"$PROJECT_ROOT\" worktree add --force --detach")
 	require.Contains(t, content, "git -C \"$PROJECT_ROOT\" worktree remove --force")
 }

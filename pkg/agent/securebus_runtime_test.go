@@ -168,6 +168,22 @@ func waitForSecureBusAuditEvent(t *testing.T, q *sqlc.Queries, sessionKey, actio
 	return matched
 }
 
+func waitForSecureBusAuditTargetEvent(t *testing.T, q *sqlc.Queries, sessionKey, action, toolCallID, target string) sqlc.AgentAuditLog {
+	t.Helper()
+	var matched sqlc.AgentAuditLog
+	require.Eventually(t, func() bool {
+		rows := listAuditEntriesBySession(t, q, sessionKey)
+		for _, row := range rows {
+			if row.Action == action && row.ToolCallID == toolCallID && row.Target == target {
+				matched = row
+				return true
+			}
+		}
+		return false
+	}, 2*time.Second, 50*time.Millisecond)
+	return matched
+}
+
 func TestRepairToolCallInputRepairsDirectExecPlaceholder(t *testing.T) {
 	t.Parallel()
 
@@ -737,8 +753,11 @@ func TestToolCallReentersSecureBusForNestedTarget(t *testing.T) {
 	require.False(t, resp.IsError, "expected allow, got: %s", resp.Result)
 	require.Equal(t, "workspace file contents", resp.Result)
 
-	// Audit row for the nested read_file should be persisted.
-	waitForSecureBusAuditEvent(t, q, sessionKey, "securebus_tool_exec", "call-allow")
+	// Audit row for the nested read_file should be persisted with the outer
+	// tool_call ID preserved for correlation.
+	row := waitForSecureBusAuditTargetEvent(t, q, sessionKey, "securebus_tool_exec", "call-allow", "read_file")
+	require.NotNil(t, row.Input)
+	require.Contains(t, *row.Input, "docs/readme.md")
 
 	// ── Deny path: tool_call -> read_file outside workspace ──
 	outsidePath := filepath.Join(t.TempDir(), "secret.txt")
@@ -755,11 +774,10 @@ func TestToolCallReentersSecureBusForNestedTarget(t *testing.T) {
 	// Audit row for the policy violation must exist (the nested read_file
 	// request uses the bus entry point which records its own audit row with
 	// the given session key).
-	var row sqlc.AgentAuditLog
 	require.Eventually(t, func() bool {
 		rows := listAuditEntriesBySession(t, q, sessionKey)
 		for _, r := range rows {
-			if r.Action == "securebus_tool_exec_policy_violation" {
+			if r.Action == "securebus_tool_exec_policy_violation" && r.ToolCallID == "call-deny" && r.Target == "read_file" {
 				row = r
 				return true
 			}
