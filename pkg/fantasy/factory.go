@@ -146,6 +146,22 @@ var providerRegistry = []providerEntry{
 		proxy:                func(c *config.Config) string { return c.Providers.Moonshot.Proxy },
 		timeout:              func(c *config.Config) int { return c.Providers.Moonshot.Timeout },
 	},
+	{
+		names:       []string{"opencode-go", "opencode_go", "oc-go"},
+		apiKey:      func(c *config.Config) string { return c.Providers.OpenCode.APIKey },
+		apiBase:     func(c *config.Config) string { return c.Providers.OpenCode.APIBase },
+		defaultBase: "https://opencode.ai/zen/go/v1",
+		proxy:       func(c *config.Config) string { return c.Providers.OpenCode.Proxy },
+		timeout:     func(c *config.Config) int { return c.Providers.OpenCode.Timeout },
+	},
+	{
+		names:       []string{"opencode-zen", "opencode_zen", "oc-zen"},
+		apiKey:      func(c *config.Config) string { return c.Providers.OpenCode.APIKey },
+		apiBase:     func(c *config.Config) string { return c.Providers.OpenCode.APIBase },
+		defaultBase: "https://opencode.ai/zen/v1",
+		proxy:       func(c *config.Config) string { return c.Providers.OpenCode.Proxy },
+		timeout:     func(c *config.Config) int { return c.Providers.OpenCode.Timeout },
+	},
 }
 
 // findProviderByName returns the registry entry that matches the given explicit

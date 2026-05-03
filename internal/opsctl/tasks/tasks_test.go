@@ -167,6 +167,10 @@ func TestEnvExampleUsesRuntimeEnvNames(t *testing.T) {
 		"DRAGONSCALE_AGENTS_DEFAULTS_PROVIDER",
 		"DRAGONSCALE_AGENTS_DEFAULTS_MODEL",
 		"DRAGONSCALE_PROVIDERS_OPENROUTER_API_KEY",
+		"DRAGONSCALE_PROVIDERS_OPENCODE_API_KEY",
+		"DRAGONSCALE_PROVIDERS_OPENCODE_API_BASE",
+		"OPENCODE_API_KEY",
+		"OPENCODE_GO_API_KEY",
 		"DRAGONSCALE_TOOLS_WEB_BRAVE_API_KEY",
 	} {
 		require.Contains(t, content, name)
@@ -723,6 +727,8 @@ func TestEvalTaskForwardsProviderAuthEnv(t *testing.T) {
 			"DRAGONSCALE_PROVIDERS_OPENROUTER_API_BASE": "https://openrouter.example/v1",
 			"DRAGONSCALE_PROVIDERS_OPENAI_API_KEY":      "dragon-openai-key",
 			"DRAGONSCALE_PROVIDERS_OPENAI_API_BASE":     "https://openai.example/v1",
+			"DRAGONSCALE_PROVIDERS_OPENCODE_API_KEY":    "dragon-opencode-key",
+			"DRAGONSCALE_PROVIDERS_OPENCODE_API_BASE":   "https://opencode.example/v1",
 			"DRAGONSCALE_AGENTS_DEFAULTS_PROVIDER":      "openrouter",
 			"DRAGONSCALE_AGENTS_DEFAULTS_MODEL":         "openai/gpt-4o-mini",
 		},
@@ -742,6 +748,8 @@ func TestEvalTaskForwardsProviderAuthEnv(t *testing.T) {
 		"DRAGONSCALE_PROVIDERS_OPENROUTER_API_BASE=https://openrouter.example/v1",
 		"DRAGONSCALE_PROVIDERS_OPENAI_API_KEY=dragon-openai-key",
 		"DRAGONSCALE_PROVIDERS_OPENAI_API_BASE=https://openai.example/v1",
+		"DRAGONSCALE_PROVIDERS_OPENCODE_API_KEY=dragon-opencode-key",
+		"DRAGONSCALE_PROVIDERS_OPENCODE_API_BASE=https://opencode.example/v1",
 		"DRAGONSCALE_AGENTS_DEFAULTS_PROVIDER=openrouter",
 		"DRAGONSCALE_AGENTS_DEFAULTS_MODEL=openai/gpt-4o-mini",
 	} {

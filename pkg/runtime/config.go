@@ -118,6 +118,9 @@ func ApplyEvalProviderDefaults(cfg *config.Config) {
 	if cfg.Providers.OpenAI.APIKey == "" {
 		cfg.Providers.OpenAI.APIKey = lookupFirstEnv("DRAGONSCALE_PROVIDERS_OPENAI_API_KEY", "OPENAI_API_KEY")
 	}
+	if cfg.Providers.OpenCode.APIKey == "" {
+		cfg.Providers.OpenCode.APIKey = lookupFirstEnv("DRAGONSCALE_PROVIDERS_OPENCODE_API_KEY", "OPENCODE_API_KEY", "OPENCODE_GO_API_KEY")
+	}
 	if provider := lookupFirstEnv("DRAGONSCALE_AGENTS_DEFAULTS_PROVIDER"); provider != "" {
 		cfg.Agents.Defaults.Provider = provider
 	}
@@ -126,6 +129,17 @@ func ApplyEvalProviderDefaults(cfg *config.Config) {
 	}
 
 	if hasUsableEvalProvider(cfg) {
+		return
+	}
+
+	if cfg.Providers.OpenCode.APIKey != "" && cfg.Agents.Defaults.Provider == "" {
+		cfg.Agents.Defaults.Provider = "opencode-go"
+		if cfg.Providers.OpenCode.APIBase == "" {
+			cfg.Providers.OpenCode.APIBase = "https://opencode.ai/zen/go/v1"
+		}
+		if isDefaultOrEmptyEvalModel(cfg.Agents.Defaults.Model) {
+			cfg.Agents.Defaults.Model = "kimi-k2.6"
+		}
 		return
 	}
 
@@ -221,6 +235,8 @@ func evalProviderConfigured(cfg *config.Config, provider string) bool {
 		return providerKeyConfigured(cfg.Providers.ShengSuanYun.APIKey)
 	case "github_copilot":
 		return providerKeyConfigured(cfg.Providers.GitHubCopilot.APIKey)
+	case "opencode-go", "opencode-zen":
+		return providerKeyConfigured(cfg.Providers.OpenCode.APIKey)
 	default:
 		return false
 	}
@@ -263,6 +279,7 @@ func EnsureMinProviderTimeout(cfg *config.Config, minTimeout time.Duration) {
 		&cfg.Providers.ShengSuanYun,
 		&cfg.Providers.DeepSeek,
 		&cfg.Providers.GitHubCopilot,
+		&cfg.Providers.OpenCode,
 	}
 	for _, p := range providers {
 		set(p)

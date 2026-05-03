@@ -195,6 +195,11 @@ The comparison flow uses a temporary git worktree for the base ref, so the activ
   - Convenience aliases: `OPENROUTER_API_KEY`, `OPENAI_API_KEY`
   - Optional model/provider overrides: `DRAGONSCALE_AGENTS_DEFAULTS_PROVIDER`, `DRAGONSCALE_AGENTS_DEFAULTS_MODEL`
 - When no provider-backed base config is found, eval defaults to OpenRouter first (`openai/gpt-4o-mini`) when an OpenRouter key is present, then OpenAI (`gpt-4o-mini`) when an OpenAI key is present.
+- OpenCode Go / Zen auth:
+  - `OPENCODE_API_KEY`, `OPENCODE_GO_API_KEY` aliases map to `DRAGONSCALE_PROVIDERS_OPENCODE_API_KEY`
+  - `DRAGONSCALE_PROVIDERS_OPENCODE_API_BASE` defaults to `https://opencode.ai/zen/go/v1` for `opencode-go` and `https://opencode.ai/zen/v1` for `opencode-zen`
+  - Eval auto-routing prefers `opencode-go` when an OpenCode key is present and no explicit provider is set
+  - Example: `OPENCODE_API_KEY=oc-... SKIP_DEVCONTAINER_WRAPPER=1 make DEVCONTAINER_EXEC= eval-proof-full`
 - `promptfooconfig.yaml` intentionally does not set provider-level `DRAGONSCALE_EVAL_CONFIG`; opsctl supplies the default/override so promptfoo does not overwrite caller-provided config before launching `eval-runner`.
 - For direct promptfoo runs that bypass `make eval`/opsctl, set the overlay explicitly, for example `cd eval && DRAGONSCALE_EVAL_CONFIG=./configs/default.json npx promptfoo eval -c reverify-two-cases.yaml`.
 - Do not commit provider config files containing API keys. CI should continue to use the `DRAGONSCALE_EVAL_BASE_CONFIG` secret-materialization workflow.

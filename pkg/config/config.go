@@ -279,6 +279,7 @@ type ProvidersConfig struct {
 	ShengSuanYun  ProviderConfig       `json:"shengsuanyun"`
 	DeepSeek      ProviderConfig       `json:"deepseek"`
 	GitHubCopilot ProviderConfig       `json:"github_copilot"`
+	OpenCode      ProviderConfig       `json:"opencode"`
 }
 
 // ConfiguredNames returns the names of providers that have credentials set
@@ -301,6 +302,8 @@ func (p ProvidersConfig) ConfiguredNames() []string {
 		{"ollama", p.Ollama.APIBase},
 		{"vllm", p.VLLM.APIBase},
 		{"github_copilot", p.GitHubCopilot.APIKey},
+		{"opencode-go", p.OpenCode.APIKey},
+		{"opencode-zen", p.OpenCode.APIKey},
 	}
 	var names []string
 	for _, e := range entries {
@@ -587,6 +590,7 @@ func providerEnvBindings(cfg *Config) []providerEnvBinding {
 		{name: "SHENGSUANYUN", target: &cfg.Providers.ShengSuanYun},
 		{name: "DEEPSEEK", target: &cfg.Providers.DeepSeek},
 		{name: "GITHUB_COPILOT", target: &cfg.Providers.GitHubCopilot},
+		{name: "OPENCODE", target: &cfg.Providers.OpenCode},
 	}
 }
 
