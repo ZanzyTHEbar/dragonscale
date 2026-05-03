@@ -79,6 +79,7 @@ type AgentLoop struct {
 	toolResultSearch        fantasy.AgentTool
 	cortex                  *cortex.Cortex
 	inflight                sync.WaitGroup
+	stopOnce                sync.Once
 }
 
 type outputTarget struct {
@@ -499,25 +500,31 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 
 func (al *AgentLoop) Stop() {
 	al.running.Store(false)
-	al.inflight.Wait()
+	al.stopOnce.Do(func() {
+		al.inflight.Wait()
 
-	if al.auditChan != nil {
-		close(al.auditChan)
-		<-al.auditDone // wait for audit worker to drain
-	}
-	if al.sessions != nil {
-		al.sessions.Close()
-	}
-	if al.identitySync != nil {
-		al.identitySync.Close()
-	}
-	if al.memoryStore != nil {
-		if err := al.memoryStore.Sync(); err != nil {
-			logger.WarnCF("agent", "Failed to sync memory before shutdown",
-				map[string]interface{}{"error": err.Error()})
+		if al.secureBus != nil {
+			al.secureBus.Close()
 		}
-		al.memoryStore.Close()
-	}
+
+		if al.auditChan != nil {
+			close(al.auditChan)
+			<-al.auditDone // wait for audit worker to drain
+		}
+		if al.sessions != nil {
+			al.sessions.Close()
+		}
+		if al.identitySync != nil {
+			al.identitySync.Close()
+		}
+		if al.memoryStore != nil {
+			if err := al.memoryStore.Sync(); err != nil {
+				logger.WarnCF("agent", "Failed to sync memory before shutdown",
+					map[string]interface{}{"error": err.Error()})
+			}
+			al.memoryStore.Close()
+		}
+	})
 }
 
 // auditWorker drains the audit channel, accumulating entries and flushing
@@ -576,6 +583,9 @@ func (al *AgentLoop) SetChannelManager(cm *channels.Manager) {
 // calls are routed through the bus for capability enforcement, secret injection,
 // leak scanning, and audit logging. Call before the first message is processed.
 func (al *AgentLoop) SetSecureBus(b *securebus.Bus) {
+	if al.secureBus != nil && al.secureBus != b {
+		al.secureBus.Close()
+	}
 	al.secureBus = b
 }
 
@@ -583,7 +593,8 @@ func (al *AgentLoop) SetSecureBus(b *securebus.Bus) {
 // attaches it so all subsequent tool calls are routed through it.
 // ss may be nil — secret injection is then disabled but all other enforcement
 // (policy, leak scanning, audit) remains active.
-// The returned Bus must be closed on shutdown.
+// The loop owns the installed bus: replacing it closes the previous bus, and
+// Stop closes the current bus.
 func (al *AgentLoop) SetupSecureBus(ss *security.SecretStore, cfg securebus.BusConfig) *securebus.Bus {
 	if cfg.Policy.AllowedWorkspace == "" && al.cfg != nil && al.cfg.RestrictToSandbox() {
 		cfg.Policy.AllowedWorkspace = al.cfg.SandboxPath()
@@ -621,7 +632,7 @@ func (al *AgentLoop) SetupSecureBus(ss *security.SecretStore, cfg securebus.BusC
 	}
 	auditSink := newSecureBusAuditSink(al.enqueueAuditEntry)
 	b := securebus.New(cfg, ss, capLookup, executor, auditSink)
-	al.secureBus = b
+	al.SetSecureBus(b)
 	return b
 }
 

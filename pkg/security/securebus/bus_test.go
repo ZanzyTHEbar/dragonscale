@@ -507,6 +507,16 @@ func TestBus_CloseIdempotent(t *testing.T) {
 	}, "Close() must be safe to call multiple times")
 }
 
+func TestBus_CloseRejectsTransportSend(t *testing.T) {
+	t.Parallel()
+	bus := makeBus(t, nil, nil)
+
+	bus.Close()
+	_, err := bus.Transport().Send(t.Context(), itr.NewFinalRequest("req-closed", "sess", 0, "done", ""))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "transport closed")
+}
+
 func TestBus_ToolSearch(t *testing.T) {
 	t.Parallel()
 	bus := makeBus(t, nil, nil)

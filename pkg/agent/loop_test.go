@@ -7,12 +7,15 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	fantasy "charm.land/fantasy"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/bus"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/config"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/itr"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/memory"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/messages"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/security/securebus"
 	"go.uber.org/mock/gomock"
 )
 
@@ -542,6 +545,91 @@ func TestAgentLoop_ContextCancellation(t *testing.T) {
 
 	// Should handle gracefully (but currently may panic due to session manager)
 	al.processMessage(ctx, msg)
+}
+
+func TestAgentLoop_StopClosesSecureBus(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	cfg := config.DefaultConfig()
+	cfg.Agents.Defaults.Sandbox = tmpDir
+
+	msgBus := bus.NewMessageBus()
+	model := newMockLanguageModel(t, "ok")
+	al := mustNewAgentLoop(t, cfg, msgBus, model)
+	sb := al.secureBus
+	if sb == nil {
+		t.Fatal("secureBus should be initialized")
+	}
+
+	al.Stop()
+	al.Stop()
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	_, err := sb.Transport().Send(ctx, itr.NewFinalRequest("req-stop", "sess", 0, "done", ""))
+	if err == nil || !strings.Contains(err.Error(), "transport closed") {
+		t.Fatalf("expected closed transport error, got %v", err)
+	}
+}
+
+func TestAgentLoop_SetupSecureBusClosesReplacedBus(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	cfg := config.DefaultConfig()
+	cfg.Agents.Defaults.Sandbox = tmpDir
+
+	msgBus := bus.NewMessageBus()
+	model := newMockLanguageModel(t, "ok")
+	al := mustNewAgentLoop(t, cfg, msgBus, model)
+	defer al.Stop()
+	first := al.secureBus
+	if first == nil {
+		t.Fatal("secureBus should be initialized")
+	}
+
+	second := al.SetupSecureBus(nil, securebus.DefaultBusConfig())
+	if second == nil || second == first {
+		t.Fatal("SetupSecureBus should install a replacement bus")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	_, err := first.Transport().Send(ctx, itr.NewFinalRequest("req-replaced", "sess", 0, "done", ""))
+	if err == nil || !strings.Contains(err.Error(), "transport closed") {
+		t.Fatalf("expected replaced bus transport to be closed, got %v", err)
+	}
+}
+
+func TestAgentLoop_SetSecureBusClosesReplacedBus(t *testing.T) {
+	t.Parallel()
+
+	tmpDir := t.TempDir()
+	cfg := config.DefaultConfig()
+	cfg.Agents.Defaults.Sandbox = tmpDir
+
+	msgBus := bus.NewMessageBus()
+	model := newMockLanguageModel(t, "ok")
+	al := mustNewAgentLoop(t, cfg, msgBus, model)
+	defer al.Stop()
+	first := al.secureBus
+	if first == nil {
+		t.Fatal("secureBus should be initialized")
+	}
+
+	replacement := securebus.New(securebus.DefaultBusConfig(), nil, nil, nil)
+	al.SetSecureBus(replacement)
+	if al.secureBus != replacement {
+		t.Fatal("SetSecureBus should install replacement bus")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	_, err := first.Transport().Send(ctx, itr.NewFinalRequest("req-set-replaced", "sess", 0, "done", ""))
+	if err == nil || !strings.Contains(err.Error(), "transport closed") {
+		t.Fatalf("expected replaced bus transport to be closed, got %v", err)
+	}
 }
 
 func TestAgentLoop_ToolResultLimit(t *testing.T) {
