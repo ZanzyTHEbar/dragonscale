@@ -65,7 +65,7 @@ type AgentLoop struct {
 	identitySync            *dragonsync.IdentitySync        // File→DB sync for identity docs (nil if memory disabled)
 	activeSessionKey        atomic.Value                    // Owner: agent_run.go — written in runAgentLoop, read by router/toolloop for context routing
 	running                 atomic.Bool                     // Owner: loop.go — lifecycle gate controlled by Run/Stop only
-	summarizing             sync.Map                        // Owner: summarizer.go — intended for async summarization lockout, currently gated by TODO path
+	summarizing             sync.Map                        // Owner: summarizer.go — async summarization lease/lockout per session
 	summarizeFailures       sync.Map                        // Owner: summarizer.go — write/read in forceCompression + summarizeSession error paths
 	contextTreeCache        sync.Map                        // Owner: summarizer.go — sessionKey → contextTreeCacheEntry keyed by query and history size
 	auditChan               chan *memory.AuditEntry         // Buffered channel for async audit logging; drained by background worker

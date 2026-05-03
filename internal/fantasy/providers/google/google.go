@@ -537,7 +537,10 @@ func toGooglePrompt(prompt fantasy.Prompt) (*genai.Content, []*genai.Content, []
 				})
 			}
 		default:
-			panic("unsupported message role: " + msg.Role)
+			warnings = append(warnings, fantasy.CallWarning{
+				Type:    fantasy.CallWarningTypeOther,
+				Message: fmt.Sprintf("unsupported message role: %s", msg.Role),
+			})
 		}
 	}
 	return systemInstructions, content, warnings
