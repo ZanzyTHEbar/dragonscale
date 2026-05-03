@@ -23,13 +23,13 @@ const (
 // The server side listens for connections and dispatches requests to the
 // SecureBus; the client side connects and performs request/response exchanges.
 type SocketTransport struct {
-	mu        sync.Mutex
 	closeOnce sync.Once
 	path      string
 	conn      net.Conn
 	listener  net.Listener
 	closed    chan struct{}
 	isServer  bool
+	sendSem   chan struct{}
 
 	connsMu sync.Mutex
 	conns   []net.Conn
@@ -42,9 +42,10 @@ func NewSocketTransportClient(path string) (*SocketTransport, error) {
 		return nil, fmt.Errorf("connect to daemon at %s: %w", path, err)
 	}
 	return &SocketTransport{
-		path:   path,
-		conn:   conn,
-		closed: make(chan struct{}),
+		path:    path,
+		conn:    conn,
+		closed:  make(chan struct{}),
+		sendSem: make(chan struct{}, 1),
 	}, nil
 }
 
@@ -72,31 +73,88 @@ func NewSocketTransportServer(path string) (*SocketTransport, error) {
 }
 
 // Send submits a request over the socket and blocks until the response arrives.
-// Client-side only.
+// Client-side only. If ctx is cancelled during a request, the client transport
+// is closed because the request/response stream may no longer be synchronized.
 func (st *SocketTransport) Send(ctx context.Context, req itr.ToolRequest) (itr.ToolResponse, error) {
 	if st.isServer {
 		return itr.ToolResponse{}, fmt.Errorf("Send called on server transport; use Serve instead")
 	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
 
-	st.mu.Lock()
-	defer st.mu.Unlock()
+	release, err := st.acquireSend(ctx)
+	if err != nil {
+		return itr.ToolResponse{}, err
+	}
+	defer release()
 
 	select {
 	case <-st.closed:
 		return itr.ToolResponse{}, fmt.Errorf("transport closed")
+	case <-ctx.Done():
+		return itr.ToolResponse{}, ctx.Err()
 	default:
 	}
 
+	cleanupDeadline := st.watchSendContext(ctx)
+	// Clear any cancellation deadline before releasing the send semaphore so the
+	// next request cannot inherit a stale expired deadline.
+	defer cleanupDeadline()
+
 	if err := writeFrame(st.conn, req); err != nil {
-		return itr.ToolResponse{}, fmt.Errorf("write request: %w", err)
+		return itr.ToolResponse{}, st.sendIOError(ctx, "write request", err)
 	}
 
 	var resp itr.ToolResponse
 	if err := readFrame(st.conn, &resp); err != nil {
-		return itr.ToolResponse{}, fmt.Errorf("read response: %w", err)
+		return itr.ToolResponse{}, st.sendIOError(ctx, "read response", err)
 	}
 
 	return resp, nil
+}
+
+func (st *SocketTransport) acquireSend(ctx context.Context) (func(), error) {
+	select {
+	case st.sendSem <- struct{}{}:
+		return func() { <-st.sendSem }, nil
+	case <-st.closed:
+		return nil, fmt.Errorf("transport closed")
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+func (st *SocketTransport) watchSendContext(ctx context.Context) func() {
+	if st.conn == nil || ctx.Done() == nil {
+		return func() {}
+	}
+
+	done := make(chan struct{})
+	watchDone := make(chan struct{})
+	go func() {
+		defer close(watchDone)
+		select {
+		case <-ctx.Done():
+			_ = st.conn.SetDeadline(time.Now())
+		case <-st.closed:
+		case <-done:
+		}
+	}()
+
+	return func() {
+		close(done)
+		<-watchDone
+		_ = st.conn.SetDeadline(time.Time{})
+	}
+}
+
+func (st *SocketTransport) sendIOError(ctx context.Context, op string, err error) error {
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		_ = st.Close()
+		return fmt.Errorf("%s: %w", op, ctxErr)
+	}
+	return fmt.Errorf("%s: %w", op, err)
 }
 
 // Serve accepts connections and dispatches requests to handler. Blocks until

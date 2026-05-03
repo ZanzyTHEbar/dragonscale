@@ -132,6 +132,124 @@ func TestSocketTransportClientSendOnClosed(t *testing.T) {
 	server.Close()
 }
 
+func TestSocketTransportSendHonorsContextDeadline(t *testing.T) {
+	t.Parallel()
+	sockPath := filepath.Join(t.TempDir(), "send-deadline.sock")
+
+	server, err := NewSocketTransportServer(sockPath)
+	require.NoError(t, err)
+	defer server.Close()
+
+	handlerStarted := make(chan struct{})
+	releaseHandler := make(chan struct{})
+	serveErr := make(chan error, 1)
+	go func() {
+		serveErr <- server.ServeContext(context.Background(), func(reqCtx context.Context, req itr.ToolRequest) itr.ToolResponse {
+			close(handlerStarted)
+			select {
+			case <-releaseHandler:
+			case <-reqCtx.Done():
+			}
+			return itr.ToolResponse{ID: req.ID, Result: "late"}
+		})
+	}()
+
+	client, err := NewSocketTransportClient(sockPath)
+	require.NoError(t, err)
+	defer client.Close()
+
+	sendCtx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	_, err = client.Send(sendCtx, itr.NewFinalRequest("req-deadline", "sess", 0, "done", ""))
+	require.Error(t, err)
+	require.True(t, errors.Is(err, context.DeadlineExceeded), "Send error = %v, want context deadline", err)
+
+	select {
+	case <-handlerStarted:
+	case <-time.After(time.Second):
+		t.Fatal("handler did not receive request")
+	}
+
+	_, err = client.Send(t.Context(), itr.NewFinalRequest("req-after-timeout", "sess", 0, "done", ""))
+	require.ErrorContains(t, err, "transport closed")
+
+	close(releaseHandler)
+	require.NoError(t, server.Close())
+	select {
+	case err := <-serveErr:
+		require.NoError(t, err)
+	case <-time.After(time.Second):
+		t.Fatal("ServeContext did not return after server close")
+	}
+}
+
+func TestSocketTransportSendHonorsContextWhileSendInFlight(t *testing.T) {
+	t.Parallel()
+	sockPath := filepath.Join(t.TempDir(), "send-inflight.sock")
+
+	server, err := NewSocketTransportServer(sockPath)
+	require.NoError(t, err)
+	defer server.Close()
+
+	firstStarted := make(chan struct{})
+	releaseFirst := make(chan struct{})
+	serveErr := make(chan error, 1)
+	go func() {
+		serveErr <- server.ServeContext(context.Background(), func(reqCtx context.Context, req itr.ToolRequest) itr.ToolResponse {
+			if req.ID == "req-block" {
+				close(firstStarted)
+				select {
+				case <-releaseFirst:
+				case <-reqCtx.Done():
+				}
+			}
+			return itr.ToolResponse{ID: req.ID, Result: "ok"}
+		})
+	}()
+
+	client, err := NewSocketTransportClient(sockPath)
+	require.NoError(t, err)
+	defer client.Close()
+
+	firstDone := make(chan error, 1)
+	go func() {
+		_, err := client.Send(t.Context(), itr.NewFinalRequest("req-block", "sess", 0, "done", ""))
+		firstDone <- err
+	}()
+
+	select {
+	case <-firstStarted:
+	case <-time.After(time.Second):
+		t.Fatal("first request did not reach handler")
+	}
+
+	sendCtx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	_, err = client.Send(sendCtx, itr.NewFinalRequest("req-waiting", "sess", 0, "done", ""))
+	require.Error(t, err)
+	require.True(t, errors.Is(err, context.DeadlineExceeded), "waiting Send error = %v, want context deadline", err)
+
+	close(releaseFirst)
+	select {
+	case err := <-firstDone:
+		require.NoError(t, err)
+	case <-time.After(time.Second):
+		t.Fatal("first Send did not finish after release")
+	}
+
+	resp, err := client.Send(t.Context(), itr.NewFinalRequest("req-after-wait-timeout", "sess", 0, "done", ""))
+	require.NoError(t, err)
+	assert.Empty(t, cmp.Diff("req-after-wait-timeout", resp.ID))
+
+	require.NoError(t, server.Close())
+	select {
+	case err := <-serveErr:
+		require.NoError(t, err)
+	case <-time.After(time.Second):
+		t.Fatal("ServeContext did not return after server close")
+	}
+}
+
 func TestSocketTransportCloseConcurrent(t *testing.T) {
 	t.Parallel()
 	sockPath := filepath.Join(t.TempDir(), "concurrent-close.sock")
