@@ -2,6 +2,7 @@ package fantasy
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"charm.land/fantasy/internal/testcmp"
@@ -13,11 +14,28 @@ import (
 func newRecordingToolRuntime(t *testing.T, stepIndices *[]int) *MockToolRuntime {
 	t.Helper()
 	runtime := NewMockToolRuntime(gomock.NewController(t))
-	runtime.EXPECT().Execute(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(
-		func(ctx context.Context, _ []AgentTool, _ []ExecutableProviderTool, calls []ToolCallContent, _ func(ToolResultContent) error) ([]ToolResultContent, error) {
+	runtime.EXPECT().Execute(
+		gomock.Any(),
+		gomock.AssignableToTypeOf([]AgentTool{}),
+		gomock.AssignableToTypeOf([]ExecutableProviderTool{}),
+		gomock.AssignableToTypeOf([]ToolCallContent{}),
+		gomock.Any(),
+	).DoAndReturn(
+		func(ctx context.Context, tools []AgentTool, execProviderTools []ExecutableProviderTool, calls []ToolCallContent, _ func(ToolResultContent) error) ([]ToolResultContent, error) {
 			if len(calls) == 0 {
 				return nil, nil
 			}
+			require.Len(t, tools, 1)
+			assert.Equal(t, "echo", tools[0].Info().Name)
+			require.Empty(t, execProviderTools)
+			require.Len(t, calls, 1)
+
+			stepIndex := StepIndexFromCtx(ctx)
+			expectedCallID := fmt.Sprintf("call-%d", stepIndex+1)
+			assert.Equal(t, expectedCallID, calls[0].ToolCallID)
+			assert.Equal(t, "echo", calls[0].ToolName)
+			assert.Equal(t, `{}`, calls[0].Input)
+
 			*stepIndices = append(*stepIndices, StepIndexFromCtx(ctx))
 			results := make([]ToolResultContent, 0, len(calls))
 			for _, call := range calls {
@@ -29,7 +47,9 @@ func newRecordingToolRuntime(t *testing.T, stepIndices *[]int) *MockToolRuntime 
 			}
 			return results, nil
 		},
-	).AnyTimes()
+	// The runtime is invoked once per ReAct step, including the terminal step
+	// with no tool calls. Keep this exact to catch accidental extra loop steps.
+	).Times(3)
 	return runtime
 }
 
