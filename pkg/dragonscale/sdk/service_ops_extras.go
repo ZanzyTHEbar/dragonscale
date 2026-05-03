@@ -564,7 +564,7 @@ func (s *Service) DaemonStart(ctx context.Context, out io.Writer) error {
 
 	srvErr := make(chan error, 1)
 	go func() {
-		srvErr <- svr.Serve(func(reqCtx context.Context, req itr.ToolRequest) itr.ToolResponse {
+		srvErr <- svr.ServeContext(ctx, func(reqCtx context.Context, req itr.ToolRequest) itr.ToolResponse {
 			return bus.Execute(reqCtx, req)
 		})
 	}()

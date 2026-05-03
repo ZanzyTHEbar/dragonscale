@@ -23,12 +23,13 @@ const (
 // The server side listens for connections and dispatches requests to the
 // SecureBus; the client side connects and performs request/response exchanges.
 type SocketTransport struct {
-	mu       sync.Mutex
-	path     string
-	conn     net.Conn
-	listener net.Listener
-	closed   chan struct{}
-	isServer bool
+	mu        sync.Mutex
+	closeOnce sync.Once
+	path      string
+	conn      net.Conn
+	listener  net.Listener
+	closed    chan struct{}
+	isServer  bool
 
 	connsMu sync.Mutex
 	conns   []net.Conn
@@ -101,12 +102,33 @@ func (st *SocketTransport) Send(ctx context.Context, req itr.ToolRequest) (itr.T
 // Serve accepts connections and dispatches requests to handler. Blocks until
 // Close is called or the listener errors. Server-side only.
 func (st *SocketTransport) Serve(handler func(ctx context.Context, req itr.ToolRequest) itr.ToolResponse) error {
+	return st.ServeContext(context.Background(), handler)
+}
+
+// ServeContext accepts connections and dispatches requests to handler with ctx
+// as the parent request context. Cancelling ctx closes the server transport.
+func (st *SocketTransport) ServeContext(ctx context.Context, handler func(ctx context.Context, req itr.ToolRequest) itr.ToolResponse) error {
 	if !st.isServer {
 		return fmt.Errorf("Serve called on client transport")
 	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	serveCtx, cancel := context.WithCancel(ctx)
+
+	go func() {
+		select {
+		case <-serveCtx.Done():
+			_ = st.Close()
+		case <-st.closed:
+			cancel()
+		}
+	}()
 
 	var wg sync.WaitGroup
 	defer wg.Wait()
+	defer cancel()
+	defer st.Close()
 
 	for {
 		conn, err := st.listener.Accept()
@@ -127,15 +149,17 @@ func (st *SocketTransport) Serve(handler func(ctx context.Context, req itr.ToolR
 		go func(c net.Conn) {
 			defer wg.Done()
 			defer c.Close()
-			st.handleConnection(c, handler)
+			st.handleConnection(serveCtx, c, handler)
 		}(conn)
 	}
 }
 
-func (st *SocketTransport) handleConnection(conn net.Conn, handler func(ctx context.Context, req itr.ToolRequest) itr.ToolResponse) {
+func (st *SocketTransport) handleConnection(ctx context.Context, conn net.Conn, handler func(ctx context.Context, req itr.ToolRequest) itr.ToolResponse) {
 	for {
 		select {
 		case <-st.closed:
+			return
+		case <-ctx.Done():
 			return
 		default:
 		}
@@ -148,7 +172,7 @@ func (st *SocketTransport) handleConnection(conn net.Conn, handler func(ctx cont
 			return
 		}
 
-		resp := handler(context.Background(), req)
+		resp := handler(ctx, req)
 
 		if err := writeFrame(conn, resp); err != nil {
 			return
@@ -163,28 +187,25 @@ func (st *SocketTransport) Path() string {
 
 // Close shuts down the transport.
 func (st *SocketTransport) Close() error {
-	select {
-	case <-st.closed:
-		return nil
-	default:
+	st.closeOnce.Do(func() {
 		close(st.closed)
-	}
 
-	if st.listener != nil {
-		st.listener.Close()
-		_ = os.Remove(st.path)
-	}
+		if st.listener != nil {
+			st.listener.Close()
+			_ = os.Remove(st.path)
+		}
 
-	st.connsMu.Lock()
-	for _, c := range st.conns {
-		c.Close()
-	}
-	st.conns = nil
-	st.connsMu.Unlock()
+		st.connsMu.Lock()
+		for _, c := range st.conns {
+			c.Close()
+		}
+		st.conns = nil
+		st.connsMu.Unlock()
 
-	if st.conn != nil {
-		st.conn.Close()
-	}
+		if st.conn != nil {
+			st.conn.Close()
+		}
+	})
 	return nil
 }
 
