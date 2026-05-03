@@ -2,12 +2,9 @@ package fantasy
 
 import "context"
 
-// ToolRuntime controls how tool calls are executed (sequential, parallel, DAG, etc).
-//
-// The default behavior is sequential execution identical to the legacy agent
-// implementation.
+// ToolRuntime controls how client-side tool calls are executed.
 type ToolRuntime interface {
-	Execute(ctx context.Context, tools []AgentTool, toolCalls []ToolCallContent, toolResultCallback func(result ToolResultContent) error) ([]ToolResultContent, error)
+	Execute(ctx context.Context, tools []AgentTool, execProviderTools []ExecutableProviderTool, toolCalls []ToolCallContent, toolResultCallback func(result ToolResultContent) error) ([]ToolResultContent, error)
 }
 
 // ToolRuntimeMetrics captures lightweight execution counters.

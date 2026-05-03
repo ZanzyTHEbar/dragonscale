@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -265,6 +266,66 @@ func TestSessionManager_DelegateSaveIsNoop(t *testing.T) {
 			t.Errorf("delegate mode should not write JSON files, found %s", e.Name())
 		}
 	}
+}
+
+func TestSessionManager_DelegateSavePersistsAndRestoresSummary(t *testing.T) {
+	t.Parallel()
+
+	del, err := delegate.NewLibSQLInMemory()
+	require.NoError(t, err)
+	require.NoError(t, del.Init(t.Context()))
+	defer del.Close()
+
+	sm := NewSessionManager("", WithSessionDelegate(del, "test-agent"))
+	key := "delegate-summary"
+	sm.AddMessage(key, "user", "hello")
+	sm.SetSummary(key, "durable summary")
+	require.NoError(t, sm.Save(key))
+
+	summaries, err := del.ListSummaries(t.Context(), "test-agent", key, 1)
+	require.NoError(t, err)
+	require.Len(t, summaries, 1)
+	assert.Equal(t, "durable summary", summaries[0].Content)
+
+	restored := NewSessionManager("", WithSessionDelegate(del, "test-agent"))
+	assert.Equal(t, "durable summary", restored.GetSummary(key))
+}
+
+func TestSessionManager_CloseWhileSaveRuns(t *testing.T) {
+	t.Parallel()
+
+	del, err := delegate.NewLibSQLInMemory()
+	require.NoError(t, err)
+	require.NoError(t, del.Init(t.Context()))
+	defer del.Close()
+
+	sm := NewSessionManager("", WithSessionDelegate(del, "test-agent"))
+	key := "close-while-save"
+	sm.AddMessage(key, "user", "hello")
+	sm.AddMessage(key, "assistant", "world")
+
+	var wg sync.WaitGroup
+	errCh := make(chan error, 8)
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			errCh <- sm.Save(key)
+		}()
+	}
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		sm.Close()
+	}()
+
+	wg.Wait()
+	close(errCh)
+	for err := range errCh {
+		require.NoError(t, err)
+	}
+	sm.Close()
 }
 
 func TestSessionManager_DelegateBootstrapPaginationAndOrder(t *testing.T) {

@@ -1,7 +1,9 @@
 package openai
 
 import (
+	"context"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -9,10 +11,8 @@ import (
 	"testing"
 
 	"charm.land/fantasy"
-	jsonv2 "github.com/go-json-experiment/json"
-	"github.com/google/go-cmp/cmp"
-	"github.com/openai/openai-go/v2/packages/param"
-	"github.com/stretchr/testify/assert"
+	"charm.land/fantasy/internal/testcmp"
+	"github.com/charmbracelet/openai-go/packages/param"
 	"github.com/stretchr/testify/require"
 )
 
@@ -38,7 +38,7 @@ func TestToOpenAiPrompt_SystemMessages(t *testing.T) {
 
 		systemMsg := messages[0].OfSystem
 		require.NotNil(t, systemMsg)
-		assert.Empty(t, cmp.Diff("You are a helpful assistant.", systemMsg.Content.OfString.Value))
+		testcmp.RequireEqual(t, "You are a helpful assistant.", systemMsg.Content.OfString.Value)
 	})
 
 	t.Run("should handle empty system messages", func(t *testing.T) {
@@ -78,7 +78,7 @@ func TestToOpenAiPrompt_SystemMessages(t *testing.T) {
 
 		systemMsg := messages[0].OfSystem
 		require.NotNil(t, systemMsg)
-		assert.Empty(t, cmp.Diff("You are a helpful assistant.\nBe concise.", systemMsg.Content.OfString.Value))
+		testcmp.RequireEqual(t, "You are a helpful assistant.\nBe concise.", systemMsg.Content.OfString.Value)
 	})
 }
 
@@ -104,7 +104,7 @@ func TestToOpenAiPrompt_UserMessages(t *testing.T) {
 
 		userMsg := messages[0].OfUser
 		require.NotNil(t, userMsg)
-		assert.Empty(t, cmp.Diff("Hello", userMsg.Content.OfString.Value))
+		testcmp.RequireEqual(t, "Hello", userMsg.Content.OfString.Value)
 	})
 
 	t.Run("should convert messages with image parts", func(t *testing.T) {
@@ -138,13 +138,13 @@ func TestToOpenAiPrompt_UserMessages(t *testing.T) {
 		// Check text part
 		textPart := content[0].OfText
 		require.NotNil(t, textPart)
-		assert.Empty(t, cmp.Diff("Hello", textPart.Text))
+		testcmp.RequireEqual(t, "Hello", textPart.Text)
 
 		// Check image part
 		imagePart := content[1].OfImageURL
 		require.NotNil(t, imagePart)
 		expectedURL := "data:image/png;base64," + base64.StdEncoding.EncodeToString(imageData)
-		assert.Empty(t, cmp.Diff(expectedURL, imagePart.ImageURL.URL))
+		testcmp.RequireEqual(t, expectedURL, imagePart.ImageURL.URL)
 	})
 
 	t.Run("should add image detail when specified through provider options", func(t *testing.T) {
@@ -179,7 +179,7 @@ func TestToOpenAiPrompt_UserMessages(t *testing.T) {
 
 		imagePart := content[0].OfImageURL
 		require.NotNil(t, imagePart)
-		assert.Empty(t, cmp.Diff("low", imagePart.ImageURL.Detail))
+		testcmp.RequireEqual(t, "low", imagePart.ImageURL.Detail)
 	})
 }
 
@@ -238,8 +238,8 @@ func TestToOpenAiPrompt_FileParts(t *testing.T) {
 
 		audioPart := content[0].OfInputAudio
 		require.NotNil(t, audioPart)
-		assert.Empty(t, cmp.Diff(base64.StdEncoding.EncodeToString(audioData), audioPart.InputAudio.Data))
-		assert.Empty(t, cmp.Diff("wav", audioPart.InputAudio.Format))
+		testcmp.RequireEqual(t, base64.StdEncoding.EncodeToString(audioData), audioPart.InputAudio.Data)
+		testcmp.RequireEqual(t, "wav", audioPart.InputAudio.Format)
 	})
 
 	t.Run("should add audio content for audio/mpeg file parts", func(t *testing.T) {
@@ -267,7 +267,7 @@ func TestToOpenAiPrompt_FileParts(t *testing.T) {
 		content := userMsg.Content.OfArrayOfContentParts
 		audioPart := content[0].OfInputAudio
 		require.NotNil(t, audioPart)
-		assert.Empty(t, cmp.Diff("mp3", audioPart.InputAudio.Format))
+		testcmp.RequireEqual(t, "mp3", audioPart.InputAudio.Format)
 	})
 
 	t.Run("should add audio content for audio/mp3 file parts", func(t *testing.T) {
@@ -295,7 +295,7 @@ func TestToOpenAiPrompt_FileParts(t *testing.T) {
 		content := userMsg.Content.OfArrayOfContentParts
 		audioPart := content[0].OfInputAudio
 		require.NotNil(t, audioPart)
-		assert.Empty(t, cmp.Diff("mp3", audioPart.InputAudio.Format))
+		testcmp.RequireEqual(t, "mp3", audioPart.InputAudio.Format)
 	})
 
 	t.Run("should convert messages with PDF file parts", func(t *testing.T) {
@@ -326,10 +326,10 @@ func TestToOpenAiPrompt_FileParts(t *testing.T) {
 
 		filePart := content[0].OfFile
 		require.NotNil(t, filePart)
-		assert.Empty(t, cmp.Diff("document.pdf", filePart.File.Filename.Value))
+		testcmp.RequireEqual(t, "document.pdf", filePart.File.Filename.Value)
 
 		expectedData := "data:application/pdf;base64," + base64.StdEncoding.EncodeToString(pdfData)
-		assert.Empty(t, cmp.Diff(expectedData, filePart.File.FileData.Value))
+		testcmp.RequireEqual(t, expectedData, filePart.File.FileData.Value)
 	})
 
 	t.Run("should convert messages with binary PDF file parts", func(t *testing.T) {
@@ -360,7 +360,7 @@ func TestToOpenAiPrompt_FileParts(t *testing.T) {
 		require.NotNil(t, filePart)
 
 		expectedData := "data:application/pdf;base64," + base64.StdEncoding.EncodeToString(pdfData)
-		assert.Empty(t, cmp.Diff(expectedData, filePart.File.FileData.Value))
+		testcmp.RequireEqual(t, expectedData, filePart.File.FileData.Value)
 	})
 
 	t.Run("should convert messages with PDF file parts using file_id", func(t *testing.T) {
@@ -387,7 +387,7 @@ func TestToOpenAiPrompt_FileParts(t *testing.T) {
 		content := userMsg.Content.OfArrayOfContentParts
 		filePart := content[0].OfFile
 		require.NotNil(t, filePart)
-		assert.Empty(t, cmp.Diff("file-pdf-12345", filePart.File.FileID.Value))
+		testcmp.RequireEqual(t, "file-pdf-12345", filePart.File.FileID.Value)
 		require.True(t, param.IsOmitted(filePart.File.FileData))
 		require.True(t, param.IsOmitted(filePart.File.Filename))
 	})
@@ -417,7 +417,7 @@ func TestToOpenAiPrompt_FileParts(t *testing.T) {
 		content := userMsg.Content.OfArrayOfContentParts
 		filePart := content[0].OfFile
 		require.NotNil(t, filePart)
-		assert.Empty(t, cmp.Diff("part-0.pdf", filePart.File.Filename.Value))
+		testcmp.RequireEqual(t, "part-0.pdf", filePart.File.Filename.Value)
 	})
 }
 
@@ -428,10 +428,10 @@ func TestToOpenAiPrompt_ToolCalls(t *testing.T) {
 		t.Parallel()
 
 		inputArgs := map[string]any{"foo": "bar123"}
-		inputJSON, _ := jsonv2.Marshal(inputArgs)
+		inputJSON, _ := json.Marshal(inputArgs)
 
 		outputResult := map[string]any{"oof": "321rab"}
-		outputJSON, _ := jsonv2.Marshal(outputResult)
+		outputJSON, _ := json.Marshal(outputResult)
 
 		prompt := fantasy.Prompt{
 			{
@@ -465,20 +465,20 @@ func TestToOpenAiPrompt_ToolCalls(t *testing.T) {
 		// Check assistant message with tool call
 		assistantMsg := messages[0].OfAssistant
 		require.NotNil(t, assistantMsg)
-		assert.Empty(t, cmp.Diff("", assistantMsg.Content.OfString.Value))
+		testcmp.RequireEqual(t, "", assistantMsg.Content.OfString.Value)
 		require.Len(t, assistantMsg.ToolCalls, 1)
 
 		toolCall := assistantMsg.ToolCalls[0].OfFunction
 		require.NotNil(t, toolCall)
-		assert.Empty(t, cmp.Diff("quux", toolCall.ID))
-		assert.Empty(t, cmp.Diff("thwomp", toolCall.Function.Name))
-		assert.Empty(t, cmp.Diff(string(inputJSON), toolCall.Function.Arguments))
+		testcmp.RequireEqual(t, "quux", toolCall.ID)
+		testcmp.RequireEqual(t, "thwomp", toolCall.Function.Name)
+		testcmp.RequireEqual(t, string(inputJSON), toolCall.Function.Arguments)
 
 		// Check tool message
 		toolMsg := messages[1].OfTool
 		require.NotNil(t, toolMsg)
-		assert.Empty(t, cmp.Diff(string(outputJSON), toolMsg.Content.OfString.Value))
-		assert.Empty(t, cmp.Diff("quux", toolMsg.ToolCallID))
+		testcmp.RequireEqual(t, string(outputJSON), toolMsg.Content.OfString.Value)
+		testcmp.RequireEqual(t, "quux", toolMsg.ToolCallID)
 	})
 
 	t.Run("should handle different tool output types", func(t *testing.T) {
@@ -512,14 +512,14 @@ func TestToOpenAiPrompt_ToolCalls(t *testing.T) {
 		// Check first tool message (text)
 		textToolMsg := messages[0].OfTool
 		require.NotNil(t, textToolMsg)
-		assert.Empty(t, cmp.Diff("Hello world", textToolMsg.Content.OfString.Value))
-		assert.Empty(t, cmp.Diff("text-tool", textToolMsg.ToolCallID))
+		testcmp.RequireEqual(t, "Hello world", textToolMsg.Content.OfString.Value)
+		testcmp.RequireEqual(t, "text-tool", textToolMsg.ToolCallID)
 
 		// Check second tool message (error)
 		errorToolMsg := messages[1].OfTool
 		require.NotNil(t, errorToolMsg)
-		assert.Empty(t, cmp.Diff("Something went wrong", errorToolMsg.Content.OfString.Value))
-		assert.Empty(t, cmp.Diff("error-tool", errorToolMsg.ToolCallID))
+		testcmp.RequireEqual(t, "Something went wrong", errorToolMsg.Content.OfString.Value)
+		testcmp.RequireEqual(t, "error-tool", errorToolMsg.ToolCallID)
 	})
 }
 
@@ -545,14 +545,14 @@ func TestToOpenAiPrompt_AssistantMessages(t *testing.T) {
 
 		assistantMsg := messages[0].OfAssistant
 		require.NotNil(t, assistantMsg)
-		assert.Empty(t, cmp.Diff("Hello, how can I help you?", assistantMsg.Content.OfString.Value))
+		testcmp.RequireEqual(t, "Hello, how can I help you?", assistantMsg.Content.OfString.Value)
 	})
 
 	t.Run("should handle assistant messages with mixed content", func(t *testing.T) {
 		t.Parallel()
 
 		inputArgs := map[string]any{"query": "test"}
-		inputJSON, _ := jsonv2.Marshal(inputArgs)
+		inputJSON, _ := json.Marshal(inputArgs)
 
 		prompt := fantasy.Prompt{
 			{
@@ -575,13 +575,13 @@ func TestToOpenAiPrompt_AssistantMessages(t *testing.T) {
 
 		assistantMsg := messages[0].OfAssistant
 		require.NotNil(t, assistantMsg)
-		assert.Empty(t, cmp.Diff("Let me search for that.", assistantMsg.Content.OfString.Value))
+		testcmp.RequireEqual(t, "Let me search for that.", assistantMsg.Content.OfString.Value)
 		require.Len(t, assistantMsg.ToolCalls, 1)
 
 		toolCall := assistantMsg.ToolCalls[0].OfFunction
-		assert.Empty(t, cmp.Diff("call-123", toolCall.ID))
-		assert.Empty(t, cmp.Diff("search", toolCall.Function.Name))
-		assert.Empty(t, cmp.Diff(string(inputJSON), toolCall.Function.Arguments))
+		testcmp.RequireEqual(t, "call-123", toolCall.ID)
+		testcmp.RequireEqual(t, "search", toolCall.Function.Name)
+		testcmp.RequireEqual(t, string(inputJSON), toolCall.Function.Arguments)
 	})
 }
 
@@ -724,7 +724,7 @@ func newMockServer() *mockServer {
 		// Parse request body
 		if r.Body != nil {
 			var body map[string]any
-			jsonv2.UnmarshalRead(r.Body, &body)
+			json.NewDecoder(r.Body).Decode(&body)
 			call.body = body
 		}
 
@@ -732,7 +732,7 @@ func newMockServer() *mockServer {
 
 		// Return mock response
 		w.Header().Set("Content-Type", "application/json")
-		jsonv2.MarshalWrite(w, ms.response)
+		json.NewEncoder(w).Encode(ms.response)
 	}))
 
 	return ms
@@ -818,7 +818,7 @@ func TestDoGenerate(t *testing.T) {
 		require.NoError(t, err)
 		model, _ := provider.LanguageModel(t.Context(), "gpt-3.5-turbo")
 
-		result, err := model.Generate(t.Context(), fantasy.Call{
+		result, err := model.Generate(context.Background(), fantasy.Call{
 			Prompt: testPrompt,
 		})
 
@@ -827,7 +827,7 @@ func TestDoGenerate(t *testing.T) {
 
 		textContent, ok := result.Content[0].(fantasy.TextContent)
 		require.True(t, ok)
-		assert.Empty(t, cmp.Diff("Hello, World!", textContent.Text))
+		testcmp.RequireEqual(t, "Hello, World!", textContent.Text)
 	})
 
 	t.Run("should extract usage", func(t *testing.T) {
@@ -851,14 +851,14 @@ func TestDoGenerate(t *testing.T) {
 		require.NoError(t, err)
 		model, _ := provider.LanguageModel(t.Context(), "gpt-3.5-turbo")
 
-		result, err := model.Generate(t.Context(), fantasy.Call{
+		result, err := model.Generate(context.Background(), fantasy.Call{
 			Prompt: testPrompt,
 		})
 
 		require.NoError(t, err)
-		assert.Empty(t, cmp.Diff(int64(20), result.Usage.InputTokens))
-		assert.Empty(t, cmp.Diff(int64(5), result.Usage.OutputTokens))
-		assert.Empty(t, cmp.Diff(int64(25), result.Usage.TotalTokens))
+		testcmp.RequireEqual(t, int64(20), result.Usage.InputTokens)
+		testcmp.RequireEqual(t, int64(5), result.Usage.OutputTokens)
+		testcmp.RequireEqual(t, int64(25), result.Usage.TotalTokens)
 	})
 
 	t.Run("should send request body", func(t *testing.T) {
@@ -876,7 +876,7 @@ func TestDoGenerate(t *testing.T) {
 		require.NoError(t, err)
 		model, _ := provider.LanguageModel(t.Context(), "gpt-3.5-turbo")
 
-		_, err = model.Generate(t.Context(), fantasy.Call{
+		_, err = model.Generate(context.Background(), fantasy.Call{
 			Prompt: testPrompt,
 		})
 
@@ -884,17 +884,17 @@ func TestDoGenerate(t *testing.T) {
 		require.Len(t, server.calls, 1)
 
 		call := server.calls[0]
-		assert.Empty(t, cmp.Diff("POST", call.method))
-		assert.Empty(t, cmp.Diff("/chat/completions", call.path))
-		assert.Empty(t, cmp.Diff("gpt-3.5-turbo", call.body["model"]))
+		testcmp.RequireEqual(t, "POST", call.method)
+		testcmp.RequireEqual(t, "/chat/completions", call.path)
+		testcmp.RequireEqual(t, "gpt-3.5-turbo", call.body["model"])
 
 		messages, ok := call.body["messages"].([]any)
 		require.True(t, ok)
 		require.Len(t, messages, 1)
 
 		message := messages[0].(map[string]any)
-		assert.Empty(t, cmp.Diff("user", message["role"]))
-		assert.Empty(t, cmp.Diff("Hello", message["content"]))
+		testcmp.RequireEqual(t, "user", message["role"])
+		testcmp.RequireEqual(t, "Hello", message["content"])
 	})
 
 	t.Run("should support partial usage", func(t *testing.T) {
@@ -917,14 +917,14 @@ func TestDoGenerate(t *testing.T) {
 		require.NoError(t, err)
 		model, _ := provider.LanguageModel(t.Context(), "gpt-3.5-turbo")
 
-		result, err := model.Generate(t.Context(), fantasy.Call{
+		result, err := model.Generate(context.Background(), fantasy.Call{
 			Prompt: testPrompt,
 		})
 
 		require.NoError(t, err)
-		assert.Empty(t, cmp.Diff(int64(20), result.Usage.InputTokens))
-		assert.Empty(t, cmp.Diff(int64(0), result.Usage.OutputTokens))
-		assert.Empty(t, cmp.Diff(int64(20), result.Usage.TotalTokens))
+		testcmp.RequireEqual(t, int64(20), result.Usage.InputTokens)
+		testcmp.RequireEqual(t, int64(0), result.Usage.OutputTokens)
+		testcmp.RequireEqual(t, int64(20), result.Usage.TotalTokens)
 	})
 
 	t.Run("should extract logprobs", func(t *testing.T) {
@@ -944,10 +944,10 @@ func TestDoGenerate(t *testing.T) {
 		require.NoError(t, err)
 		model, _ := provider.LanguageModel(t.Context(), "gpt-3.5-turbo")
 
-		result, err := model.Generate(t.Context(), fantasy.Call{
+		result, err := model.Generate(context.Background(), fantasy.Call{
 			Prompt: testPrompt,
 			ProviderOptions: NewProviderOptions(&ProviderOptions{
-				LogProbs: fantasy.Opt(true),
+				LogProbs: new(true),
 			}),
 		})
 
@@ -979,12 +979,12 @@ func TestDoGenerate(t *testing.T) {
 		require.NoError(t, err)
 		model, _ := provider.LanguageModel(t.Context(), "gpt-3.5-turbo")
 
-		result, err := model.Generate(t.Context(), fantasy.Call{
+		result, err := model.Generate(context.Background(), fantasy.Call{
 			Prompt: testPrompt,
 		})
 
 		require.NoError(t, err)
-		assert.Empty(t, cmp.Diff(fantasy.FinishReasonStop, result.FinishReason))
+		testcmp.RequireEqual(t, fantasy.FinishReasonStop, result.FinishReason)
 	})
 
 	t.Run("should support unknown finish reason", func(t *testing.T) {
@@ -1004,12 +1004,12 @@ func TestDoGenerate(t *testing.T) {
 		require.NoError(t, err)
 		model, _ := provider.LanguageModel(t.Context(), "gpt-3.5-turbo")
 
-		result, err := model.Generate(t.Context(), fantasy.Call{
+		result, err := model.Generate(context.Background(), fantasy.Call{
 			Prompt: testPrompt,
 		})
 
 		require.NoError(t, err)
-		assert.Empty(t, cmp.Diff(fantasy.FinishReasonUnknown, result.FinishReason))
+		testcmp.RequireEqual(t, fantasy.FinishReasonUnknown, result.FinishReason)
 	})
 
 	t.Run("should pass the model and the messages", func(t *testing.T) {
@@ -1029,7 +1029,7 @@ func TestDoGenerate(t *testing.T) {
 		require.NoError(t, err)
 		model, _ := provider.LanguageModel(t.Context(), "gpt-3.5-turbo")
 
-		_, err = model.Generate(t.Context(), fantasy.Call{
+		_, err = model.Generate(context.Background(), fantasy.Call{
 			Prompt: testPrompt,
 		})
 
@@ -1037,14 +1037,14 @@ func TestDoGenerate(t *testing.T) {
 		require.Len(t, server.calls, 1)
 
 		call := server.calls[0]
-		assert.Empty(t, cmp.Diff("gpt-3.5-turbo", call.body["model"]))
+		testcmp.RequireEqual(t, "gpt-3.5-turbo", call.body["model"])
 
 		messages := call.body["messages"].([]any)
 		require.Len(t, messages, 1)
 
 		message := messages[0].(map[string]any)
-		assert.Empty(t, cmp.Diff("user", message["role"]))
-		assert.Empty(t, cmp.Diff("Hello", message["content"]))
+		testcmp.RequireEqual(t, "user", message["role"])
+		testcmp.RequireEqual(t, "Hello", message["content"])
 	})
 
 	t.Run("should pass settings", func(t *testing.T) {
@@ -1062,14 +1062,14 @@ func TestDoGenerate(t *testing.T) {
 		require.NoError(t, err)
 		model, _ := provider.LanguageModel(t.Context(), "gpt-3.5-turbo")
 
-		_, err = model.Generate(t.Context(), fantasy.Call{
+		_, err = model.Generate(context.Background(), fantasy.Call{
 			Prompt: testPrompt,
 			ProviderOptions: NewProviderOptions(&ProviderOptions{
 				LogitBias: map[string]int64{
 					"50256": -100,
 				},
-				ParallelToolCalls: fantasy.Opt(false),
-				User:              fantasy.Opt("test-user-id"),
+				ParallelToolCalls: new(false),
+				User:              new("test-user-id"),
 			}),
 		})
 
@@ -1077,15 +1077,15 @@ func TestDoGenerate(t *testing.T) {
 		require.Len(t, server.calls, 1)
 
 		call := server.calls[0]
-		assert.Empty(t, cmp.Diff("gpt-3.5-turbo", call.body["model"]))
+		testcmp.RequireEqual(t, "gpt-3.5-turbo", call.body["model"])
 
 		messages := call.body["messages"].([]any)
 		require.Len(t, messages, 1)
 
 		logitBias := call.body["logit_bias"].(map[string]any)
-		assert.Empty(t, cmp.Diff(float64(-100), logitBias["50256"]))
-		assert.Empty(t, cmp.Diff(false, call.body["parallel_tool_calls"]))
-		assert.Empty(t, cmp.Diff("test-user-id", call.body["user"]))
+		testcmp.RequireEqual(t, any(float64(-100)), logitBias["50256"])
+		testcmp.RequireEqual(t, false, call.body["parallel_tool_calls"])
+		testcmp.RequireEqual(t, "test-user-id", call.body["user"])
 	})
 
 	t.Run("should pass reasoningEffort setting", func(t *testing.T) {
@@ -1105,11 +1105,11 @@ func TestDoGenerate(t *testing.T) {
 		require.NoError(t, err)
 		model, _ := provider.LanguageModel(t.Context(), "o1-mini")
 
-		_, err = model.Generate(t.Context(), fantasy.Call{
+		_, err = model.Generate(context.Background(), fantasy.Call{
 			Prompt: testPrompt,
 			ProviderOptions: NewProviderOptions(
 				&ProviderOptions{
-					ReasoningEffort: ReasoningEffortOption(ReasoningEffortLow),
+					ReasoningEffort: new(ReasoningEffortLow),
 				},
 			),
 		})
@@ -1118,15 +1118,15 @@ func TestDoGenerate(t *testing.T) {
 		require.Len(t, server.calls, 1)
 
 		call := server.calls[0]
-		assert.Empty(t, cmp.Diff("o1-mini", call.body["model"]))
-		assert.Empty(t, cmp.Diff("low", call.body["reasoning_effort"]))
+		testcmp.RequireEqual(t, "o1-mini", call.body["model"])
+		testcmp.RequireEqual(t, "low", call.body["reasoning_effort"])
 
 		messages := call.body["messages"].([]any)
 		require.Len(t, messages, 1)
 
 		message := messages[0].(map[string]any)
-		assert.Empty(t, cmp.Diff("user", message["role"]))
-		assert.Empty(t, cmp.Diff("Hello", message["content"]))
+		testcmp.RequireEqual(t, "user", message["role"])
+		testcmp.RequireEqual(t, "Hello", message["content"])
 	})
 
 	t.Run("should pass textVerbosity setting", func(t *testing.T) {
@@ -1146,10 +1146,10 @@ func TestDoGenerate(t *testing.T) {
 		require.NoError(t, err)
 		model, _ := provider.LanguageModel(t.Context(), "gpt-4o")
 
-		_, err = model.Generate(t.Context(), fantasy.Call{
+		_, err = model.Generate(context.Background(), fantasy.Call{
 			Prompt: testPrompt,
 			ProviderOptions: NewProviderOptions(&ProviderOptions{
-				TextVerbosity: fantasy.Opt("low"),
+				TextVerbosity: new("low"),
 			}),
 		})
 
@@ -1157,15 +1157,15 @@ func TestDoGenerate(t *testing.T) {
 		require.Len(t, server.calls, 1)
 
 		call := server.calls[0]
-		assert.Empty(t, cmp.Diff("gpt-4o", call.body["model"]))
-		assert.Empty(t, cmp.Diff("low", call.body["verbosity"]))
+		testcmp.RequireEqual(t, "gpt-4o", call.body["model"])
+		testcmp.RequireEqual(t, "low", call.body["verbosity"])
 
 		messages := call.body["messages"].([]any)
 		require.Len(t, messages, 1)
 
 		message := messages[0].(map[string]any)
-		assert.Empty(t, cmp.Diff("user", message["role"]))
-		assert.Empty(t, cmp.Diff("Hello", message["content"]))
+		testcmp.RequireEqual(t, "user", message["role"])
+		testcmp.RequireEqual(t, "Hello", message["content"])
 	})
 
 	t.Run("should pass tools and toolChoice", func(t *testing.T) {
@@ -1185,7 +1185,7 @@ func TestDoGenerate(t *testing.T) {
 		require.NoError(t, err)
 		model, _ := provider.LanguageModel(t.Context(), "gpt-3.5-turbo")
 
-		_, err = model.Generate(t.Context(), fantasy.Call{
+		_, err = model.Generate(context.Background(), fantasy.Call{
 			Prompt: testPrompt,
 			Tools: []fantasy.Tool{
 				fantasy.FunctionTool{
@@ -1210,7 +1210,7 @@ func TestDoGenerate(t *testing.T) {
 		require.Len(t, server.calls, 1)
 
 		call := server.calls[0]
-		assert.Empty(t, cmp.Diff("gpt-3.5-turbo", call.body["model"]))
+		testcmp.RequireEqual(t, "gpt-3.5-turbo", call.body["model"])
 
 		messages := call.body["messages"].([]any)
 		require.Len(t, messages, 1)
@@ -1219,17 +1219,17 @@ func TestDoGenerate(t *testing.T) {
 		require.Len(t, tools, 1)
 
 		tool := tools[0].(map[string]any)
-		assert.Empty(t, cmp.Diff("function", tool["type"]))
+		testcmp.RequireEqual(t, "function", tool["type"])
 
 		function := tool["function"].(map[string]any)
-		assert.Empty(t, cmp.Diff("test-tool", function["name"]))
-		assert.Empty(t, cmp.Diff(false, function["strict"]))
+		testcmp.RequireEqual(t, "test-tool", function["name"])
+		testcmp.RequireEqual(t, false, function["strict"])
 
 		toolChoice := call.body["tool_choice"].(map[string]any)
-		assert.Empty(t, cmp.Diff("function", toolChoice["type"]))
+		testcmp.RequireEqual(t, "function", toolChoice["type"])
 
 		toolChoiceFunction := toolChoice["function"].(map[string]any)
-		assert.Empty(t, cmp.Diff("test-tool", toolChoiceFunction["name"]))
+		testcmp.RequireEqual(t, "test-tool", toolChoiceFunction["name"])
 	})
 
 	t.Run("should parse tool results", func(t *testing.T) {
@@ -1258,7 +1258,7 @@ func TestDoGenerate(t *testing.T) {
 		require.NoError(t, err)
 		model, _ := provider.LanguageModel(t.Context(), "gpt-3.5-turbo")
 
-		result, err := model.Generate(t.Context(), fantasy.Call{
+		result, err := model.Generate(context.Background(), fantasy.Call{
 			Prompt: testPrompt,
 			Tools: []fantasy.Tool{
 				fantasy.FunctionTool{
@@ -1284,9 +1284,9 @@ func TestDoGenerate(t *testing.T) {
 
 		toolCall, ok := result.Content[0].(fantasy.ToolCallContent)
 		require.True(t, ok)
-		assert.Empty(t, cmp.Diff("call_O17Uplv4lJvD6DVdIvFFeRMw", toolCall.ToolCallID))
-		assert.Empty(t, cmp.Diff("test-tool", toolCall.ToolName))
-		assert.Empty(t, cmp.Diff(`{"value":"Spark"}`, toolCall.Input))
+		testcmp.RequireEqual(t, "call_O17Uplv4lJvD6DVdIvFFeRMw", toolCall.ToolCallID)
+		testcmp.RequireEqual(t, "test-tool", toolCall.ToolName)
+		testcmp.RequireEqual(t, `{"value":"Spark"}`, toolCall.Input)
 	})
 
 	t.Run("should handle ToolChoiceRequired", func(t *testing.T) {
@@ -1306,7 +1306,7 @@ func TestDoGenerate(t *testing.T) {
 		require.NoError(t, err)
 		model, _ := provider.LanguageModel(t.Context(), "gpt-3.5-turbo")
 
-		_, err = model.Generate(t.Context(), fantasy.Call{
+		_, err = model.Generate(context.Background(), fantasy.Call{
 			Prompt: testPrompt,
 			Tools: []fantasy.Tool{
 				fantasy.FunctionTool{
@@ -1331,21 +1331,21 @@ func TestDoGenerate(t *testing.T) {
 		require.Len(t, server.calls, 1)
 
 		call := server.calls[0]
-		assert.Empty(t, cmp.Diff("gpt-3.5-turbo", call.body["model"]))
+		testcmp.RequireEqual(t, "gpt-3.5-turbo", call.body["model"])
 
 		// Verify tool is present
 		tools := call.body["tools"].([]any)
 		require.Len(t, tools, 1)
 
 		tool := tools[0].(map[string]any)
-		assert.Empty(t, cmp.Diff("function", tool["type"]))
+		testcmp.RequireEqual(t, "function", tool["type"])
 
 		function := tool["function"].(map[string]any)
-		assert.Empty(t, cmp.Diff("test-tool", function["name"]))
+		testcmp.RequireEqual(t, "test-tool", function["name"])
 
 		// Verify tool_choice is set to "required" (not a function name)
 		toolChoice := call.body["tool_choice"]
-		assert.Empty(t, cmp.Diff("required", toolChoice))
+		testcmp.RequireEqual(t, "required", toolChoice)
 	})
 
 	t.Run("should parse annotations/citations", func(t *testing.T) {
@@ -1376,7 +1376,7 @@ func TestDoGenerate(t *testing.T) {
 		require.NoError(t, err)
 		model, _ := provider.LanguageModel(t.Context(), "gpt-3.5-turbo")
 
-		result, err := model.Generate(t.Context(), fantasy.Call{
+		result, err := model.Generate(context.Background(), fantasy.Call{
 			Prompt: testPrompt,
 		})
 
@@ -1385,13 +1385,13 @@ func TestDoGenerate(t *testing.T) {
 
 		textContent, ok := result.Content[0].(fantasy.TextContent)
 		require.True(t, ok)
-		assert.Empty(t, cmp.Diff("Based on the search results [doc1], I found information.", textContent.Text))
+		testcmp.RequireEqual(t, "Based on the search results [doc1], I found information.", textContent.Text)
 
 		sourceContent, ok := result.Content[1].(fantasy.SourceContent)
 		require.True(t, ok)
-		assert.Empty(t, cmp.Diff(fantasy.SourceTypeURL, sourceContent.SourceType))
-		assert.Empty(t, cmp.Diff("https://example.com/doc1.pdf", sourceContent.URL))
-		assert.Empty(t, cmp.Diff("Document 1", sourceContent.Title))
+		testcmp.RequireEqual(t, fantasy.SourceTypeURL, sourceContent.SourceType)
+		testcmp.RequireEqual(t, "https://example.com/doc1.pdf", sourceContent.URL)
+		testcmp.RequireEqual(t, "Document 1", sourceContent.Title)
 		require.NotEmpty(t, sourceContent.ID)
 	})
 
@@ -1419,15 +1419,16 @@ func TestDoGenerate(t *testing.T) {
 		require.NoError(t, err)
 		model, _ := provider.LanguageModel(t.Context(), "gpt-4o-mini")
 
-		result, err := model.Generate(t.Context(), fantasy.Call{
+		result, err := model.Generate(context.Background(), fantasy.Call{
 			Prompt: testPrompt,
 		})
 
 		require.NoError(t, err)
-		assert.Empty(t, cmp.Diff(int64(1152), result.Usage.CacheReadTokens))
-		assert.Empty(t, cmp.Diff(int64(15), result.Usage.InputTokens))
-		assert.Empty(t, cmp.Diff(int64(20), result.Usage.OutputTokens))
-		assert.Empty(t, cmp.Diff(int64(35), result.Usage.TotalTokens))
+		testcmp.RequireEqual(t, int64(1152), result.Usage.CacheReadTokens)
+		// InputTokens = prompt_tokens - cached_tokens = 15 - 1152 = -1137 → clamped to 0
+		testcmp.RequireEqual(t, int64(0), result.Usage.InputTokens)
+		testcmp.RequireEqual(t, int64(20), result.Usage.OutputTokens)
+		testcmp.RequireEqual(t, int64(35), result.Usage.TotalTokens)
 	})
 
 	t.Run("should return accepted_prediction_tokens and rejected_prediction_tokens", func(t *testing.T) {
@@ -1455,7 +1456,7 @@ func TestDoGenerate(t *testing.T) {
 		require.NoError(t, err)
 		model, _ := provider.LanguageModel(t.Context(), "gpt-4o-mini")
 
-		result, err := model.Generate(t.Context(), fantasy.Call{
+		result, err := model.Generate(context.Background(), fantasy.Call{
 			Prompt: testPrompt,
 		})
 
@@ -1465,8 +1466,8 @@ func TestDoGenerate(t *testing.T) {
 		openaiMeta, ok := result.ProviderMetadata["openai"].(*ProviderMetadata)
 
 		require.True(t, ok)
-		assert.Empty(t, cmp.Diff(int64(123), openaiMeta.AcceptedPredictionTokens))
-		assert.Empty(t, cmp.Diff(int64(456), openaiMeta.RejectedPredictionTokens))
+		testcmp.RequireEqual(t, int64(123), openaiMeta.AcceptedPredictionTokens)
+		testcmp.RequireEqual(t, int64(456), openaiMeta.RejectedPredictionTokens)
 	})
 
 	t.Run("should clear out temperature, top_p, frequency_penalty, presence_penalty for reasoning models", func(t *testing.T) {
@@ -1484,7 +1485,7 @@ func TestDoGenerate(t *testing.T) {
 		require.NoError(t, err)
 		model, _ := provider.LanguageModel(t.Context(), "o1-preview")
 
-		result, err := model.Generate(t.Context(), fantasy.Call{
+		result, err := model.Generate(context.Background(), fantasy.Call{
 			Prompt:           testPrompt,
 			Temperature:      &[]float64{0.5}[0],
 			TopP:             &[]float64{0.7}[0],
@@ -1496,14 +1497,14 @@ func TestDoGenerate(t *testing.T) {
 		require.Len(t, server.calls, 1)
 
 		call := server.calls[0]
-		assert.Empty(t, cmp.Diff("o1-preview", call.body["model"]))
+		testcmp.RequireEqual(t, "o1-preview", call.body["model"])
 
 		messages := call.body["messages"].([]any)
 		require.Len(t, messages, 1)
 
 		message := messages[0].(map[string]any)
-		assert.Empty(t, cmp.Diff("user", message["role"]))
-		assert.Empty(t, cmp.Diff("Hello", message["content"]))
+		testcmp.RequireEqual(t, "user", message["role"])
+		testcmp.RequireEqual(t, "Hello", message["content"])
 
 		// These should not be present
 		require.Nil(t, call.body["temperature"])
@@ -1513,8 +1514,8 @@ func TestDoGenerate(t *testing.T) {
 
 		// Should have warnings
 		require.Len(t, result.Warnings, 4)
-		assert.Empty(t, cmp.Diff(fantasy.CallWarningTypeUnsupportedSetting, result.Warnings[0].Type))
-		assert.Empty(t, cmp.Diff("temperature", result.Warnings[0].Setting))
+		testcmp.RequireEqual(t, fantasy.CallWarningTypeUnsupportedSetting, result.Warnings[0].Type)
+		testcmp.RequireEqual(t, "temperature", result.Warnings[0].Setting)
 		require.Contains(t, result.Warnings[0].Details, "temperature is not supported for reasoning models")
 	})
 
@@ -1533,7 +1534,7 @@ func TestDoGenerate(t *testing.T) {
 		require.NoError(t, err)
 		model, _ := provider.LanguageModel(t.Context(), "o1-preview")
 
-		_, err = model.Generate(t.Context(), fantasy.Call{
+		_, err = model.Generate(context.Background(), fantasy.Call{
 			Prompt:          testPrompt,
 			MaxOutputTokens: &[]int64{1000}[0],
 		})
@@ -1542,16 +1543,16 @@ func TestDoGenerate(t *testing.T) {
 		require.Len(t, server.calls, 1)
 
 		call := server.calls[0]
-		assert.Empty(t, cmp.Diff("o1-preview", call.body["model"]))
-		assert.Empty(t, cmp.Diff(float64(1000), call.body["max_completion_tokens"]))
+		testcmp.RequireEqual(t, "o1-preview", call.body["model"])
+		testcmp.RequireEqual(t, any(float64(1000)), call.body["max_completion_tokens"])
 		require.Nil(t, call.body["max_tokens"])
 
 		messages := call.body["messages"].([]any)
 		require.Len(t, messages, 1)
 
 		message := messages[0].(map[string]any)
-		assert.Empty(t, cmp.Diff("user", message["role"]))
-		assert.Empty(t, cmp.Diff("Hello", message["content"]))
+		testcmp.RequireEqual(t, "user", message["role"])
+		testcmp.RequireEqual(t, "Hello", message["content"])
 	})
 
 	t.Run("should return reasoning tokens", func(t *testing.T) {
@@ -1578,15 +1579,15 @@ func TestDoGenerate(t *testing.T) {
 		require.NoError(t, err)
 		model, _ := provider.LanguageModel(t.Context(), "o1-preview")
 
-		result, err := model.Generate(t.Context(), fantasy.Call{
+		result, err := model.Generate(context.Background(), fantasy.Call{
 			Prompt: testPrompt,
 		})
 
 		require.NoError(t, err)
-		assert.Empty(t, cmp.Diff(int64(15), result.Usage.InputTokens))
-		assert.Empty(t, cmp.Diff(int64(20), result.Usage.OutputTokens))
-		assert.Empty(t, cmp.Diff(int64(35), result.Usage.TotalTokens))
-		assert.Empty(t, cmp.Diff(int64(10), result.Usage.ReasoningTokens))
+		testcmp.RequireEqual(t, int64(15), result.Usage.InputTokens)
+		testcmp.RequireEqual(t, int64(20), result.Usage.OutputTokens)
+		testcmp.RequireEqual(t, int64(35), result.Usage.TotalTokens)
+		testcmp.RequireEqual(t, int64(10), result.Usage.ReasoningTokens)
 	})
 
 	t.Run("should send max_completion_tokens extension setting", func(t *testing.T) {
@@ -1606,10 +1607,10 @@ func TestDoGenerate(t *testing.T) {
 		require.NoError(t, err)
 		model, _ := provider.LanguageModel(t.Context(), "o1-preview")
 
-		_, err = model.Generate(t.Context(), fantasy.Call{
+		_, err = model.Generate(context.Background(), fantasy.Call{
 			Prompt: testPrompt,
 			ProviderOptions: NewProviderOptions(&ProviderOptions{
-				MaxCompletionTokens: fantasy.Opt(int64(255)),
+				MaxCompletionTokens: new(int64(255)),
 			}),
 		})
 
@@ -1617,15 +1618,15 @@ func TestDoGenerate(t *testing.T) {
 		require.Len(t, server.calls, 1)
 
 		call := server.calls[0]
-		assert.Empty(t, cmp.Diff("o1-preview", call.body["model"]))
-		assert.Empty(t, cmp.Diff(float64(255), call.body["max_completion_tokens"]))
+		testcmp.RequireEqual(t, "o1-preview", call.body["model"])
+		testcmp.RequireEqual(t, any(float64(255)), call.body["max_completion_tokens"])
 
 		messages := call.body["messages"].([]any)
 		require.Len(t, messages, 1)
 
 		message := messages[0].(map[string]any)
-		assert.Empty(t, cmp.Diff("user", message["role"]))
-		assert.Empty(t, cmp.Diff("Hello", message["content"]))
+		testcmp.RequireEqual(t, "user", message["role"])
+		testcmp.RequireEqual(t, "Hello", message["content"])
 	})
 
 	t.Run("should send prediction extension setting", func(t *testing.T) {
@@ -1645,7 +1646,7 @@ func TestDoGenerate(t *testing.T) {
 		require.NoError(t, err)
 		model, _ := provider.LanguageModel(t.Context(), "gpt-3.5-turbo")
 
-		_, err = model.Generate(t.Context(), fantasy.Call{
+		_, err = model.Generate(context.Background(), fantasy.Call{
 			Prompt: testPrompt,
 			ProviderOptions: NewProviderOptions(&ProviderOptions{
 				Prediction: map[string]any{
@@ -1659,18 +1660,18 @@ func TestDoGenerate(t *testing.T) {
 		require.Len(t, server.calls, 1)
 
 		call := server.calls[0]
-		assert.Empty(t, cmp.Diff("gpt-3.5-turbo", call.body["model"]))
+		testcmp.RequireEqual(t, "gpt-3.5-turbo", call.body["model"])
 
 		prediction := call.body["prediction"].(map[string]any)
-		assert.Empty(t, cmp.Diff("content", prediction["type"]))
-		assert.Empty(t, cmp.Diff("Hello, World!", prediction["content"]))
+		testcmp.RequireEqual(t, "content", prediction["type"])
+		testcmp.RequireEqual(t, "Hello, World!", prediction["content"])
 
 		messages := call.body["messages"].([]any)
 		require.Len(t, messages, 1)
 
 		message := messages[0].(map[string]any)
-		assert.Empty(t, cmp.Diff("user", message["role"]))
-		assert.Empty(t, cmp.Diff("Hello", message["content"]))
+		testcmp.RequireEqual(t, "user", message["role"])
+		testcmp.RequireEqual(t, "Hello", message["content"])
 	})
 
 	t.Run("should send store extension setting", func(t *testing.T) {
@@ -1690,10 +1691,10 @@ func TestDoGenerate(t *testing.T) {
 		require.NoError(t, err)
 		model, _ := provider.LanguageModel(t.Context(), "gpt-3.5-turbo")
 
-		_, err = model.Generate(t.Context(), fantasy.Call{
+		_, err = model.Generate(context.Background(), fantasy.Call{
 			Prompt: testPrompt,
 			ProviderOptions: NewProviderOptions(&ProviderOptions{
-				Store: fantasy.Opt(true),
+				Store: new(true),
 			}),
 		})
 
@@ -1701,15 +1702,15 @@ func TestDoGenerate(t *testing.T) {
 		require.Len(t, server.calls, 1)
 
 		call := server.calls[0]
-		assert.Empty(t, cmp.Diff("gpt-3.5-turbo", call.body["model"]))
-		assert.Empty(t, cmp.Diff(true, call.body["store"]))
+		testcmp.RequireEqual(t, "gpt-3.5-turbo", call.body["model"])
+		testcmp.RequireEqual(t, true, call.body["store"])
 
 		messages := call.body["messages"].([]any)
 		require.Len(t, messages, 1)
 
 		message := messages[0].(map[string]any)
-		assert.Empty(t, cmp.Diff("user", message["role"]))
-		assert.Empty(t, cmp.Diff("Hello", message["content"]))
+		testcmp.RequireEqual(t, "user", message["role"])
+		testcmp.RequireEqual(t, "Hello", message["content"])
 	})
 
 	t.Run("should send metadata extension values", func(t *testing.T) {
@@ -1729,7 +1730,7 @@ func TestDoGenerate(t *testing.T) {
 		require.NoError(t, err)
 		model, _ := provider.LanguageModel(t.Context(), "gpt-3.5-turbo")
 
-		_, err = model.Generate(t.Context(), fantasy.Call{
+		_, err = model.Generate(context.Background(), fantasy.Call{
 			Prompt: testPrompt,
 			ProviderOptions: NewProviderOptions(&ProviderOptions{
 				Metadata: map[string]any{
@@ -1742,17 +1743,17 @@ func TestDoGenerate(t *testing.T) {
 		require.Len(t, server.calls, 1)
 
 		call := server.calls[0]
-		assert.Empty(t, cmp.Diff("gpt-3.5-turbo", call.body["model"]))
+		testcmp.RequireEqual(t, "gpt-3.5-turbo", call.body["model"])
 
 		metadata := call.body["metadata"].(map[string]any)
-		assert.Empty(t, cmp.Diff("value", metadata["custom"]))
+		testcmp.RequireEqual(t, "value", metadata["custom"])
 
 		messages := call.body["messages"].([]any)
 		require.Len(t, messages, 1)
 
 		message := messages[0].(map[string]any)
-		assert.Empty(t, cmp.Diff("user", message["role"]))
-		assert.Empty(t, cmp.Diff("Hello", message["content"]))
+		testcmp.RequireEqual(t, "user", message["role"])
+		testcmp.RequireEqual(t, "Hello", message["content"])
 	})
 
 	t.Run("should send promptCacheKey extension value", func(t *testing.T) {
@@ -1772,10 +1773,10 @@ func TestDoGenerate(t *testing.T) {
 		require.NoError(t, err)
 		model, _ := provider.LanguageModel(t.Context(), "gpt-3.5-turbo")
 
-		_, err = model.Generate(t.Context(), fantasy.Call{
+		_, err = model.Generate(context.Background(), fantasy.Call{
 			Prompt: testPrompt,
 			ProviderOptions: NewProviderOptions(&ProviderOptions{
-				PromptCacheKey: fantasy.Opt("test-cache-key-123"),
+				PromptCacheKey: new("test-cache-key-123"),
 			}),
 		})
 
@@ -1783,15 +1784,15 @@ func TestDoGenerate(t *testing.T) {
 		require.Len(t, server.calls, 1)
 
 		call := server.calls[0]
-		assert.Empty(t, cmp.Diff("gpt-3.5-turbo", call.body["model"]))
-		assert.Empty(t, cmp.Diff("test-cache-key-123", call.body["prompt_cache_key"]))
+		testcmp.RequireEqual(t, "gpt-3.5-turbo", call.body["model"])
+		testcmp.RequireEqual(t, "test-cache-key-123", call.body["prompt_cache_key"])
 
 		messages := call.body["messages"].([]any)
 		require.Len(t, messages, 1)
 
 		message := messages[0].(map[string]any)
-		assert.Empty(t, cmp.Diff("user", message["role"]))
-		assert.Empty(t, cmp.Diff("Hello", message["content"]))
+		testcmp.RequireEqual(t, "user", message["role"])
+		testcmp.RequireEqual(t, "Hello", message["content"])
 	})
 
 	t.Run("should send safety_identifier extension value", func(t *testing.T) {
@@ -1811,10 +1812,10 @@ func TestDoGenerate(t *testing.T) {
 		require.NoError(t, err)
 		model, _ := provider.LanguageModel(t.Context(), "gpt-3.5-turbo")
 
-		_, err = model.Generate(t.Context(), fantasy.Call{
+		_, err = model.Generate(context.Background(), fantasy.Call{
 			Prompt: testPrompt,
 			ProviderOptions: NewProviderOptions(&ProviderOptions{
-				SafetyIdentifier: fantasy.Opt("test-safety-identifier-123"),
+				SafetyIdentifier: new("test-safety-identifier-123"),
 			}),
 		})
 
@@ -1822,15 +1823,15 @@ func TestDoGenerate(t *testing.T) {
 		require.Len(t, server.calls, 1)
 
 		call := server.calls[0]
-		assert.Empty(t, cmp.Diff("gpt-3.5-turbo", call.body["model"]))
-		assert.Empty(t, cmp.Diff("test-safety-identifier-123", call.body["safety_identifier"]))
+		testcmp.RequireEqual(t, "gpt-3.5-turbo", call.body["model"])
+		testcmp.RequireEqual(t, "test-safety-identifier-123", call.body["safety_identifier"])
 
 		messages := call.body["messages"].([]any)
 		require.Len(t, messages, 1)
 
 		message := messages[0].(map[string]any)
-		assert.Empty(t, cmp.Diff("user", message["role"]))
-		assert.Empty(t, cmp.Diff("Hello", message["content"]))
+		testcmp.RequireEqual(t, "user", message["role"])
+		testcmp.RequireEqual(t, "Hello", message["content"])
 	})
 
 	t.Run("should remove temperature setting for search preview models", func(t *testing.T) {
@@ -1848,7 +1849,7 @@ func TestDoGenerate(t *testing.T) {
 		require.NoError(t, err)
 		model, _ := provider.LanguageModel(t.Context(), "gpt-4o-search-preview")
 
-		result, err := model.Generate(t.Context(), fantasy.Call{
+		result, err := model.Generate(context.Background(), fantasy.Call{
 			Prompt:      testPrompt,
 			Temperature: &[]float64{0.7}[0],
 		})
@@ -1857,12 +1858,12 @@ func TestDoGenerate(t *testing.T) {
 		require.Len(t, server.calls, 1)
 
 		call := server.calls[0]
-		assert.Empty(t, cmp.Diff("gpt-4o-search-preview", call.body["model"]))
+		testcmp.RequireEqual(t, "gpt-4o-search-preview", call.body["model"])
 		require.Nil(t, call.body["temperature"])
 
 		require.Len(t, result.Warnings, 1)
-		assert.Empty(t, cmp.Diff(fantasy.CallWarningTypeUnsupportedSetting, result.Warnings[0].Type))
-		assert.Empty(t, cmp.Diff("temperature", result.Warnings[0].Setting))
+		testcmp.RequireEqual(t, fantasy.CallWarningTypeUnsupportedSetting, result.Warnings[0].Type)
+		testcmp.RequireEqual(t, "temperature", result.Warnings[0].Setting)
 		require.Contains(t, result.Warnings[0].Details, "search preview models")
 	})
 
@@ -1883,10 +1884,10 @@ func TestDoGenerate(t *testing.T) {
 		require.NoError(t, err)
 		model, _ := provider.LanguageModel(t.Context(), "o3-mini")
 
-		_, err = model.Generate(t.Context(), fantasy.Call{
+		_, err = model.Generate(context.Background(), fantasy.Call{
 			Prompt: testPrompt,
 			ProviderOptions: NewProviderOptions(&ProviderOptions{
-				ServiceTier: fantasy.Opt("flex"),
+				ServiceTier: new("flex"),
 			}),
 		})
 
@@ -1894,15 +1895,15 @@ func TestDoGenerate(t *testing.T) {
 		require.Len(t, server.calls, 1)
 
 		call := server.calls[0]
-		assert.Empty(t, cmp.Diff("o3-mini", call.body["model"]))
-		assert.Empty(t, cmp.Diff("flex", call.body["service_tier"]))
+		testcmp.RequireEqual(t, "o3-mini", call.body["model"])
+		testcmp.RequireEqual(t, "flex", call.body["service_tier"])
 
 		messages := call.body["messages"].([]any)
 		require.Len(t, messages, 1)
 
 		message := messages[0].(map[string]any)
-		assert.Empty(t, cmp.Diff("user", message["role"]))
-		assert.Empty(t, cmp.Diff("Hello", message["content"]))
+		testcmp.RequireEqual(t, "user", message["role"])
+		testcmp.RequireEqual(t, "Hello", message["content"])
 	})
 
 	t.Run("should show warning when using flex processing with unsupported model", func(t *testing.T) {
@@ -1920,10 +1921,10 @@ func TestDoGenerate(t *testing.T) {
 		require.NoError(t, err)
 		model, _ := provider.LanguageModel(t.Context(), "gpt-4o-mini")
 
-		result, err := model.Generate(t.Context(), fantasy.Call{
+		result, err := model.Generate(context.Background(), fantasy.Call{
 			Prompt: testPrompt,
 			ProviderOptions: NewProviderOptions(&ProviderOptions{
-				ServiceTier: fantasy.Opt("flex"),
+				ServiceTier: new("flex"),
 			}),
 		})
 
@@ -1934,8 +1935,8 @@ func TestDoGenerate(t *testing.T) {
 		require.Nil(t, call.body["service_tier"])
 
 		require.Len(t, result.Warnings, 1)
-		assert.Empty(t, cmp.Diff(fantasy.CallWarningTypeUnsupportedSetting, result.Warnings[0].Type))
-		assert.Empty(t, cmp.Diff("ServiceTier", result.Warnings[0].Setting))
+		testcmp.RequireEqual(t, fantasy.CallWarningTypeUnsupportedSetting, result.Warnings[0].Type)
+		testcmp.RequireEqual(t, "ServiceTier", result.Warnings[0].Setting)
 		require.Contains(t, result.Warnings[0].Details, "flex processing is only available")
 	})
 
@@ -1954,10 +1955,10 @@ func TestDoGenerate(t *testing.T) {
 		require.NoError(t, err)
 		model, _ := provider.LanguageModel(t.Context(), "gpt-4o-mini")
 
-		_, err = model.Generate(t.Context(), fantasy.Call{
+		_, err = model.Generate(context.Background(), fantasy.Call{
 			Prompt: testPrompt,
 			ProviderOptions: NewProviderOptions(&ProviderOptions{
-				ServiceTier: fantasy.Opt("priority"),
+				ServiceTier: new("priority"),
 			}),
 		})
 
@@ -1965,15 +1966,15 @@ func TestDoGenerate(t *testing.T) {
 		require.Len(t, server.calls, 1)
 
 		call := server.calls[0]
-		assert.Empty(t, cmp.Diff("gpt-4o-mini", call.body["model"]))
-		assert.Empty(t, cmp.Diff("priority", call.body["service_tier"]))
+		testcmp.RequireEqual(t, "gpt-4o-mini", call.body["model"])
+		testcmp.RequireEqual(t, "priority", call.body["service_tier"])
 
 		messages := call.body["messages"].([]any)
 		require.Len(t, messages, 1)
 
 		message := messages[0].(map[string]any)
-		assert.Empty(t, cmp.Diff("user", message["role"]))
-		assert.Empty(t, cmp.Diff("Hello", message["content"]))
+		testcmp.RequireEqual(t, "user", message["role"])
+		testcmp.RequireEqual(t, "Hello", message["content"])
 	})
 
 	t.Run("should show warning when using priority processing with unsupported model", func(t *testing.T) {
@@ -1991,10 +1992,10 @@ func TestDoGenerate(t *testing.T) {
 		require.NoError(t, err)
 		model, _ := provider.LanguageModel(t.Context(), "gpt-3.5-turbo")
 
-		result, err := model.Generate(t.Context(), fantasy.Call{
+		result, err := model.Generate(context.Background(), fantasy.Call{
 			Prompt: testPrompt,
 			ProviderOptions: NewProviderOptions(&ProviderOptions{
-				ServiceTier: fantasy.Opt("priority"),
+				ServiceTier: new("priority"),
 			}),
 		})
 
@@ -2005,8 +2006,8 @@ func TestDoGenerate(t *testing.T) {
 		require.Nil(t, call.body["service_tier"])
 
 		require.Len(t, result.Warnings, 1)
-		assert.Empty(t, cmp.Diff(fantasy.CallWarningTypeUnsupportedSetting, result.Warnings[0].Type))
-		assert.Empty(t, cmp.Diff("ServiceTier", result.Warnings[0].Setting))
+		testcmp.RequireEqual(t, fantasy.CallWarningTypeUnsupportedSetting, result.Warnings[0].Type)
+		testcmp.RequireEqual(t, "ServiceTier", result.Warnings[0].Setting)
 		require.Contains(t, result.Warnings[0].Details, "priority processing is only available")
 	})
 }
@@ -2039,7 +2040,7 @@ func newStreamingMockServer() *streamingMockServer {
 		// Parse request body
 		if r.Body != nil {
 			var body map[string]any
-			jsonv2.UnmarshalRead(r.Body, &body)
+			json.NewDecoder(r.Body).Decode(&body)
 			call.body = body
 		}
 
@@ -2142,7 +2143,7 @@ func (sms *streamingMockServer) prepareStreamResponse(opts map[string]any) {
 			},
 		},
 	}
-	initialData, _ := jsonv2.Marshal(initialChunk)
+	initialData, _ := json.Marshal(initialChunk)
 	chunks = append(chunks, "data: "+string(initialData)+"\n\n")
 
 	// Content chunks
@@ -2163,7 +2164,7 @@ func (sms *streamingMockServer) prepareStreamResponse(opts map[string]any) {
 				},
 			},
 		}
-		contentData, _ := jsonv2.Marshal(contentChunk)
+		contentData, _ := json.Marshal(contentChunk)
 		chunks = append(chunks, "data: "+string(contentData)+"\n\n")
 
 		// Add annotations if this is the last content chunk and we have annotations
@@ -2185,7 +2186,7 @@ func (sms *streamingMockServer) prepareStreamResponse(opts map[string]any) {
 						},
 					},
 				}
-				annotationData, _ := jsonv2.Marshal(annotationChunk)
+				annotationData, _ := json.Marshal(annotationChunk)
 				chunks = append(chunks, "data: "+string(annotationData)+"\n\n")
 			}
 		}
@@ -2211,7 +2212,7 @@ func (sms *streamingMockServer) prepareStreamResponse(opts map[string]any) {
 		finishChunk["choices"].([]map[string]any)[0]["logprobs"] = logprobs
 	}
 
-	finishData, _ := jsonv2.Marshal(finishChunk)
+	finishData, _ := json.Marshal(finishChunk)
 	chunks = append(chunks, "data: "+string(finishData)+"\n\n")
 
 	// Usage chunk
@@ -2224,7 +2225,7 @@ func (sms *streamingMockServer) prepareStreamResponse(opts map[string]any) {
 		"choices":            []map[string]any{},
 		"usage":              usage,
 	}
-	usageData, _ := jsonv2.Marshal(usageChunk)
+	usageData, _ := json.Marshal(usageChunk)
 	chunks = append(chunks, "data: "+string(usageData)+"\n\n")
 
 	// Done
@@ -2253,6 +2254,18 @@ func (sms *streamingMockServer) prepareToolStreamResponse() {
 func (sms *streamingMockServer) prepareErrorStreamResponse() {
 	chunks := []string{
 		`data: {"error":{"message": "The server had an error processing your request. Sorry about that! You can retry your request, or contact us through our help center at help.openai.com if you keep seeing this error.","type":"server_error","param":null,"code":null}}` + "\n\n",
+		"data: [DONE]\n\n",
+	}
+	sms.chunks = chunks
+}
+
+func (sms *streamingMockServer) prepareToolStreamResponseWithEmptyArgs() {
+	chunks := []string{
+		// Tool call start with empty arguments (like Copilot sometimes does)
+		`data: {"id":"chatcmpl-emptyargs","object":"chat.completion.chunk","created":1711357598,"model":"gpt-3.5-turbo-0125","system_fingerprint":"fp_3bc1b5746c","choices":[{"index":0,"delta":{"role":"assistant","content":null,"tool_calls":[{"index":0,"id":"call_empty_args","type":"function","function":{"name":"test-tool","arguments":""}}]},"logprobs":null,"finish_reason":null}]}` + "\n\n",
+		// Finish without any argument deltas
+		`data: {"id":"chatcmpl-emptyargs","object":"chat.completion.chunk","created":1711357598,"model":"gpt-3.5-turbo-0125","system_fingerprint":"fp_3bc1b5746c","choices":[{"index":0,"delta":{},"logprobs":null,"finish_reason":"tool_calls"}]}` + "\n\n",
+		`data: {"id":"chatcmpl-emptyargs","object":"chat.completion.chunk","created":1711357598,"model":"gpt-3.5-turbo-0125","system_fingerprint":"fp_3bc1b5746c","choices":[],"usage":{"prompt_tokens":53,"completion_tokens":17,"total_tokens":70}}` + "\n\n",
 		"data: [DONE]\n\n",
 	}
 	sms.chunks = chunks
@@ -2299,7 +2312,7 @@ func TestDoStream(t *testing.T) {
 		require.NoError(t, err)
 		model, _ := provider.LanguageModel(t.Context(), "gpt-3.5-turbo")
 
-		stream, err := model.Stream(t.Context(), fantasy.Call{
+		stream, err := model.Stream(context.Background(), fantasy.Call{
 			Prompt: testPrompt,
 		})
 
@@ -2331,14 +2344,14 @@ func TestDoStream(t *testing.T) {
 		require.NotEqual(t, -1, textStart)
 		require.NotEqual(t, -1, textEnd)
 		require.NotEqual(t, -1, finish)
-		assert.Empty(t, cmp.Diff([]string{"Hello", ", ", "World!"}, deltas))
+		testcmp.RequireEqual(t, []string{"Hello", ", ", "World!"}, deltas)
 
 		// Check finish part
 		finishPart := parts[finish]
-		assert.Empty(t, cmp.Diff(fantasy.FinishReasonStop, finishPart.FinishReason))
-		assert.Empty(t, cmp.Diff(int64(17), finishPart.Usage.InputTokens))
-		assert.Empty(t, cmp.Diff(int64(227), finishPart.Usage.OutputTokens))
-		assert.Empty(t, cmp.Diff(int64(244), finishPart.Usage.TotalTokens))
+		testcmp.RequireEqual(t, fantasy.FinishReasonStop, finishPart.FinishReason)
+		testcmp.RequireEqual(t, int64(17), finishPart.Usage.InputTokens)
+		testcmp.RequireEqual(t, int64(227), finishPart.Usage.OutputTokens)
+		testcmp.RequireEqual(t, int64(244), finishPart.Usage.TotalTokens)
 	})
 
 	t.Run("should stream tool deltas", func(t *testing.T) {
@@ -2356,7 +2369,7 @@ func TestDoStream(t *testing.T) {
 		require.NoError(t, err)
 		model, _ := provider.LanguageModel(t.Context(), "gpt-3.5-turbo")
 
-		stream, err := model.Stream(t.Context(), fantasy.Call{
+		stream, err := model.Stream(context.Background(), fantasy.Call{
 			Prompt: testPrompt,
 			Tools: []fantasy.Tool{
 				fantasy.FunctionTool{
@@ -2389,17 +2402,17 @@ func TestDoStream(t *testing.T) {
 			switch part.Type {
 			case fantasy.StreamPartTypeToolInputStart:
 				toolInputStart = i
-				assert.Empty(t, cmp.Diff("call_O17Uplv4lJvD6DVdIvFFeRMw", part.ID))
-				assert.Empty(t, cmp.Diff("test-tool", part.ToolCallName))
+				testcmp.RequireEqual(t, "call_O17Uplv4lJvD6DVdIvFFeRMw", part.ID)
+				testcmp.RequireEqual(t, "test-tool", part.ToolCallName)
 			case fantasy.StreamPartTypeToolInputDelta:
 				toolDeltas = append(toolDeltas, part.Delta)
 			case fantasy.StreamPartTypeToolInputEnd:
 				toolInputEnd = i
 			case fantasy.StreamPartTypeToolCall:
 				toolCall = i
-				assert.Empty(t, cmp.Diff("call_O17Uplv4lJvD6DVdIvFFeRMw", part.ID))
-				assert.Empty(t, cmp.Diff("test-tool", part.ToolCallName))
-				assert.Empty(t, cmp.Diff(`{"value":"Sparkle Day"}`, part.ToolCallInput))
+				testcmp.RequireEqual(t, "call_O17Uplv4lJvD6DVdIvFFeRMw", part.ID)
+				testcmp.RequireEqual(t, "test-tool", part.ToolCallName)
+				testcmp.RequireEqual(t, `{"value":"Sparkle Day"}`, part.ToolCallInput)
 			}
 		}
 
@@ -2412,7 +2425,73 @@ func TestDoStream(t *testing.T) {
 		for _, delta := range toolDeltas {
 			fullInput.WriteString(delta)
 		}
-		assert.Empty(t, cmp.Diff(`{"value":"Sparkle Day"}`, fullInput.String()))
+		testcmp.RequireEqual(t, `{"value":"Sparkle Day"}`, fullInput.String())
+	})
+
+	t.Run("should handle tool calls with empty arguments", func(t *testing.T) {
+		t.Parallel()
+
+		server := newStreamingMockServer()
+		defer server.close()
+
+		server.prepareToolStreamResponseWithEmptyArgs()
+
+		provider, err := New(
+			WithAPIKey("test-api-key"),
+			WithBaseURL(server.server.URL),
+		)
+		require.NoError(t, err)
+		model, _ := provider.LanguageModel(t.Context(), "gpt-3.5-turbo")
+
+		stream, err := model.Stream(context.Background(), fantasy.Call{
+			Prompt: testPrompt,
+			Tools: []fantasy.Tool{
+				fantasy.FunctionTool{
+					Name: "test-tool",
+					InputSchema: map[string]any{
+						"type": "object",
+						"properties": map[string]any{
+							"value": map[string]any{
+								"type": "string",
+							},
+						},
+						"required":             []string{"value"},
+						"additionalProperties": false,
+						"$schema":              "http://json-schema.org/draft-07/schema#",
+					},
+				},
+			},
+		})
+
+		require.NoError(t, err)
+
+		parts, err := collectStreamParts(stream)
+		require.NoError(t, err)
+
+		// Find tool-related parts
+		toolInputStart, toolInputEnd, toolCall := -1, -1, -1
+
+		for i, part := range parts {
+			switch part.Type {
+			case fantasy.StreamPartTypeToolInputStart:
+				toolInputStart = i
+				testcmp.RequireEqual(t, "call_empty_args", part.ID)
+				testcmp.RequireEqual(t, "test-tool", part.ToolCallName)
+			case fantasy.StreamPartTypeToolInputEnd:
+				toolInputEnd = i
+				testcmp.RequireEqual(t, "call_empty_args", part.ID)
+			case fantasy.StreamPartTypeToolCall:
+				toolCall = i
+				testcmp.RequireEqual(t, "call_empty_args", part.ID)
+				testcmp.RequireEqual(t, "test-tool", part.ToolCallName)
+				// Empty arguments should be normalized to "{}"
+				testcmp.RequireEqual(t, "{}", part.ToolCallInput)
+			}
+		}
+
+		require.NotEqual(t, -1, toolInputStart, "expected ToolInputStart part")
+		require.NotEqual(t, -1, toolInputEnd, "expected ToolInputEnd part")
+		require.NotEqual(t, -1, toolCall, "expected ToolCall part")
 	})
 
 	t.Run("should stream annotations/citations", func(t *testing.T) {
@@ -2443,7 +2522,7 @@ func TestDoStream(t *testing.T) {
 		require.NoError(t, err)
 		model, _ := provider.LanguageModel(t.Context(), "gpt-3.5-turbo")
 
-		stream, err := model.Stream(t.Context(), fantasy.Call{
+		stream, err := model.Stream(context.Background(), fantasy.Call{
 			Prompt: testPrompt,
 		})
 
@@ -2462,9 +2541,9 @@ func TestDoStream(t *testing.T) {
 		}
 
 		require.NotNil(t, sourcePart)
-		assert.Empty(t, cmp.Diff(fantasy.SourceTypeURL, sourcePart.SourceType))
-		assert.Empty(t, cmp.Diff("https://example.com/doc1.pdf", sourcePart.URL))
-		assert.Empty(t, cmp.Diff("Document 1", sourcePart.Title))
+		testcmp.RequireEqual(t, fantasy.SourceTypeURL, sourcePart.SourceType)
+		testcmp.RequireEqual(t, "https://example.com/doc1.pdf", sourcePart.URL)
+		testcmp.RequireEqual(t, "Document 1", sourcePart.Title)
 		require.NotEmpty(t, sourcePart.ID)
 	})
 
@@ -2483,7 +2562,7 @@ func TestDoStream(t *testing.T) {
 		require.NoError(t, err)
 		model, _ := provider.LanguageModel(t.Context(), "gpt-3.5-turbo")
 
-		stream, err := model.Stream(t.Context(), fantasy.Call{
+		stream, err := model.Stream(context.Background(), fantasy.Call{
 			Prompt: testPrompt,
 		})
 
@@ -2525,7 +2604,7 @@ func TestDoStream(t *testing.T) {
 		require.NoError(t, err)
 		model, _ := provider.LanguageModel(t.Context(), "gpt-3.5-turbo")
 
-		_, err = model.Stream(t.Context(), fantasy.Call{
+		_, err = model.Stream(context.Background(), fantasy.Call{
 			Prompt: testPrompt,
 		})
 
@@ -2533,20 +2612,20 @@ func TestDoStream(t *testing.T) {
 		require.Len(t, server.calls, 1)
 
 		call := server.calls[0]
-		assert.Empty(t, cmp.Diff("POST", call.method))
-		assert.Empty(t, cmp.Diff("/chat/completions", call.path))
-		assert.Empty(t, cmp.Diff("gpt-3.5-turbo", call.body["model"]))
-		assert.Empty(t, cmp.Diff(true, call.body["stream"]))
+		testcmp.RequireEqual(t, "POST", call.method)
+		testcmp.RequireEqual(t, "/chat/completions", call.path)
+		testcmp.RequireEqual(t, "gpt-3.5-turbo", call.body["model"])
+		testcmp.RequireEqual(t, true, call.body["stream"])
 
 		streamOptions := call.body["stream_options"].(map[string]any)
-		assert.Empty(t, cmp.Diff(true, streamOptions["include_usage"]))
+		testcmp.RequireEqual(t, true, streamOptions["include_usage"])
 
 		messages := call.body["messages"].([]any)
 		require.Len(t, messages, 1)
 
 		message := messages[0].(map[string]any)
-		assert.Empty(t, cmp.Diff("user", message["role"]))
-		assert.Empty(t, cmp.Diff("Hello", message["content"]))
+		testcmp.RequireEqual(t, "user", message["role"])
+		testcmp.RequireEqual(t, "Hello", message["content"])
 	})
 
 	t.Run("should return cached tokens in providerMetadata", func(t *testing.T) {
@@ -2574,7 +2653,7 @@ func TestDoStream(t *testing.T) {
 		require.NoError(t, err)
 		model, _ := provider.LanguageModel(t.Context(), "gpt-3.5-turbo")
 
-		stream, err := model.Stream(t.Context(), fantasy.Call{
+		stream, err := model.Stream(context.Background(), fantasy.Call{
 			Prompt: testPrompt,
 		})
 
@@ -2593,10 +2672,11 @@ func TestDoStream(t *testing.T) {
 		}
 
 		require.NotNil(t, finishPart)
-		assert.Empty(t, cmp.Diff(int64(1152), finishPart.Usage.CacheReadTokens))
-		assert.Empty(t, cmp.Diff(int64(15), finishPart.Usage.InputTokens))
-		assert.Empty(t, cmp.Diff(int64(20), finishPart.Usage.OutputTokens))
-		assert.Empty(t, cmp.Diff(int64(35), finishPart.Usage.TotalTokens))
+		testcmp.RequireEqual(t, int64(1152), finishPart.Usage.CacheReadTokens)
+		// InputTokens = prompt_tokens - cached_tokens = 15 - 1152 = -1137 → clamped to 0
+		testcmp.RequireEqual(t, int64(0), finishPart.Usage.InputTokens)
+		testcmp.RequireEqual(t, int64(20), finishPart.Usage.OutputTokens)
+		testcmp.RequireEqual(t, int64(35), finishPart.Usage.TotalTokens)
 	})
 
 	t.Run("should return accepted_prediction_tokens and rejected_prediction_tokens", func(t *testing.T) {
@@ -2625,7 +2705,7 @@ func TestDoStream(t *testing.T) {
 		require.NoError(t, err)
 		model, _ := provider.LanguageModel(t.Context(), "gpt-3.5-turbo")
 
-		stream, err := model.Stream(t.Context(), fantasy.Call{
+		stream, err := model.Stream(context.Background(), fantasy.Call{
 			Prompt: testPrompt,
 		})
 
@@ -2648,8 +2728,8 @@ func TestDoStream(t *testing.T) {
 
 		openaiMeta, ok := finishPart.ProviderMetadata["openai"].(*ProviderMetadata)
 		require.True(t, ok)
-		assert.Empty(t, cmp.Diff(int64(123), openaiMeta.AcceptedPredictionTokens))
-		assert.Empty(t, cmp.Diff(int64(456), openaiMeta.RejectedPredictionTokens))
+		testcmp.RequireEqual(t, int64(123), openaiMeta.AcceptedPredictionTokens)
+		testcmp.RequireEqual(t, int64(456), openaiMeta.RejectedPredictionTokens)
 	})
 
 	t.Run("should send store extension setting", func(t *testing.T) {
@@ -2669,10 +2749,10 @@ func TestDoStream(t *testing.T) {
 		require.NoError(t, err)
 		model, _ := provider.LanguageModel(t.Context(), "gpt-3.5-turbo")
 
-		_, err = model.Stream(t.Context(), fantasy.Call{
+		_, err = model.Stream(context.Background(), fantasy.Call{
 			Prompt: testPrompt,
 			ProviderOptions: NewProviderOptions(&ProviderOptions{
-				Store: fantasy.Opt(true),
+				Store: new(true),
 			}),
 		})
 
@@ -2680,19 +2760,19 @@ func TestDoStream(t *testing.T) {
 		require.Len(t, server.calls, 1)
 
 		call := server.calls[0]
-		assert.Empty(t, cmp.Diff("gpt-3.5-turbo", call.body["model"]))
-		assert.Empty(t, cmp.Diff(true, call.body["stream"]))
-		assert.Empty(t, cmp.Diff(true, call.body["store"]))
+		testcmp.RequireEqual(t, "gpt-3.5-turbo", call.body["model"])
+		testcmp.RequireEqual(t, true, call.body["stream"])
+		testcmp.RequireEqual(t, true, call.body["store"])
 
 		streamOptions := call.body["stream_options"].(map[string]any)
-		assert.Empty(t, cmp.Diff(true, streamOptions["include_usage"]))
+		testcmp.RequireEqual(t, true, streamOptions["include_usage"])
 
 		messages := call.body["messages"].([]any)
 		require.Len(t, messages, 1)
 
 		message := messages[0].(map[string]any)
-		assert.Empty(t, cmp.Diff("user", message["role"]))
-		assert.Empty(t, cmp.Diff("Hello", message["content"]))
+		testcmp.RequireEqual(t, "user", message["role"])
+		testcmp.RequireEqual(t, "Hello", message["content"])
 	})
 
 	t.Run("should send metadata extension values", func(t *testing.T) {
@@ -2712,7 +2792,7 @@ func TestDoStream(t *testing.T) {
 		require.NoError(t, err)
 		model, _ := provider.LanguageModel(t.Context(), "gpt-3.5-turbo")
 
-		_, err = model.Stream(t.Context(), fantasy.Call{
+		_, err = model.Stream(context.Background(), fantasy.Call{
 			Prompt: testPrompt,
 			ProviderOptions: NewProviderOptions(&ProviderOptions{
 				Metadata: map[string]any{
@@ -2725,21 +2805,21 @@ func TestDoStream(t *testing.T) {
 		require.Len(t, server.calls, 1)
 
 		call := server.calls[0]
-		assert.Empty(t, cmp.Diff("gpt-3.5-turbo", call.body["model"]))
-		assert.Empty(t, cmp.Diff(true, call.body["stream"]))
+		testcmp.RequireEqual(t, "gpt-3.5-turbo", call.body["model"])
+		testcmp.RequireEqual(t, true, call.body["stream"])
 
 		metadata := call.body["metadata"].(map[string]any)
-		assert.Empty(t, cmp.Diff("value", metadata["custom"]))
+		testcmp.RequireEqual(t, "value", metadata["custom"])
 
 		streamOptions := call.body["stream_options"].(map[string]any)
-		assert.Empty(t, cmp.Diff(true, streamOptions["include_usage"]))
+		testcmp.RequireEqual(t, true, streamOptions["include_usage"])
 
 		messages := call.body["messages"].([]any)
 		require.Len(t, messages, 1)
 
 		message := messages[0].(map[string]any)
-		assert.Empty(t, cmp.Diff("user", message["role"]))
-		assert.Empty(t, cmp.Diff("Hello", message["content"]))
+		testcmp.RequireEqual(t, "user", message["role"])
+		testcmp.RequireEqual(t, "Hello", message["content"])
 	})
 
 	t.Run("should send serviceTier flex processing setting in streaming", func(t *testing.T) {
@@ -2759,10 +2839,10 @@ func TestDoStream(t *testing.T) {
 		require.NoError(t, err)
 		model, _ := provider.LanguageModel(t.Context(), "o3-mini")
 
-		_, err = model.Stream(t.Context(), fantasy.Call{
+		_, err = model.Stream(context.Background(), fantasy.Call{
 			Prompt: testPrompt,
 			ProviderOptions: NewProviderOptions(&ProviderOptions{
-				ServiceTier: fantasy.Opt("flex"),
+				ServiceTier: new("flex"),
 			}),
 		})
 
@@ -2770,19 +2850,19 @@ func TestDoStream(t *testing.T) {
 		require.Len(t, server.calls, 1)
 
 		call := server.calls[0]
-		assert.Empty(t, cmp.Diff("o3-mini", call.body["model"]))
-		assert.Empty(t, cmp.Diff("flex", call.body["service_tier"]))
-		assert.Empty(t, cmp.Diff(true, call.body["stream"]))
+		testcmp.RequireEqual(t, "o3-mini", call.body["model"])
+		testcmp.RequireEqual(t, "flex", call.body["service_tier"])
+		testcmp.RequireEqual(t, true, call.body["stream"])
 
 		streamOptions := call.body["stream_options"].(map[string]any)
-		assert.Empty(t, cmp.Diff(true, streamOptions["include_usage"]))
+		testcmp.RequireEqual(t, true, streamOptions["include_usage"])
 
 		messages := call.body["messages"].([]any)
 		require.Len(t, messages, 1)
 
 		message := messages[0].(map[string]any)
-		assert.Empty(t, cmp.Diff("user", message["role"]))
-		assert.Empty(t, cmp.Diff("Hello", message["content"]))
+		testcmp.RequireEqual(t, "user", message["role"])
+		testcmp.RequireEqual(t, "Hello", message["content"])
 	})
 
 	t.Run("should send serviceTier priority processing setting in streaming", func(t *testing.T) {
@@ -2802,10 +2882,10 @@ func TestDoStream(t *testing.T) {
 		require.NoError(t, err)
 		model, _ := provider.LanguageModel(t.Context(), "gpt-4o-mini")
 
-		_, err = model.Stream(t.Context(), fantasy.Call{
+		_, err = model.Stream(context.Background(), fantasy.Call{
 			Prompt: testPrompt,
 			ProviderOptions: NewProviderOptions(&ProviderOptions{
-				ServiceTier: fantasy.Opt("priority"),
+				ServiceTier: new("priority"),
 			}),
 		})
 
@@ -2813,19 +2893,19 @@ func TestDoStream(t *testing.T) {
 		require.Len(t, server.calls, 1)
 
 		call := server.calls[0]
-		assert.Empty(t, cmp.Diff("gpt-4o-mini", call.body["model"]))
-		assert.Empty(t, cmp.Diff("priority", call.body["service_tier"]))
-		assert.Empty(t, cmp.Diff(true, call.body["stream"]))
+		testcmp.RequireEqual(t, "gpt-4o-mini", call.body["model"])
+		testcmp.RequireEqual(t, "priority", call.body["service_tier"])
+		testcmp.RequireEqual(t, true, call.body["stream"])
 
 		streamOptions := call.body["stream_options"].(map[string]any)
-		assert.Empty(t, cmp.Diff(true, streamOptions["include_usage"]))
+		testcmp.RequireEqual(t, true, streamOptions["include_usage"])
 
 		messages := call.body["messages"].([]any)
 		require.Len(t, messages, 1)
 
 		message := messages[0].(map[string]any)
-		assert.Empty(t, cmp.Diff("user", message["role"]))
-		assert.Empty(t, cmp.Diff("Hello", message["content"]))
+		testcmp.RequireEqual(t, "user", message["role"])
+		testcmp.RequireEqual(t, "Hello", message["content"])
 	})
 
 	t.Run("should stream text delta for reasoning models", func(t *testing.T) {
@@ -2846,7 +2926,7 @@ func TestDoStream(t *testing.T) {
 		require.NoError(t, err)
 		model, _ := provider.LanguageModel(t.Context(), "o1-preview")
 
-		stream, err := model.Stream(t.Context(), fantasy.Call{
+		stream, err := model.Stream(context.Background(), fantasy.Call{
 			Prompt: testPrompt,
 		})
 
@@ -2862,10 +2942,9 @@ func TestDoStream(t *testing.T) {
 				textDeltas = append(textDeltas, part.Delta)
 			}
 		}
-		assert.
 
-			// Should contain the text content (without empty delta)
-			Empty(t, cmp.Diff([]string{"Hello, World!"}, textDeltas))
+		// Should contain the text content (without empty delta)
+		testcmp.RequireEqual(t, []string{"Hello, World!"}, textDeltas)
 	})
 
 	t.Run("should send reasoning tokens", func(t *testing.T) {
@@ -2894,7 +2973,7 @@ func TestDoStream(t *testing.T) {
 		require.NoError(t, err)
 		model, _ := provider.LanguageModel(t.Context(), "o1-preview")
 
-		stream, err := model.Stream(t.Context(), fantasy.Call{
+		stream, err := model.Stream(context.Background(), fantasy.Call{
 			Prompt: testPrompt,
 		})
 
@@ -2913,10 +2992,10 @@ func TestDoStream(t *testing.T) {
 		}
 
 		require.NotNil(t, finishPart)
-		assert.Empty(t, cmp.Diff(int64(15), finishPart.Usage.InputTokens))
-		assert.Empty(t, cmp.Diff(int64(20), finishPart.Usage.OutputTokens))
-		assert.Empty(t, cmp.Diff(int64(35), finishPart.Usage.TotalTokens))
-		assert.Empty(t, cmp.Diff(int64(10), finishPart.Usage.ReasoningTokens))
+		testcmp.RequireEqual(t, int64(15), finishPart.Usage.InputTokens)
+		testcmp.RequireEqual(t, int64(20), finishPart.Usage.OutputTokens)
+		testcmp.RequireEqual(t, int64(35), finishPart.Usage.TotalTokens)
+		testcmp.RequireEqual(t, int64(10), finishPart.Usage.ReasoningTokens)
 	})
 }
 
@@ -2943,7 +3022,7 @@ func TestDefaultToPrompt_DropsEmptyMessages(t *testing.T) {
 
 		require.Len(t, messages, 1, "should only have user message")
 		require.Len(t, warnings, 1)
-		assert.Empty(t, cmp.Diff(fantasy.CallWarningTypeOther, warnings[0].Type))
+		testcmp.RequireEqual(t, fantasy.CallWarningTypeOther, warnings[0].Type)
 		require.Contains(t, warnings[0].Message, "dropping empty assistant message")
 	})
 
@@ -3104,11 +3183,11 @@ func TestResponsesToPrompt_DropsEmptyMessages(t *testing.T) {
 			},
 		}
 
-		input, warnings := toResponsesPrompt(prompt, "system")
+		input, warnings := toResponsesPrompt(prompt, "system", false)
 
 		require.Len(t, input, 1, "should only have user message")
 		require.Len(t, warnings, 1)
-		assert.Empty(t, cmp.Diff(fantasy.CallWarningTypeOther, warnings[0].Type))
+		testcmp.RequireEqual(t, fantasy.CallWarningTypeOther, warnings[0].Type)
 		require.Contains(t, warnings[0].Message, "dropping empty assistant message")
 	})
 
@@ -3130,7 +3209,7 @@ func TestResponsesToPrompt_DropsEmptyMessages(t *testing.T) {
 			},
 		}
 
-		input, warnings := toResponsesPrompt(prompt, "system")
+		input, warnings := toResponsesPrompt(prompt, "system", false)
 
 		require.Len(t, input, 2, "should have both user and assistant messages")
 		require.Empty(t, warnings)
@@ -3158,7 +3237,7 @@ func TestResponsesToPrompt_DropsEmptyMessages(t *testing.T) {
 			},
 		}
 
-		input, warnings := toResponsesPrompt(prompt, "system")
+		input, warnings := toResponsesPrompt(prompt, "system", false)
 
 		require.Len(t, input, 2, "should have both user and assistant messages")
 		require.Empty(t, warnings)
@@ -3179,7 +3258,7 @@ func TestResponsesToPrompt_DropsEmptyMessages(t *testing.T) {
 			},
 		}
 
-		input, warnings := toResponsesPrompt(prompt, "system")
+		input, warnings := toResponsesPrompt(prompt, "system", false)
 
 		require.Empty(t, input)
 		require.Len(t, warnings, 2) // One for unsupported type, one for empty message
@@ -3201,7 +3280,7 @@ func TestResponsesToPrompt_DropsEmptyMessages(t *testing.T) {
 			},
 		}
 
-		input, warnings := toResponsesPrompt(prompt, "system")
+		input, warnings := toResponsesPrompt(prompt, "system", false)
 
 		require.Len(t, input, 1)
 		require.Empty(t, warnings)
@@ -3222,7 +3301,7 @@ func TestResponsesToPrompt_DropsEmptyMessages(t *testing.T) {
 			},
 		}
 
-		input, warnings := toResponsesPrompt(prompt, "system")
+		input, warnings := toResponsesPrompt(prompt, "system", false)
 
 		require.Len(t, input, 1)
 		require.Empty(t, warnings)
@@ -3243,9 +3322,893 @@ func TestResponsesToPrompt_DropsEmptyMessages(t *testing.T) {
 			},
 		}
 
-		input, warnings := toResponsesPrompt(prompt, "system")
+		input, warnings := toResponsesPrompt(prompt, "system", false)
 
 		require.Len(t, input, 1)
 		require.Empty(t, warnings)
 	})
+}
+
+func TestParseContextTooLargeError(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		message  string
+		wantErr  bool
+		wantUsed int
+		wantMax  int
+	}{
+		{
+			name:     "matches openai format with resulted in",
+			message:  "This model's maximum context length is 128000 tokens. However, your messages resulted in 150000 tokens.",
+			wantErr:  true,
+			wantUsed: 150000,
+			wantMax:  128000,
+		},
+		{
+			name:     "matches openai format with requested",
+			message:  "maximum context length is 8192 tokens, however you requested 10000 tokens",
+			wantErr:  true,
+			wantUsed: 10000,
+			wantMax:  8192,
+		},
+		{
+			name:    "does not match unrelated error",
+			message: "invalid api key",
+			wantErr: false,
+		},
+		{
+			name:    "does not match rate limit error",
+			message: "rate limit exceeded",
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			providerErr := &fantasy.ProviderError{Message: tt.message}
+			parseContextTooLargeError(tt.message, providerErr)
+
+			if tt.wantErr {
+				require.True(t, providerErr.IsContextTooLarge())
+				if tt.wantUsed > 0 {
+					testcmp.RequireEqual(t, tt.wantUsed, providerErr.ContextUsedTokens)
+					testcmp.RequireEqual(t, tt.wantMax, providerErr.ContextMaxTokens)
+				}
+			} else {
+				require.False(t, providerErr.IsContextTooLarge())
+			}
+		})
+	}
+}
+
+func TestUserAgent(t *testing.T) {
+	t.Parallel()
+
+	t.Run("default UA applied", func(t *testing.T) {
+		t.Parallel()
+
+		server := newMockServer()
+		defer server.close()
+		server.prepareJSONResponse(map[string]any{})
+
+		p, err := New(WithAPIKey("k"), WithBaseURL(server.server.URL))
+		require.NoError(t, err)
+		model, _ := p.LanguageModel(t.Context(), "gpt-4")
+		_, _ = model.Generate(t.Context(), fantasy.Call{Prompt: testPrompt})
+
+		require.Len(t, server.calls, 1)
+		testcmp.AssertEqual(t, "Charm-Fantasy/"+fantasy.Version+" (https://charm.land/fantasy)", server.calls[0].headers["User-Agent"])
+	})
+
+	t.Run("WithHeaders User-Agent wins over default", func(t *testing.T) {
+		t.Parallel()
+
+		server := newMockServer()
+		defer server.close()
+		server.prepareJSONResponse(map[string]any{})
+
+		p, err := New(WithAPIKey("k"), WithBaseURL(server.server.URL), WithHeaders(map[string]string{"User-Agent": "custom-from-headers"}))
+		require.NoError(t, err)
+		model, _ := p.LanguageModel(t.Context(), "gpt-4")
+		_, _ = model.Generate(t.Context(), fantasy.Call{Prompt: testPrompt})
+
+		require.Len(t, server.calls, 1)
+		testcmp.AssertEqual(t, "custom-from-headers", server.calls[0].headers["User-Agent"])
+	})
+
+	t.Run("WithUserAgent wins over both", func(t *testing.T) {
+		t.Parallel()
+
+		server := newMockServer()
+		defer server.close()
+		server.prepareJSONResponse(map[string]any{})
+
+		p, err := New(
+			WithAPIKey("k"),
+			WithBaseURL(server.server.URL),
+			WithHeaders(map[string]string{"User-Agent": "from-headers"}),
+			WithUserAgent("explicit-ua"),
+		)
+		require.NoError(t, err)
+		model, _ := p.LanguageModel(t.Context(), "gpt-4")
+		_, _ = model.Generate(t.Context(), fantasy.Call{Prompt: testPrompt})
+
+		require.Len(t, server.calls, 1)
+		testcmp.AssertEqual(t, "explicit-ua", server.calls[0].headers["User-Agent"])
+	})
+
+	t.Run("Call.UserAgent overrides provider WithHeaders UA", func(t *testing.T) {
+		t.Parallel()
+
+		server := newMockServer()
+		defer server.close()
+		server.prepareJSONResponse(map[string]any{})
+
+		p, err := New(
+			WithAPIKey("k"),
+			WithBaseURL(server.server.URL),
+			WithHeaders(map[string]string{"User-Agent": "header-ua"}),
+		)
+		require.NoError(t, err)
+		model, _ := p.LanguageModel(t.Context(), "gpt-4")
+		_, _ = model.Generate(t.Context(), fantasy.Call{
+			Prompt:    testPrompt,
+			UserAgent: "call-level-ua",
+		})
+
+		require.Len(t, server.calls, 1)
+		testcmp.AssertEqual(t, "call-level-ua", server.calls[0].headers["User-Agent"])
+	})
+
+	t.Run("no Call UA falls through to provider UA", func(t *testing.T) {
+		t.Parallel()
+
+		server := newMockServer()
+		defer server.close()
+		server.prepareJSONResponse(map[string]any{})
+
+		p, err := New(
+			WithAPIKey("k"),
+			WithBaseURL(server.server.URL),
+			WithUserAgent("provider-ua"),
+		)
+		require.NoError(t, err)
+		model, _ := p.LanguageModel(t.Context(), "gpt-4")
+		_, _ = model.Generate(t.Context(), fantasy.Call{Prompt: testPrompt})
+
+		require.Len(t, server.calls, 1)
+		testcmp.AssertEqual(t, "provider-ua", server.calls[0].headers["User-Agent"])
+	})
+
+	t.Run("agent WithUserAgent overrides provider UA end-to-end", func(t *testing.T) {
+		t.Parallel()
+
+		server := newMockServer()
+		defer server.close()
+		server.prepareJSONResponse(map[string]any{})
+
+		p, err := New(
+			WithAPIKey("k"),
+			WithBaseURL(server.server.URL),
+			WithUserAgent("provider-ua"),
+		)
+		require.NoError(t, err)
+		model, _ := p.LanguageModel(t.Context(), "gpt-4")
+
+		agent := fantasy.NewAgent(model, fantasy.WithUserAgent("agent-ua"))
+		_, _ = agent.Generate(t.Context(), fantasy.AgentCall{Prompt: "hi"})
+
+		require.Len(t, server.calls, 1)
+		testcmp.AssertEqual(t, "agent-ua", server.calls[0].headers["User-Agent"])
+	})
+
+	t.Run("agent without UA falls through to provider UA end-to-end", func(t *testing.T) {
+		t.Parallel()
+
+		server := newMockServer()
+		defer server.close()
+		server.prepareJSONResponse(map[string]any{})
+
+		p, err := New(
+			WithAPIKey("k"),
+			WithBaseURL(server.server.URL),
+			WithUserAgent("provider-ua"),
+		)
+		require.NoError(t, err)
+		model, _ := p.LanguageModel(t.Context(), "gpt-4")
+
+		agent := fantasy.NewAgent(model)
+		_, _ = agent.Generate(t.Context(), fantasy.AgentCall{Prompt: "hi"})
+
+		require.Len(t, server.calls, 1)
+		testcmp.AssertEqual(t, "provider-ua", server.calls[0].headers["User-Agent"])
+	})
+}
+
+// --- OpenAI Responses API Web Search Tests ---
+
+// mockResponsesWebSearchResponse returns a Responses API response
+// containing a web_search_call output item followed by a message
+// with url_citation annotations.
+func mockResponsesWebSearchResponse() map[string]any {
+	return map[string]any{
+		"id":     "resp_01WebSearch",
+		"object": "response",
+		"model":  "gpt-4.1",
+		"output": []any{
+			map[string]any{
+				"type":   "web_search_call",
+				"id":     "ws_01",
+				"status": "completed",
+				"action": map[string]any{
+					"type":  "search",
+					"query": "latest AI news",
+				},
+			},
+			map[string]any{
+				"type":   "message",
+				"id":     "msg_01",
+				"role":   "assistant",
+				"status": "completed",
+				"content": []any{
+					map[string]any{
+						"type": "output_text",
+						"text": "Based on recent search results, here is the latest AI news.",
+						"annotations": []any{
+							map[string]any{
+								"type":        "url_citation",
+								"url":         "https://example.com/ai-news",
+								"title":       "Latest AI News",
+								"start_index": 0,
+								"end_index":   50,
+							},
+							map[string]any{
+								"type":        "url_citation",
+								"url":         "https://example.com/ml-update",
+								"title":       "ML Update",
+								"start_index": 51,
+								"end_index":   60,
+							},
+						},
+					},
+				},
+			},
+		},
+		"status": "completed",
+		"usage": map[string]any{
+			"input_tokens":  100,
+			"output_tokens": 50,
+			"total_tokens":  150,
+		},
+	}
+}
+
+func newResponsesProvider(t *testing.T, serverURL string) fantasy.LanguageModel {
+	t.Helper()
+	provider, err := New(
+		WithAPIKey("test-api-key"),
+		WithBaseURL(serverURL),
+		WithUseResponsesAPI(),
+	)
+	require.NoError(t, err)
+	model, err := provider.LanguageModel(context.Background(), "gpt-4.1")
+	require.NoError(t, err)
+	return model
+}
+
+func TestResponsesGenerate_WebSearchResponse(t *testing.T) {
+	t.Parallel()
+
+	server := newMockServer()
+	defer server.close()
+	server.response = mockResponsesWebSearchResponse()
+
+	model := newResponsesProvider(t, server.server.URL)
+
+	resp, err := model.Generate(context.Background(), fantasy.Call{
+		Prompt: testPrompt,
+		Tools:  []fantasy.Tool{WebSearchTool(nil)},
+	})
+	require.NoError(t, err)
+
+	testcmp.RequireEqual(t, "POST", server.calls[0].method)
+	testcmp.RequireEqual(t, "/responses", server.calls[0].path)
+
+	var (
+		toolCalls   []fantasy.ToolCallContent
+		sources     []fantasy.SourceContent
+		toolResults []fantasy.ToolResultContent
+		texts       []fantasy.TextContent
+	)
+	for _, c := range resp.Content {
+		switch v := c.(type) {
+		case fantasy.ToolCallContent:
+			toolCalls = append(toolCalls, v)
+		case fantasy.SourceContent:
+			sources = append(sources, v)
+		case fantasy.ToolResultContent:
+			toolResults = append(toolResults, v)
+		case fantasy.TextContent:
+			texts = append(texts, v)
+		}
+	}
+
+	// ToolCallContent for the provider-executed web_search.
+	require.Len(t, toolCalls, 1)
+	require.True(t, toolCalls[0].ProviderExecuted)
+	testcmp.RequireEqual(t, "web_search", toolCalls[0].ToolName)
+	testcmp.RequireEqual(t, "ws_01", toolCalls[0].ToolCallID)
+
+	// SourceContent entries from url_citation annotations.
+	require.Len(t, sources, 2)
+	testcmp.RequireEqual(t, "https://example.com/ai-news", sources[0].URL)
+	testcmp.RequireEqual(t, "Latest AI News", sources[0].Title)
+	testcmp.RequireEqual(t, fantasy.SourceTypeURL, sources[0].SourceType)
+	testcmp.RequireEqual(t, "https://example.com/ml-update", sources[1].URL)
+	testcmp.RequireEqual(t, "ML Update", sources[1].Title)
+
+	// ToolResultContent with provider metadata.
+	require.Len(t, toolResults, 1)
+	require.True(t, toolResults[0].ProviderExecuted)
+	testcmp.RequireEqual(t, "web_search", toolResults[0].ToolName)
+	testcmp.RequireEqual(t, "ws_01", toolResults[0].ToolCallID)
+
+	metaVal, ok := toolResults[0].ProviderMetadata[Name]
+	require.True(t, ok, "providerMetadata should contain openai key")
+	wsMeta, ok := metaVal.(*WebSearchCallMetadata)
+	require.True(t, ok, "metadata should be *WebSearchCallMetadata")
+	testcmp.RequireEqual(t, "ws_01", wsMeta.ItemID)
+	require.NotNil(t, wsMeta.Action)
+	testcmp.RequireEqual(t, "search", wsMeta.Action.Type)
+	testcmp.RequireEqual(t, "latest AI news", wsMeta.Action.Query)
+
+	// TextContent with the final answer.
+	require.Len(t, texts, 1)
+	testcmp.RequireEqual(t,
+		"Based on recent search results, here is the latest AI news.",
+		texts[0].Text)
+
+}
+
+func TestResponsesGenerate_StoreOption(t *testing.T) {
+	t.Parallel()
+
+	server := newMockServer()
+	defer server.close()
+	server.response = mockResponsesWebSearchResponse()
+
+	model := newResponsesProvider(t, server.server.URL)
+
+	_, err := model.Generate(context.Background(), fantasy.Call{
+		Prompt: testPrompt,
+		ProviderOptions: fantasy.ProviderOptions{
+			Name: &ResponsesProviderOptions{
+				Store: new(true),
+			},
+		},
+	})
+	require.NoError(t, err)
+
+	testcmp.RequireEqual(t, "POST", server.calls[0].method)
+	testcmp.RequireEqual(t, "/responses", server.calls[0].path)
+	testcmp.RequireEqual(t, true, server.calls[0].body["store"])
+}
+
+func TestResponsesGenerate_PreviousResponseIDOption(t *testing.T) {
+	t.Parallel()
+
+	server := newMockServer()
+	defer server.close()
+	server.response = mockResponsesWebSearchResponse()
+
+	model := newResponsesProvider(t, server.server.URL)
+
+	_, err := model.Generate(context.Background(), fantasy.Call{
+		Prompt: testPrompt,
+		ProviderOptions: fantasy.ProviderOptions{
+			Name: &ResponsesProviderOptions{
+				PreviousResponseID: new("resp_prev_123"),
+				Store:              new(true),
+			},
+		},
+	})
+	require.NoError(t, err)
+
+	testcmp.RequireEqual(t, "POST", server.calls[0].method)
+	testcmp.RequireEqual(t, "/responses", server.calls[0].path)
+	testcmp.RequireEqual(t, "resp_prev_123", server.calls[0].body["previous_response_id"])
+}
+
+func TestResponsesGenerate_StateChainingAcrossTurns(t *testing.T) {
+	t.Parallel()
+
+	server := newMockServer()
+	defer server.close()
+	server.response = map[string]any{
+		"id":     "resp_turn_1",
+		"object": "response",
+		"model":  "gpt-4.1",
+		"output": []any{
+			map[string]any{
+				"type":   "message",
+				"id":     "msg_1",
+				"role":   "assistant",
+				"status": "completed",
+				"content": []any{
+					map[string]any{
+						"type": "output_text",
+						"text": "First turn",
+					},
+				},
+			},
+		},
+		"status": "completed",
+		"usage": map[string]any{
+			"input_tokens":  10,
+			"output_tokens": 5,
+			"total_tokens":  15,
+		},
+	}
+
+	model := newResponsesProvider(t, server.server.URL)
+
+	first, err := model.Generate(context.Background(), fantasy.Call{
+		Prompt: testPrompt,
+		ProviderOptions: fantasy.ProviderOptions{
+			Name: &ResponsesProviderOptions{Store: new(true)},
+		},
+	})
+	require.NoError(t, err)
+
+	meta, ok := first.ProviderMetadata[Name].(*ResponsesProviderMetadata)
+	require.True(t, ok)
+	testcmp.RequireEqual(t, "resp_turn_1", meta.ResponseID)
+
+	server.response = map[string]any{
+		"id":     "resp_turn_2",
+		"object": "response",
+		"model":  "gpt-4.1",
+		"output": []any{
+			map[string]any{
+				"type":   "message",
+				"id":     "msg_2",
+				"role":   "assistant",
+				"status": "completed",
+				"content": []any{
+					map[string]any{
+						"type": "output_text",
+						"text": "Second turn",
+					},
+				},
+			},
+		},
+		"status": "completed",
+		"usage": map[string]any{
+			"input_tokens":  8,
+			"output_tokens": 4,
+			"total_tokens":  12,
+		},
+	}
+
+	_, err = model.Generate(context.Background(), fantasy.Call{
+		Prompt: fantasy.Prompt{
+			fantasy.NewUserMessage("follow-up only"),
+		},
+		ProviderOptions: fantasy.ProviderOptions{
+			Name: &ResponsesProviderOptions{
+				Store:              new(true),
+				PreviousResponseID: &meta.ResponseID,
+			},
+		},
+	})
+	require.NoError(t, err)
+	require.Len(t, server.calls, 2)
+
+	firstCall := server.calls[0]
+	testcmp.RequireEqual(t, true, firstCall.body["store"])
+
+	secondCall := server.calls[1]
+	testcmp.RequireEqual(t, "resp_turn_1", secondCall.body["previous_response_id"])
+	testcmp.RequireEqual(t, true, secondCall.body["store"])
+
+	input, ok := secondCall.body["input"].([]any)
+	require.True(t, ok)
+	require.Len(t, input, 1)
+
+	inputMessage, ok := input[0].(map[string]any)
+	require.True(t, ok)
+	testcmp.RequireEqual(t, "user", inputMessage["role"])
+}
+
+func TestResponsesGenerate_WebSearchToolInRequest(t *testing.T) {
+	t.Parallel()
+
+	t.Run("basic web_search tool", func(t *testing.T) {
+		t.Parallel()
+
+		server := newMockServer()
+		defer server.close()
+		server.response = mockResponsesWebSearchResponse()
+
+		model := newResponsesProvider(t, server.server.URL)
+
+		_, err := model.Generate(context.Background(), fantasy.Call{
+			Prompt: testPrompt,
+			Tools:  []fantasy.Tool{WebSearchTool(nil)},
+		})
+		require.NoError(t, err)
+
+		tools, ok := server.calls[0].body["tools"].([]any)
+		require.True(t, ok, "request body should have tools array")
+		require.Len(t, tools, 1)
+
+		tool, ok := tools[0].(map[string]any)
+		require.True(t, ok)
+		testcmp.RequireEqual(t, "web_search", tool["type"])
+	})
+
+	t.Run("with search_context_size and allowed_domains", func(t *testing.T) {
+		t.Parallel()
+
+		server := newMockServer()
+		defer server.close()
+		server.response = mockResponsesWebSearchResponse()
+
+		model := newResponsesProvider(t, server.server.URL)
+
+		_, err := model.Generate(context.Background(), fantasy.Call{
+			Prompt: testPrompt,
+			Tools: []fantasy.Tool{
+				WebSearchTool(&WebSearchToolOptions{
+					SearchContextSize: SearchContextSizeHigh,
+					AllowedDomains:    []string{"example.com", "test.com"},
+				}),
+			},
+		})
+		require.NoError(t, err)
+
+		tools, ok := server.calls[0].body["tools"].([]any)
+		require.True(t, ok)
+		require.Len(t, tools, 1)
+
+		tool, ok := tools[0].(map[string]any)
+		require.True(t, ok)
+		testcmp.RequireEqual(t, "web_search", tool["type"])
+		testcmp.RequireEqual(t, "high", tool["search_context_size"])
+
+		filters, ok := tool["filters"].(map[string]any)
+		require.True(t, ok, "tool should have filters")
+		domains, ok := filters["allowed_domains"].([]any)
+		require.True(t, ok, "filters should have allowed_domains")
+		require.Len(t, domains, 2)
+		testcmp.RequireEqual(t, "example.com", domains[0])
+		testcmp.RequireEqual(t, "test.com", domains[1])
+	})
+
+	t.Run("with user_location", func(t *testing.T) {
+		t.Parallel()
+
+		server := newMockServer()
+		defer server.close()
+		server.response = mockResponsesWebSearchResponse()
+
+		model := newResponsesProvider(t, server.server.URL)
+
+		_, err := model.Generate(context.Background(), fantasy.Call{
+			Prompt: testPrompt,
+			Tools: []fantasy.Tool{
+				WebSearchTool(&WebSearchToolOptions{
+					UserLocation: &WebSearchUserLocation{
+						City:    "San Francisco",
+						Country: "US",
+					},
+				}),
+			},
+		})
+		require.NoError(t, err)
+
+		tools, ok := server.calls[0].body["tools"].([]any)
+		require.True(t, ok)
+		require.Len(t, tools, 1)
+
+		tool, ok := tools[0].(map[string]any)
+		require.True(t, ok)
+		testcmp.RequireEqual(t, "web_search", tool["type"])
+
+		userLoc, ok := tool["user_location"].(map[string]any)
+		require.True(t, ok, "tool should have user_location")
+		testcmp.RequireEqual(t, "San Francisco", userLoc["city"])
+		testcmp.RequireEqual(t, "US", userLoc["country"])
+	})
+}
+
+func TestResponsesToPrompt_WebSearchProviderExecutedToolResults(t *testing.T) {
+	t.Parallel()
+
+	prompt := fantasy.Prompt{
+		{
+			Role: fantasy.MessageRoleUser,
+			Content: []fantasy.MessagePart{
+				fantasy.TextPart{Text: "Search for the latest AI news"},
+			},
+		},
+		{
+			Role: fantasy.MessageRoleAssistant,
+			Content: []fantasy.MessagePart{
+				fantasy.ToolCallPart{
+					ToolCallID:       "ws_01",
+					ToolName:         "web_search",
+					ProviderExecuted: true,
+				},
+				fantasy.ToolResultPart{
+					ToolCallID:       "ws_01",
+					ProviderExecuted: true,
+				},
+				fantasy.TextPart{Text: "Here is what I found."},
+			},
+		},
+	}
+
+	t.Run("store false skips item reference", func(t *testing.T) {
+		t.Parallel()
+
+		input, warnings := toResponsesPrompt(prompt, "system instructions", false)
+
+		require.Empty(t, warnings)
+		require.Len(t, input, 2,
+			"expected user + assistant text when store=false")
+		require.Nil(t, input[0].OfItemReference)
+		require.Nil(t, input[1].OfItemReference)
+	})
+
+	t.Run("store true uses item reference", func(t *testing.T) {
+		t.Parallel()
+
+		input, warnings := toResponsesPrompt(prompt, "system instructions", true)
+
+		require.Empty(t, warnings)
+		require.Len(t, input, 3,
+			"expected user + item_reference + assistant text when store=true")
+		require.NotNil(t, input[1].OfItemReference)
+		testcmp.RequireEqual(t, "ws_01", input[1].OfItemReference.ID)
+	})
+}
+
+func TestResponsesToPrompt_ReasoningWithStore(t *testing.T) {
+	t.Parallel()
+
+	encryptedContent := "gAAAAABpvAwtDPh5dSXW86hwbwoTo4DJHANQ"
+	reasoningItemID := "rs_08d030b87966238b0069bc095b7e5c81"
+
+	reasoningPart := fantasy.ReasoningPart{
+		Text: "Let me think about this...",
+		ProviderOptions: fantasy.ProviderOptions{
+			Name: &ResponsesReasoningMetadata{
+				ItemID:           reasoningItemID,
+				EncryptedContent: &encryptedContent,
+				Summary:          []string{},
+			},
+		},
+	}
+
+	prompt := fantasy.Prompt{
+		{
+			Role: fantasy.MessageRoleUser,
+			Content: []fantasy.MessagePart{
+				fantasy.TextPart{Text: "What is 2+2?"},
+			},
+		},
+		{
+			Role: fantasy.MessageRoleAssistant,
+			Content: []fantasy.MessagePart{
+				reasoningPart,
+				fantasy.TextPart{Text: "4"},
+			},
+		},
+		{
+			Role: fantasy.MessageRoleUser,
+			Content: []fantasy.MessagePart{
+				fantasy.TextPart{Text: "And 3+3?"},
+			},
+		},
+	}
+
+	t.Run("store true skips reasoning", func(t *testing.T) {
+		t.Parallel()
+
+		input, warnings := toResponsesPrompt(prompt, "system", true)
+		require.Empty(t, warnings)
+
+		// With store=true: user, assistant text (reasoning
+		// skipped), follow-up user.
+		require.Len(t, input, 3)
+
+		// Verify no reasoning item leaked through.
+		for _, item := range input {
+			require.Nil(t, item.OfReasoning,
+				"reasoning items must not appear when store=true")
+		}
+	})
+
+	t.Run("store false skips reasoning", func(t *testing.T) {
+		t.Parallel()
+
+		input, warnings := toResponsesPrompt(prompt, "system", false)
+		require.Empty(t, warnings)
+
+		// With store=false: user, assistant text, follow-up user.
+		require.Len(t, input, 3)
+
+		for _, item := range input {
+			require.Nil(t, item.OfReasoning,
+				"reasoning items must not appear when store=false")
+		}
+	})
+}
+
+func TestResponsesStream_WebSearchResponse(t *testing.T) {
+	t.Parallel()
+
+	chunks := []string{
+		"event: response.output_item.added\n" +
+			`data: {"type":"response.output_item.added","output_index":0,"item":{"type":"web_search_call","id":"ws_01","status":"in_progress"}}` + "\n\n",
+		"event: response.output_item.done\n" +
+			`data: {"type":"response.output_item.done","output_index":0,"item":{"type":"web_search_call","id":"ws_01","status":"completed","action":{"type":"search","query":"latest AI news"}}}` + "\n\n",
+		"event: response.output_item.added\n" +
+			`data: {"type":"response.output_item.added","output_index":1,"item":{"type":"message","id":"msg_01","role":"assistant","status":"in_progress","content":[]}}` + "\n\n",
+		"event: response.output_text.delta\n" +
+			`data: {"type":"response.output_text.delta","output_index":1,"content_index":0,"delta":"Here are the results."}` + "\n\n",
+		"event: response.output_text.annotation.added\n" +
+			`data: {"type":"response.output_text.annotation.added","annotation":{"type":"url_citation","url":"https://example.com/ai-news","title":"Latest AI News","start_index":0,"end_index":21},"annotation_index":0,"content_index":0,"item_id":"msg_01","output_index":1,"sequence_number":10}` + "\n\n",
+		"event: response.output_text.annotation.added\n" +
+			`data: {"type":"response.output_text.annotation.added","annotation":{"type":"url_citation","url":"https://example.com/more-news","title":"More AI News","start_index":22,"end_index":40},"annotation_index":1,"content_index":0,"item_id":"msg_01","output_index":1,"sequence_number":11}` + "\n\n",
+		"event: response.output_item.done\n" +
+			`data: {"type":"response.output_item.done","output_index":1,"item":{"type":"message","id":"msg_01","role":"assistant","status":"completed","content":[{"type":"output_text","text":"Here are the results.","annotations":[{"type":"url_citation","url":"https://example.com/ai-news","title":"Latest AI News","start_index":0,"end_index":21},{"type":"url_citation","url":"https://example.com/more-news","title":"More AI News","start_index":22,"end_index":40}]}]}}` + "\n\n",
+		"event: response.completed\n" +
+			`data: {"type":"response.completed","response":{"id":"resp_01","status":"completed","output":[],"usage":{"input_tokens":100,"output_tokens":50,"total_tokens":150}}}` + "\n\n",
+	}
+
+	sms := newStreamingMockServer()
+	defer sms.close()
+	sms.chunks = chunks
+
+	model := newResponsesProvider(t, sms.server.URL)
+
+	stream, err := model.Stream(context.Background(), fantasy.Call{
+		Prompt: testPrompt,
+		Tools:  []fantasy.Tool{WebSearchTool(nil)},
+	})
+	require.NoError(t, err)
+
+	var parts []fantasy.StreamPart
+	stream(func(part fantasy.StreamPart) bool {
+		parts = append(parts, part)
+		return true
+	})
+
+	var (
+		toolInputStarts []fantasy.StreamPart
+		toolCalls       []fantasy.StreamPart
+		toolResults     []fantasy.StreamPart
+		textDeltas      []fantasy.StreamPart
+		sources         []fantasy.StreamPart
+		finishes        []fantasy.StreamPart
+	)
+	for _, p := range parts {
+		switch p.Type {
+		case fantasy.StreamPartTypeToolInputStart:
+			toolInputStarts = append(toolInputStarts, p)
+		case fantasy.StreamPartTypeToolCall:
+			toolCalls = append(toolCalls, p)
+		case fantasy.StreamPartTypeToolResult:
+			toolResults = append(toolResults, p)
+		case fantasy.StreamPartTypeTextDelta:
+			textDeltas = append(textDeltas, p)
+		case fantasy.StreamPartTypeSource:
+			sources = append(sources, p)
+		case fantasy.StreamPartTypeFinish:
+			finishes = append(finishes, p)
+		}
+	}
+
+	require.NotEmpty(t, toolInputStarts, "should have a tool input start")
+	require.True(t, toolInputStarts[0].ProviderExecuted)
+	testcmp.RequireEqual(t, "web_search", toolInputStarts[0].ToolCallName)
+
+	require.NotEmpty(t, toolCalls, "should have a tool call")
+	require.True(t, toolCalls[0].ProviderExecuted)
+	testcmp.RequireEqual(t, "web_search", toolCalls[0].ToolCallName)
+
+	require.NotEmpty(t, toolResults, "should have a tool result")
+	require.True(t, toolResults[0].ProviderExecuted)
+	testcmp.RequireEqual(t, "web_search", toolResults[0].ToolCallName)
+	testcmp.RequireEqual(t, "ws_01", toolResults[0].ID)
+
+	require.NotEmpty(t, textDeltas, "should have text deltas")
+	testcmp.RequireEqual(t, "Here are the results.", textDeltas[0].Delta)
+
+	require.Len(t, sources, 2, "should have two source citations from annotation events")
+	testcmp.RequireEqual(t, fantasy.SourceTypeURL, sources[0].SourceType)
+	testcmp.RequireEqual(t, "https://example.com/ai-news", sources[0].URL)
+	testcmp.RequireEqual(t, "Latest AI News", sources[0].Title)
+	require.NotEmpty(t, sources[0].ID, "source should have an ID")
+	testcmp.RequireEqual(t, fantasy.SourceTypeURL, sources[1].SourceType)
+	testcmp.RequireEqual(t, "https://example.com/more-news", sources[1].URL)
+	testcmp.RequireEqual(t, "More AI News", sources[1].Title)
+	require.NotEmpty(t, sources[1].ID, "source should have an ID")
+
+	require.Len(t, finishes, 1)
+	responsesMeta, ok := finishes[0].ProviderMetadata[Name].(*ResponsesProviderMetadata)
+	require.True(t, ok)
+	testcmp.RequireEqual(t, "resp_01", responsesMeta.ResponseID)
+}
+
+func TestResponsesStream_StoreOption(t *testing.T) {
+	t.Parallel()
+
+	chunks := []string{
+		"event: response.completed\n" +
+			`data: {"type":"response.completed","response":{"id":"resp_01","status":"completed","output":[],"usage":{"input_tokens":100,"output_tokens":50,"total_tokens":150}}}` + "\n\n",
+	}
+
+	sms := newStreamingMockServer()
+	defer sms.close()
+	sms.chunks = chunks
+
+	model := newResponsesProvider(t, sms.server.URL)
+
+	stream, err := model.Stream(context.Background(), fantasy.Call{
+		Prompt: testPrompt,
+		ProviderOptions: fantasy.ProviderOptions{
+			Name: &ResponsesProviderOptions{
+				Store: new(true),
+			},
+		},
+	})
+	require.NoError(t, err)
+
+	stream(func(part fantasy.StreamPart) bool {
+		return part.Type != fantasy.StreamPartTypeFinish
+	})
+
+	testcmp.RequireEqual(t, "POST", sms.calls[0].method)
+	testcmp.RequireEqual(t, "/responses", sms.calls[0].path)
+	testcmp.RequireEqual(t, true, sms.calls[0].body["store"])
+}
+
+func TestResponsesStream_PreviousResponseIDOption(t *testing.T) {
+	t.Parallel()
+
+	chunks := []string{
+		"event: response.completed\n" +
+			`data: {"type":"response.completed","response":{"id":"resp_01","status":"completed","output":[],"usage":{"input_tokens":100,"output_tokens":50,"total_tokens":150}}}` + "\n\n",
+	}
+
+	sms := newStreamingMockServer()
+	defer sms.close()
+	sms.chunks = chunks
+
+	model := newResponsesProvider(t, sms.server.URL)
+
+	stream, err := model.Stream(context.Background(), fantasy.Call{
+		Prompt: testPrompt,
+		ProviderOptions: fantasy.ProviderOptions{
+			Name: &ResponsesProviderOptions{
+				PreviousResponseID: new("resp_prev_456"),
+				Store:              new(true),
+			},
+		},
+	})
+	require.NoError(t, err)
+
+	stream(func(part fantasy.StreamPart) bool {
+		return part.Type != fantasy.StreamPartTypeFinish
+	})
+
+	testcmp.RequireEqual(t, "POST", sms.calls[0].method)
+	testcmp.RequireEqual(t, "/responses", sms.calls[0].path)
+	testcmp.RequireEqual(t, "resp_prev_456", sms.calls[0].body["previous_response_id"])
 }

@@ -112,3 +112,31 @@ func TestStateStruct(t *testing.T) {
 		t.Errorf("Expected LastChatID 'test-chat-id', got '%s'", state.LastChatID)
 	}
 }
+
+func TestSetLastSessionKeyForTarget(t *testing.T) {
+	t.Parallel()
+
+	sm := NewManager("/tmp/test")
+	err := sm.SetLastSessionKeyForTarget(context.Background(), "telegram", "chat-1", "session-a")
+	if err != nil {
+		t.Fatalf("SetLastSessionKeyForTarget failed: %v", err)
+	}
+
+	if got := sm.GetLastSessionKeyForTarget("telegram", "chat-1"); got != "session-a" {
+		t.Fatalf("expected session-a for target, got %q", got)
+	}
+	if got := sm.GetLastSessionKey(); got != "session-a" {
+		t.Fatalf("expected global last session to mirror latest update, got %q", got)
+	}
+	if got := sm.GetLastSessionKeyForTarget("telegram", "chat-2"); got != "" {
+		t.Fatalf("expected empty session for other target, got %q", got)
+	}
+
+	err = sm.SetLastSessionKeyForTarget(context.Background(), "telegram", "chat-1", "")
+	if err != nil {
+		t.Fatalf("clearing SetLastSessionKeyForTarget failed: %v", err)
+	}
+	if got := sm.GetLastSessionKeyForTarget("telegram", "chat-1"); got != "" {
+		t.Fatalf("expected cleared target session, got %q", got)
+	}
+}

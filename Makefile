@@ -1,8 +1,8 @@
 .PHONY: all build generate build-all install uninstall uninstall-all clean help \
-	test lint hooks fmt deps update-deps sqlc-check flatc-check sqlc-vet \
-	fantasy-check fantasy-diff fantasy-sync fantasy-patch test-integration check run \
+	test lint hooks fmt deps update-deps sqlc-check flatc-check mockgen-check sqlc-vet \
+	fantasy-check fantasy-diff fantasy-sync fantasy-patch test-integration test-containers check run \
 	devcontainer-up devcontainer-build devcontainer-generate devcontainer-verify \
-	eval-build eval eval-fixtures eval-view eval-clean eval-compare eval-test
+	eval-build eval eval-fixtures eval-view eval-proof-full eval-clean eval-compare eval-test
 
 # Build variables
 BINARY_NAME=dragonscale
@@ -163,6 +163,10 @@ sqlc-check: $(OPSCTL_BIN)
 flatc-check: $(OPSCTL_BIN)
 	@$(OPSCTL) flatc-check
 
+## mockgen-check: Verify mockgen generation is idempotent for current tree
+mockgen-check: $(OPSCTL_BIN)
+	@$(OPSCTL) mockgen-check
+
 ## sqlc-vet: Run sqlc vet rules (no-unbounded-delete, one-select-requires-limit-1)
 sqlc-vet: $(OPSCTL_BIN)
 	@$(OPSCTL) sqlc-vet
@@ -188,9 +192,13 @@ fantasy-sync: $(OPSCTL_BIN)
 fantasy-patch: $(OPSCTL_BIN)
 	@$(OPSCTL) fantasy-patch
 
-## test-integration: Run integration tests (requires build tags)
+## test-integration: Run integration-tagged tests
 test-integration: $(OPSCTL_BIN)
 	@$(OPSCTL) test-integration
+
+## test-containers: Run memory integration + Docker-backed smoke tests (requires Docker)
+test-containers: $(OPSCTL_BIN)
+	@$(OPSCTL) test-containers
 
 ## check: Run vet, fmt, sqlc vet, and verify dependencies
 check: $(OPSCTL_BIN)
@@ -235,6 +243,10 @@ eval-fixtures:
 ## eval-view: Open the promptfoo results viewer
 eval-view:
 	@DRAGONSCALE_PROMPTFOO_ARGS="$(DRAGONSCALE_PROMPTFOO_ARGS)" $(OPSCTL_EVAL) $(OPSCTL_EVAL_ARGS) eval-view
+
+## eval-proof-full: Run local provider-backed full eval proof with threshold and artifacts
+eval-proof-full:
+	@PROMPTFOO_PASS_RATE_THRESHOLD="$${PROMPTFOO_PASS_RATE_THRESHOLD:-100}" SKIP_DEVCONTAINER_WRAPPER=1 DEVCONTAINER_EXEC= DRAGONSCALE_PROMPTFOO_ARGS="$(DRAGONSCALE_PROMPTFOO_ARGS)" $(CGO_ENV) $(GO) run ./cmd/opsctl $(OPSCTL_EVAL_ARGS) eval-proof-full
 
 eval-clean:
 	@DRAGONSCALE_PROMPTFOO_ARGS="$(DRAGONSCALE_PROMPTFOO_ARGS)" $(OPSCTL_EVAL) $(OPSCTL_EVAL_ARGS) eval-clean

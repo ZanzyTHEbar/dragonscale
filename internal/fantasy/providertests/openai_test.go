@@ -18,7 +18,6 @@ var openaiTestModels = []testModel{
 }
 
 func TestOpenAICommon(t *testing.T) {
-	t.Parallel()
 	var pairs []builderPair
 	for _, m := range openaiTestModels {
 		pairs = append(pairs, builderPair{m.name, openAIBuilder(m.model), nil, nil})
@@ -27,7 +26,6 @@ func TestOpenAICommon(t *testing.T) {
 }
 
 func TestOpenAIObjectGeneration(t *testing.T) {
-	t.Parallel()
 	var pairs []builderPair
 	for _, m := range openaiTestModels {
 		pairs = append(pairs, builderPair{m.name, openAIBuilder(m.model), nil, nil})

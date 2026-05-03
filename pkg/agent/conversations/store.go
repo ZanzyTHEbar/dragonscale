@@ -153,32 +153,9 @@ func (s *Store) ForkFromCheckpoint(ctx context.Context, p ForkFromCheckpointPara
 		return sqlc.AgentConversation{}, dserrors.New(dserrors.CodeInvalidArgument, "checkpoint_name is required")
 	}
 
-	cp, err := s.q.GetAgentCheckpointByConversationIDAndName(ctx,
-		sqlc.GetAgentCheckpointByConversationIDAndNameParams{
-			ConversationID: fromID,
-			Name:           cpName,
-		})
+	cp, snap, err := s.LoadCheckpointSnapshot(ctx, fromID, cpName)
 	if err != nil {
 		return sqlc.AgentConversation{}, err
-	}
-
-	runState, err := s.q.GetAgentRunStateByID(ctx, sqlc.GetAgentRunStateByIDParams{ID: cp.RunStateID})
-	if err != nil {
-		return sqlc.AgentConversation{}, err
-	}
-
-	type msgSnapshot struct {
-		Role    string `json:"role"`
-		Content string `json:"content"`
-	}
-	type snapshot struct {
-		Messages []msgSnapshot `json:"messages"`
-	}
-	var snap snapshot
-	if len(runState.SnapshotJson) > 0 {
-		if err := jsonv2.Unmarshal(runState.SnapshotJson, &snap); err != nil {
-			return sqlc.AgentConversation{}, dserrors.Wrapf(dserrors.CodeInternal, err, "parse snapshot for run state %s", cp.RunStateID)
-		}
 	}
 
 	conv, err := s.q.CreateAgentConversation(ctx, sqlc.CreateAgentConversationParams{
@@ -204,10 +181,7 @@ func (s *Store) ForkFromCheckpoint(ctx context.Context, p ForkFromCheckpointPara
 	})
 
 	// Seed messages from snapshot — cap to 200 to prevent pathological snapshots.
-	msgs := snap.Messages
-	if len(msgs) > 200 {
-		msgs = msgs[len(msgs)-200:]
-	}
+	msgs := HydrationMessages(snap.Messages, MaxCheckpointHydrationMessages)
 
 	seedMeta := map[string]any{
 		"seeded_from_conversation_id": fromID.String(),
@@ -217,7 +191,7 @@ func (s *Store) ForkFromCheckpoint(ctx context.Context, p ForkFromCheckpointPara
 	seedMetaJSON, _ := jsonv2.Marshal(seedMeta)
 
 	for _, m := range msgs {
-		if m.Role != "user" && m.Role != "assistant" {
+		if !isCheckpointHydrationRole(m.Role) {
 			continue
 		}
 		if strings.TrimSpace(m.Content) == "" {
@@ -233,6 +207,44 @@ func (s *Store) ForkFromCheckpoint(ctx context.Context, p ForkFromCheckpointPara
 	}
 
 	return conv, nil
+}
+
+func (s *Store) LoadCheckpointSnapshot(ctx context.Context, conversationID ids.UUID, checkpointName string) (sqlc.AgentCheckpoint, CheckpointSnapshot, error) {
+	if conversationID.IsZero() {
+		return sqlc.AgentCheckpoint{}, CheckpointSnapshot{}, dserrors.New(dserrors.CodeInvalidArgument, "conversation_id is required")
+	}
+	if strings.TrimSpace(checkpointName) == "" {
+		return sqlc.AgentCheckpoint{}, CheckpointSnapshot{}, dserrors.New(dserrors.CodeInvalidArgument, "checkpoint_name is required")
+	}
+
+	cp, err := s.q.GetAgentCheckpointByConversationIDAndName(ctx, sqlc.GetAgentCheckpointByConversationIDAndNameParams{
+		ConversationID: conversationID,
+		Name:           strings.TrimSpace(checkpointName),
+	})
+	if err != nil {
+		return sqlc.AgentCheckpoint{}, CheckpointSnapshot{}, err
+	}
+
+	runState, err := s.q.GetAgentRunStateByID(ctx, sqlc.GetAgentRunStateByIDParams{ID: cp.RunStateID})
+	if err != nil {
+		return sqlc.AgentCheckpoint{}, CheckpointSnapshot{}, err
+	}
+
+	snap, err := DecodeCheckpointSnapshot(runState.SnapshotJson)
+	if err != nil {
+		return sqlc.AgentCheckpoint{}, CheckpointSnapshot{}, dserrors.Wrapf(dserrors.CodeInternal, err, "parse snapshot for run state %s", cp.RunStateID)
+	}
+
+	return cp, snap, nil
+}
+
+func isCheckpointHydrationRole(role string) bool {
+	switch role {
+	case "user", "assistant", "tool", "system":
+		return true
+	default:
+		return false
+	}
 }
 
 // ─── Merge ────────────────────────────────────────────────────────────────────

@@ -690,7 +690,9 @@ func TestIntegration_FullStackNoDisk(t *testing.T) {
 			SessionKey: "test-session",
 			Action:     "tool_call",
 			Target:     "exec",
+			ToolCallID: "call-exec",
 			Input:      `{"command":"ls"}`,
+			Success:    true,
 		}
 		if err := d.InsertAuditEntry(ctx, entry); err != nil {
 			t.Fatalf("InsertAuditEntry: %v", err)

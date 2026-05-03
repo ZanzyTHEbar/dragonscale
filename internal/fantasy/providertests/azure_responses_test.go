@@ -1,7 +1,7 @@
 package providertests
 
 import (
-	stdcmp "cmp"
+	"cmp"
 	"net/http"
 	"os"
 	"testing"
@@ -10,13 +10,10 @@ import (
 	"charm.land/fantasy/providers/azure"
 	"charm.land/fantasy/providers/openai"
 	"charm.land/x/vcr"
-	"github.com/google/go-cmp/cmp"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestAzureResponsesCommon(t *testing.T) {
-	t.Parallel()
 	var pairs []builderPair
 	models := []testModel{
 		{"azure-gpt-5-mini", "gpt-5-mini", true},
@@ -31,8 +28,8 @@ func TestAzureResponsesCommon(t *testing.T) {
 func azureReasoningBuilder(model string) builderFunc {
 	return func(t *testing.T, r *vcr.Recorder) (fantasy.LanguageModel, error) {
 		provider, err := azure.New(
-			azure.WithBaseURL(stdcmp.Or(os.Getenv("FANTASY_AZURE_BASE_URL"), defaultBaseURL)),
-			azure.WithAPIKey(stdcmp.Or(os.Getenv("FANTASY_AZURE_API_KEY"), "(missing)")),
+			azure.WithBaseURL(cmp.Or(os.Getenv("FANTASY_AZURE_BASE_URL"), defaultBaseURL)),
+			azure.WithAPIKey(cmp.Or(os.Getenv("FANTASY_AZURE_API_KEY"), "(missing)")),
 			azure.WithHTTPClient(&http.Client{Transport: r}),
 			azure.WithUseResponsesAPI(),
 		)
@@ -44,14 +41,13 @@ func azureReasoningBuilder(model string) builderFunc {
 }
 
 func TestAzureResponsesWithSummaryThinking(t *testing.T) {
-	t.Parallel()
 	opts := fantasy.ProviderOptions{
 		openai.Name: &openai.ResponsesProviderOptions{
 			Include: []openai.IncludeType{
 				openai.IncludeReasoningEncryptedContent,
 			},
 			ReasoningEffort:  openai.ReasoningEffortOption(openai.ReasoningEffortHigh),
-			ReasoningSummary: fantasy.Opt("auto"),
+			ReasoningSummary: new("auto"),
 		},
 	}
 	var pairs []builderPair
@@ -98,5 +94,5 @@ func testAzureResponsesThinkingWithSummaryThinking(t *testing.T, result *fantasy
 	}
 	require.Greater(t, reasoningContentCount, 0)
 	require.Greater(t, encryptedData, 0)
-	assert.Empty(t, cmp.Diff(reasoningContentCount, encryptedData))
+	require.Equal(t, reasoningContentCount, encryptedData)
 }

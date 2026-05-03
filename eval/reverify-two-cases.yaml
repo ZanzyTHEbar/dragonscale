@@ -1,0 +1,79 @@
+description: "DragonScale targeted re-verification"
+
+maxConcurrency: 1
+
+providers:
+  - id: "exec:./bin/eval-runner"
+    label: "dragonscale"
+    config:
+      timeout: 180000
+
+defaultTest:
+  assert:
+    - type: javascript
+      value: |
+        try {
+          const trace = JSON.parse(output);
+          const valid = typeof trace.output === 'string' && Array.isArray(trace.steps) && trace.metrics && typeof trace.metrics.total_duration_ms === 'number';
+          return { pass: valid, score: valid ? 1.0 : 0.0, reason: valid ? 'valid trace JSON' : 'invalid trace structure' };
+        } catch(e) {
+          return { pass: false, score: 0, reason: 'output is not valid JSON: ' + e.message };
+        }
+    - type: javascript
+      value: |
+        const trace = JSON.parse(output);
+        const dur = trace.metrics.total_duration_ms;
+        const score = dur < 30000 ? 1.0 : dur < 90000 ? 1.0 - (dur - 30000) / 60000 : 0.0;
+        const pass = dur < 90000;
+        return { pass, score, reason: `duration: ${dur}ms (score: ${score.toFixed(2)})` };
+
+tests:
+  - description: "edit file: agent edits an existing file"
+    vars:
+      prompt: "First write a file called edit_target.txt with 'hello world'. Then edit it to replace 'world' with 'dragonscale'. Read it back and confirm."
+    assert:
+      - type: javascript
+        value: |
+          const trace = JSON.parse(output);
+          if (trace.error) return { pass: false, score: 0, reason: trace.error };
+          const toolCalls = trace.steps.filter(s => s.type === 'tool_call');
+          const getToolName = (t) => {
+            if (t.tool !== 'tool_call') return t.tool;
+            try { const a = typeof t.args === 'string' ? JSON.parse(t.args) : t.args; return (a && a.tool_name) || t.tool; } catch(e) { return t.tool; }
+          };
+          const toolNames = toolCalls.map(getToolName);
+          const hasEdit = toolNames.includes('edit_file');
+          const hasWrite = toolNames.includes('write_file');
+          const hasAnyModify = hasEdit || hasWrite;
+          return { pass: hasAnyModify, score: hasEdit ? 1.0 : (hasWrite ? 0.7 : 0.0), reason: `edit=${hasEdit}, write=${hasWrite} (tools: ${toolNames.join(', ')})` };
+      - type: javascript
+        value: |
+          const trace = JSON.parse(output);
+          const out = (trace.output || '').toLowerCase();
+          const hasDragonScale = out.includes('dragonscale');
+          return { pass: hasDragonScale, score: hasDragonScale ? 1.0 : 0.0, reason: hasDragonScale ? 'confirmed edit result' : 'did not confirm dragonscale in output' };
+
+  - description: "skill read: load skill content"
+    vars:
+      prompt: "Read the 'eval-test-skill' skill and tell me what greeting templates it provides."
+    assert:
+      - type: javascript
+        value: |
+          const trace = JSON.parse(output);
+          if (trace.error) return { pass: false, score: 0, reason: trace.error };
+          const toolCalls = trace.steps.filter(s => s.type === 'tool_call');
+          const getToolName = (t) => {
+            if (t.tool !== 'tool_call') return t.tool;
+            try { const a = typeof t.args === 'string' ? JSON.parse(t.args) : t.args; return (a && a.tool_name) || t.tool; } catch(e) { return t.tool; }
+          };
+          const toolNames = toolCalls.map(getToolName);
+          const usedSkillRead = toolNames.includes('skill_read');
+          return { pass: usedSkillRead, score: usedSkillRead ? 1.0 : 0.0, reason: usedSkillRead ? 'used skill_read' : `no skill_read (tools: ${toolNames.join(', ')})` };
+      - type: javascript
+        value: |
+          const trace = JSON.parse(output);
+          const out = (trace.output || '').toLowerCase();
+          const hasContent = out.includes('formal') || out.includes('casual') || out.includes('greeting') || out.includes('template');
+          return { pass: hasContent, score: hasContent ? 1.0 : 0.0, reason: hasContent ? 'returned skill content' : 'did not return skill content' };
+
+outputPath: "results/reverify-two-cases.json"

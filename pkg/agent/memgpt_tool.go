@@ -7,6 +7,8 @@ package agent
 
 import (
 	"context"
+	"strings"
+
 	jsonv2 "github.com/go-json-experiment/json"
 
 	memstore "github.com/ZanzyTHEbar/dragonscale/pkg/memory/store"
@@ -16,7 +18,10 @@ import (
 // MemGPTTool wraps store.MemoryTool as a DragonScale tools.Tool so it can be
 // registered in the ToolRegistry and executed by the Fantasy agent loop.
 type MemGPTTool struct {
-	inner *memstore.MemoryTool
+	store        *memstore.MemoryStore
+	agentID      string
+	session      string
+	sessionKeyFn func() string
 }
 
 var _ tools.Tool = (*MemGPTTool)(nil)
@@ -24,7 +29,9 @@ var _ tools.Tool = (*MemGPTTool)(nil)
 // NewMemGPTTool creates a DragonScale tool wrapper around a MemoryTool.
 func NewMemGPTTool(store *memstore.MemoryStore, agentID, session string) *MemGPTTool {
 	return &MemGPTTool{
-		inner: memstore.NewMemoryTool(store, agentID, session),
+		store:   store,
+		agentID: agentID,
+		session: session,
 	}
 }
 
@@ -89,7 +96,7 @@ func (t *MemGPTTool) Execute(ctx context.Context, args map[string]interface{}) *
 		return tools.ErrorResult("invalid arguments: " + err.Error())
 	}
 
-	result, err := t.inner.Execute(ctx, string(input))
+	result, err := memstore.NewMemoryTool(t.store, t.agentID, t.currentSession(ctx)).Execute(ctx, string(input))
 	if err != nil {
 		return tools.ErrorResult("memory tool error: " + err.Error())
 	}
@@ -102,5 +109,21 @@ func (t *MemGPTTool) Execute(ctx context.Context, args map[string]interface{}) *
 // UpdateSession rebinds the inner MemoryTool to a new session.
 // Called when the agent switches sessions.
 func (t *MemGPTTool) UpdateSession(store *memstore.MemoryStore, agentID, session string) {
-	t.inner = memstore.NewMemoryTool(store, agentID, session)
+	t.store = store
+	t.agentID = agentID
+	t.session = session
+}
+
+func (t *MemGPTTool) SetSessionResolver(sessionKeyFn func() string) {
+	t.sessionKeyFn = sessionKeyFn
+}
+
+func (t *MemGPTTool) currentSession(ctx context.Context) string {
+	if sessionKey := tools.ResolveSessionKey(ctx, t.sessionKeyFn); sessionKey != "" {
+		return sessionKey
+	}
+	if strings.TrimSpace(t.session) != "" {
+		return t.session
+	}
+	return "default"
 }

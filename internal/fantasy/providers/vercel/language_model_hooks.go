@@ -2,8 +2,8 @@ package vercel
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
-	jsonv2 "github.com/go-json-experiment/json"
 	"maps"
 	"strings"
 
@@ -11,8 +11,8 @@ import (
 	"charm.land/fantasy/providers/anthropic"
 	"charm.land/fantasy/providers/google"
 	openaipkg "charm.land/fantasy/providers/openai"
-	openaisdk "github.com/openai/openai-go/v2"
-	"github.com/openai/openai-go/v2/packages/param"
+	openaisdk "github.com/charmbracelet/openai-go"
+	"github.com/charmbracelet/openai-go/packages/param"
 )
 
 const reasoningStartedCtx = "reasoning_started"
@@ -102,7 +102,7 @@ func languagePrepareModelCall(_ fantasy.LanguageModel, params *openaisdk.ChatCom
 func languageModelExtraContent(choice openaisdk.ChatCompletionChoice) []fantasy.Content {
 	content := make([]fantasy.Content, 0)
 	reasoningData := ReasoningData{}
-	err := jsonv2.Unmarshal([]byte(choice.Message.RawJSON()), &reasoningData)
+	err := json.Unmarshal([]byte(choice.Message.RawJSON()), &reasoningData)
 	if err != nil {
 		return content
 	}
@@ -251,7 +251,7 @@ func languageModelStreamExtra(chunk openaisdk.ChatCompletionChunk, yield func(fa
 	inx := 0
 	choice := chunk.Choices[inx]
 	reasoningData := ReasoningData{}
-	err := jsonv2.Unmarshal([]byte(choice.Delta.RawJSON()), &reasoningData)
+	err := json.Unmarshal([]byte(choice.Delta.RawJSON()), &reasoningData)
 	if err != nil {
 		yield(fantasy.StreamPart{
 			Type:  fantasy.StreamPartTypeError,
@@ -844,9 +844,9 @@ func languageModelToPrompt(prompt fantasy.Prompt, _, model string) ([]openaisdk.
 							Text:      reasoningPart.Text,
 							Signature: metadata.Signature,
 						})
-						data, _ := jsonv2.Marshal(reasoningDetails)
+						data, _ := json.Marshal(reasoningDetails)
 						reasoningDetailsMap := []map[string]any{}
-						_ = jsonv2.Unmarshal(data, &reasoningDetailsMap)
+						_ = json.Unmarshal(data, &reasoningDetailsMap)
 						assistantMsg.SetExtraFields(map[string]any{
 							"reasoning_details": reasoningDetailsMap,
 							"reasoning":         reasoningPart.Text,
@@ -874,15 +874,17 @@ func languageModelToPrompt(prompt fantasy.Prompt, _, model string) ([]openaisdk.
 								Index:   inx,
 							})
 						}
-						reasoningDetails = append(reasoningDetails, ReasoningDetail{
-							Type:   "reasoning.encrypted",
-							Format: "openai-responses-v1",
-							Data:   *metadata.EncryptedContent,
-							ID:     metadata.ItemID,
-						})
-						data, _ := jsonv2.Marshal(reasoningDetails)
+						if metadata.EncryptedContent != nil {
+							reasoningDetails = append(reasoningDetails, ReasoningDetail{
+								Type:   "reasoning.encrypted",
+								Format: "openai-responses-v1",
+								Data:   *metadata.EncryptedContent,
+								ID:     metadata.ItemID,
+							})
+						}
+						data, _ := json.Marshal(reasoningDetails)
 						reasoningDetailsMap := []map[string]any{}
-						_ = jsonv2.Unmarshal(data, &reasoningDetailsMap)
+						_ = json.Unmarshal(data, &reasoningDetailsMap)
 						assistantMsg.SetExtraFields(map[string]any{
 							"reasoning_details": reasoningDetailsMap,
 						})
@@ -911,9 +913,9 @@ func languageModelToPrompt(prompt fantasy.Prompt, _, model string) ([]openaisdk.
 							Data:   metadata.Signature,
 							ID:     metadata.ToolID,
 						})
-						data, _ := jsonv2.Marshal(reasoningDetails)
+						data, _ := json.Marshal(reasoningDetails)
 						reasoningDetailsMap := []map[string]any{}
-						_ = jsonv2.Unmarshal(data, &reasoningDetailsMap)
+						_ = json.Unmarshal(data, &reasoningDetailsMap)
 						assistantMsg.SetExtraFields(map[string]any{
 							"reasoning_details": reasoningDetailsMap,
 						})
@@ -923,9 +925,9 @@ func languageModelToPrompt(prompt fantasy.Prompt, _, model string) ([]openaisdk.
 							Text:   reasoningPart.Text,
 							Format: "unknown",
 						})
-						data, _ := jsonv2.Marshal(reasoningDetails)
+						data, _ := json.Marshal(reasoningDetails)
 						reasoningDetailsMap := []map[string]any{}
-						_ = jsonv2.Unmarshal(data, &reasoningDetailsMap)
+						_ = json.Unmarshal(data, &reasoningDetailsMap)
 						assistantMsg.SetExtraFields(map[string]any{
 							"reasoning_details": reasoningDetailsMap,
 						})
@@ -1040,11 +1042,11 @@ func hasVisibleUserContent(content []openaisdk.ChatCompletionContentPartUnionPar
 
 func structToMapJSON(s any) (map[string]any, error) {
 	var result map[string]any
-	jsonBytes, err := jsonv2.Marshal(s)
+	jsonBytes, err := json.Marshal(s)
 	if err != nil {
 		return nil, err
 	}
-	err = jsonv2.Unmarshal(jsonBytes, &result)
+	err = json.Unmarshal(jsonBytes, &result)
 	if err != nil {
 		return nil, err
 	}

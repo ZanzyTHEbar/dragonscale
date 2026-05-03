@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strings"
 	"testing"
 
 	"charm.land/fantasy"
@@ -26,7 +27,6 @@ var vertexTestModels = []testModel{
 }
 
 func TestGoogleCommon(t *testing.T) {
-	t.Parallel()
 	var pairs []builderPair
 	for _, m := range geminiTestModels {
 		pairs = append(pairs, builderPair{m.name, geminiBuilder(m.model), nil, nil})
@@ -38,12 +38,19 @@ func TestGoogleCommon(t *testing.T) {
 }
 
 func TestGoogleThinking(t *testing.T) {
-	t.Parallel()
-	opts := fantasy.ProviderOptions{
+	gemini2Opts := fantasy.ProviderOptions{
 		google.Name: &google.ProviderOptions{
 			ThinkingConfig: &google.ThinkingConfig{
-				ThinkingBudget:  fantasy.Opt(int64(100)),
-				IncludeThoughts: fantasy.Opt(true),
+				ThinkingBudget:  new(int64(100)),
+				IncludeThoughts: new(true),
+			},
+		},
+	}
+	gemini3Opts := fantasy.ProviderOptions{
+		google.Name: &google.ProviderOptions{
+			ThinkingConfig: &google.ThinkingConfig{
+				ThinkingLevel:   fantasy.Opt(google.ThinkingLevelHigh),
+				IncludeThoughts: new(true),
 			},
 		},
 	}
@@ -53,13 +60,16 @@ func TestGoogleThinking(t *testing.T) {
 		if !m.reasoning {
 			continue
 		}
+		opts := gemini3Opts
+		if strings.HasPrefix(m.model, "gemini-2") {
+			opts = gemini2Opts
+		}
 		pairs = append(pairs, builderPair{m.name, geminiBuilder(m.model), opts, nil})
 	}
 	testThinking(t, pairs, testGoogleThinking)
 }
 
 func TestGoogleObjectGeneration(t *testing.T) {
-	t.Parallel()
 	var pairs []builderPair
 	for _, m := range geminiTestModels {
 		pairs = append(pairs, builderPair{m.name, geminiBuilder(m.model), nil, nil})
@@ -68,7 +78,6 @@ func TestGoogleObjectGeneration(t *testing.T) {
 }
 
 func TestGoogleVertexObjectGeneration(t *testing.T) {
-	t.Parallel()
 	var pairs []builderPair
 	for _, m := range vertexTestModels {
 		pairs = append(pairs, builderPair{m.name, vertexBuilder(m.model), nil, nil})

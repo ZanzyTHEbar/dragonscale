@@ -2,23 +2,23 @@ package openaicompat
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
-	jsonv2 "github.com/go-json-experiment/json"
 	"strings"
 
 	"charm.land/fantasy"
 	"charm.land/fantasy/providers/openai"
-	openaisdk "github.com/openai/openai-go/v2"
-	"github.com/openai/openai-go/v2/packages/param"
-	"github.com/openai/openai-go/v2/shared"
+	openaisdk "github.com/charmbracelet/openai-go"
+	"github.com/charmbracelet/openai-go/packages/param"
+	"github.com/charmbracelet/openai-go/shared"
 )
 
 const reasoningStartedCtx = "reasoning_started"
 
 // PrepareCallFunc prepares the call for the language model.
-func PrepareCallFunc(_ fantasy.LanguageModel, params *openaisdk.ChatCompletionNewParams, call fantasy.Call) ([]fantasy.CallWarning, error) {
+func PrepareCallFunc(model fantasy.LanguageModel, params *openaisdk.ChatCompletionNewParams, call fantasy.Call) ([]fantasy.CallWarning, error) {
 	providerOptions := &ProviderOptions{}
-	if v, ok := call.ProviderOptions[Name]; ok {
+	if v, ok := call.ProviderOptions[model.Provider()]; ok {
 		providerOptions, ok = v.(*ProviderOptions)
 		if !ok {
 			return nil, &fantasy.Error{Title: "invalid argument", Message: "openai-compat provider options should be *openaicompat.ProviderOptions"}
@@ -27,6 +27,8 @@ func PrepareCallFunc(_ fantasy.LanguageModel, params *openaisdk.ChatCompletionNe
 
 	if providerOptions.ReasoningEffort != nil {
 		switch *providerOptions.ReasoningEffort {
+		case openai.ReasoningEffortNone:
+			params.ReasoningEffort = shared.ReasoningEffortNone
 		case openai.ReasoningEffortMinimal:
 			params.ReasoningEffort = shared.ReasoningEffortMinimal
 		case openai.ReasoningEffortLow:
@@ -35,6 +37,8 @@ func PrepareCallFunc(_ fantasy.LanguageModel, params *openaisdk.ChatCompletionNe
 			params.ReasoningEffort = shared.ReasoningEffortMedium
 		case openai.ReasoningEffortHigh:
 			params.ReasoningEffort = shared.ReasoningEffortHigh
+		case openai.ReasoningEffortXHigh:
+			params.ReasoningEffort = shared.ReasoningEffortXhigh
 		default:
 			return nil, fmt.Errorf("reasoning model `%s` not supported", *providerOptions.ReasoningEffort)
 		}
@@ -50,13 +54,13 @@ func PrepareCallFunc(_ fantasy.LanguageModel, params *openaisdk.ChatCompletionNe
 func ExtraContentFunc(choice openaisdk.ChatCompletionChoice) []fantasy.Content {
 	var content []fantasy.Content
 	reasoningData := ReasoningData{}
-	err := jsonv2.Unmarshal([]byte(choice.Message.RawJSON()), &reasoningData)
+	err := json.Unmarshal([]byte(choice.Message.RawJSON()), &reasoningData)
 	if err != nil {
 		return content
 	}
-	if reasoningData.ReasoningContent != "" {
+	if rc := reasoningData.GetReasoningContent(); rc != "" {
 		content = append(content, fantasy.ReasoningContent{
-			Text: reasoningData.ReasoningContent,
+			Text: rc,
 		})
 	}
 	return content
@@ -84,7 +88,7 @@ func StreamExtraFunc(chunk openaisdk.ChatCompletionChunk, yield func(fantasy.Str
 
 	for inx, choice := range chunk.Choices {
 		reasoningData := ReasoningData{}
-		err := jsonv2.Unmarshal([]byte(choice.Delta.RawJSON()), &reasoningData)
+		err := json.Unmarshal([]byte(choice.Delta.RawJSON()), &reasoningData)
 		if err != nil {
 			yield(fantasy.StreamPart{
 				Type:  fantasy.StreamPartTypeError,
@@ -110,11 +114,11 @@ func StreamExtraFunc(chunk openaisdk.ChatCompletionChunk, yield func(fantasy.Str
 				Delta: reasoningContent,
 			})
 		}
-		if reasoningData.ReasoningContent != "" {
+		if rc := reasoningData.GetReasoningContent(); rc != "" {
 			if !reasoningStarted {
 				ctx[reasoningStartedCtx] = true
 			}
-			return ctx, emitEvent(reasoningData.ReasoningContent)
+			return ctx, emitEvent(rc)
 		}
 		if reasoningStarted && (choice.Delta.Content != "" || len(choice.Delta.ToolCalls) > 0) {
 			ctx[reasoningStartedCtx] = false
@@ -133,6 +137,8 @@ func StreamExtraFunc(chunk openaisdk.ChatCompletionChunk, yield func(fantasy.Str
 func ToPromptFunc(prompt fantasy.Prompt, _, _ string) ([]openaisdk.ChatCompletionMessageParamUnion, []fantasy.CallWarning) {
 	var messages []openaisdk.ChatCompletionMessageParamUnion
 	var warnings []fantasy.CallWarning
+	hasReasoning := false
+
 	for _, msg := range prompt {
 		switch msg.Role {
 		case fantasy.MessageRoleSystem:
@@ -209,6 +215,13 @@ func ToPromptFunc(prompt fantasy.Prompt, _, _ string) ([]openaisdk.ChatCompletio
 					}
 
 					switch {
+					case strings.HasPrefix(filePart.MediaType, "text/"):
+						base64Encoded := base64.StdEncoding.EncodeToString(filePart.Data)
+						documentBlock := openaisdk.ChatCompletionContentPartFileFileParam{
+							FileData: param.NewOpt(base64Encoded),
+						}
+						content = append(content, openaisdk.FileContentPart(documentBlock))
+
 					case strings.HasPrefix(filePart.MediaType, "image/"):
 						// Handle image files
 						base64Encoded := base64.StdEncoding.EncodeToString(filePart.Data)
@@ -337,6 +350,7 @@ func ToPromptFunc(prompt fantasy.Prompt, _, _ string) ([]openaisdk.ChatCompletio
 						continue
 					}
 					reasoningText = reasoningPart.Text
+					hasReasoning = true
 				case fantasy.ContentTypeToolCall:
 					toolCallPart, ok := fantasy.AsContentType[fantasy.ToolCallPart](c)
 					if !ok {
@@ -359,8 +373,10 @@ func ToPromptFunc(prompt fantasy.Prompt, _, _ string) ([]openaisdk.ChatCompletio
 						})
 				}
 			}
-			// Add reasoning_content field if present
-			if reasoningText != "" {
+			// Add reasoning_content field if present, or if thinking is enabled
+			// and the message has tool calls (some providers like Kimi require
+			// reasoning_content on all assistant messages when thinking is enabled).
+			if reasoningText != "" || (hasReasoning && len(assistantMsg.ToolCalls) > 0) {
 				assistantMsg.SetExtraFields(map[string]any{
 					"reasoning_content": reasoningText,
 				})

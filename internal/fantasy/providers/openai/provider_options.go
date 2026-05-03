@@ -2,16 +2,18 @@
 package openai
 
 import (
-	jsonv2 "github.com/go-json-experiment/json"
+	"encoding/json"
 
 	"charm.land/fantasy"
-	"github.com/openai/openai-go/v2"
+	"github.com/charmbracelet/openai-go"
 )
 
 // ReasoningEffort represents the reasoning effort level for OpenAI models.
 type ReasoningEffort string
 
 const (
+	// ReasoningEffortNone represents ReasoningEffortNone reasoning effort.
+	ReasoningEffortNone ReasoningEffort = "none"
 	// ReasoningEffortMinimal represents minimal reasoning effort.
 	ReasoningEffortMinimal ReasoningEffort = "minimal"
 	// ReasoningEffortLow represents low reasoning effort.
@@ -20,6 +22,8 @@ const (
 	ReasoningEffortMedium ReasoningEffort = "medium"
 	// ReasoningEffortHigh represents high reasoning effort.
 	ReasoningEffortHigh ReasoningEffort = "high"
+	// ReasoningEffortXHigh represents extra-high reasoning effort.
+	ReasoningEffortXHigh ReasoningEffort = "xhigh"
 )
 
 // Global type identifiers for OpenAI-specific provider data.
@@ -33,21 +37,21 @@ const (
 func init() {
 	fantasy.RegisterProviderType(TypeProviderOptions, func(data []byte) (fantasy.ProviderOptionsData, error) {
 		var v ProviderOptions
-		if err := jsonv2.Unmarshal(data, &v); err != nil {
+		if err := json.Unmarshal(data, &v); err != nil {
 			return nil, err
 		}
 		return &v, nil
 	})
 	fantasy.RegisterProviderType(TypeProviderFileOptions, func(data []byte) (fantasy.ProviderOptionsData, error) {
 		var v ProviderFileOptions
-		if err := jsonv2.Unmarshal(data, &v); err != nil {
+		if err := json.Unmarshal(data, &v); err != nil {
 			return nil, err
 		}
 		return &v, nil
 	})
 	fantasy.RegisterProviderType(TypeProviderMetadata, func(data []byte) (fantasy.ProviderOptionsData, error) {
 		var v ProviderMetadata
-		if err := jsonv2.Unmarshal(data, &v); err != nil {
+		if err := json.Unmarshal(data, &v); err != nil {
 			return nil, err
 		}
 		return &v, nil
@@ -146,8 +150,10 @@ func (o *ProviderFileOptions) UnmarshalJSON(data []byte) error {
 }
 
 // ReasoningEffortOption creates a pointer to a ReasoningEffort value.
+//
+//go:fix inline
 func ReasoningEffortOption(e ReasoningEffort) *ReasoningEffort {
-	return &e
+	return new(e)
 }
 
 // NewProviderOptions creates new provider options for OpenAI.

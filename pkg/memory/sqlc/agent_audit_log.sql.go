@@ -66,8 +66,11 @@ INSERT INTO agent_audit_log (
         session_key,
         action,
         target,
+        tool_call_id,
         input,
         output,
+        success,
+        error_msg,
         duration_ms,
         created_at
     )
@@ -80,6 +83,9 @@ VALUES (
         ?6,
         ?7,
         ?8,
+        ?9,
+        ?10,
+        ?11,
         strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
     )
 RETURNING id,
@@ -87,8 +93,11 @@ RETURNING id,
     session_key,
     action,
     target,
+    tool_call_id,
     input,
     output,
+    success,
+    error_msg,
     duration_ms,
     created_at
 `
@@ -99,8 +108,11 @@ type InsertAuditEntryParams struct {
 	SessionKey string   `db:"session_key" json:"session_key"`
 	Action     string   `db:"action" json:"action"`
 	Target     string   `db:"target" json:"target"`
+	ToolCallID string   `db:"tool_call_id" json:"tool_call_id"`
 	Input      *string  `db:"input" json:"input"`
 	Output     *string  `db:"output" json:"output"`
+	Success    bool     `db:"success" json:"success"`
+	ErrorMsg   string   `db:"error_msg" json:"error_msg"`
 	DurationMs *int64   `db:"duration_ms" json:"duration_ms"`
 }
 
@@ -112,8 +124,11 @@ type InsertAuditEntryParams struct {
 //	        session_key,
 //	        action,
 //	        target,
+//	        tool_call_id,
 //	        input,
 //	        output,
+//	        success,
+//	        error_msg,
 //	        duration_ms,
 //	        created_at
 //	    )
@@ -126,6 +141,9 @@ type InsertAuditEntryParams struct {
 //	        ?6,
 //	        ?7,
 //	        ?8,
+//	        ?9,
+//	        ?10,
+//	        ?11,
 //	        strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
 //	    )
 //	RETURNING id,
@@ -133,8 +151,11 @@ type InsertAuditEntryParams struct {
 //	    session_key,
 //	    action,
 //	    target,
+//	    tool_call_id,
 //	    input,
 //	    output,
+//	    success,
+//	    error_msg,
 //	    duration_ms,
 //	    created_at
 func (q *Queries) InsertAuditEntry(ctx context.Context, arg InsertAuditEntryParams) (AgentAuditLog, error) {
@@ -144,8 +165,11 @@ func (q *Queries) InsertAuditEntry(ctx context.Context, arg InsertAuditEntryPara
 		arg.SessionKey,
 		arg.Action,
 		arg.Target,
+		arg.ToolCallID,
 		arg.Input,
 		arg.Output,
+		arg.Success,
+		arg.ErrorMsg,
 		arg.DurationMs,
 	)
 	var i AgentAuditLog
@@ -155,8 +179,11 @@ func (q *Queries) InsertAuditEntry(ctx context.Context, arg InsertAuditEntryPara
 		&i.SessionKey,
 		&i.Action,
 		&i.Target,
+		&i.ToolCallID,
 		&i.Input,
 		&i.Output,
+		&i.Success,
+		&i.ErrorMsg,
 		&i.DurationMs,
 		&i.CreatedAt,
 	)
@@ -169,8 +196,11 @@ SELECT id,
     session_key,
     action,
     target,
+    tool_call_id,
     input,
     output,
+    success,
+    error_msg,
     duration_ms,
     created_at
 FROM agent_audit_log
@@ -191,8 +221,11 @@ type ListAuditEntriesParams struct {
 //	    session_key,
 //	    action,
 //	    target,
+//	    tool_call_id,
 //	    input,
 //	    output,
+//	    success,
+//	    error_msg,
 //	    duration_ms,
 //	    created_at
 //	FROM agent_audit_log
@@ -214,8 +247,11 @@ func (q *Queries) ListAuditEntries(ctx context.Context, arg ListAuditEntriesPara
 			&i.SessionKey,
 			&i.Action,
 			&i.Target,
+			&i.ToolCallID,
 			&i.Input,
 			&i.Output,
+			&i.Success,
+			&i.ErrorMsg,
 			&i.DurationMs,
 			&i.CreatedAt,
 		); err != nil {
@@ -238,8 +274,11 @@ SELECT id,
     session_key,
     action,
     target,
+    tool_call_id,
     input,
     output,
+    success,
+    error_msg,
     duration_ms,
     created_at
 FROM agent_audit_log
@@ -262,8 +301,11 @@ type ListAuditEntriesByActionParams struct {
 //	    session_key,
 //	    action,
 //	    target,
+//	    tool_call_id,
 //	    input,
 //	    output,
+//	    success,
+//	    error_msg,
 //	    duration_ms,
 //	    created_at
 //	FROM agent_audit_log
@@ -286,8 +328,11 @@ func (q *Queries) ListAuditEntriesByAction(ctx context.Context, arg ListAuditEnt
 			&i.SessionKey,
 			&i.Action,
 			&i.Target,
+			&i.ToolCallID,
 			&i.Input,
 			&i.Output,
+			&i.Success,
+			&i.ErrorMsg,
 			&i.DurationMs,
 			&i.CreatedAt,
 		); err != nil {
@@ -310,8 +355,11 @@ SELECT id,
     session_key,
     action,
     target,
+    tool_call_id,
     input,
     output,
+    success,
+    error_msg,
     duration_ms,
     created_at
 FROM agent_audit_log
@@ -334,8 +382,11 @@ type ListAuditEntriesBySessionParams struct {
 //	    session_key,
 //	    action,
 //	    target,
+//	    tool_call_id,
 //	    input,
 //	    output,
+//	    success,
+//	    error_msg,
 //	    duration_ms,
 //	    created_at
 //	FROM agent_audit_log
@@ -358,8 +409,11 @@ func (q *Queries) ListAuditEntriesBySession(ctx context.Context, arg ListAuditEn
 			&i.SessionKey,
 			&i.Action,
 			&i.Target,
+			&i.ToolCallID,
 			&i.Input,
 			&i.Output,
+			&i.Success,
+			&i.ErrorMsg,
 			&i.DurationMs,
 			&i.CreatedAt,
 		); err != nil {
@@ -382,8 +436,11 @@ SELECT id,
     session_key,
     action,
     target,
+    tool_call_id,
     input,
     output,
+    success,
+    error_msg,
     duration_ms,
     created_at
 FROM agent_audit_log
@@ -402,8 +459,11 @@ type ListAuditEntriesGlobalParams struct {
 //	    session_key,
 //	    action,
 //	    target,
+//	    tool_call_id,
 //	    input,
 //	    output,
+//	    success,
+//	    error_msg,
 //	    duration_ms,
 //	    created_at
 //	FROM agent_audit_log
@@ -424,8 +484,11 @@ func (q *Queries) ListAuditEntriesGlobal(ctx context.Context, arg ListAuditEntri
 			&i.SessionKey,
 			&i.Action,
 			&i.Target,
+			&i.ToolCallID,
 			&i.Input,
 			&i.Output,
+			&i.Success,
+			&i.ErrorMsg,
 			&i.DurationMs,
 			&i.CreatedAt,
 		); err != nil {
@@ -448,13 +511,17 @@ SELECT id,
     session_key,
     action,
     target,
+    tool_call_id,
     input,
     output,
+    success,
+    error_msg,
     duration_ms,
     created_at
 FROM agent_audit_log
 WHERE julianday(created_at) > julianday(?1)
-ORDER BY created_at ASC, id ASC
+ORDER BY created_at ASC,
+    id ASC
 LIMIT ?3 OFFSET ?2
 `
 
@@ -471,13 +538,17 @@ type ListAuditEntriesGlobalSincePagedParams struct {
 //	    session_key,
 //	    action,
 //	    target,
+//	    tool_call_id,
 //	    input,
 //	    output,
+//	    success,
+//	    error_msg,
 //	    duration_ms,
 //	    created_at
 //	FROM agent_audit_log
 //	WHERE julianday(created_at) > julianday(?1)
-//	ORDER BY created_at ASC, id ASC
+//	ORDER BY created_at ASC,
+//	    id ASC
 //	LIMIT ?3 OFFSET ?2
 func (q *Queries) ListAuditEntriesGlobalSincePaged(ctx context.Context, arg ListAuditEntriesGlobalSincePagedParams) ([]AgentAuditLog, error) {
 	rows, err := q.db.QueryContext(ctx, ListAuditEntriesGlobalSincePaged, arg.Since, arg.Off, arg.Lim)
@@ -494,8 +565,11 @@ func (q *Queries) ListAuditEntriesGlobalSincePaged(ctx context.Context, arg List
 			&i.SessionKey,
 			&i.Action,
 			&i.Target,
+			&i.ToolCallID,
 			&i.Input,
 			&i.Output,
+			&i.Success,
+			&i.ErrorMsg,
 			&i.DurationMs,
 			&i.CreatedAt,
 		); err != nil {

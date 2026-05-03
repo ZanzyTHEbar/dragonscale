@@ -1,10 +1,13 @@
 package fantasy
 
-// No imports needed — json method signatures are defined inline.
+import (
+	"context"
+	"encoding/json"
+)
 
 // ProviderOptionsData is an interface for provider-specific options data.
-// All implementations MUST also implement jsonv2.MarshalerV2 and
-// jsonv2.UnmarshalerV2 interfaces to ensure proper JSON serialization
+// All implementations MUST also implement encoding/json.Marshaler and
+// encoding/json.Unmarshaler interfaces to ensure proper JSON serialization
 // with the provider registry system.
 //
 // Recommended implementation pattern using generic helpers:
@@ -20,7 +23,7 @@ package fantasy
 //	func init() {
 //	    fantasy.RegisterProviderType(TypeMyProviderOptions, func(data []byte) (fantasy.ProviderOptionsData, error) {
 //	        var opts MyProviderOptions
-//	        if err := jsonv2.Unmarshal(data, &opts); err != nil {
+//	        if err := json.Unmarshal(data, &opts); err != nil {
 //	            return nil, err
 //	        }
 //	        return &opts, nil
@@ -30,27 +33,28 @@ package fantasy
 //	// Implement ProviderOptionsData interface
 //	func (*MyProviderOptions) Options() {}
 //
-//	// Implement jsonv2.MarshalerTo using the generic helper
-//	func (m MyProviderOptions) MarshalJSONTo(enc *jsontext.Encoder) error {
+//	// Implement json.Marshaler using the generic helper
+//	func (m MyProviderOptions) MarshalJSON() ([]byte, error) {
 //	    type plain MyProviderOptions
-//	    return fantasy.MarshalProviderTypeTo(enc, TypeMyProviderOptions, plain(m))
+//	    return fantasy.MarshalProviderType(TypeMyProviderOptions, plain(m))
 //	}
 //
-//	// Implement jsonv2.UnmarshalerFrom using the generic helper
+//	// Implement json.Unmarshaler using the generic helper
 //	// Note: Receives inner data after type routing by the registry.
-//	func (m *MyProviderOptions) UnmarshalJSONFrom(dec *jsontext.Decoder) error {
+//	func (m *MyProviderOptions) UnmarshalJSON(data []byte) error {
 //	    type plain MyProviderOptions
 //	    var p plain
-//	    if err := fantasy.UnmarshalProviderTypeFrom(dec, &p); err != nil {
+//	    if err := fantasy.UnmarshalProviderType(data, &p); err != nil {
 //	        return err
 //	    }
 //	    *m = MyProviderOptions(p)
 //	    return nil
 //	}
 type ProviderOptionsData interface {
+	// Options is a marker method that identifies types implementing this interface.
 	Options()
-	MarshalJSON() ([]byte, error)
-	UnmarshalJSON([]byte) error
+	json.Marshaler
+	json.Unmarshaler
 }
 
 // ProviderMetadata represents additional provider-specific metadata.
@@ -251,9 +255,10 @@ func (t ToolCallPart) Options() ProviderOptions {
 
 // ToolResultPart represents a tool result in a message.
 type ToolResultPart struct {
-	ToolCallID      string                  `json:"tool_call_id"`
-	Output          ToolResultOutputContent `json:"output"`
-	ProviderOptions ProviderOptions         `json:"provider_options"`
+	ToolCallID       string                  `json:"tool_call_id"`
+	Output           ToolResultOutputContent `json:"output"`
+	ProviderExecuted bool                    `json:"provider_executed"`
+	ProviderOptions  ProviderOptions         `json:"provider_options"`
 }
 
 // GetType returns the type of the tool result part.
@@ -305,9 +310,9 @@ func (t ToolResultOutputContentError) GetType() ToolResultContentType {
 
 // ToolResultOutputContentMedia represents media output content of a tool result.
 type ToolResultOutputContentMedia struct {
-	Data      string `json:"data"`          // for media type (base64)
-	MediaType string `json:"media_type"`    // for media type
-	Text      string `json:"text,omitzero"` // optional text content accompanying the media
+	Data      string `json:"data"`           // for media type (base64)
+	MediaType string `json:"media_type"`     // for media type
+	Text      string `json:"text,omitempty"` // optional text content accompanying the media
 }
 
 // GetType returns the type of the tool result output content media.
@@ -433,9 +438,9 @@ type ToolCallContent struct {
 	// Additional provider-specific metadata for the tool call.
 	ProviderMetadata ProviderMetadata `json:"provider_metadata"`
 	// Whether this tool call is invalid (failed validation/parsing)
-	Invalid bool `json:"invalid,omitzero"`
+	Invalid bool `json:"invalid,omitempty"`
 	// Error that occurred during validation/parsing (only set if Invalid is true)
-	ValidationError error `json:"validation_error,omitzero"`
+	ValidationError error `json:"validation_error,omitempty"`
 }
 
 // GetType returns the type of the tool call content.
@@ -458,6 +463,10 @@ type ToolResultContent struct {
 	ProviderExecuted bool `json:"provider_executed"`
 	// Additional provider-specific metadata for the tool result.
 	ProviderMetadata ProviderMetadata `json:"provider_metadata"`
+	// StopTurn indicates that the agent loop should stop after this result.
+	// The tool result is still delivered to the model's context, but the model
+	// does not get another chance to make tool calls in the same turn.
+	StopTurn bool `json:"stop_turn,omitempty"`
 }
 
 // GetType returns the type of the tool result content.
@@ -510,6 +519,16 @@ func (f FunctionTool) GetName() string {
 	return f.Name
 }
 
+// ProviderTool is a tool whose schema and wire format are defined by
+// the model provider. Both pure provider-executed tools
+// (ProviderDefinedTool) and client-executed provider tools
+// (ExecutableProviderTool) implement this interface. The unexported
+// method seals this interface to the types in this package.
+// External packages should use NewExecutableProviderTool instead.
+type ProviderTool interface {
+	providerDefinedTool() ProviderDefinedTool
+}
+
 // ProviderDefinedTool represents the configuration of a tool that is defined by the provider.
 type ProviderDefinedTool struct {
 	// ID of the tool. Should follow the format `<provider-name>.<unique-tool-name>`.
@@ -528,6 +547,53 @@ func (p ProviderDefinedTool) GetType() ToolType {
 // GetName returns the name of the provider-defined tool.
 func (p ProviderDefinedTool) GetName() string {
 	return p.Name
+}
+
+func (p ProviderDefinedTool) providerDefinedTool() ProviderDefinedTool {
+	return p
+}
+
+// ExecutableProviderTool pairs a ProviderDefinedTool with a
+// client-side execution function. Use this for provider-defined tools
+// that require local execution (e.g. Anthropic computer use). Register
+// it via WithProviderDefinedTools.
+type ExecutableProviderTool struct {
+	pdt ProviderDefinedTool
+	run func(ctx context.Context, call ToolCall) (ToolResponse, error)
+}
+
+func (e ExecutableProviderTool) providerDefinedTool() ProviderDefinedTool {
+	return e.pdt
+}
+
+// GetType returns the type of the underlying ProviderDefinedTool.
+func (e ExecutableProviderTool) GetType() ToolType {
+	return e.pdt.GetType()
+}
+
+// GetName returns the name of the underlying ProviderDefinedTool.
+func (e ExecutableProviderTool) GetName() string {
+	return e.pdt.GetName()
+}
+
+// Definition returns the underlying ProviderDefinedTool.
+func (e ExecutableProviderTool) Definition() ProviderDefinedTool {
+	return e.pdt
+}
+
+// Run executes the tool's client-side function.
+func (e ExecutableProviderTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error) {
+	return e.run(ctx, call)
+}
+
+// NewExecutableProviderTool creates a provider-defined tool with
+// client-side execution. The tool is sent to the API using the
+// provider's native wire format, but executed locally by run.
+func NewExecutableProviderTool(
+	pdt ProviderDefinedTool,
+	run func(ctx context.Context, call ToolCall) (ToolResponse, error),
+) ExecutableProviderTool {
+	return ExecutableProviderTool{pdt: pdt, run: run}
 }
 
 // NewUserMessage creates a new user message with the given prompt and optional files.

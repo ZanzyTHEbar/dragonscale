@@ -337,7 +337,7 @@ func TestMapRunRead_DetectsOutputHashMismatch(t *testing.T) {
 
 func TestAgenticMap_WorkerLifecycle(t *testing.T) {
 	t.Parallel()
-	provider := &MockLanguageModel{}
+	provider := newPromptEchoLanguageModel(t)
 	manager := NewSubagentManager(provider, "test-model", "/tmp/test", bus.NewMessageBus())
 	manager.SetRunLoop(func(_ context.Context, _ ToolLoopConfig, _, userPrompt, _, _ string) (*ToolLoopResult, error) {
 		return &ToolLoopResult{Content: "processed: " + userPrompt, Iterations: 1}, nil

@@ -25,7 +25,7 @@ func waitForCondition(t *testing.T, timeout time.Duration, cond func() bool) {
 
 func TestSubagentManager_SpawnRequiresRunLoop(t *testing.T) {
 	t.Parallel()
-	provider := &MockLanguageModel{}
+	provider := newPromptEchoLanguageModel(t)
 	manager := NewSubagentManager(provider, "test-model", "/tmp/test", bus.NewMessageBus())
 
 	_, err := manager.Spawn(t.Context(), "task-without-loop", "label", "", "", "cli", "chat", nil)
@@ -39,7 +39,7 @@ func TestSubagentManager_SpawnRequiresRunLoop(t *testing.T) {
 
 func TestSubagentManager_SpawnDelegationGuardrails(t *testing.T) {
 	t.Parallel()
-	provider := &MockLanguageModel{}
+	provider := newPromptEchoLanguageModel(t)
 	manager := NewSubagentManager(provider, "test-model", "/tmp/test", bus.NewMessageBus())
 	manager.SetDelegationLimits(2, 1)
 
@@ -84,7 +84,7 @@ func TestSubagentManager_SpawnDelegationGuardrails(t *testing.T) {
 
 func TestSubagentManager_ConcurrentSpawnRespectsFanout(t *testing.T) {
 	t.Parallel()
-	provider := &MockLanguageModel{}
+	provider := newPromptEchoLanguageModel(t)
 	manager := NewSubagentManager(provider, "test-model", "/tmp/test", bus.NewMessageBus())
 	manager.SetDelegationLimits(3, 2)
 
@@ -155,7 +155,7 @@ func TestSubagentManager_ConcurrentSpawnRespectsFanout(t *testing.T) {
 
 func TestSubagentManager_SpawnAuditLineageAndRuntimeContext(t *testing.T) {
 	t.Parallel()
-	provider := &MockLanguageModel{}
+	provider := newPromptEchoLanguageModel(t)
 	manager := NewSubagentManager(provider, "test-model", "/tmp/test", bus.NewMessageBus())
 
 	var gotTaskID string

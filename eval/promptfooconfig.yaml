@@ -11,8 +11,6 @@ providers:
     label: "dragonscale"
     config:
       timeout: 180000
-    env:
-      DRAGONSCALE_EVAL_CONFIG: "./configs/default.json"
 
 # Default assertions applied to every test case
 defaultTest:
@@ -21,7 +19,7 @@ defaultTest:
       value: |
         try {
           const trace = JSON.parse(output);
-          const valid = trace.hasOwnProperty('output') && trace.hasOwnProperty('metrics');
+          const valid = typeof trace.output === 'string' && Array.isArray(trace.steps) && trace.metrics && typeof trace.metrics.total_duration_ms === 'number';
           return { pass: valid, score: valid ? 1.0 : 0.0, reason: valid ? 'valid trace JSON' : 'invalid trace structure' };
         } catch(e) {
           return { pass: false, score: 0, reason: 'output is not valid JSON: ' + e.message };
@@ -33,7 +31,8 @@ defaultTest:
         const trace = JSON.parse(output);
         const dur = trace.metrics.total_duration_ms;
         const score = dur < 30000 ? 1.0 : dur < 90000 ? 1.0 - (dur - 30000) / 60000 : 0.0;
-        return { pass: true, score, reason: `duration: ${dur}ms (score: ${score.toFixed(2)})` };
+        const pass = dur < 90000;
+        return { pass, score, reason: `duration: ${dur}ms (score: ${score.toFixed(2)})` };
 
 tests: "cases/*.yaml"
 

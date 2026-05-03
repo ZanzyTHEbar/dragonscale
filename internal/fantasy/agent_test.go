@@ -2,14 +2,13 @@ package fantasy
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"testing"
 
-	jsonv2 "github.com/go-json-experiment/json"
-	"github.com/google/go-cmp/cmp"
-
-	"github.com/stretchr/testify/assert"
+	"charm.land/fantasy/internal/testcmp"
 	"github.com/stretchr/testify/require"
 )
 
@@ -47,13 +46,13 @@ func (m *mockTool) Run(ctx context.Context, call ToolCall) (ToolResponse, error)
 	return ToolResponse{Content: "mock result", IsError: false}, nil
 }
 
-// Mock language model for testing
-type mockLanguageModel struct {
+// scriptedLanguageModel is a behavior fixture for agent flow tests.
+type scriptedLanguageModel struct {
 	generateFunc func(ctx context.Context, call Call) (*Response, error)
 	streamFunc   func(ctx context.Context, call Call) (StreamResponse, error)
 }
 
-func (m *mockLanguageModel) Generate(ctx context.Context, call Call) (*Response, error) {
+func (m *scriptedLanguageModel) Generate(ctx context.Context, call Call) (*Response, error) {
 	if m.generateFunc != nil {
 		return m.generateFunc(ctx, call)
 	}
@@ -70,26 +69,26 @@ func (m *mockLanguageModel) Generate(ctx context.Context, call Call) (*Response,
 	}, nil
 }
 
-func (m *mockLanguageModel) Stream(ctx context.Context, call Call) (StreamResponse, error) {
+func (m *scriptedLanguageModel) Stream(ctx context.Context, call Call) (StreamResponse, error) {
 	if m.streamFunc != nil {
 		return m.streamFunc(ctx, call)
 	}
 	return nil, fmt.Errorf("mock stream not implemented")
 }
 
-func (m *mockLanguageModel) Provider() string {
+func (m *scriptedLanguageModel) Provider() string {
 	return "mock-provider"
 }
 
-func (m *mockLanguageModel) Model() string {
+func (m *scriptedLanguageModel) Model() string {
 	return "mock-model"
 }
 
-func (m *mockLanguageModel) GenerateObject(ctx context.Context, call ObjectCall) (*ObjectResponse, error) {
+func (m *scriptedLanguageModel) GenerateObject(ctx context.Context, call ObjectCall) (*ObjectResponse, error) {
 	return nil, fmt.Errorf("mock GenerateObject not implemented")
 }
 
-func (m *mockLanguageModel) StreamObject(ctx context.Context, call ObjectCall) (ObjectStreamResponse, error) {
+func (m *scriptedLanguageModel) StreamObject(ctx context.Context, call ObjectCall) (ObjectStreamResponse, error) {
 	return nil, fmt.Errorf("mock StreamObject not implemented")
 }
 
@@ -106,12 +105,12 @@ func TestAgent_Generate_ResultContent_AllTypes(t *testing.T) {
 		"tool1",
 		"Test tool",
 		func(ctx context.Context, input TestInput, _ ToolCall) (ToolResponse, error) {
-			assert.Empty(t, cmp.Diff("value", input.Value))
+			testcmp.RequireEqual(t, "value", input.Value)
 			return ToolResponse{Content: "result1", IsError: false}, nil
 		},
 	)
 
-	model := &mockLanguageModel{
+	model := &scriptedLanguageModel{
 		generateFunc: func(ctx context.Context, call Call) (*Response, error) {
 			return &Response{
 				Content: []Content{
@@ -147,7 +146,7 @@ func TestAgent_Generate_ResultContent_AllTypes(t *testing.T) {
 	}
 
 	agent := NewAgent(model, WithTools(tool1))
-	result, err := agent.Generate(t.Context(), AgentCall{
+	result, err := agent.Generate(context.Background(), AgentCall{
 		Prompt: "prompt",
 	})
 
@@ -161,40 +160,40 @@ func TestAgent_Generate_ResultContent_AllTypes(t *testing.T) {
 	// Verify each content type in order
 	textContent, ok := AsContentType[TextContent](result.Response.Content[0])
 	require.True(t, ok)
-	assert.Empty(t, cmp.Diff("Hello, world!", textContent.Text))
+	testcmp.RequireEqual(t, "Hello, world!", textContent.Text)
 
 	sourceContent, ok := AsContentType[SourceContent](result.Response.Content[1])
 	require.True(t, ok)
-	assert.Empty(t, cmp.Diff("123", sourceContent.ID))
+	testcmp.RequireEqual(t, "123", sourceContent.ID)
 
 	fileContent, ok := AsContentType[FileContent](result.Response.Content[2])
 	require.True(t, ok)
-	assert.Empty(t, cmp.Diff([]byte{1, 2, 3}, fileContent.Data))
+	testcmp.RequireEqual(t, []byte{1, 2, 3}, fileContent.Data)
 
 	reasoningContent, ok := AsContentType[ReasoningContent](result.Response.Content[3])
 	require.True(t, ok)
-	assert.Empty(t, cmp.Diff("I will open the conversation with witty banter.", reasoningContent.Text))
+	testcmp.RequireEqual(t, "I will open the conversation with witty banter.", reasoningContent.Text)
 
 	toolCallContent, ok := AsContentType[ToolCallContent](result.Response.Content[4])
 	require.True(t, ok)
-	assert.Empty(t, cmp.Diff("call-1", toolCallContent.ToolCallID))
+	testcmp.RequireEqual(t, "call-1", toolCallContent.ToolCallID)
 
 	moreTextContent, ok := AsContentType[TextContent](result.Response.Content[5])
 	require.True(t, ok)
-	assert.Empty(t, cmp.Diff("More text", moreTextContent.Text))
+	testcmp.RequireEqual(t, "More text", moreTextContent.Text)
 
 	// Tool result should be appended
 	toolResultContent, ok := AsContentType[ToolResultContent](result.Response.Content[6])
 	require.True(t, ok)
-	assert.Empty(t, cmp.Diff("call-1", toolResultContent.ToolCallID))
-	assert.Empty(t, cmp.Diff("tool1", toolResultContent.ToolName))
+	testcmp.RequireEqual(t, "call-1", toolResultContent.ToolCallID)
+	testcmp.RequireEqual(t, "tool1", toolResultContent.ToolName)
 }
 
 // Test result.text extraction
 func TestAgent_Generate_ResultText(t *testing.T) {
 	t.Parallel()
 
-	model := &mockLanguageModel{
+	model := &scriptedLanguageModel{
 		generateFunc: func(ctx context.Context, call Call) (*Response, error) {
 			return &Response{
 				Content: []Content{
@@ -211,7 +210,7 @@ func TestAgent_Generate_ResultText(t *testing.T) {
 	}
 
 	agent := NewAgent(model)
-	result, err := agent.Generate(t.Context(), AgentCall{
+	result, err := agent.Generate(context.Background(), AgentCall{
 		Prompt: "prompt",
 	})
 
@@ -220,7 +219,7 @@ func TestAgent_Generate_ResultText(t *testing.T) {
 
 	// Test text extraction from content
 	text := result.Response.Content.Text()
-	assert.Empty(t, cmp.Diff("Hello, world!", text))
+	testcmp.RequireEqual(t, "Hello, world!", text)
 }
 
 // Test result.toolCalls extraction (matches TS test exactly)
@@ -252,15 +251,15 @@ func TestAgent_Generate_ResultToolCalls(t *testing.T) {
 		},
 	)
 
-	model := &mockLanguageModel{
+	model := &scriptedLanguageModel{
 		generateFunc: func(ctx context.Context, call Call) (*Response, error) {
 			// Verify tools are passed correctly
 			require.Len(t, call.Tools, 2)
-			assert.Empty(t, cmp.Diff(ToolChoiceAuto, *call.ToolChoice)) // Should be auto, not required
+			testcmp.RequireEqual(t, ToolChoiceAuto, *call.ToolChoice) // Should be auto, not required
 
 			// Verify prompt structure
 			require.Len(t, call.Prompt, 1)
-			assert.Empty(t, cmp.Diff(MessageRoleUser, call.Prompt[0].Role))
+			testcmp.RequireEqual(t, MessageRoleUser, call.Prompt[0].Role)
 
 			return &Response{
 				Content: []Content{
@@ -281,7 +280,7 @@ func TestAgent_Generate_ResultToolCalls(t *testing.T) {
 	}
 
 	agent := NewAgent(model, WithTools(tool1, tool2))
-	result, err := agent.Generate(t.Context(), AgentCall{
+	result, err := agent.Generate(context.Background(), AgentCall{
 		Prompt: "test-input",
 	})
 
@@ -298,14 +297,14 @@ func TestAgent_Generate_ResultToolCalls(t *testing.T) {
 	}
 
 	require.Len(t, toolCalls, 1)
-	assert.Empty(t, cmp.Diff("call-1", toolCalls[0].ToolCallID))
-	assert.Empty(t, cmp.Diff("tool1", toolCalls[0].ToolName))
+	testcmp.RequireEqual(t, "call-1", toolCalls[0].ToolCallID)
+	testcmp.RequireEqual(t, "tool1", toolCalls[0].ToolName)
 
 	// Parse and verify input
 	var input map[string]any
-	err = jsonv2.Unmarshal([]byte(toolCalls[0].Input), &input)
+	err = json.Unmarshal([]byte(toolCalls[0].Input), &input)
 	require.NoError(t, err)
-	assert.Empty(t, cmp.Diff("value", input["value"]))
+	testcmp.RequireEqual(t, "value", input["value"])
 }
 
 // Test result.toolResults extraction (matches TS test exactly)
@@ -321,20 +320,20 @@ func TestAgent_Generate_ResultToolResults(t *testing.T) {
 		"tool1",
 		"Test tool",
 		func(ctx context.Context, input TestInput, _ ToolCall) (ToolResponse, error) {
-			assert.Empty(t, cmp.Diff("value", input.Value))
+			testcmp.RequireEqual(t, "value", input.Value)
 			return ToolResponse{Content: "result1", IsError: false}, nil
 		},
 	)
 
-	model := &mockLanguageModel{
+	model := &scriptedLanguageModel{
 		generateFunc: func(ctx context.Context, call Call) (*Response, error) {
 			// Verify tools and tool choice
 			require.Len(t, call.Tools, 1)
-			assert.Empty(t, cmp.Diff(ToolChoiceAuto, *call.ToolChoice))
+			testcmp.RequireEqual(t, ToolChoiceAuto, *call.ToolChoice)
 
 			// Verify prompt
 			require.Len(t, call.Prompt, 1)
-			assert.Empty(t, cmp.Diff(MessageRoleUser, call.Prompt[0].Role))
+			testcmp.RequireEqual(t, MessageRoleUser, call.Prompt[0].Role)
 
 			return &Response{
 				Content: []Content{
@@ -355,7 +354,7 @@ func TestAgent_Generate_ResultToolResults(t *testing.T) {
 	}
 
 	agent := NewAgent(model, WithTools(tool1))
-	result, err := agent.Generate(t.Context(), AgentCall{
+	result, err := agent.Generate(context.Background(), AgentCall{
 		Prompt: "test-input",
 	})
 
@@ -372,13 +371,13 @@ func TestAgent_Generate_ResultToolResults(t *testing.T) {
 	}
 
 	require.Len(t, toolResults, 1)
-	assert.Empty(t, cmp.Diff("call-1", toolResults[0].ToolCallID))
-	assert.Empty(t, cmp.Diff("tool1", toolResults[0].ToolName))
+	testcmp.RequireEqual(t, "call-1", toolResults[0].ToolCallID)
+	testcmp.RequireEqual(t, "tool1", toolResults[0].ToolName)
 
 	// Verify result content
 	textResult, ok := toolResults[0].Result.(ToolResultOutputContentText)
 	require.True(t, ok)
-	assert.Empty(t, cmp.Diff("result1", textResult.Text))
+	testcmp.RequireEqual(t, "result1", textResult.Text)
 }
 
 // Test multi-step scenario (matches TS "2 steps: initial, tool-result" test)
@@ -394,13 +393,13 @@ func TestAgent_Generate_MultipleSteps(t *testing.T) {
 		"tool1",
 		"Test tool",
 		func(ctx context.Context, input TestInput, _ ToolCall) (ToolResponse, error) {
-			assert.Empty(t, cmp.Diff("value", input.Value))
+			testcmp.RequireEqual(t, "value", input.Value)
 			return ToolResponse{Content: "result1", IsError: false}, nil
 		},
 	)
 
 	callCount := 0
-	model := &mockLanguageModel{
+	model := &scriptedLanguageModel{
 		generateFunc: func(ctx context.Context, call Call) (*Response, error) {
 			callCount++
 			switch callCount {
@@ -442,27 +441,24 @@ func TestAgent_Generate_MultipleSteps(t *testing.T) {
 	}
 
 	agent := NewAgent(model, WithTools(tool1))
-	result, err := agent.Generate(t.Context(), AgentCall{
+	result, err := agent.Generate(context.Background(), AgentCall{
 		Prompt: "test-input",
 	})
 
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.Len(t, result.Steps, 2)
-	assert.
 
-		// Check total usage sums both steps
-		Empty(t, cmp.Diff(int64(13), result.TotalUsage.InputTokens))
-	assert. // 10 + 3
-		Empty(t, cmp.Diff(int64(15), result.TotalUsage.OutputTokens))
-	assert. // 5 + 10
-		Empty(t, cmp.Diff(int64(28), result.TotalUsage.TotalTokens)) // 15 + 13
+	// Check total usage sums both steps
+	testcmp.RequireEqual(t, int64(13), result.TotalUsage.InputTokens)  // 10 + 3
+	testcmp.RequireEqual(t, int64(15), result.TotalUsage.OutputTokens) // 5 + 10
+	testcmp.RequireEqual(t, int64(28), result.TotalUsage.TotalTokens)  // 15 + 13
 
 	// Final response should be from last step
 	require.Len(t, result.Response.Content, 1)
 	textContent, ok := AsContentType[TextContent](result.Response.Content[0])
 	require.True(t, ok)
-	assert.Empty(t, cmp.Diff("Hello, world!", textContent.Text))
+	testcmp.RequireEqual(t, "Hello, world!", textContent.Text)
 
 	// result.toolCalls should be empty (from last step)
 	var toolCalls []ToolCallContent
@@ -487,7 +483,7 @@ func TestAgent_Generate_MultipleSteps(t *testing.T) {
 func TestAgent_Generate_BasicText(t *testing.T) {
 	t.Parallel()
 
-	model := &mockLanguageModel{
+	model := &scriptedLanguageModel{
 		generateFunc: func(ctx context.Context, call Call) (*Response, error) {
 			return &Response{
 				Content: []Content{
@@ -504,7 +500,7 @@ func TestAgent_Generate_BasicText(t *testing.T) {
 	}
 
 	agent := NewAgent(model)
-	result, err := agent.Generate(t.Context(), AgentCall{
+	result, err := agent.Generate(context.Background(), AgentCall{
 		Prompt: "test prompt",
 	})
 
@@ -516,52 +512,120 @@ func TestAgent_Generate_BasicText(t *testing.T) {
 	require.Len(t, result.Response.Content, 1)
 	textContent, ok := AsContentType[TextContent](result.Response.Content[0])
 	require.True(t, ok)
-	assert.Empty(t, cmp.Diff("Hello, world!", textContent.Text))
-	assert.
+	testcmp.RequireEqual(t, "Hello, world!", textContent.Text)
 
-		// Check usage
-		Empty(t, cmp.Diff(int64(3), result.Response.Usage.InputTokens))
-	assert.Empty(t, cmp.Diff(int64(10), result.Response.Usage.OutputTokens))
-	assert.Empty(t, cmp.Diff(int64(13), result.Response.Usage.TotalTokens))
-	assert.
+	// Check usage
+	testcmp.RequireEqual(t, int64(3), result.Response.Usage.InputTokens)
+	testcmp.RequireEqual(t, int64(10), result.Response.Usage.OutputTokens)
+	testcmp.RequireEqual(t, int64(13), result.Response.Usage.TotalTokens)
 
-		// Check total usage
-		Empty(t, cmp.Diff(int64(3), result.TotalUsage.InputTokens))
-	assert.Empty(t, cmp.Diff(int64(10), result.TotalUsage.OutputTokens))
-	assert.Empty(t, cmp.Diff(int64(13), result.TotalUsage.TotalTokens))
+	// Check total usage
+	testcmp.RequireEqual(t, int64(3), result.TotalUsage.InputTokens)
+	testcmp.RequireEqual(t, int64(10), result.TotalUsage.OutputTokens)
+	testcmp.RequireEqual(t, int64(13), result.TotalUsage.TotalTokens)
 }
 
-// Test empty prompt error
+// Test empty prompt validation
 func TestAgent_Generate_EmptyPrompt(t *testing.T) {
 	t.Parallel()
 
-	model := &mockLanguageModel{}
+	model := &scriptedLanguageModel{}
 	agent := NewAgent(model)
 
-	result, err := agent.Generate(t.Context(), AgentCall{
-		Prompt: "", // Empty prompt should cause error
+	t.Run("fails without messages", func(t *testing.T) {
+		result, err := agent.Generate(context.Background(), AgentCall{
+			Prompt: "",
+		})
+		require.Error(t, err)
+		require.Nil(t, result)
+		require.Contains(t, err.Error(), "prompt can't be empty when there are no messages")
 	})
 
-	require.Error(t, err)
-	require.Nil(t, result)
-	require.Contains(t, err.Error(), "invalid argument: prompt can't be empty")
+	t.Run("fails with files even if messages exist", func(t *testing.T) {
+		result, err := agent.Generate(context.Background(), AgentCall{
+			Prompt: "",
+			Messages: []Message{
+				{Role: MessageRoleUser, Content: []MessagePart{TextPart{Text: "hello"}}},
+			},
+			Files: []FilePart{{Filename: "test.txt", Data: []byte("test"), MediaType: "text/plain"}},
+		})
+		require.Error(t, err)
+		require.Nil(t, result)
+		require.Contains(t, err.Error(), "prompt can't be empty when there are files")
+	})
+
+	t.Run("fails when last message is assistant", func(t *testing.T) {
+		result, err := agent.Generate(context.Background(), AgentCall{
+			Prompt: "",
+			Messages: []Message{
+				{Role: MessageRoleUser, Content: []MessagePart{TextPart{Text: "hello"}}},
+				{Role: MessageRoleAssistant, Content: []MessagePart{TextPart{Text: "hi there"}}},
+			},
+		})
+		require.Error(t, err)
+		require.Nil(t, result)
+		require.Contains(t, err.Error(), "prompt can't be empty when the last message is not a user or tool message")
+	})
+
+	t.Run("succeeds when last message is user", func(t *testing.T) {
+		model := &scriptedLanguageModel{
+			generateFunc: func(ctx context.Context, call Call) (*Response, error) {
+				return &Response{
+					Content:      []Content{TextContent{Text: "response"}},
+					FinishReason: FinishReasonStop,
+				}, nil
+			},
+		}
+		agent := NewAgent(model)
+
+		result, err := agent.Generate(context.Background(), AgentCall{
+			Prompt: "",
+			Messages: []Message{
+				{Role: MessageRoleUser, Content: []MessagePart{TextPart{Text: "hello"}}},
+			},
+		})
+		require.NoError(t, err)
+		require.NotNil(t, result)
+	})
+
+	t.Run("succeeds when last message is tool", func(t *testing.T) {
+		model := &scriptedLanguageModel{
+			generateFunc: func(ctx context.Context, call Call) (*Response, error) {
+				return &Response{
+					Content:      []Content{TextContent{Text: "response"}},
+					FinishReason: FinishReasonStop,
+				}, nil
+			},
+		}
+		agent := NewAgent(model)
+
+		result, err := agent.Generate(context.Background(), AgentCall{
+			Prompt: "",
+			Messages: []Message{
+				{Role: MessageRoleUser, Content: []MessagePart{TextPart{Text: "hello"}}},
+				{Role: MessageRoleAssistant, Content: []MessagePart{ToolCallPart{ToolCallID: "call_1", ToolName: "test"}}},
+				{Role: MessageRoleTool, Content: []MessagePart{ToolResultPart{ToolCallID: "call_1", Output: ToolResultOutputContentText{Text: "result"}}}},
+			},
+		})
+		require.NoError(t, err)
+		require.NotNil(t, result)
+	})
 }
 
 // Test with system prompt
 func TestAgent_Generate_WithSystemPrompt(t *testing.T) {
 	t.Parallel()
 
-	model := &mockLanguageModel{
+	model := &scriptedLanguageModel{
 		generateFunc: func(ctx context.Context, call Call) (*Response, error) {
 			// Verify system message is included
-			require.Len(t, call.Prompt, 2)
-			assert. // system + user
-				Empty(t, cmp.Diff(MessageRoleSystem, call.Prompt[0].Role))
-			assert.Empty(t, cmp.Diff(MessageRoleUser, call.Prompt[1].Role))
+			require.Len(t, call.Prompt, 2) // system + user
+			testcmp.RequireEqual(t, MessageRoleSystem, call.Prompt[0].Role)
+			testcmp.RequireEqual(t, MessageRoleUser, call.Prompt[1].Role)
 
 			systemPart, ok := call.Prompt[0].Content[0].(TextPart)
 			require.True(t, ok)
-			assert.Empty(t, cmp.Diff("You are a helpful assistant", systemPart.Text))
+			testcmp.RequireEqual(t, "You are a helpful assistant", systemPart.Text)
 
 			return &Response{
 				Content: []Content{
@@ -578,7 +642,7 @@ func TestAgent_Generate_WithSystemPrompt(t *testing.T) {
 	}
 
 	agent := NewAgent(model, WithSystemPrompt("You are a helpful assistant"))
-	result, err := agent.Generate(t.Context(), AgentCall{
+	result, err := agent.Generate(context.Background(), AgentCall{
 		Prompt: "test prompt",
 	})
 
@@ -608,13 +672,13 @@ func TestAgent_Generate_OptionsActiveTools(t *testing.T) {
 		required: []string{"value"},
 	}
 
-	model := &mockLanguageModel{
+	model := &scriptedLanguageModel{
 		generateFunc: func(ctx context.Context, call Call) (*Response, error) {
 			// Verify only tool1 is available
 			require.Len(t, call.Tools, 1)
 			functionTool, ok := call.Tools[0].(FunctionTool)
 			require.True(t, ok)
-			assert.Empty(t, cmp.Diff("tool1", functionTool.Name))
+			testcmp.RequireEqual(t, "tool1", functionTool.Name)
 
 			return &Response{
 				Content: []Content{
@@ -631,9 +695,60 @@ func TestAgent_Generate_OptionsActiveTools(t *testing.T) {
 	}
 
 	agent := NewAgent(model, WithTools(tool1, tool2))
-	result, err := agent.Generate(t.Context(), AgentCall{
+	result, err := agent.Generate(context.Background(), AgentCall{
 		Prompt:      "test-input",
 		ActiveTools: []string{"tool1"}, // Only tool1 should be active
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+}
+
+func TestAgent_Generate_OptionsActiveTools_WithProviderDefinedTools(t *testing.T) {
+	t.Parallel()
+
+	tool1 := &mockTool{
+		name:        "tool1",
+		description: "Test tool 1",
+		parameters: map[string]any{
+			"value": map[string]any{"type": "string"},
+		},
+		required: []string{"value"},
+	}
+
+	providerTool1 := ProviderDefinedTool{ID: "provider.web_search", Name: "web_search"}
+	providerTool2 := ProviderDefinedTool{ID: "provider.code_execution", Name: "code_execution"}
+
+	model := &scriptedLanguageModel{
+		generateFunc: func(ctx context.Context, call Call) (*Response, error) {
+			require.Len(t, call.Tools, 2)
+
+			functionTool, ok := call.Tools[0].(FunctionTool)
+			require.True(t, ok)
+			testcmp.RequireEqual(t, "tool1", functionTool.Name)
+
+			providerTool, ok := call.Tools[1].(ProviderDefinedTool)
+			require.True(t, ok)
+			testcmp.RequireEqual(t, "web_search", providerTool.Name)
+
+			return &Response{
+				Content: []Content{
+					TextContent{Text: "Hello, world!"},
+				},
+				Usage: Usage{
+					InputTokens:  3,
+					OutputTokens: 10,
+					TotalTokens:  13,
+				},
+				FinishReason: FinishReasonStop,
+			}, nil
+		},
+	}
+
+	agent := NewAgent(model, WithTools(tool1), WithProviderDefinedTools(providerTool1, providerTool2))
+	result, err := agent.Generate(context.Background(), AgentCall{
+		Prompt:      "test-input",
+		ActiveTools: []string{"tool1", "web_search"}, // Only tool1 and web_search should be active
 	})
 
 	require.NoError(t, err)
@@ -652,48 +767,46 @@ func TestResponseContent_Getters(t *testing.T) {
 		ToolCallContent{ToolCallID: "call1", ToolName: "test_tool", Input: `{"arg": "value"}`},
 		ToolResultContent{ToolCallID: "call1", ToolName: "test_tool", Result: ToolResultOutputContentText{Text: "result"}},
 	}
-	assert.
 
-		// Test Text()
-		Empty(t, cmp.Diff("Hello world", content.Text()))
+	// Test Text()
+	testcmp.RequireEqual(t, "Hello world", content.Text())
 
 	// Test Reasoning()
 	reasoning := content.Reasoning()
 	require.Len(t, reasoning, 1)
-	assert.Empty(t, cmp.Diff("Let me think...", reasoning[0].Text))
-	assert.
+	testcmp.RequireEqual(t, "Let me think...", reasoning[0].Text)
 
-		// Test ReasoningText()
-		Empty(t, cmp.Diff("Let me think...", content.ReasoningText()))
+	// Test ReasoningText()
+	testcmp.RequireEqual(t, "Let me think...", content.ReasoningText())
 
 	// Test Files()
 	files := content.Files()
 	require.Len(t, files, 1)
-	assert.Empty(t, cmp.Diff("text/plain", files[0].MediaType))
-	assert.Empty(t, cmp.Diff([]byte("file data"), files[0].Data))
+	testcmp.RequireEqual(t, "text/plain", files[0].MediaType)
+	testcmp.RequireEqual(t, []byte("file data"), files[0].Data)
 
 	// Test Sources()
 	sources := content.Sources()
 	require.Len(t, sources, 1)
-	assert.Empty(t, cmp.Diff(SourceTypeURL, sources[0].SourceType))
-	assert.Empty(t, cmp.Diff("https://example.com", sources[0].URL))
-	assert.Empty(t, cmp.Diff("Example", sources[0].Title))
+	testcmp.RequireEqual(t, SourceTypeURL, sources[0].SourceType)
+	testcmp.RequireEqual(t, "https://example.com", sources[0].URL)
+	testcmp.RequireEqual(t, "Example", sources[0].Title)
 
 	// Test ToolCalls()
 	toolCalls := content.ToolCalls()
 	require.Len(t, toolCalls, 1)
-	assert.Empty(t, cmp.Diff("call1", toolCalls[0].ToolCallID))
-	assert.Empty(t, cmp.Diff("test_tool", toolCalls[0].ToolName))
-	assert.Empty(t, cmp.Diff(`{"arg": "value"}`, toolCalls[0].Input))
+	testcmp.RequireEqual(t, "call1", toolCalls[0].ToolCallID)
+	testcmp.RequireEqual(t, "test_tool", toolCalls[0].ToolName)
+	testcmp.RequireEqual(t, `{"arg": "value"}`, toolCalls[0].Input)
 
 	// Test ToolResults()
 	toolResults := content.ToolResults()
 	require.Len(t, toolResults, 1)
-	assert.Empty(t, cmp.Diff("call1", toolResults[0].ToolCallID))
-	assert.Empty(t, cmp.Diff("test_tool", toolResults[0].ToolName))
+	testcmp.RequireEqual(t, "call1", toolResults[0].ToolCallID)
+	testcmp.RequireEqual(t, "test_tool", toolResults[0].ToolName)
 	result, ok := AsToolResultOutputType[ToolResultOutputContentText](toolResults[0].Result)
 	require.True(t, ok)
-	assert.Empty(t, cmp.Diff("result", result.Text))
+	testcmp.RequireEqual(t, "result", result.Text)
 }
 
 func TestResponseContent_Getters_Empty(t *testing.T) {
@@ -701,8 +814,9 @@ func TestResponseContent_Getters_Empty(t *testing.T) {
 
 	// Test with empty content
 	content := ResponseContent{}
-	assert.Empty(t, cmp.Diff("", content.Text()))
-	assert.Empty(t, cmp.Diff("", content.ReasoningText()))
+
+	testcmp.RequireEqual(t, "", content.Text())
+	testcmp.RequireEqual(t, "", content.ReasoningText())
 	require.Empty(t, content.Reasoning())
 	require.Empty(t, content.Files())
 	require.Empty(t, content.Sources())
@@ -724,18 +838,17 @@ func TestResponseContent_Getters_MultipleItems(t *testing.T) {
 	// Test multiple reasoning
 	reasoning := content.Reasoning()
 	require.Len(t, reasoning, 2)
-	assert.Empty(t, cmp.Diff("First thought", reasoning[0].Text))
-	assert.Empty(t, cmp.Diff("Second thought", reasoning[1].Text))
-	assert.
+	testcmp.RequireEqual(t, "First thought", reasoning[0].Text)
+	testcmp.RequireEqual(t, "Second thought", reasoning[1].Text)
 
-		// Test concatenated reasoning text
-		Empty(t, cmp.Diff("First thoughtSecond thought", content.ReasoningText()))
+	// Test concatenated reasoning text
+	testcmp.RequireEqual(t, "First thoughtSecond thought", content.ReasoningText())
 
 	// Test multiple files
 	files := content.Files()
 	require.Len(t, files, 2)
-	assert.Empty(t, cmp.Diff("text/plain", files[0].MediaType))
-	assert.Empty(t, cmp.Diff("image/png", files[1].MediaType))
+	testcmp.RequireEqual(t, "text/plain", files[0].MediaType)
+	testcmp.RequireEqual(t, "image/png", files[1].MediaType)
 }
 
 func TestStopConditions(t *testing.T) {
@@ -864,7 +977,7 @@ func TestStopConditions_Integration(t *testing.T) {
 
 	t.Run("StepCountIs integration", func(t *testing.T) {
 		t.Parallel()
-		model := &mockLanguageModel{
+		model := &scriptedLanguageModel{
 			generateFunc: func(ctx context.Context, call Call) (*Response, error) {
 				return &Response{
 					Content: ResponseContent{
@@ -882,7 +995,7 @@ func TestStopConditions_Integration(t *testing.T) {
 
 		agent := NewAgent(model, WithStopConditions(StepCountIs(1)))
 
-		result, err := agent.Generate(t.Context(), AgentCall{
+		result, err := agent.Generate(context.Background(), AgentCall{
 			Prompt: "test prompt",
 		})
 
@@ -893,7 +1006,7 @@ func TestStopConditions_Integration(t *testing.T) {
 
 	t.Run("Multiple stop conditions", func(t *testing.T) {
 		t.Parallel()
-		model := &mockLanguageModel{
+		model := &scriptedLanguageModel{
 			generateFunc: func(ctx context.Context, call Call) (*Response, error) {
 				return &Response{
 					Content: ResponseContent{
@@ -914,15 +1027,14 @@ func TestStopConditions_Integration(t *testing.T) {
 			FinishReasonIs(FinishReasonStop), // Or stop on finish reason
 		))
 
-		result, err := agent.Generate(t.Context(), AgentCall{
+		result, err := agent.Generate(context.Background(), AgentCall{
 			Prompt: "test prompt",
 		})
 
 		require.NoError(t, err)
 		require.NotNil(t, result)
-		assert.
-			// Should stop on first condition met (finish reason stop)
-			Empty(t, cmp.Diff(FinishReasonStop, result.Response.FinishReason))
+		// Should stop on first condition met (finish reason stop)
+		testcmp.RequireEqual(t, FinishReasonStop, result.Response.FinishReason)
 	})
 }
 
@@ -932,7 +1044,7 @@ func TestPrepareStep(t *testing.T) {
 	t.Run("System prompt modification", func(t *testing.T) {
 		t.Parallel()
 		var capturedSystemPrompt string
-		model := &mockLanguageModel{
+		model := &scriptedLanguageModel{
 			generateFunc: func(ctx context.Context, call Call) (*Response, error) {
 				// Capture the system message to verify it was modified
 				if len(call.Prompt) > 0 && call.Prompt[0].Role == MessageRoleSystem {
@@ -963,20 +1075,20 @@ func TestPrepareStep(t *testing.T) {
 
 		agent := NewAgent(model, WithSystemPrompt("Original system prompt"))
 
-		result, err := agent.Generate(t.Context(), AgentCall{
+		result, err := agent.Generate(context.Background(), AgentCall{
 			Prompt:      "test prompt",
 			PrepareStep: prepareStepFunc,
 		})
 
 		require.NoError(t, err)
 		require.NotNil(t, result)
-		assert.Empty(t, cmp.Diff("Modified system prompt for step 0", capturedSystemPrompt))
+		testcmp.RequireEqual(t, "Modified system prompt for step 0", capturedSystemPrompt)
 	})
 
 	t.Run("Tool choice modification", func(t *testing.T) {
 		t.Parallel()
 		var capturedToolChoice *ToolChoice
-		model := &mockLanguageModel{
+		model := &scriptedLanguageModel{
 			generateFunc: func(ctx context.Context, call Call) (*Response, error) {
 				capturedToolChoice = call.ToolChoice
 				return &Response{
@@ -1000,7 +1112,7 @@ func TestPrepareStep(t *testing.T) {
 
 		agent := NewAgent(model)
 
-		result, err := agent.Generate(t.Context(), AgentCall{
+		result, err := agent.Generate(context.Background(), AgentCall{
 			Prompt:      "test prompt",
 			PrepareStep: prepareStepFunc,
 		})
@@ -1008,13 +1120,13 @@ func TestPrepareStep(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, result)
 		require.NotNil(t, capturedToolChoice)
-		assert.Empty(t, cmp.Diff(ToolChoiceNone, *capturedToolChoice))
+		testcmp.RequireEqual(t, ToolChoiceNone, *capturedToolChoice)
 	})
 
 	t.Run("Active tools modification", func(t *testing.T) {
 		t.Parallel()
 		var capturedToolNames []string
-		model := &mockLanguageModel{
+		model := &scriptedLanguageModel{
 			generateFunc: func(ctx context.Context, call Call) (*Response, error) {
 				// Capture tool names to verify active tools were modified
 				for _, tool := range call.Tools {
@@ -1045,7 +1157,7 @@ func TestPrepareStep(t *testing.T) {
 
 		agent := NewAgent(model, WithTools(tool1, tool2, tool3))
 
-		result, err := agent.Generate(t.Context(), AgentCall{
+		result, err := agent.Generate(context.Background(), AgentCall{
 			Prompt:      "test prompt",
 			PrepareStep: prepareStepFunc,
 		})
@@ -1053,13 +1165,13 @@ func TestPrepareStep(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, result)
 		require.Len(t, capturedToolNames, 1)
-		assert.Empty(t, cmp.Diff("tool2", capturedToolNames[0]))
+		testcmp.RequireEqual(t, "tool2", capturedToolNames[0])
 	})
 
 	t.Run("No tools when DisableAllTools is true", func(t *testing.T) {
 		t.Parallel()
 		var capturedToolCount int
-		model := &mockLanguageModel{
+		model := &scriptedLanguageModel{
 			generateFunc: func(ctx context.Context, call Call) (*Response, error) {
 				capturedToolCount = len(call.Tools)
 				return &Response{
@@ -1084,14 +1196,14 @@ func TestPrepareStep(t *testing.T) {
 
 		agent := NewAgent(model, WithTools(tool1))
 
-		result, err := agent.Generate(t.Context(), AgentCall{
+		result, err := agent.Generate(context.Background(), AgentCall{
 			Prompt:      "test prompt",
 			PrepareStep: prepareStepFunc,
 		})
 
 		require.NoError(t, err)
 		require.NotNil(t, result)
-		assert.Empty(t, cmp.Diff(0, capturedToolCount)) // No tools should be passed
+		testcmp.RequireEqual(t, 0, capturedToolCount) // No tools should be passed
 	})
 
 	t.Run("All fields modified together", func(t *testing.T) {
@@ -1100,7 +1212,7 @@ func TestPrepareStep(t *testing.T) {
 		var capturedToolChoice *ToolChoice
 		var capturedToolNames []string
 
-		model := &mockLanguageModel{
+		model := &scriptedLanguageModel{
 			generateFunc: func(ctx context.Context, call Call) (*Response, error) {
 				// Capture system prompt
 				if len(call.Prompt) > 0 && call.Prompt[0].Role == MessageRoleSystem {
@@ -1144,18 +1256,18 @@ func TestPrepareStep(t *testing.T) {
 
 		agent := NewAgent(model, WithSystemPrompt("Original system"), WithTools(tool1, tool2))
 
-		result, err := agent.Generate(t.Context(), AgentCall{
+		result, err := agent.Generate(context.Background(), AgentCall{
 			Prompt:      "test prompt",
 			PrepareStep: prepareStepFunc,
 		})
 
 		require.NoError(t, err)
 		require.NotNil(t, result)
-		assert.Empty(t, cmp.Diff("Step-specific system", capturedSystemPrompt))
+		testcmp.RequireEqual(t, "Step-specific system", capturedSystemPrompt)
 		require.NotNil(t, capturedToolChoice)
-		assert.Empty(t, cmp.Diff(SpecificToolChoice("tool1"), *capturedToolChoice))
+		testcmp.RequireEqual(t, SpecificToolChoice("tool1"), *capturedToolChoice)
 		require.Len(t, capturedToolNames, 1)
-		assert.Empty(t, cmp.Diff("tool1", capturedToolNames[0]))
+		testcmp.RequireEqual(t, "tool1", capturedToolNames[0])
 	})
 
 	t.Run("Nil fields use parent values", func(t *testing.T) {
@@ -1164,7 +1276,7 @@ func TestPrepareStep(t *testing.T) {
 		var capturedToolChoice *ToolChoice
 		var capturedToolNames []string
 
-		model := &mockLanguageModel{
+		model := &scriptedLanguageModel{
 			generateFunc: func(ctx context.Context, call Call) (*Response, error) {
 				// Capture system prompt
 				if len(call.Prompt) > 0 && call.Prompt[0].Role == MessageRoleSystem {
@@ -1205,24 +1317,24 @@ func TestPrepareStep(t *testing.T) {
 
 		agent := NewAgent(model, WithSystemPrompt("Parent system"), WithTools(tool1))
 
-		result, err := agent.Generate(t.Context(), AgentCall{
+		result, err := agent.Generate(context.Background(), AgentCall{
 			Prompt:      "test prompt",
 			PrepareStep: prepareStepFunc,
 		})
 
 		require.NoError(t, err)
 		require.NotNil(t, result)
-		assert.Empty(t, cmp.Diff("Parent system", capturedSystemPrompt))
+		testcmp.RequireEqual(t, "Parent system", capturedSystemPrompt)
 		require.NotNil(t, capturedToolChoice)
-		assert.Empty(t, cmp.Diff(ToolChoiceAuto, *capturedToolChoice)) // Default
+		testcmp.RequireEqual(t, ToolChoiceAuto, *capturedToolChoice) // Default
 		require.Len(t, capturedToolNames, 1)
-		assert.Empty(t, cmp.Diff("tool1", capturedToolNames[0]))
+		testcmp.RequireEqual(t, "tool1", capturedToolNames[0])
 	})
 
 	t.Run("Empty ActiveTools means all tools", func(t *testing.T) {
 		t.Parallel()
 		var capturedToolNames []string
-		model := &mockLanguageModel{
+		model := &scriptedLanguageModel{
 			generateFunc: func(ctx context.Context, call Call) (*Response, error) {
 				// Capture tool names to verify all tools are included
 				for _, tool := range call.Tools {
@@ -1251,7 +1363,7 @@ func TestPrepareStep(t *testing.T) {
 
 		agent := NewAgent(model, WithTools(tool1, tool2))
 
-		result, err := agent.Generate(t.Context(), AgentCall{
+		result, err := agent.Generate(context.Background(), AgentCall{
 			Prompt:      "test prompt",
 			PrepareStep: prepareStepFunc,
 		})
@@ -1269,7 +1381,7 @@ func TestToolCallRepair(t *testing.T) {
 
 	t.Run("Valid tool call passes validation", func(t *testing.T) {
 		t.Parallel()
-		model := &mockLanguageModel{
+		model := &scriptedLanguageModel{
 			generateFunc: func(ctx context.Context, call Call) (*Response, error) {
 				return &Response{
 					Content: ResponseContent{
@@ -1300,7 +1412,7 @@ func TestToolCallRepair(t *testing.T) {
 
 		agent := NewAgent(model, WithTools(tool), WithStopConditions(StepCountIs(2))) // Limit steps
 
-		result, err := agent.Generate(t.Context(), AgentCall{
+		result, err := agent.Generate(context.Background(), AgentCall{
 			Prompt: "test prompt",
 		})
 
@@ -1316,7 +1428,7 @@ func TestToolCallRepair(t *testing.T) {
 
 	t.Run("Invalid tool call without repair function", func(t *testing.T) {
 		t.Parallel()
-		model := &mockLanguageModel{
+		model := &scriptedLanguageModel{
 			generateFunc: func(ctx context.Context, call Call) (*Response, error) {
 				return &Response{
 					Content: ResponseContent{
@@ -1344,7 +1456,7 @@ func TestToolCallRepair(t *testing.T) {
 
 		agent := NewAgent(model, WithTools(tool), WithStopConditions(StepCountIs(2))) // Limit steps
 
-		result, err := agent.Generate(t.Context(), AgentCall{
+		result, err := agent.Generate(context.Background(), AgentCall{
 			Prompt: "test prompt",
 		})
 
@@ -1356,12 +1468,12 @@ func TestToolCallRepair(t *testing.T) {
 		toolCalls := result.Steps[0].Content.ToolCalls()
 		require.Len(t, toolCalls, 1)
 		require.True(t, toolCalls[0].Invalid) // Should be invalid
-		require.Contains(t, toolCalls[0].ValidationError.Error(), "required")
+		require.Contains(t, toolCalls[0].ValidationError.Error(), "missing required parameter: value")
 	})
 
 	t.Run("Invalid tool call with successful repair", func(t *testing.T) {
 		t.Parallel()
-		model := &mockLanguageModel{
+		model := &scriptedLanguageModel{
 			generateFunc: func(ctx context.Context, call Call) (*Response, error) {
 				return &Response{
 					Content: ResponseContent{
@@ -1399,7 +1511,7 @@ func TestToolCallRepair(t *testing.T) {
 
 		agent := NewAgent(model, WithTools(tool), WithRepairToolCall(repairFunc), WithStopConditions(StepCountIs(2)))
 
-		result, err := agent.Generate(t.Context(), AgentCall{
+		result, err := agent.Generate(context.Background(), AgentCall{
 			Prompt: "test prompt",
 		})
 
@@ -1410,14 +1522,13 @@ func TestToolCallRepair(t *testing.T) {
 		// Check that tool call was repaired and is now valid
 		toolCalls := result.Steps[0].Content.ToolCalls()
 		require.Len(t, toolCalls, 1)
-		require.False(t, toolCalls[0].Invalid)
-		assert.Empty( // Should be valid after repair
-			t, cmp.Diff(`{"value": "repaired"}`, toolCalls[0].Input)) // Should have repaired input
+		require.False(t, toolCalls[0].Invalid)                               // Should be valid after repair
+		testcmp.RequireEqual(t, `{"value": "repaired"}`, toolCalls[0].Input) // Should have repaired input
 	})
 
 	t.Run("Invalid tool call with failed repair", func(t *testing.T) {
 		t.Parallel()
-		model := &mockLanguageModel{
+		model := &scriptedLanguageModel{
 			generateFunc: func(ctx context.Context, call Call) (*Response, error) {
 				return &Response{
 					Content: ResponseContent{
@@ -1450,7 +1561,7 @@ func TestToolCallRepair(t *testing.T) {
 
 		agent := NewAgent(model, WithTools(tool), WithRepairToolCall(repairFunc), WithStopConditions(StepCountIs(2)))
 
-		result, err := agent.Generate(t.Context(), AgentCall{
+		result, err := agent.Generate(context.Background(), AgentCall{
 			Prompt: "test prompt",
 		})
 
@@ -1462,12 +1573,12 @@ func TestToolCallRepair(t *testing.T) {
 		toolCalls := result.Steps[0].Content.ToolCalls()
 		require.Len(t, toolCalls, 1)
 		require.True(t, toolCalls[0].Invalid) // Should be invalid
-		require.Contains(t, toolCalls[0].ValidationError.Error(), "required")
+		require.Contains(t, toolCalls[0].ValidationError.Error(), "missing required parameter: value")
 	})
 
 	t.Run("Nonexistent tool call", func(t *testing.T) {
 		t.Parallel()
-		model := &mockLanguageModel{
+		model := &scriptedLanguageModel{
 			generateFunc: func(ctx context.Context, call Call) (*Response, error) {
 				return &Response{
 					Content: ResponseContent{
@@ -1488,7 +1599,7 @@ func TestToolCallRepair(t *testing.T) {
 
 		agent := NewAgent(model, WithTools(tool), WithStopConditions(StepCountIs(2)))
 
-		result, err := agent.Generate(t.Context(), AgentCall{
+		result, err := agent.Generate(context.Background(), AgentCall{
 			Prompt: "test prompt",
 		})
 
@@ -1505,7 +1616,7 @@ func TestToolCallRepair(t *testing.T) {
 
 	t.Run("Invalid JSON in tool call", func(t *testing.T) {
 		t.Parallel()
-		model := &mockLanguageModel{
+		model := &scriptedLanguageModel{
 			generateFunc: func(ctx context.Context, call Call) (*Response, error) {
 				return &Response{
 					Content: ResponseContent{
@@ -1533,7 +1644,7 @@ func TestToolCallRepair(t *testing.T) {
 
 		agent := NewAgent(model, WithTools(tool), WithStopConditions(StepCountIs(2)))
 
-		result, err := agent.Generate(t.Context(), AgentCall{
+		result, err := agent.Generate(context.Background(), AgentCall{
 			Prompt: "test prompt",
 		})
 
@@ -1567,7 +1678,7 @@ func TestAgent_MediaToolResponses(t *testing.T) {
 			},
 		}
 
-		model := &mockLanguageModel{
+		model := &scriptedLanguageModel{
 			generateFunc: func(ctx context.Context, call Call) (*Response, error) {
 				if len(call.Prompt) == 1 {
 					// First call - request image tool
@@ -1594,7 +1705,7 @@ func TestAgent_MediaToolResponses(t *testing.T) {
 
 		agent := NewAgent(model, WithTools(imageTool), WithStopConditions(StepCountIs(3)))
 
-		result, err := agent.Generate(t.Context(), AgentCall{
+		result, err := agent.Generate(context.Background(), AgentCall{
 			Prompt: "Generate an image",
 		})
 
@@ -1608,8 +1719,8 @@ func TestAgent_MediaToolResponses(t *testing.T) {
 
 		mediaResult, ok := toolResults[0].Result.(ToolResultOutputContentMedia)
 		require.True(t, ok, "Expected media result")
-		assert.Empty(t, cmp.Diff(string(imageData), mediaResult.Data))
-		assert.Empty(t, cmp.Diff("image/png", mediaResult.MediaType))
+		testcmp.RequireEqual(t, base64.StdEncoding.EncodeToString(imageData), mediaResult.Data)
+		testcmp.RequireEqual(t, "image/png", mediaResult.MediaType)
 	})
 
 	t.Run("Media tool response (audio)", func(t *testing.T) {
@@ -1623,7 +1734,7 @@ func TestAgent_MediaToolResponses(t *testing.T) {
 			},
 		}
 
-		model := &mockLanguageModel{
+		model := &scriptedLanguageModel{
 			generateFunc: func(ctx context.Context, call Call) (*Response, error) {
 				if len(call.Prompt) == 1 {
 					return &Response{
@@ -1648,7 +1759,7 @@ func TestAgent_MediaToolResponses(t *testing.T) {
 
 		agent := NewAgent(model, WithTools(audioTool), WithStopConditions(StepCountIs(3)))
 
-		result, err := agent.Generate(t.Context(), AgentCall{
+		result, err := agent.Generate(context.Background(), AgentCall{
 			Prompt: "Generate audio",
 		})
 
@@ -1660,8 +1771,8 @@ func TestAgent_MediaToolResponses(t *testing.T) {
 
 		mediaResult, ok := toolResults[0].Result.(ToolResultOutputContentMedia)
 		require.True(t, ok, "Expected media result")
-		assert.Empty(t, cmp.Diff(string(audioData), mediaResult.Data))
-		assert.Empty(t, cmp.Diff("audio/wav", mediaResult.MediaType))
+		testcmp.RequireEqual(t, base64.StdEncoding.EncodeToString(audioData), mediaResult.Data)
+		testcmp.RequireEqual(t, "audio/wav", mediaResult.MediaType)
 	})
 
 	t.Run("Media response with text", func(t *testing.T) {
@@ -1677,7 +1788,7 @@ func TestAgent_MediaToolResponses(t *testing.T) {
 			},
 		}
 
-		model := &mockLanguageModel{
+		model := &scriptedLanguageModel{
 			generateFunc: func(ctx context.Context, call Call) (*Response, error) {
 				if len(call.Prompt) == 1 {
 					return &Response{
@@ -1702,7 +1813,7 @@ func TestAgent_MediaToolResponses(t *testing.T) {
 
 		agent := NewAgent(model, WithTools(imageTool), WithStopConditions(StepCountIs(3)))
 
-		result, err := agent.Generate(t.Context(), AgentCall{
+		result, err := agent.Generate(context.Background(), AgentCall{
 			Prompt: "Take a screenshot",
 		})
 
@@ -1714,9 +1825,9 @@ func TestAgent_MediaToolResponses(t *testing.T) {
 
 		mediaResult, ok := toolResults[0].Result.(ToolResultOutputContentMedia)
 		require.True(t, ok, "Expected media result")
-		assert.Empty(t, cmp.Diff(string(imageData), mediaResult.Data))
-		assert.Empty(t, cmp.Diff("image/png", mediaResult.MediaType))
-		assert.Empty(t, cmp.Diff("Screenshot captured successfully", mediaResult.Text))
+		testcmp.RequireEqual(t, base64.StdEncoding.EncodeToString(imageData), mediaResult.Data)
+		testcmp.RequireEqual(t, "image/png", mediaResult.MediaType)
+		testcmp.RequireEqual(t, "Screenshot captured successfully", mediaResult.Text)
 	})
 
 	t.Run("Media response preserves metadata", func(t *testing.T) {
@@ -1736,7 +1847,7 @@ func TestAgent_MediaToolResponses(t *testing.T) {
 			},
 		}
 
-		model := &mockLanguageModel{
+		model := &scriptedLanguageModel{
 			generateFunc: func(ctx context.Context, call Call) (*Response, error) {
 				if len(call.Prompt) == 1 {
 					return &Response{
@@ -1761,7 +1872,7 @@ func TestAgent_MediaToolResponses(t *testing.T) {
 
 		agent := NewAgent(model, WithTools(imageTool), WithStopConditions(StepCountIs(3)))
 
-		result, err := agent.Generate(t.Context(), AgentCall{
+		result, err := agent.Generate(context.Background(), AgentCall{
 			Prompt: "Generate image",
 		})
 
@@ -1775,9 +1886,676 @@ func TestAgent_MediaToolResponses(t *testing.T) {
 		require.NotEmpty(t, toolResults[0].ClientMetadata)
 
 		var metadata ImageMetadata
-		err = jsonv2.Unmarshal([]byte(toolResults[0].ClientMetadata), &metadata)
+		err = json.Unmarshal([]byte(toolResults[0].ClientMetadata), &metadata)
 		require.NoError(t, err)
-		assert.Empty(t, cmp.Diff(800, metadata.Width))
-		assert.Empty(t, cmp.Diff(600, metadata.Height))
+		testcmp.RequireEqual(t, 800, metadata.Width)
+		testcmp.RequireEqual(t, 600, metadata.Height)
 	})
+}
+
+func TestToResponseMessages_ProviderExecutedRouting(t *testing.T) {
+	t.Parallel()
+
+	// Build step content that mixes a provider-executed tool call/result
+	// (e.g. web search) with a regular local tool call/result.
+	content := []Content{
+		// Provider-executed tool call.
+		&ToolCallContent{
+			ToolCallID:       "srvtoolu_01",
+			ToolName:         "web_search",
+			Input:            `{"query":"test"}`,
+			ProviderExecuted: true,
+		},
+		// Provider-executed tool result.
+		&ToolResultContent{
+			ToolCallID:       "srvtoolu_01",
+			ProviderExecuted: true,
+		},
+		// Regular (locally-executed) tool call.
+		&ToolCallContent{
+			ToolCallID: "toolu_02",
+			ToolName:   "calculator",
+			Input:      `{"expr":"1+1"}`,
+		},
+		// Regular tool result.
+		&ToolResultContent{
+			ToolCallID: "toolu_02",
+			Result:     ToolResultOutputContentText{Text: "2"},
+		},
+		// Some trailing text.
+		&TextContent{Text: "Done."},
+	}
+
+	msgs := toResponseMessages(content)
+
+	// Expect two messages: assistant + tool.
+	require.Len(t, msgs, 2)
+
+	// Assistant message should contain:
+	//   1. provider-executed ToolCallPart
+	//   2. provider-executed ToolResultPart
+	//   3. regular ToolCallPart
+	//   4. TextPart
+	assistant := msgs[0]
+	testcmp.RequireEqual(t, MessageRoleAssistant, assistant.Role)
+	require.Len(t, assistant.Content, 4)
+
+	// Verify provider-executed tool call is in assistant.
+	tc1, ok := AsMessagePart[ToolCallPart](assistant.Content[0])
+	require.True(t, ok)
+	testcmp.RequireEqual(t, "srvtoolu_01", tc1.ToolCallID)
+	require.True(t, tc1.ProviderExecuted)
+
+	// Verify provider-executed tool result is in assistant.
+	tr1, ok := AsMessagePart[ToolResultPart](assistant.Content[1])
+	require.True(t, ok)
+	testcmp.RequireEqual(t, "srvtoolu_01", tr1.ToolCallID)
+	require.True(t, tr1.ProviderExecuted)
+
+	// Verify regular tool call is in assistant.
+	tc2, ok := AsMessagePart[ToolCallPart](assistant.Content[2])
+	require.True(t, ok)
+	testcmp.RequireEqual(t, "toolu_02", tc2.ToolCallID)
+	require.False(t, tc2.ProviderExecuted)
+
+	// Verify text part is in assistant.
+	text, ok := AsMessagePart[TextPart](assistant.Content[3])
+	require.True(t, ok)
+	testcmp.RequireEqual(t, "Done.", text.Text)
+
+	// Tool message should contain only the regular tool result.
+	toolMsg := msgs[1]
+	testcmp.RequireEqual(t, MessageRoleTool, toolMsg.Role)
+	require.Len(t, toolMsg.Content, 1)
+
+	tr2, ok := AsMessagePart[ToolResultPart](toolMsg.Content[0])
+	require.True(t, ok)
+	testcmp.RequireEqual(t, "toolu_02", tr2.ToolCallID)
+	require.False(t, tr2.ProviderExecuted)
+}
+
+// TestAgent_Generate_ExecutableProviderTool verifies that an
+// ExecutableProviderTool registered via WithProviderDefinedTools is
+// executed by the agent when the model returns a matching tool call.
+func TestAgent_Generate_ExecutableProviderTool(t *testing.T) {
+	t.Parallel()
+
+	runCalled := false
+	execTool := NewExecutableProviderTool(
+		ProviderDefinedTool{
+			ID:   "test.computer",
+			Name: "computer",
+			Args: map[string]any{"display_width_px": 1920},
+		},
+		func(ctx context.Context, call ToolCall) (ToolResponse, error) {
+			runCalled = true
+			return NewTextResponse("screenshot taken"), nil
+		},
+	)
+
+	model := &scriptedLanguageModel{
+		generateFunc: func(ctx context.Context, call Call) (*Response, error) {
+			return &Response{
+				Content: []Content{
+					ToolCallContent{
+						ToolCallID: "call-1",
+						ToolName:   "computer",
+						Input:      `{"action":"screenshot"}`,
+					},
+				},
+				Usage:        Usage{TotalTokens: 10},
+				FinishReason: FinishReasonStop,
+			}, nil
+		},
+	}
+
+	agent := NewAgent(model, WithProviderDefinedTools(execTool))
+	result, err := agent.Generate(context.Background(), AgentCall{
+		Prompt: "take a screenshot",
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.True(t, runCalled, "expected Run func to be called")
+	require.Len(t, result.Steps, 1)
+
+	// Verify tool result is in the response.
+	var toolResults []ToolResultContent
+	for _, c := range result.Response.Content {
+		if tr, ok := AsContentType[ToolResultContent](c); ok {
+			toolResults = append(toolResults, tr)
+		}
+	}
+	require.Len(t, toolResults, 1)
+	testcmp.RequireEqual(t, "call-1", toolResults[0].ToolCallID)
+	testcmp.RequireEqual(t, "computer", toolResults[0].ToolName)
+
+	textResult, ok := toolResults[0].Result.(ToolResultOutputContentText)
+	require.True(t, ok)
+	testcmp.RequireEqual(t, "screenshot taken", textResult.Text)
+}
+
+// TestAgent_Generate_ExecutableProviderTool_ActiveTools verifies that
+// active tool filtering works for ExecutableProviderTool.
+func TestAgent_Generate_ExecutableProviderTool_ActiveTools(t *testing.T) {
+	t.Parallel()
+
+	execTool := NewExecutableProviderTool(
+		ProviderDefinedTool{
+			ID:   "test.computer",
+			Name: "computer",
+			Args: map[string]any{"display_width_px": 1920},
+		},
+		func(ctx context.Context, call ToolCall) (ToolResponse, error) {
+			return NewTextResponse("ok"), nil
+		},
+	)
+
+	model := &scriptedLanguageModel{
+		generateFunc: func(ctx context.Context, call Call) (*Response, error) {
+			// With ActiveTools=["other"], computer should be filtered out.
+			require.Empty(t, call.Tools)
+
+			return &Response{
+				Content:      []Content{TextContent{Text: "no tools"}},
+				Usage:        Usage{TotalTokens: 5},
+				FinishReason: FinishReasonStop,
+			}, nil
+		},
+	}
+
+	agent := NewAgent(model, WithProviderDefinedTools(execTool))
+	result, err := agent.Generate(context.Background(), AgentCall{
+		Prompt:      "test",
+		ActiveTools: []string{"other"},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+}
+
+// TestAgent_Generate_ExecutableProviderTool_ActiveTools_Rejected
+// verifies that a hallucinated tool call for an EPT excluded by
+// activeTools is rejected at validation and execution time.
+func TestAgent_Generate_ExecutableProviderTool_ActiveTools_Rejected(t *testing.T) {
+	t.Parallel()
+
+	runCalled := false
+	execTool := NewExecutableProviderTool(
+		ProviderDefinedTool{
+			ID:   "test.computer",
+			Name: "computer",
+			Args: map[string]any{"display_width_px": 1920},
+		},
+		func(ctx context.Context, call ToolCall) (ToolResponse, error) {
+			runCalled = true
+			return NewTextResponse("ok"), nil
+		},
+	)
+
+	callCount := 0
+	model := &scriptedLanguageModel{
+		generateFunc: func(ctx context.Context, call Call) (*Response, error) {
+			callCount++
+			if callCount == 1 {
+				// Model hallucinates a call to the excluded tool.
+				return &Response{
+					Content: []Content{ToolCallContent{
+						ToolCallID: "call-1",
+						ToolName:   "computer",
+						Input:      `{"action":"screenshot"}`,
+					}},
+					Usage:        Usage{TotalTokens: 5},
+					FinishReason: FinishReasonToolCalls,
+				}, nil
+			}
+			// Second call: model stops.
+			return &Response{
+				Content:      []Content{TextContent{Text: "done"}},
+				Usage:        Usage{TotalTokens: 3},
+				FinishReason: FinishReasonStop,
+			}, nil
+		},
+	}
+
+	agent := NewAgent(model, WithProviderDefinedTools(execTool))
+	result, err := agent.Generate(context.Background(), AgentCall{
+		Prompt:      "test",
+		ActiveTools: []string{"other"},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.False(t, runCalled, "excluded EPT should not have been executed")
+
+	// The tool call should have been marked invalid.
+	var foundInvalidToolResult bool
+	for _, step := range result.Steps {
+		for _, content := range step.Content {
+			if tr, ok := AsContentType[ToolResultContent](content); ok {
+				if errResult, ok := tr.Result.(ToolResultOutputContentError); ok {
+					require.Contains(t, errResult.Error.Error(), "tool not found")
+					foundInvalidToolResult = true
+				}
+			}
+		}
+	}
+	require.True(t, foundInvalidToolResult, "expected an error result for the excluded tool call")
+}
+
+// TestAgent_Stream_ExecutableProviderTool verifies that an
+// ExecutableProviderTool works through the Stream path.
+func TestAgent_Stream_ExecutableProviderTool(t *testing.T) {
+	t.Parallel()
+
+	runCalled := false
+	execTool := NewExecutableProviderTool(
+		ProviderDefinedTool{
+			ID:   "test.computer",
+			Name: "computer",
+			Args: map[string]any{"display_width_px": 1920},
+		},
+		func(ctx context.Context, call ToolCall) (ToolResponse, error) {
+			runCalled = true
+			return NewTextResponse("screenshot taken"), nil
+		},
+	)
+
+	model := &scriptedLanguageModel{
+		streamFunc: func(ctx context.Context, call Call) (StreamResponse, error) {
+			return func(yield func(StreamPart) bool) {
+				if !yield(StreamPart{
+					Type:          StreamPartTypeToolCall,
+					ID:            "call-1",
+					ToolCallName:  "computer",
+					ToolCallInput: `{"action":"screenshot"}`,
+				}) {
+					return
+				}
+				yield(StreamPart{
+					Type:         StreamPartTypeFinish,
+					FinishReason: FinishReasonStop,
+					Usage:        Usage{TotalTokens: 10},
+				})
+			}, nil
+		},
+	}
+
+	agent := NewAgent(model, WithProviderDefinedTools(execTool))
+	result, err := agent.Stream(context.Background(), AgentStreamCall{
+		Prompt: "take a screenshot",
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.True(t, runCalled, "expected Run func to be called")
+	require.Len(t, result.Steps, 1)
+
+	// Verify tool result is in the step content.
+	var toolResults []ToolResultContent
+	for _, c := range result.Steps[0].Content {
+		if tr, ok := AsContentType[ToolResultContent](c); ok {
+			toolResults = append(toolResults, tr)
+		}
+	}
+	require.Len(t, toolResults, 1)
+	testcmp.RequireEqual(t, "call-1", toolResults[0].ToolCallID)
+}
+
+// TestAgent_PrepareTools_ExecutableProviderTool verifies that
+// prepareTools emits a ProviderDefinedTool (not a FunctionTool) when
+// an ExecutableProviderTool is registered via WithProviderDefinedTools.
+func TestAgent_PrepareTools_ExecutableProviderTool(t *testing.T) {
+	t.Parallel()
+
+	execTool := NewExecutableProviderTool(
+		ProviderDefinedTool{
+			ID:   "test.computer",
+			Name: "computer",
+			Args: map[string]any{"display_width_px": 1920},
+		},
+		func(ctx context.Context, call ToolCall) (ToolResponse, error) {
+			return NewTextResponse("ok"), nil
+		},
+	)
+
+	model := &scriptedLanguageModel{
+		generateFunc: func(ctx context.Context, call Call) (*Response, error) {
+			// Verify the tool is emitted as a ProviderDefinedTool.
+			require.Len(t, call.Tools, 1)
+			pdt, ok := call.Tools[0].(ProviderDefinedTool)
+			require.True(t, ok, "expected ProviderDefinedTool, got %T", call.Tools[0])
+			testcmp.RequireEqual(t, "computer", pdt.Name)
+			testcmp.RequireEqual(t, "test.computer", pdt.ID)
+
+			return &Response{
+				Content:      []Content{TextContent{Text: "done"}},
+				Usage:        Usage{TotalTokens: 5},
+				FinishReason: FinishReasonStop,
+			}, nil
+		},
+	}
+
+	agent := NewAgent(model, WithProviderDefinedTools(execTool))
+	_, err := agent.Generate(context.Background(), AgentCall{
+		Prompt: "test",
+	})
+	require.NoError(t, err)
+}
+
+// TestAgent_ValidateToolCall_ExecutableProviderTool verifies that
+// schema validation is skipped for executable provider tools, but
+// JSON parsing is still checked.
+func TestAgent_ValidateToolCall_ExecutableProviderTool(t *testing.T) {
+	t.Parallel()
+
+	execTool := NewExecutableProviderTool(
+		ProviderDefinedTool{
+			ID:   "test.computer",
+			Name: "computer",
+		},
+		func(ctx context.Context, call ToolCall) (ToolResponse, error) {
+			return NewTextResponse("ok"), nil
+		},
+	)
+
+	a := &agent{
+		settings: agentSettings{
+			executableProviderTools: []ExecutableProviderTool{execTool},
+		},
+	}
+
+	// Valid JSON should pass even without required fields.
+	err := a.validateToolCall(ToolCallContent{
+		ToolName: "computer",
+		Input:    `{"action":"screenshot"}`,
+	}, []AgentTool{}, []ExecutableProviderTool{execTool})
+	require.NoError(t, err)
+
+	// Invalid JSON should still fail.
+	err = a.validateToolCall(ToolCallContent{
+		ToolName: "computer",
+		Input:    `not-json`,
+	}, []AgentTool{}, []ExecutableProviderTool{execTool})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "invalid JSON")
+}
+
+// TestAgent_WithProviderDefinedTools_BackwardCompat verifies that
+// passing a plain ProviderDefinedTool to WithProviderDefinedTools
+// still works (web search path).
+func TestAgent_WithProviderDefinedTools_BackwardCompat(t *testing.T) {
+	t.Parallel()
+
+	webSearch := ProviderDefinedTool{
+		ID:   "anthropic.web_search",
+		Name: "web_search",
+		Args: map[string]any{"max_results": 5},
+	}
+
+	model := &scriptedLanguageModel{
+		generateFunc: func(ctx context.Context, call Call) (*Response, error) {
+			require.Len(t, call.Tools, 1)
+			pdt, ok := call.Tools[0].(ProviderDefinedTool)
+			require.True(t, ok, "expected ProviderDefinedTool, got %T", call.Tools[0])
+			testcmp.RequireEqual(t, "web_search", pdt.Name)
+			testcmp.RequireEqual(t, "anthropic.web_search", pdt.ID)
+
+			return &Response{
+				Content:      []Content{TextContent{Text: "search results"}},
+				Usage:        Usage{TotalTokens: 5},
+				FinishReason: FinishReasonStop,
+			}, nil
+		},
+	}
+
+	agent := NewAgent(model, WithProviderDefinedTools(webSearch))
+	result, err := agent.Generate(context.Background(), AgentCall{
+		Prompt: "search for something",
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	testcmp.RequireEqual(t, "search results", result.Response.Content.Text())
+}
+
+// TestAgent_Generate_ExecutableProviderTool_ImageBase64 verifies that
+// image data returned by an ExecutableProviderTool's run function is
+// base64-encoded when stored in ToolResultOutputContentMedia.Data.
+func TestAgent_Generate_ExecutableProviderTool_ImageBase64(t *testing.T) {
+	t.Parallel()
+
+	rawPNG := []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A}
+
+	execTool := NewExecutableProviderTool(
+		ProviderDefinedTool{
+			ID:   "test.computer",
+			Name: "computer",
+			Args: map[string]any{"display_width_px": 1920},
+		},
+		func(ctx context.Context, call ToolCall) (ToolResponse, error) {
+			return NewImageResponse(rawPNG, "image/png"), nil
+		},
+	)
+
+	callCount := 0
+	model := &scriptedLanguageModel{
+		generateFunc: func(ctx context.Context, call Call) (*Response, error) {
+			callCount++
+			if callCount == 1 {
+				return &Response{
+					Content: []Content{
+						ToolCallContent{
+							ToolCallID: "call-1",
+							ToolName:   "computer",
+							Input:      `{"action":"screenshot"}`,
+						},
+					},
+					Usage:        Usage{TotalTokens: 10},
+					FinishReason: FinishReasonToolCalls,
+				}, nil
+			}
+			return &Response{
+				Content:      []Content{TextContent{Text: "done"}},
+				Usage:        Usage{TotalTokens: 5},
+				FinishReason: FinishReasonStop,
+			}, nil
+		},
+	}
+
+	agent := NewAgent(model, WithProviderDefinedTools(execTool))
+	result, err := agent.Generate(context.Background(), AgentCall{
+		Prompt: "take a screenshot",
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Len(t, result.Steps, 2)
+
+	// The tool result in the first step must have base64-encoded data.
+	toolResults := result.Steps[0].Content.ToolResults()
+	require.Len(t, toolResults, 1)
+
+	mediaResult, ok := toolResults[0].Result.(ToolResultOutputContentMedia)
+	require.True(t, ok, "expected media result")
+	testcmp.RequireEqual(t, base64.StdEncoding.EncodeToString(rawPNG), mediaResult.Data)
+	testcmp.RequireEqual(t, "image/png", mediaResult.MediaType)
+}
+
+// TestAgent_Generate_ExecutableProviderTool_CriticalError verifies
+// that a Go error returned from an ExecutableProviderTool's run
+// function is treated as a critical error, stopping the agent loop.
+func TestAgent_Generate_ExecutableProviderTool_CriticalError(t *testing.T) {
+	t.Parallel()
+
+	execTool := NewExecutableProviderTool(
+		ProviderDefinedTool{
+			ID:   "test.computer",
+			Name: "computer",
+			Args: map[string]any{"display_width_px": 1920},
+		},
+		func(ctx context.Context, call ToolCall) (ToolResponse, error) {
+			return ToolResponse{}, fmt.Errorf("vnc connection lost")
+		},
+	)
+
+	callCount := 0
+	model := &scriptedLanguageModel{
+		generateFunc: func(ctx context.Context, call Call) (*Response, error) {
+			callCount++
+			return &Response{
+				Content: []Content{
+					ToolCallContent{
+						ToolCallID: "call-1",
+						ToolName:   "computer",
+						Input:      `{"action":"screenshot"}`,
+					},
+				},
+				Usage:        Usage{TotalTokens: 10},
+				FinishReason: FinishReasonToolCalls,
+			}, nil
+		},
+	}
+
+	agent := NewAgent(model, WithProviderDefinedTools(execTool), WithStopConditions(StepCountIs(5)))
+	result, err := agent.Generate(context.Background(), AgentCall{
+		Prompt: "take a screenshot",
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	// The model should only be called once — the critical error stops
+	// the loop before a second model call.
+	testcmp.RequireEqual(t, 1, callCount)
+	require.Len(t, result.Steps, 1)
+}
+
+func TestAgent_Generate_StopTurn(t *testing.T) {
+	t.Parallel()
+
+	type TestInput struct {
+		Value string `json:"value" description:"Test value"`
+	}
+
+	tool1 := NewAgentTool(
+		"tool1",
+		"Test tool",
+		func(ctx context.Context, input TestInput, _ ToolCall) (ToolResponse, error) {
+			resp := NewTextErrorResponse("permission denied: this tool call was blocked")
+			resp.StopTurn = true
+			return resp, nil
+		},
+	)
+
+	callCount := 0
+	model := &scriptedLanguageModel{
+		generateFunc: func(ctx context.Context, call Call) (*Response, error) {
+			callCount++
+			return &Response{
+				Content: []Content{
+					ToolCallContent{
+						ToolCallID: "call-1",
+						ToolName:   "tool1",
+						Input:      `{"value":"test"}`,
+					},
+				},
+				Usage: Usage{
+					InputTokens:  10,
+					OutputTokens: 5,
+					TotalTokens:  15,
+				},
+				FinishReason: FinishReasonToolCalls,
+			}, nil
+		},
+	}
+
+	agent := NewAgent(model, WithTools(tool1))
+	result, err := agent.Generate(context.Background(), AgentCall{
+		Prompt: "test-input",
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	// The model should only be called once — StopTurn prevents the second call.
+	testcmp.RequireEqual(t, 1, callCount)
+	require.Len(t, result.Steps, 1)
+
+	// The tool result should still be in the step content.
+	toolResults := result.Steps[0].Content.ToolResults()
+	require.Len(t, toolResults, 1)
+	testcmp.RequireEqual(t, "tool1", toolResults[0].ToolName)
+	require.True(t, toolResults[0].StopTurn)
+
+	// The final response also includes the stop-marked tool result.
+	responseResults := result.Response.Content.ToolResults()
+	require.Len(t, responseResults, 1)
+	require.True(t, responseResults[0].StopTurn)
+}
+
+func TestAgent_Generate_StopTurn_NotSet(t *testing.T) {
+	t.Parallel()
+
+	type TestInput struct {
+		Value string `json:"value" description:"Test value"`
+	}
+
+	tool1 := NewAgentTool(
+		"tool1",
+		"Test tool",
+		func(ctx context.Context, input TestInput, _ ToolCall) (ToolResponse, error) {
+			return NewTextErrorResponse("normal error"), nil
+		},
+	)
+
+	callCount := 0
+	model := &scriptedLanguageModel{
+		generateFunc: func(ctx context.Context, call Call) (*Response, error) {
+			callCount++
+			switch callCount {
+			case 1:
+				return &Response{
+					Content: []Content{
+						ToolCallContent{
+							ToolCallID: "call-1",
+							ToolName:   "tool1",
+							Input:      `{"value":"test"}`,
+						},
+					},
+					Usage: Usage{
+						InputTokens:  10,
+						OutputTokens: 5,
+						TotalTokens:  15,
+					},
+					FinishReason: FinishReasonToolCalls,
+				}, nil
+			case 2:
+				return &Response{
+					Content: []Content{
+						TextContent{Text: "Done"},
+					},
+					Usage:        Usage{InputTokens: 3, OutputTokens: 5, TotalTokens: 8},
+					FinishReason: FinishReasonStop,
+				}, nil
+			default:
+				t.Fatalf("Unexpected call count: %d", callCount)
+				return nil, nil
+			}
+		},
+	}
+
+	agent := NewAgent(model, WithTools(tool1))
+	result, err := agent.Generate(context.Background(), AgentCall{
+		Prompt: "test-input",
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	// Without StopTurn, the model gets a second call.
+	testcmp.RequireEqual(t, 2, callCount)
+	require.Len(t, result.Steps, 2)
+
+	// StopTurn should be false on the tool result.
+	toolResults := result.Steps[0].Content.ToolResults()
+	require.Len(t, toolResults, 1)
+	require.False(t, toolResults[0].StopTurn)
 }

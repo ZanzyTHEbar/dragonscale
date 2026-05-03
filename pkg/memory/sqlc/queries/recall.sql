@@ -219,6 +219,7 @@ FROM recall_items
 WHERE agent_id = sqlc.arg(agent_id)
     AND session_key = sqlc.arg(session_key)
     AND tags = 'session-message'
+    AND suppressed_at IS NULL
     AND (
         role = sqlc.arg(role)
         OR sqlc.arg(role) = ''
@@ -242,6 +243,7 @@ FROM recall_items
 WHERE agent_id = sqlc.arg(agent_id)
     AND session_key = sqlc.arg(session_key)
     AND tags = 'session-message'
+    AND suppressed_at IS NULL
     AND (
         role = sqlc.arg(role)
         OR sqlc.arg(role) = ''
@@ -253,4 +255,5 @@ SELECT COUNT(*)
 FROM recall_items
 WHERE agent_id = sqlc.arg(agent_id)
     AND session_key = sqlc.arg(session_key)
-    AND tags = 'session-message';
+    AND tags = 'session-message'
+    AND suppressed_at IS NULL;

@@ -6,10 +6,6 @@ import (
 )
 
 // ReActState represents the execution state of the agent loop.
-//
-// NOTE: This is intentionally generic and lives in the vendored fantasy module.
-// Budgetsmith-specific persistence and instrumentation should be implemented via
-// interfaces/hooks in the Budgetsmith repo.
 type ReActState string
 
 const (

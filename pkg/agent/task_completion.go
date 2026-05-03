@@ -2,38 +2,20 @@ package agent
 
 import (
 	"context"
-	"time"
 
 	"github.com/ZanzyTHEbar/dragonscale/pkg"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/ids"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/logger"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/memory"
 )
 
-// TaskCompletion tracks the outcome of an agent run for RL analysis.
-type TaskCompletion struct {
-	TaskID          string
-	Description     string
-	TokensUsed      int
-	ToolCalls       int
-	Errors          int
-	UserCorrections int
-	Completed       bool
-	SelfReports     []MemoryRating // MemoryID + Score
-	CreatedAt       time.Time
-}
-
-// MemoryRating represents a self-reported usefulness score for a memory.
-type MemoryRating struct {
-	MemoryID ids.UUID
-	Score    int // 0-3 scale
-}
+type TaskCompletion = memory.TaskCompletionRecord
+type MemoryRating = memory.MemoryRating
 
 // TaskCompletionStore is the interface for storing task completion records.
 // Implemented by the memory delegate.
 type TaskCompletionStore interface {
 	StoreTaskCompletion(ctx context.Context, agentID string, completion TaskCompletion, conversationID, runID ids.UUID) error
-	GetCompletedTasks(ctx context.Context, agentID string, since time.Time) ([]TaskCompletion, error)
-	UpdateMemorySelfReport(ctx context.Context, memoryID ids.UUID, score int) error
 }
 
 // endTask stores task completion data and self-reports.
@@ -42,6 +24,7 @@ func (al *AgentLoop) endTask(ctx context.Context, conversationID, runID ids.UUID
 	if al.memDelegate == nil {
 		return nil
 	}
+	ctx = context.WithoutCancel(ctx)
 
 	// Store self-report scores if the delegate implements RLStore
 	if rlStore, ok := al.memDelegate.(interface {

@@ -25,10 +25,13 @@ type ToolCapabilities struct {
 	Secrets []SecretRef
 
 	// Network lists URL glob patterns the tool is permitted to contact.
-	// SSRF validation is still applied within permitted patterns.
+	// When SecureBus capability enforcement is active, SSRF validation is still
+	// applied within permitted patterns.
 	Network []EndpointRule
 
-	// Filesystem lists path rules the tool may access, relative to workspace root.
+	// Filesystem lists lexical path rules the tool may access, relative to the
+	// workspace root. Tools remain responsible for safe open/read/write-time path
+	// confinement (including symlink handling).
 	Filesystem []PathRule
 
 	// Shell declares the shell access level for tools that execute subprocesses.
@@ -58,7 +61,7 @@ type EndpointRule struct {
 	Pattern string
 }
 
-// PathRule grants filesystem access to paths matching Pattern.
+// PathRule grants lexical filesystem access to paths matching Pattern.
 // Pattern is relative to the workspace root and uses filepath.Match syntax.
 type PathRule struct {
 	// Pattern is the path glob, e.g. "data/**" or "config/*.toml".

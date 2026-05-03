@@ -2,6 +2,7 @@ package sync
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"sync"
@@ -12,23 +13,24 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
 )
 
-// mockStore is a minimal in-memory implementation of DocumentStore for tests.
-type mockStore struct {
+// memoryDocumentStore is a minimal in-memory implementation of DocumentStore for tests.
+type memoryDocumentStore struct {
 	mu   sync.Mutex
 	kv   map[string]string
 	docs map[string]*memory.AgentDocument // keyed by agentID+":"+name
 }
 
-func newMockStore() *mockStore {
-	return &mockStore{
+func newMemoryDocumentStore() *memoryDocumentStore {
+	return &memoryDocumentStore{
 		kv:   make(map[string]string),
 		docs: make(map[string]*memory.AgentDocument),
 	}
 }
 
-func (m *mockStore) GetKV(_ context.Context, agentID, key string) (string, error) {
+func (m *memoryDocumentStore) GetKV(_ context.Context, agentID, key string) (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	v, ok := m.kv[agentID+":"+key]
@@ -38,21 +40,21 @@ func (m *mockStore) GetKV(_ context.Context, agentID, key string) (string, error
 	return v, nil
 }
 
-func (m *mockStore) UpsertKV(_ context.Context, agentID, key, value string) error {
+func (m *memoryDocumentStore) UpsertKV(_ context.Context, agentID, key, value string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.kv[agentID+":"+key] = value
 	return nil
 }
 
-func (m *mockStore) UpsertDocument(_ context.Context, doc *memory.AgentDocument) error {
+func (m *memoryDocumentStore) UpsertDocument(_ context.Context, doc *memory.AgentDocument) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.docs[doc.AgentID+":"+doc.Name] = doc
 	return nil
 }
 
-func (m *mockStore) ListDocumentsByCategory(_ context.Context, agentID, category string) ([]*memory.AgentDocument, error) {
+func (m *memoryDocumentStore) ListDocumentsByCategory(_ context.Context, agentID, category string) ([]*memory.AgentDocument, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	var out []*memory.AgentDocument
@@ -64,13 +66,13 @@ func (m *mockStore) ListDocumentsByCategory(_ context.Context, agentID, category
 	return out, nil
 }
 
-func (m *mockStore) getDoc(agentID, name string) *memory.AgentDocument {
+func (m *memoryDocumentStore) getDoc(agentID, name string) *memory.AgentDocument {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.docs[agentID+":"+name]
 }
 
-func (m *mockStore) getHash(agentID, name string) string {
+func (m *memoryDocumentStore) getHash(agentID, name string) string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.kv[agentID+":"+kvPrefix+name]
@@ -94,7 +96,7 @@ func TestSyncAll_InsertsNewFiles(t *testing.T) {
 		"IDENTITY.md": "# Identity\nDragonScale v1",
 	})
 
-	store := newMockStore()
+	store := newMemoryDocumentStore()
 	s := New(dir, "agent-1", store)
 
 	require.NoError(t, s.SyncAll(t.Context()))
@@ -116,7 +118,7 @@ func TestSyncAll_SkipsUnchangedFiles(t *testing.T) {
 		"AGENT.md": "# Agent\nSame content.",
 	})
 
-	store := newMockStore()
+	store := newMemoryDocumentStore()
 	s := New(dir, "agent-1", store)
 
 	require.NoError(t, s.SyncAll(t.Context()))
@@ -129,13 +131,43 @@ func TestSyncAll_SkipsUnchangedFiles(t *testing.T) {
 	assert.Empty(t, cmp.Diff(firstID, secondDoc.ID), "unchanged file should not be re-upserted")
 }
 
+func TestSyncAll_ReturnsUpsertDocumentError(t *testing.T) {
+	t.Parallel()
+	dir := setupIdentityDir(t, map[string]string{
+		"AGENT.md": "# Agent\nVersion 1",
+	})
+	upsertErr := errors.New("upsert failed")
+
+	ctrl := gomock.NewController(t)
+	store := NewMockDocumentStore(ctrl)
+	s := New(dir, "agent-1", store)
+
+	gomock.InOrder(
+		store.EXPECT().GetKV(gomock.Any(), "agent-1", kvPrefix+"AGENT.md").Return("", os.ErrNotExist),
+		store.EXPECT().UpsertDocument(gomock.Any(), gomock.Any()).DoAndReturn(
+			func(_ context.Context, doc *memory.AgentDocument) error {
+				assert.Empty(t, cmp.Diff("agent-1", doc.AgentID))
+				assert.Empty(t, cmp.Diff("AGENT.md", doc.Name))
+				assert.Empty(t, cmp.Diff(syncCategory, doc.Category))
+				assert.Empty(t, cmp.Diff("# Agent\nVersion 1", doc.Content))
+				return upsertErr
+			},
+		),
+	)
+
+	err := s.SyncAll(t.Context())
+	require.ErrorIs(t, err, upsertErr)
+	assert.ErrorContains(t, err, "sync AGENT.md")
+	assert.ErrorContains(t, err, "upsert document AGENT.md")
+}
+
 func TestSyncAll_UpsertsModifiedFiles(t *testing.T) {
 	t.Parallel()
 	dir := setupIdentityDir(t, map[string]string{
 		"AGENT.md": "# Agent\nVersion 1",
 	})
 
-	store := newMockStore()
+	store := newMemoryDocumentStore()
 	s := New(dir, "agent-1", store)
 	require.NoError(t, s.SyncAll(t.Context()))
 
@@ -157,7 +189,7 @@ func TestSyncAll_SkipsMissingFiles(t *testing.T) {
 		"AGENT.md": "# Agent only",
 	})
 
-	store := newMockStore()
+	store := newMemoryDocumentStore()
 	s := New(dir, "agent-1", store)
 
 	require.NoError(t, s.SyncAll(t.Context()))
@@ -174,7 +206,7 @@ func TestSyncAll_SkipsEmptyFiles(t *testing.T) {
 		"AGENT.md": "   \n\t\n  ",
 	})
 
-	store := newMockStore()
+	store := newMemoryDocumentStore()
 	s := New(dir, "agent-1", store)
 
 	require.NoError(t, s.SyncAll(t.Context()))
@@ -187,7 +219,7 @@ func TestSyncAll_IsolatesAgents(t *testing.T) {
 		"AGENT.md": "# Shared agent file",
 	})
 
-	store := newMockStore()
+	store := newMemoryDocumentStore()
 	s1 := New(dir, "agent-a", store)
 	s2 := New(dir, "agent-b", store)
 
@@ -207,7 +239,7 @@ func TestCheckAndSync_DetectsModifiedFile(t *testing.T) {
 		"AGENT.md": "# Original",
 	})
 
-	store := newMockStore()
+	store := newMemoryDocumentStore()
 	s := New(dir, "agent-1", store)
 	require.NoError(t, s.SyncAll(t.Context()))
 
@@ -226,7 +258,7 @@ func TestCheckAndSync_SkipsUntouchedFiles(t *testing.T) {
 		"AGENT.md": "# Stable",
 	})
 
-	store := newMockStore()
+	store := newMemoryDocumentStore()
 	s := New(dir, "agent-1", store)
 	require.NoError(t, s.SyncAll(t.Context()))
 
@@ -245,7 +277,7 @@ func TestWatch_DetectsFileChange(t *testing.T) {
 		"AGENT.md": "# Initial",
 	})
 
-	store := newMockStore()
+	store := newMemoryDocumentStore()
 	s := New(dir, "agent-1", store)
 	require.NoError(t, s.SyncAll(t.Context()))
 
@@ -267,7 +299,7 @@ func TestWatch_IgnoresNonIdentityFiles(t *testing.T) {
 		"AGENT.md": "# Agent",
 	})
 
-	store := newMockStore()
+	store := newMemoryDocumentStore()
 	s := New(dir, "agent-1", store)
 	require.NoError(t, s.SyncAll(t.Context()))
 
@@ -321,7 +353,7 @@ func TestIsIdentityFile(t *testing.T) {
 
 func TestNew_SetsFields(t *testing.T) {
 	t.Parallel()
-	store := newMockStore()
+	store := newMemoryDocumentStore()
 	s := New("/tmp/identity", "test-agent", store)
 	assert.Empty(t, cmp.Diff("/tmp/identity", s.identityDir))
 	assert.Empty(t, cmp.Diff("test-agent", s.agentID))

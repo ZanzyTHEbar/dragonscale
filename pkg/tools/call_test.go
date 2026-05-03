@@ -2,8 +2,10 @@ package tools
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestToolCallTool_Name(t *testing.T) {
@@ -202,9 +204,9 @@ func TestToolCallTool_ContextPropagation(t *testing.T) {
 	r.Register(ct)
 
 	tc := NewToolCallTool(r)
-	tc.SetContext("test-channel", "test-chat")
+	ctx := WithExecutionTarget(t.Context(), "test-channel", "test-chat")
 
-	tc.Execute(t.Context(), map[string]interface{}{
+	tc.Execute(ctx, map[string]interface{}{
 		"tool_name": "capture",
 		"arguments": map[string]interface{}{},
 	})
@@ -212,6 +214,48 @@ func TestToolCallTool_ContextPropagation(t *testing.T) {
 	// ToolCallTool dispatches via registry.ExecuteWithContext, which propagates channel/chatID
 	if ct.lastChannel != "test-channel" {
 		t.Errorf("expected channel propagation, got %s", ct.lastChannel)
+	}
+}
+
+func TestToolCallTool_ForwardsAsyncCallbackAndExecutionTarget(t *testing.T) {
+	t.Parallel()
+	r := NewToolRegistry()
+	asyncTool := &callbackCaptureTool{}
+	r.Register(asyncTool)
+	tc := NewToolCallTool(r)
+
+	ctx := WithExecutionTarget(t.Context(), "telegram", "chat-77")
+	callbackDone := make(chan *ToolResult, 1)
+	ctx = WithAsyncCallback(ctx, func(_ context.Context, result *ToolResult) {
+		callbackDone <- result
+	})
+
+	result := tc.Execute(ctx, map[string]interface{}{
+		"tool_name": "spawn",
+		"arguments": map[string]interface{}{"task": "background"},
+	})
+
+	if result.IsError {
+		t.Fatalf("unexpected error: %s", result.ForLLM)
+	}
+	if !result.Async {
+		t.Fatal("expected async result from nested spawn tool")
+	}
+
+	select {
+	case callbackResult := <-callbackDone:
+		if callbackResult == nil {
+			t.Fatal("expected callback result")
+		}
+		if callbackResult.ForUser != "async completion on telegram:chat-77" {
+			t.Fatalf("unexpected callback result: %s", callbackResult.ForUser)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for async callback")
+	}
+
+	if asyncTool.lastChannel != "telegram" || asyncTool.lastChatID != "chat-77" {
+		t.Fatalf("expected execution target propagation, got %s:%s", asyncTool.lastChannel, asyncTool.lastChatID)
 	}
 }
 
@@ -340,7 +384,13 @@ type echoTool struct{}
 func (e *echoTool) Name() string        { return "echo" }
 func (e *echoTool) Description() string { return "Echo a message" }
 func (e *echoTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{}
+	return map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"msg": map[string]interface{}{"type": "string"},
+		},
+		"required": []string{"msg"},
+	}
 }
 func (e *echoTool) Execute(_ context.Context, args map[string]interface{}) *ToolResult {
 	msg, _ := args["msg"].(string)
@@ -361,6 +411,34 @@ func (c *contextCaptureTool) SetContext(channel, chatID string) {
 	c.lastChannel = channel
 	c.lastChatID = chatID
 }
-func (c *contextCaptureTool) Execute(_ context.Context, _ map[string]interface{}) *ToolResult {
+func (c *contextCaptureTool) Execute(ctx context.Context, _ map[string]interface{}) *ToolResult {
+	if channel, chatID := ExecutionTargetFromContext(ctx); channel != "" || chatID != "" {
+		c.lastChannel = channel
+		c.lastChatID = chatID
+	}
 	return &ToolResult{ForLLM: "captured"}
+}
+
+type callbackCaptureTool struct {
+	lastChannel string
+	lastChatID  string
+}
+
+func (c *callbackCaptureTool) Name() string        { return "spawn" }
+func (c *callbackCaptureTool) Description() string { return "captures async callback propagation" }
+func (c *callbackCaptureTool) Parameters() map[string]interface{} {
+	return map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"task": map[string]interface{}{"type": "string"},
+		},
+		"required": []string{"task"},
+	}
+}
+func (c *callbackCaptureTool) Execute(ctx context.Context, _ map[string]interface{}) *ToolResult {
+	c.lastChannel, c.lastChatID = ExecutionTargetFromContext(ctx)
+	if callback := AsyncCallbackFromContext(ctx); callback != nil {
+		callback(ctx, &ToolResult{ForLLM: "done", ForUser: fmt.Sprintf("async completion on %s:%s", c.lastChannel, c.lastChatID)})
+	}
+	return AsyncResult("spawned")
 }

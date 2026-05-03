@@ -9,8 +9,6 @@ import (
 	"charm.land/fantasy/providers/anthropic"
 	"charm.land/fantasy/providers/vercel"
 	"charm.land/x/vcr"
-	"github.com/google/go-cmp/cmp"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -22,7 +20,6 @@ var vercelTestModels = []testModel{
 }
 
 func TestVercelCommon(t *testing.T) {
-	t.Parallel()
 	var pairs []builderPair
 	for _, m := range vercelTestModels {
 		pairs = append(pairs, builderPair{m.name, vercelBuilder(m.model), nil, nil})
@@ -31,14 +28,12 @@ func TestVercelCommon(t *testing.T) {
 }
 
 func TestVercelCommonWithAnthropicCache(t *testing.T) {
-	t.Parallel()
 	testCommon(t, []builderPair{
 		{"claude-sonnet-4", vercelBuilder("anthropic/claude-sonnet-4"), nil, addAnthropicCaching},
 	})
 }
 
 func TestVercelThinking(t *testing.T) {
-	t.Parallel()
 	enabled := true
 	opts := fantasy.ProviderOptions{
 		vercel.Name: &vercel.ProviderOptions{
@@ -96,7 +91,7 @@ func testVercelThinkingWithSignature(t *testing.T, result *fantasy.AgentResult) 
 	}
 	require.Greater(t, reasoningContentCount, 0)
 	require.Greater(t, signaturesCount, 0)
-	assert.Empty(t, cmp.Diff(reasoningContentCount, signaturesCount))
+	require.Equal(t, reasoningContentCount, signaturesCount)
 	// we also add the anthropic metadata so test that
 	testAnthropicThinking(t, result)
 }

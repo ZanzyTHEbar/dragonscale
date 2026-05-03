@@ -1,39 +1,38 @@
 package fantasy
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
-	jsonv2 "github.com/go-json-experiment/json"
-	"github.com/go-json-experiment/json/jsontext"
 )
 
 // contentJSON is a helper type for JSON serialization of Content in Response.
 type contentJSON struct {
-	Type string         `json:"type"`
-	Data jsontext.Value `json:"data"`
+	Type string          `json:"type"`
+	Data json.RawMessage `json:"data"`
 }
 
 // messagePartJSON is a helper type for JSON serialization of MessagePart.
 type messagePartJSON struct {
-	Type string         `json:"type"`
-	Data jsontext.Value `json:"data"`
+	Type string          `json:"type"`
+	Data json.RawMessage `json:"data"`
 }
 
 // toolResultOutputJSON is a helper type for JSON serialization of ToolResultOutputContent.
 type toolResultOutputJSON struct {
-	Type string         `json:"type"`
-	Data jsontext.Value `json:"data"`
+	Type string          `json:"type"`
+	Data json.RawMessage `json:"data"`
 }
 
 // toolJSON is a helper type for JSON serialization of Tool.
 type toolJSON struct {
-	Type string         `json:"type"`
-	Data jsontext.Value `json:"data"`
+	Type string          `json:"type"`
+	Data json.RawMessage `json:"data"`
 }
 
 // MarshalJSON implements json.Marshaler for TextContent.
 func (t TextContent) MarshalJSON() ([]byte, error) {
-	dataBytes, err := jsonv2.Marshal(struct {
+	dataBytes, err := json.Marshal(struct {
 		Text             string           `json:"text"`
 		ProviderMetadata ProviderMetadata `json:"provider_metadata,omitempty"`
 	}{
@@ -44,25 +43,25 @@ func (t TextContent) MarshalJSON() ([]byte, error) {
 		return nil, err
 	}
 
-	return jsonv2.Marshal(contentJSON{
+	return json.Marshal(contentJSON{
 		Type: string(ContentTypeText),
-		Data: jsontext.Value(dataBytes),
+		Data: json.RawMessage(dataBytes),
 	})
 }
 
 // UnmarshalJSON implements json.Unmarshaler for TextContent.
 func (t *TextContent) UnmarshalJSON(data []byte) error {
 	var cj contentJSON
-	if err := jsonv2.Unmarshal(data, &cj); err != nil {
+	if err := json.Unmarshal(data, &cj); err != nil {
 		return err
 	}
 
 	var aux struct {
-		Text             string                    `json:"text"`
-		ProviderMetadata map[string]jsontext.Value `json:"provider_metadata,omitempty"`
+		Text             string                     `json:"text"`
+		ProviderMetadata map[string]json.RawMessage `json:"provider_metadata,omitempty"`
 	}
 
-	if err := jsonv2.Unmarshal(cj.Data, &aux); err != nil {
+	if err := json.Unmarshal(cj.Data, &aux); err != nil {
 		return err
 	}
 
@@ -81,7 +80,7 @@ func (t *TextContent) UnmarshalJSON(data []byte) error {
 
 // MarshalJSON implements json.Marshaler for ReasoningContent.
 func (r ReasoningContent) MarshalJSON() ([]byte, error) {
-	dataBytes, err := jsonv2.Marshal(struct {
+	dataBytes, err := json.Marshal(struct {
 		Text             string           `json:"text"`
 		ProviderMetadata ProviderMetadata `json:"provider_metadata,omitempty"`
 	}{
@@ -92,25 +91,25 @@ func (r ReasoningContent) MarshalJSON() ([]byte, error) {
 		return nil, err
 	}
 
-	return jsonv2.Marshal(contentJSON{
+	return json.Marshal(contentJSON{
 		Type: string(ContentTypeReasoning),
-		Data: jsontext.Value(dataBytes),
+		Data: json.RawMessage(dataBytes),
 	})
 }
 
 // UnmarshalJSON implements json.Unmarshaler for ReasoningContent.
 func (r *ReasoningContent) UnmarshalJSON(data []byte) error {
 	var cj contentJSON
-	if err := jsonv2.Unmarshal(data, &cj); err != nil {
+	if err := json.Unmarshal(data, &cj); err != nil {
 		return err
 	}
 
 	var aux struct {
-		Text             string                    `json:"text"`
-		ProviderMetadata map[string]jsontext.Value `json:"provider_metadata,omitempty"`
+		Text             string                     `json:"text"`
+		ProviderMetadata map[string]json.RawMessage `json:"provider_metadata,omitempty"`
 	}
 
-	if err := jsonv2.Unmarshal(cj.Data, &aux); err != nil {
+	if err := json.Unmarshal(cj.Data, &aux); err != nil {
 		return err
 	}
 
@@ -127,41 +126,41 @@ func (r *ReasoningContent) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// MarshalJSONV2 implements jsonv2.MarshalerTo for FileContent.
-func (f FileContent) MarshalJSONTo(enc *jsontext.Encoder) error {
-	dataBytes, err := jsonv2.Marshal(struct {
+// MarshalJSON implements json.Marshaler for FileContent.
+func (f FileContent) MarshalJSON() ([]byte, error) {
+	dataBytes, err := json.Marshal(struct {
 		MediaType        string           `json:"media_type"`
 		Data             []byte           `json:"data"`
-		ProviderMetadata ProviderMetadata `json:"provider_metadata,omitzero"`
+		ProviderMetadata ProviderMetadata `json:"provider_metadata,omitempty"`
 	}{
 		MediaType:        f.MediaType,
 		Data:             f.Data,
 		ProviderMetadata: f.ProviderMetadata,
 	})
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	return jsonv2.MarshalEncode(enc, contentJSON{
+	return json.Marshal(contentJSON{
 		Type: string(ContentTypeFile),
-		Data: jsontext.Value(dataBytes),
+		Data: json.RawMessage(dataBytes),
 	})
 }
 
 // UnmarshalJSON implements json.Unmarshaler for FileContent.
 func (f *FileContent) UnmarshalJSON(data []byte) error {
 	var cj contentJSON
-	if err := jsonv2.Unmarshal(data, &cj); err != nil {
+	if err := json.Unmarshal(data, &cj); err != nil {
 		return err
 	}
 
 	var aux struct {
-		MediaType        string                    `json:"media_type"`
-		Data             []byte                    `json:"data"`
-		ProviderMetadata map[string]jsontext.Value `json:"provider_metadata,omitempty"`
+		MediaType        string                     `json:"media_type"`
+		Data             []byte                     `json:"data"`
+		ProviderMetadata map[string]json.RawMessage `json:"provider_metadata,omitempty"`
 	}
 
-	if err := jsonv2.Unmarshal(cj.Data, &aux); err != nil {
+	if err := json.Unmarshal(cj.Data, &aux); err != nil {
 		return err
 	}
 
@@ -181,7 +180,7 @@ func (f *FileContent) UnmarshalJSON(data []byte) error {
 
 // MarshalJSON implements json.Marshaler for SourceContent.
 func (s SourceContent) MarshalJSON() ([]byte, error) {
-	dataBytes, err := jsonv2.Marshal(struct {
+	dataBytes, err := json.Marshal(struct {
 		SourceType       SourceType       `json:"source_type"`
 		ID               string           `json:"id"`
 		URL              string           `json:"url,omitempty"`
@@ -202,30 +201,30 @@ func (s SourceContent) MarshalJSON() ([]byte, error) {
 		return nil, err
 	}
 
-	return jsonv2.Marshal(contentJSON{
+	return json.Marshal(contentJSON{
 		Type: string(ContentTypeSource),
-		Data: jsontext.Value(dataBytes),
+		Data: json.RawMessage(dataBytes),
 	})
 }
 
 // UnmarshalJSON implements json.Unmarshaler for SourceContent.
 func (s *SourceContent) UnmarshalJSON(data []byte) error {
 	var cj contentJSON
-	if err := jsonv2.Unmarshal(data, &cj); err != nil {
+	if err := json.Unmarshal(data, &cj); err != nil {
 		return err
 	}
 
 	var aux struct {
-		SourceType       SourceType                `json:"source_type"`
-		ID               string                    `json:"id"`
-		URL              string                    `json:"url,omitempty"`
-		Title            string                    `json:"title,omitempty"`
-		MediaType        string                    `json:"media_type,omitempty"`
-		Filename         string                    `json:"filename,omitempty"`
-		ProviderMetadata map[string]jsontext.Value `json:"provider_metadata,omitempty"`
+		SourceType       SourceType                 `json:"source_type"`
+		ID               string                     `json:"id"`
+		URL              string                     `json:"url,omitempty"`
+		Title            string                     `json:"title,omitempty"`
+		MediaType        string                     `json:"media_type,omitempty"`
+		Filename         string                     `json:"filename,omitempty"`
+		ProviderMetadata map[string]json.RawMessage `json:"provider_metadata,omitempty"`
 	}
 
-	if err := jsonv2.Unmarshal(cj.Data, &aux); err != nil {
+	if err := json.Unmarshal(cj.Data, &aux); err != nil {
 		return err
 	}
 
@@ -254,7 +253,7 @@ func (t ToolCallContent) MarshalJSON() ([]byte, error) {
 		msg := t.ValidationError.Error()
 		validationErrMsg = &msg
 	}
-	dataBytes, err := jsonv2.Marshal(struct {
+	dataBytes, err := json.Marshal(struct {
 		ToolCallID       string           `json:"tool_call_id"`
 		ToolName         string           `json:"tool_name"`
 		Input            string           `json:"input"`
@@ -275,30 +274,30 @@ func (t ToolCallContent) MarshalJSON() ([]byte, error) {
 		return nil, err
 	}
 
-	return jsonv2.Marshal(contentJSON{
+	return json.Marshal(contentJSON{
 		Type: string(ContentTypeToolCall),
-		Data: jsontext.Value(dataBytes),
+		Data: json.RawMessage(dataBytes),
 	})
 }
 
-// UnmarshalJSONV2 implements jsonv2.UnmarshalerFrom for ToolCallContent.
-func (t *ToolCallContent) UnmarshalJSONFrom(dec *jsontext.Decoder) error {
+// UnmarshalJSON implements json.Unmarshaler for ToolCallContent.
+func (t *ToolCallContent) UnmarshalJSON(data []byte) error {
 	var cj contentJSON
-	if err := jsonv2.UnmarshalDecode(dec, &cj); err != nil {
+	if err := json.Unmarshal(data, &cj); err != nil {
 		return err
 	}
 
 	var aux struct {
-		ToolCallID       string                    `json:"tool_call_id"`
-		ToolName         string                    `json:"tool_name"`
-		Input            string                    `json:"input"`
-		ProviderExecuted bool                      `json:"provider_executed"`
-		ProviderMetadata map[string]jsontext.Value `json:"provider_metadata,omitzero"`
-		Invalid          bool                      `json:"invalid,omitzero"`
-		ValidationError  *string                   `json:"validation_error,omitzero"`
+		ToolCallID       string                     `json:"tool_call_id"`
+		ToolName         string                     `json:"tool_name"`
+		Input            string                     `json:"input"`
+		ProviderExecuted bool                       `json:"provider_executed"`
+		ProviderMetadata map[string]json.RawMessage `json:"provider_metadata,omitempty"`
+		Invalid          bool                       `json:"invalid,omitempty"`
+		ValidationError  *string                    `json:"validation_error,omitempty"`
 	}
 
-	if err := jsonv2.Unmarshal(cj.Data, &aux); err != nil {
+	if err := json.Unmarshal(cj.Data, &aux); err != nil {
 		return err
 	}
 
@@ -322,15 +321,15 @@ func (t *ToolCallContent) UnmarshalJSONFrom(dec *jsontext.Decoder) error {
 	return nil
 }
 
-// MarshalJSONV2 implements jsonv2.MarshalerTo for ToolResultContent.
-func (t ToolResultContent) MarshalJSONTo(enc *jsontext.Encoder) error {
-	dataBytes, err := jsonv2.Marshal(struct {
+// MarshalJSON implements json.Marshaler for ToolResultContent.
+func (t ToolResultContent) MarshalJSON() ([]byte, error) {
+	dataBytes, err := json.Marshal(struct {
 		ToolCallID       string                  `json:"tool_call_id"`
 		ToolName         string                  `json:"tool_name"`
 		Result           ToolResultOutputContent `json:"result"`
-		ClientMetadata   string                  `json:"client_metadata,omitzero"`
+		ClientMetadata   string                  `json:"client_metadata,omitempty"`
 		ProviderExecuted bool                    `json:"provider_executed"`
-		ProviderMetadata ProviderMetadata        `json:"provider_metadata,omitzero"`
+		ProviderMetadata ProviderMetadata        `json:"provider_metadata,omitempty"`
 	}{
 		ToolCallID:       t.ToolCallID,
 		ToolName:         t.ToolName,
@@ -340,32 +339,32 @@ func (t ToolResultContent) MarshalJSONTo(enc *jsontext.Encoder) error {
 		ProviderMetadata: t.ProviderMetadata,
 	})
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	return jsonv2.MarshalEncode(enc, contentJSON{
+	return json.Marshal(contentJSON{
 		Type: string(ContentTypeToolResult),
-		Data: jsontext.Value(dataBytes),
+		Data: json.RawMessage(dataBytes),
 	})
 }
 
-// UnmarshalJSONV2 implements jsonv2.UnmarshalerFrom for ToolResultContent.
-func (t *ToolResultContent) UnmarshalJSONFrom(dec *jsontext.Decoder) error {
+// UnmarshalJSON implements json.Unmarshaler for ToolResultContent.
+func (t *ToolResultContent) UnmarshalJSON(data []byte) error {
 	var cj contentJSON
-	if err := jsonv2.UnmarshalDecode(dec, &cj); err != nil {
+	if err := json.Unmarshal(data, &cj); err != nil {
 		return err
 	}
 
 	var aux struct {
-		ToolCallID       string                    `json:"tool_call_id"`
-		ToolName         string                    `json:"tool_name"`
-		Result           jsontext.Value            `json:"result"`
-		ClientMetadata   string                    `json:"client_metadata,omitzero"`
-		ProviderExecuted bool                      `json:"provider_executed"`
-		ProviderMetadata map[string]jsontext.Value `json:"provider_metadata,omitzero"`
+		ToolCallID       string                     `json:"tool_call_id"`
+		ToolName         string                     `json:"tool_name"`
+		Result           json.RawMessage            `json:"result"`
+		ClientMetadata   string                     `json:"client_metadata,omitempty"`
+		ProviderExecuted bool                       `json:"provider_executed"`
+		ProviderMetadata map[string]json.RawMessage `json:"provider_metadata,omitempty"`
 	}
 
-	if err := jsonv2.Unmarshal(cj.Data, &aux); err != nil {
+	if err := json.Unmarshal(cj.Data, &aux); err != nil {
 		return err
 	}
 
@@ -375,7 +374,7 @@ func (t *ToolResultContent) UnmarshalJSONFrom(dec *jsontext.Decoder) error {
 	t.ProviderExecuted = aux.ProviderExecuted
 
 	// Unmarshal the Result field
-	result, err := UnmarshalToolResultOutputContent([]byte(aux.Result))
+	result, err := UnmarshalToolResultOutputContent(aux.Result)
 	if err != nil {
 		return fmt.Errorf("failed to unmarshal tool result output: %w", err)
 	}
@@ -392,31 +391,31 @@ func (t *ToolResultContent) UnmarshalJSONFrom(dec *jsontext.Decoder) error {
 	return nil
 }
 
-// MarshalJSONV2 implements jsonv2.MarshalerTo for ToolResultOutputContentText.
-func (t ToolResultOutputContentText) MarshalJSONTo(enc *jsontext.Encoder) error {
+// MarshalJSON implements json.Marshaler for ToolResultOutputContentText.
+func (t ToolResultOutputContentText) MarshalJSON() ([]byte, error) {
 	type alias ToolResultOutputContentText
-	dataBytes, err := jsonv2.Marshal(alias(t))
+	dataBytes, err := json.Marshal(alias(t))
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	return jsonv2.MarshalEncode(enc, toolResultOutputJSON{
+	return json.Marshal(toolResultOutputJSON{
 		Type: string(ToolResultContentTypeText),
-		Data: jsontext.Value(dataBytes),
+		Data: json.RawMessage(dataBytes),
 	})
 }
 
-// UnmarshalJSONV2 implements jsonv2.UnmarshalerFrom for ToolResultOutputContentText.
-func (t *ToolResultOutputContentText) UnmarshalJSONFrom(dec *jsontext.Decoder) error {
+// UnmarshalJSON implements json.Unmarshaler for ToolResultOutputContentText.
+func (t *ToolResultOutputContentText) UnmarshalJSON(data []byte) error {
 	var tr toolResultOutputJSON
-	if err := jsonv2.UnmarshalDecode(dec, &tr); err != nil {
+	if err := json.Unmarshal(data, &tr); err != nil {
 		return err
 	}
 
 	type alias ToolResultOutputContentText
 	var temp alias
 
-	if err := jsonv2.Unmarshal([]byte(tr.Data), &temp); err != nil {
+	if err := json.Unmarshal(tr.Data, &temp); err != nil {
 		return err
 	}
 
@@ -424,31 +423,31 @@ func (t *ToolResultOutputContentText) UnmarshalJSONFrom(dec *jsontext.Decoder) e
 	return nil
 }
 
-// MarshalJSONV2 implements jsonv2.MarshalerTo for ToolResultOutputContentError.
-func (t ToolResultOutputContentError) MarshalJSONTo(enc *jsontext.Encoder) error {
+// MarshalJSON implements json.Marshaler for ToolResultOutputContentError.
+func (t ToolResultOutputContentError) MarshalJSON() ([]byte, error) {
 	errMsg := ""
 	if t.Error != nil {
 		errMsg = t.Error.Error()
 	}
-	dataBytes, err := jsonv2.Marshal(struct {
+	dataBytes, err := json.Marshal(struct {
 		Error string `json:"error"`
 	}{
 		Error: errMsg,
 	})
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	return jsonv2.MarshalEncode(enc, toolResultOutputJSON{
+	return json.Marshal(toolResultOutputJSON{
 		Type: string(ToolResultContentTypeError),
-		Data: jsontext.Value(dataBytes),
+		Data: json.RawMessage(dataBytes),
 	})
 }
 
-// UnmarshalJSONV2 implements jsonv2.UnmarshalerFrom for ToolResultOutputContentError.
-func (t *ToolResultOutputContentError) UnmarshalJSONFrom(dec *jsontext.Decoder) error {
+// UnmarshalJSON implements json.Unmarshaler for ToolResultOutputContentError.
+func (t *ToolResultOutputContentError) UnmarshalJSON(data []byte) error {
 	var tr toolResultOutputJSON
-	if err := jsonv2.UnmarshalDecode(dec, &tr); err != nil {
+	if err := json.Unmarshal(data, &tr); err != nil {
 		return err
 	}
 
@@ -456,7 +455,7 @@ func (t *ToolResultOutputContentError) UnmarshalJSONFrom(dec *jsontext.Decoder) 
 		Error string `json:"error"`
 	}
 
-	if err := jsonv2.Unmarshal([]byte(tr.Data), &temp); err != nil {
+	if err := json.Unmarshal(tr.Data, &temp); err != nil {
 		return err
 	}
 	if temp.Error != "" {
@@ -465,31 +464,31 @@ func (t *ToolResultOutputContentError) UnmarshalJSONFrom(dec *jsontext.Decoder) 
 	return nil
 }
 
-// MarshalJSONV2 implements jsonv2.MarshalerTo for ToolResultOutputContentMedia.
-func (t ToolResultOutputContentMedia) MarshalJSONTo(enc *jsontext.Encoder) error {
+// MarshalJSON implements json.Marshaler for ToolResultOutputContentMedia.
+func (t ToolResultOutputContentMedia) MarshalJSON() ([]byte, error) {
 	type alias ToolResultOutputContentMedia
-	dataBytes, err := jsonv2.Marshal(alias(t))
+	dataBytes, err := json.Marshal(alias(t))
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	return jsonv2.MarshalEncode(enc, toolResultOutputJSON{
+	return json.Marshal(toolResultOutputJSON{
 		Type: string(ToolResultContentTypeMedia),
-		Data: jsontext.Value(dataBytes),
+		Data: json.RawMessage(dataBytes),
 	})
 }
 
-// UnmarshalJSONV2 implements jsonv2.UnmarshalerFrom for ToolResultOutputContentMedia.
-func (t *ToolResultOutputContentMedia) UnmarshalJSONFrom(dec *jsontext.Decoder) error {
+// UnmarshalJSON implements json.Unmarshaler for ToolResultOutputContentMedia.
+func (t *ToolResultOutputContentMedia) UnmarshalJSON(data []byte) error {
 	var tr toolResultOutputJSON
-	if err := jsonv2.UnmarshalDecode(dec, &tr); err != nil {
+	if err := json.Unmarshal(data, &tr); err != nil {
 		return err
 	}
 
 	type alias ToolResultOutputContentMedia
 	var temp alias
 
-	if err := jsonv2.Unmarshal([]byte(tr.Data), &temp); err != nil {
+	if err := json.Unmarshal(tr.Data, &temp); err != nil {
 		return err
 	}
 
@@ -497,38 +496,38 @@ func (t *ToolResultOutputContentMedia) UnmarshalJSONFrom(dec *jsontext.Decoder) 
 	return nil
 }
 
-// MarshalJSONV2 implements jsonv2.MarshalerTo for TextPart.
-func (t TextPart) MarshalJSONTo(enc *jsontext.Encoder) error {
-	dataBytes, err := jsonv2.Marshal(struct {
+// MarshalJSON implements json.Marshaler for TextPart.
+func (t TextPart) MarshalJSON() ([]byte, error) {
+	dataBytes, err := json.Marshal(struct {
 		Text            string          `json:"text"`
-		ProviderOptions ProviderOptions `json:"provider_options,omitzero"`
+		ProviderOptions ProviderOptions `json:"provider_options,omitempty"`
 	}{
 		Text:            t.Text,
 		ProviderOptions: t.ProviderOptions,
 	})
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	return jsonv2.MarshalEncode(enc, messagePartJSON{
+	return json.Marshal(messagePartJSON{
 		Type: string(ContentTypeText),
-		Data: jsontext.Value(dataBytes),
+		Data: json.RawMessage(dataBytes),
 	})
 }
 
-// UnmarshalJSONV2 implements jsonv2.UnmarshalerFrom for TextPart.
-func (t *TextPart) UnmarshalJSONFrom(dec *jsontext.Decoder) error {
+// UnmarshalJSON implements json.Unmarshaler for TextPart.
+func (t *TextPart) UnmarshalJSON(data []byte) error {
 	var mpj messagePartJSON
-	if err := jsonv2.UnmarshalDecode(dec, &mpj); err != nil {
+	if err := json.Unmarshal(data, &mpj); err != nil {
 		return err
 	}
 
 	var aux struct {
-		Text            string                    `json:"text"`
-		ProviderOptions map[string]jsontext.Value `json:"provider_options,omitzero"`
+		Text            string                     `json:"text"`
+		ProviderOptions map[string]json.RawMessage `json:"provider_options,omitempty"`
 	}
 
-	if err := jsonv2.Unmarshal([]byte(mpj.Data), &aux); err != nil {
+	if err := json.Unmarshal(mpj.Data, &aux); err != nil {
 		return err
 	}
 
@@ -545,38 +544,38 @@ func (t *TextPart) UnmarshalJSONFrom(dec *jsontext.Decoder) error {
 	return nil
 }
 
-// MarshalJSONV2 implements jsonv2.MarshalerTo for ReasoningPart.
-func (r ReasoningPart) MarshalJSONTo(enc *jsontext.Encoder) error {
-	dataBytes, err := jsonv2.Marshal(struct {
+// MarshalJSON implements json.Marshaler for ReasoningPart.
+func (r ReasoningPart) MarshalJSON() ([]byte, error) {
+	dataBytes, err := json.Marshal(struct {
 		Text            string          `json:"text"`
-		ProviderOptions ProviderOptions `json:"provider_options,omitzero"`
+		ProviderOptions ProviderOptions `json:"provider_options,omitempty"`
 	}{
 		Text:            r.Text,
 		ProviderOptions: r.ProviderOptions,
 	})
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	return jsonv2.MarshalEncode(enc, messagePartJSON{
+	return json.Marshal(messagePartJSON{
 		Type: string(ContentTypeReasoning),
-		Data: jsontext.Value(dataBytes),
+		Data: json.RawMessage(dataBytes),
 	})
 }
 
-// UnmarshalJSONV2 implements jsonv2.UnmarshalerFrom for ReasoningPart.
-func (r *ReasoningPart) UnmarshalJSONFrom(dec *jsontext.Decoder) error {
+// UnmarshalJSON implements json.Unmarshaler for ReasoningPart.
+func (r *ReasoningPart) UnmarshalJSON(data []byte) error {
 	var mpj messagePartJSON
-	if err := jsonv2.UnmarshalDecode(dec, &mpj); err != nil {
+	if err := json.Unmarshal(data, &mpj); err != nil {
 		return err
 	}
 
 	var aux struct {
-		Text            string                    `json:"text"`
-		ProviderOptions map[string]jsontext.Value `json:"provider_options,omitzero"`
+		Text            string                     `json:"text"`
+		ProviderOptions map[string]json.RawMessage `json:"provider_options,omitempty"`
 	}
 
-	if err := jsonv2.Unmarshal([]byte(mpj.Data), &aux); err != nil {
+	if err := json.Unmarshal(mpj.Data, &aux); err != nil {
 		return err
 	}
 
@@ -593,13 +592,13 @@ func (r *ReasoningPart) UnmarshalJSONFrom(dec *jsontext.Decoder) error {
 	return nil
 }
 
-// MarshalJSONV2 implements jsonv2.MarshalerTo for FilePart.
-func (f FilePart) MarshalJSONTo(enc *jsontext.Encoder) error {
-	dataBytes, err := jsonv2.Marshal(struct {
+// MarshalJSON implements json.Marshaler for FilePart.
+func (f FilePart) MarshalJSON() ([]byte, error) {
+	dataBytes, err := json.Marshal(struct {
 		Filename        string          `json:"filename"`
 		Data            []byte          `json:"data"`
 		MediaType       string          `json:"media_type"`
-		ProviderOptions ProviderOptions `json:"provider_options,omitzero"`
+		ProviderOptions ProviderOptions `json:"provider_options,omitempty"`
 	}{
 		Filename:        f.Filename,
 		Data:            f.Data,
@@ -607,30 +606,30 @@ func (f FilePart) MarshalJSONTo(enc *jsontext.Encoder) error {
 		ProviderOptions: f.ProviderOptions,
 	})
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	return jsonv2.MarshalEncode(enc, messagePartJSON{
+	return json.Marshal(messagePartJSON{
 		Type: string(ContentTypeFile),
-		Data: jsontext.Value(dataBytes),
+		Data: json.RawMessage(dataBytes),
 	})
 }
 
-// UnmarshalJSONV2 implements jsonv2.UnmarshalerFrom for FilePart.
-func (f *FilePart) UnmarshalJSONFrom(dec *jsontext.Decoder) error {
+// UnmarshalJSON implements json.Unmarshaler for FilePart.
+func (f *FilePart) UnmarshalJSON(data []byte) error {
 	var mpj messagePartJSON
-	if err := jsonv2.UnmarshalDecode(dec, &mpj); err != nil {
+	if err := json.Unmarshal(data, &mpj); err != nil {
 		return err
 	}
 
 	var aux struct {
-		Filename        string                    `json:"filename"`
-		Data            []byte                    `json:"data"`
-		MediaType       string                    `json:"media_type"`
-		ProviderOptions map[string]jsontext.Value `json:"provider_options,omitzero"`
+		Filename        string                     `json:"filename"`
+		Data            []byte                     `json:"data"`
+		MediaType       string                     `json:"media_type"`
+		ProviderOptions map[string]json.RawMessage `json:"provider_options,omitempty"`
 	}
 
-	if err := jsonv2.Unmarshal([]byte(mpj.Data), &aux); err != nil {
+	if err := json.Unmarshal(mpj.Data, &aux); err != nil {
 		return err
 	}
 
@@ -649,14 +648,14 @@ func (f *FilePart) UnmarshalJSONFrom(dec *jsontext.Decoder) error {
 	return nil
 }
 
-// MarshalJSONV2 implements jsonv2.MarshalerTo for ToolCallPart.
-func (t ToolCallPart) MarshalJSONTo(enc *jsontext.Encoder) error {
-	dataBytes, err := jsonv2.Marshal(struct {
+// MarshalJSON implements json.Marshaler for ToolCallPart.
+func (t ToolCallPart) MarshalJSON() ([]byte, error) {
+	dataBytes, err := json.Marshal(struct {
 		ToolCallID       string          `json:"tool_call_id"`
 		ToolName         string          `json:"tool_name"`
 		Input            string          `json:"input"`
 		ProviderExecuted bool            `json:"provider_executed"`
-		ProviderOptions  ProviderOptions `json:"provider_options,omitzero"`
+		ProviderOptions  ProviderOptions `json:"provider_options,omitempty"`
 	}{
 		ToolCallID:       t.ToolCallID,
 		ToolName:         t.ToolName,
@@ -665,31 +664,31 @@ func (t ToolCallPart) MarshalJSONTo(enc *jsontext.Encoder) error {
 		ProviderOptions:  t.ProviderOptions,
 	})
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	return jsonv2.MarshalEncode(enc, messagePartJSON{
+	return json.Marshal(messagePartJSON{
 		Type: string(ContentTypeToolCall),
-		Data: jsontext.Value(dataBytes),
+		Data: json.RawMessage(dataBytes),
 	})
 }
 
-// UnmarshalJSONV2 implements jsonv2.UnmarshalerFrom for ToolCallPart.
-func (t *ToolCallPart) UnmarshalJSONFrom(dec *jsontext.Decoder) error {
+// UnmarshalJSON implements json.Unmarshaler for ToolCallPart.
+func (t *ToolCallPart) UnmarshalJSON(data []byte) error {
 	var mpj messagePartJSON
-	if err := jsonv2.UnmarshalDecode(dec, &mpj); err != nil {
+	if err := json.Unmarshal(data, &mpj); err != nil {
 		return err
 	}
 
 	var aux struct {
-		ToolCallID       string                    `json:"tool_call_id"`
-		ToolName         string                    `json:"tool_name"`
-		Input            string                    `json:"input"`
-		ProviderExecuted bool                      `json:"provider_executed"`
-		ProviderOptions  map[string]jsontext.Value `json:"provider_options,omitzero"`
+		ToolCallID       string                     `json:"tool_call_id"`
+		ToolName         string                     `json:"tool_name"`
+		Input            string                     `json:"input"`
+		ProviderExecuted bool                       `json:"provider_executed"`
+		ProviderOptions  map[string]json.RawMessage `json:"provider_options,omitempty"`
 	}
 
-	if err := jsonv2.Unmarshal([]byte(mpj.Data), &aux); err != nil {
+	if err := json.Unmarshal(mpj.Data, &aux); err != nil {
 		return err
 	}
 
@@ -709,48 +708,52 @@ func (t *ToolCallPart) UnmarshalJSONFrom(dec *jsontext.Decoder) error {
 	return nil
 }
 
-// MarshalJSONV2 implements jsonv2.MarshalerTo for ToolResultPart.
-func (t ToolResultPart) MarshalJSONTo(enc *jsontext.Encoder) error {
-	dataBytes, err := jsonv2.Marshal(struct {
-		ToolCallID      string                  `json:"tool_call_id"`
-		Output          ToolResultOutputContent `json:"output"`
-		ProviderOptions ProviderOptions         `json:"provider_options,omitzero"`
+// MarshalJSON implements json.Marshaler for ToolResultPart.
+func (t ToolResultPart) MarshalJSON() ([]byte, error) {
+	dataBytes, err := json.Marshal(struct {
+		ToolCallID       string                  `json:"tool_call_id"`
+		Output           ToolResultOutputContent `json:"output"`
+		ProviderExecuted bool                    `json:"provider_executed"`
+		ProviderOptions  ProviderOptions         `json:"provider_options,omitempty"`
 	}{
-		ToolCallID:      t.ToolCallID,
-		Output:          t.Output,
-		ProviderOptions: t.ProviderOptions,
+		ToolCallID:       t.ToolCallID,
+		Output:           t.Output,
+		ProviderExecuted: t.ProviderExecuted,
+		ProviderOptions:  t.ProviderOptions,
 	})
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	return jsonv2.MarshalEncode(enc, messagePartJSON{
+	return json.Marshal(messagePartJSON{
 		Type: string(ContentTypeToolResult),
-		Data: jsontext.Value(dataBytes),
+		Data: json.RawMessage(dataBytes),
 	})
 }
 
-// UnmarshalJSONV2 implements jsonv2.UnmarshalerFrom for ToolResultPart.
-func (t *ToolResultPart) UnmarshalJSONFrom(dec *jsontext.Decoder) error {
+// UnmarshalJSON implements json.Unmarshaler for ToolResultPart.
+func (t *ToolResultPart) UnmarshalJSON(data []byte) error {
 	var mpj messagePartJSON
-	if err := jsonv2.UnmarshalDecode(dec, &mpj); err != nil {
+	if err := json.Unmarshal(data, &mpj); err != nil {
 		return err
 	}
 
 	var aux struct {
-		ToolCallID      string                    `json:"tool_call_id"`
-		Output          jsontext.Value            `json:"output"`
-		ProviderOptions map[string]jsontext.Value `json:"provider_options,omitzero"`
+		ToolCallID       string                     `json:"tool_call_id"`
+		Output           json.RawMessage            `json:"output"`
+		ProviderExecuted bool                       `json:"provider_executed"`
+		ProviderOptions  map[string]json.RawMessage `json:"provider_options,omitempty"`
 	}
 
-	if err := jsonv2.Unmarshal([]byte(mpj.Data), &aux); err != nil {
+	if err := json.Unmarshal(mpj.Data, &aux); err != nil {
 		return err
 	}
 
 	t.ToolCallID = aux.ToolCallID
+	t.ProviderExecuted = aux.ProviderExecuted
 
 	// Unmarshal the Output field
-	output, err := UnmarshalToolResultOutputContent([]byte(aux.Output))
+	output, err := UnmarshalToolResultOutputContent(aux.Output)
 	if err != nil {
 		return fmt.Errorf("failed to unmarshal tool result output: %w", err)
 	}
@@ -767,15 +770,15 @@ func (t *ToolResultPart) UnmarshalJSONFrom(dec *jsontext.Decoder) error {
 	return nil
 }
 
-// UnmarshalJSONV2 implements jsonv2.UnmarshalerFrom for Message.
-func (m *Message) UnmarshalJSONFrom(dec *jsontext.Decoder) error {
+// UnmarshalJSON implements json.Unmarshaler for Message.
+func (m *Message) UnmarshalJSON(data []byte) error {
 	var aux struct {
-		Role            MessageRole               `json:"role"`
-		Content         []jsontext.Value          `json:"content"`
-		ProviderOptions map[string]jsontext.Value `json:"provider_options"`
+		Role            MessageRole                `json:"role"`
+		Content         []json.RawMessage          `json:"content"`
+		ProviderOptions map[string]json.RawMessage `json:"provider_options"`
 	}
 
-	if err := jsonv2.UnmarshalDecode(dec, &aux); err != nil {
+	if err := json.Unmarshal(data, &aux); err != nil {
 		return err
 	}
 
@@ -783,7 +786,7 @@ func (m *Message) UnmarshalJSONFrom(dec *jsontext.Decoder) error {
 
 	m.Content = make([]MessagePart, len(aux.Content))
 	for i, rawPart := range aux.Content {
-		part, err := UnmarshalMessagePart([]byte(rawPart))
+		part, err := UnmarshalMessagePart(rawPart)
 		if err != nil {
 			return fmt.Errorf("failed to unmarshal message part at index %d: %w", i, err)
 		}
@@ -801,13 +804,13 @@ func (m *Message) UnmarshalJSONFrom(dec *jsontext.Decoder) error {
 	return nil
 }
 
-// MarshalJSONV2 implements jsonv2.MarshalerTo for FunctionTool.
-func (f FunctionTool) MarshalJSONTo(enc *jsontext.Encoder) error {
-	dataBytes, err := jsonv2.Marshal(struct {
+// MarshalJSON implements json.Marshaler for FunctionTool.
+func (f FunctionTool) MarshalJSON() ([]byte, error) {
+	dataBytes, err := json.Marshal(struct {
 		Name            string          `json:"name"`
 		Description     string          `json:"description"`
 		InputSchema     map[string]any  `json:"input_schema"`
-		ProviderOptions ProviderOptions `json:"provider_options,omitzero"`
+		ProviderOptions ProviderOptions `json:"provider_options,omitempty"`
 	}{
 		Name:            f.Name,
 		Description:     f.Description,
@@ -815,30 +818,30 @@ func (f FunctionTool) MarshalJSONTo(enc *jsontext.Encoder) error {
 		ProviderOptions: f.ProviderOptions,
 	})
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	return jsonv2.MarshalEncode(enc, toolJSON{
+	return json.Marshal(toolJSON{
 		Type: string(ToolTypeFunction),
-		Data: jsontext.Value(dataBytes),
+		Data: json.RawMessage(dataBytes),
 	})
 }
 
-// UnmarshalJSONV2 implements jsonv2.UnmarshalerFrom for FunctionTool.
-func (f *FunctionTool) UnmarshalJSONFrom(dec *jsontext.Decoder) error {
+// UnmarshalJSON implements json.Unmarshaler for FunctionTool.
+func (f *FunctionTool) UnmarshalJSON(data []byte) error {
 	var tj toolJSON
-	if err := jsonv2.UnmarshalDecode(dec, &tj); err != nil {
+	if err := json.Unmarshal(data, &tj); err != nil {
 		return err
 	}
 
 	var aux struct {
-		Name            string                    `json:"name"`
-		Description     string                    `json:"description"`
-		InputSchema     map[string]any            `json:"input_schema"`
-		ProviderOptions map[string]jsontext.Value `json:"provider_options,omitzero"`
+		Name            string                     `json:"name"`
+		Description     string                     `json:"description"`
+		InputSchema     map[string]any             `json:"input_schema"`
+		ProviderOptions map[string]json.RawMessage `json:"provider_options,omitempty"`
 	}
 
-	if err := jsonv2.Unmarshal([]byte(tj.Data), &aux); err != nil {
+	if err := json.Unmarshal(tj.Data, &aux); err != nil {
 		return err
 	}
 
@@ -857,31 +860,31 @@ func (f *FunctionTool) UnmarshalJSONFrom(dec *jsontext.Decoder) error {
 	return nil
 }
 
-// MarshalJSONV2 implements jsonv2.MarshalerTo for ProviderDefinedTool.
-func (p ProviderDefinedTool) MarshalJSONTo(enc *jsontext.Encoder) error {
+// MarshalJSON implements json.Marshaler for ProviderDefinedTool.
+func (p ProviderDefinedTool) MarshalJSON() ([]byte, error) {
 	type alias ProviderDefinedTool
-	dataBytes, err := jsonv2.Marshal(alias(p))
+	dataBytes, err := json.Marshal(alias(p))
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	return jsonv2.MarshalEncode(enc, toolJSON{
+	return json.Marshal(toolJSON{
 		Type: string(ToolTypeProviderDefined),
-		Data: jsontext.Value(dataBytes),
+		Data: json.RawMessage(dataBytes),
 	})
 }
 
-// UnmarshalJSONV2 implements jsonv2.UnmarshalerFrom for ProviderDefinedTool.
-func (p *ProviderDefinedTool) UnmarshalJSONFrom(dec *jsontext.Decoder) error {
+// UnmarshalJSON implements json.Unmarshaler for ProviderDefinedTool.
+func (p *ProviderDefinedTool) UnmarshalJSON(data []byte) error {
 	var tj toolJSON
-	if err := jsonv2.UnmarshalDecode(dec, &tj); err != nil {
+	if err := json.Unmarshal(data, &tj); err != nil {
 		return err
 	}
 
 	type alias ProviderDefinedTool
 	var aux alias
 
-	if err := jsonv2.Unmarshal([]byte(tj.Data), &aux); err != nil {
+	if err := json.Unmarshal(tj.Data, &aux); err != nil {
 		return err
 	}
 
@@ -893,20 +896,20 @@ func (p *ProviderDefinedTool) UnmarshalJSONFrom(dec *jsontext.Decoder) error {
 // UnmarshalTool unmarshals JSON into the appropriate Tool type.
 func UnmarshalTool(data []byte) (Tool, error) {
 	var tj toolJSON
-	if err := jsonv2.Unmarshal(data, &tj); err != nil {
+	if err := json.Unmarshal(data, &tj); err != nil {
 		return nil, err
 	}
 
 	switch ToolType(tj.Type) {
 	case ToolTypeFunction:
 		var tool FunctionTool
-		if err := jsonv2.Unmarshal(data, &tool); err != nil {
+		if err := tool.UnmarshalJSON(data); err != nil {
 			return nil, err
 		}
 		return tool, nil
 	case ToolTypeProviderDefined:
 		var tool ProviderDefinedTool
-		if err := jsonv2.Unmarshal(data, &tool); err != nil {
+		if err := tool.UnmarshalJSON(data); err != nil {
 			return nil, err
 		}
 		return tool, nil
@@ -918,44 +921,44 @@ func UnmarshalTool(data []byte) (Tool, error) {
 // UnmarshalContent unmarshals JSON into the appropriate Content type.
 func UnmarshalContent(data []byte) (Content, error) {
 	var cj contentJSON
-	if err := jsonv2.Unmarshal(data, &cj); err != nil {
+	if err := json.Unmarshal(data, &cj); err != nil {
 		return nil, err
 	}
 
 	switch ContentType(cj.Type) {
 	case ContentTypeText:
 		var content TextContent
-		if err := jsonv2.Unmarshal(data, &content); err != nil {
+		if err := content.UnmarshalJSON(data); err != nil {
 			return nil, err
 		}
 		return content, nil
 	case ContentTypeReasoning:
 		var content ReasoningContent
-		if err := jsonv2.Unmarshal(data, &content); err != nil {
+		if err := content.UnmarshalJSON(data); err != nil {
 			return nil, err
 		}
 		return content, nil
 	case ContentTypeFile:
 		var content FileContent
-		if err := jsonv2.Unmarshal(data, &content); err != nil {
+		if err := content.UnmarshalJSON(data); err != nil {
 			return nil, err
 		}
 		return content, nil
 	case ContentTypeSource:
 		var content SourceContent
-		if err := jsonv2.Unmarshal(data, &content); err != nil {
+		if err := content.UnmarshalJSON(data); err != nil {
 			return nil, err
 		}
 		return content, nil
 	case ContentTypeToolCall:
 		var content ToolCallContent
-		if err := jsonv2.Unmarshal(data, &content); err != nil {
+		if err := content.UnmarshalJSON(data); err != nil {
 			return nil, err
 		}
 		return content, nil
 	case ContentTypeToolResult:
 		var content ToolResultContent
-		if err := jsonv2.Unmarshal(data, &content); err != nil {
+		if err := content.UnmarshalJSON(data); err != nil {
 			return nil, err
 		}
 		return content, nil
@@ -967,38 +970,38 @@ func UnmarshalContent(data []byte) (Content, error) {
 // UnmarshalMessagePart unmarshals JSON into the appropriate MessagePart type.
 func UnmarshalMessagePart(data []byte) (MessagePart, error) {
 	var mpj messagePartJSON
-	if err := jsonv2.Unmarshal(data, &mpj); err != nil {
+	if err := json.Unmarshal(data, &mpj); err != nil {
 		return nil, err
 	}
 
 	switch ContentType(mpj.Type) {
 	case ContentTypeText:
 		var part TextPart
-		if err := jsonv2.Unmarshal(data, &part); err != nil {
+		if err := part.UnmarshalJSON(data); err != nil {
 			return nil, err
 		}
 		return part, nil
 	case ContentTypeReasoning:
 		var part ReasoningPart
-		if err := jsonv2.Unmarshal(data, &part); err != nil {
+		if err := part.UnmarshalJSON(data); err != nil {
 			return nil, err
 		}
 		return part, nil
 	case ContentTypeFile:
 		var part FilePart
-		if err := jsonv2.Unmarshal(data, &part); err != nil {
+		if err := part.UnmarshalJSON(data); err != nil {
 			return nil, err
 		}
 		return part, nil
 	case ContentTypeToolCall:
 		var part ToolCallPart
-		if err := jsonv2.Unmarshal(data, &part); err != nil {
+		if err := part.UnmarshalJSON(data); err != nil {
 			return nil, err
 		}
 		return part, nil
 	case ContentTypeToolResult:
 		var part ToolResultPart
-		if err := jsonv2.Unmarshal(data, &part); err != nil {
+		if err := part.UnmarshalJSON(data); err != nil {
 			return nil, err
 		}
 		return part, nil
@@ -1009,27 +1012,31 @@ func UnmarshalMessagePart(data []byte) (MessagePart, error) {
 
 // UnmarshalToolResultOutputContent unmarshals JSON into the appropriate ToolResultOutputContent type.
 func UnmarshalToolResultOutputContent(data []byte) (ToolResultOutputContent, error) {
+	if len(data) == 0 || string(data) == "null" {
+		return nil, nil
+	}
+
 	var troj toolResultOutputJSON
-	if err := jsonv2.Unmarshal(data, &troj); err != nil {
+	if err := json.Unmarshal(data, &troj); err != nil {
 		return nil, err
 	}
 
 	switch ToolResultContentType(troj.Type) {
 	case ToolResultContentTypeText:
 		var content ToolResultOutputContentText
-		if err := jsonv2.Unmarshal(data, &content); err != nil {
+		if err := content.UnmarshalJSON(data); err != nil {
 			return nil, err
 		}
 		return content, nil
 	case ToolResultContentTypeError:
 		var content ToolResultOutputContentError
-		if err := jsonv2.Unmarshal(data, &content); err != nil {
+		if err := content.UnmarshalJSON(data); err != nil {
 			return nil, err
 		}
 		return content, nil
 	case ToolResultContentTypeMedia:
 		var content ToolResultOutputContentMedia
-		if err := jsonv2.Unmarshal(data, &content); err != nil {
+		if err := content.UnmarshalJSON(data); err != nil {
 			return nil, err
 		}
 		return content, nil

@@ -45,14 +45,15 @@ type RetrievedMemoryRecord struct {
 // AuditEntry represents a single audit log entry for analysis.
 // Mirrors cortex.AuditEntry.
 type AuditEntry struct {
-	ID        string
-	Timestamp time.Time
-	ToolName  string
-	ToolInput string
-	Success   bool
-	ErrorMsg  string
-	SessionID string
-	AgentID   string
+	ID         string
+	Timestamp  time.Time
+	ToolName   string
+	ToolCallID string
+	ToolInput  string
+	Success    bool
+	ErrorMsg   string
+	SessionID  string
+	AgentID    string
 }
 
 // DetectedPattern represents a pattern detected from audit analysis.

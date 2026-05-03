@@ -1,0 +1,149 @@
+package httpheaders
+
+import (
+	"testing"
+
+	"charm.land/fantasy/internal/testcmp"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+func TestDefaultUserAgent(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		version string
+		want    string
+	}{
+		{name: "basic version", version: "0.11.0", want: "Charm-Fantasy/0.11.0 (https://charm.land/fantasy)"},
+		{name: "another version", version: "1.0.0", want: "Charm-Fantasy/1.0.0 (https://charm.land/fantasy)"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := DefaultUserAgent(tt.version)
+			testcmp.AssertEqual(t, tt.want, got)
+		})
+	}
+}
+
+func TestResolveHeaders_Precedence(t *testing.T) {
+	t.Parallel()
+
+	t.Run("explicit UA wins over headers and default", func(t *testing.T) {
+		t.Parallel()
+		headers := map[string]string{"User-Agent": "from-headers"}
+		got := ResolveHeaders(headers, "explicit-ua", "default-ua")
+		testcmp.AssertEqual(t, "explicit-ua", got["User-Agent"])
+	})
+
+	t.Run("header UA wins over default", func(t *testing.T) {
+		t.Parallel()
+		headers := map[string]string{"User-Agent": "from-headers"}
+		got := ResolveHeaders(headers, "", "default-ua")
+		testcmp.AssertEqual(t, "from-headers", got["User-Agent"])
+	})
+
+	t.Run("default UA used when nothing else set", func(t *testing.T) {
+		t.Parallel()
+		got := ResolveHeaders(nil, "", "default-ua")
+		testcmp.AssertEqual(t, "default-ua", got["User-Agent"])
+	})
+
+	t.Run("explicit UA wins over case-insensitive header key", func(t *testing.T) {
+		t.Parallel()
+		headers := map[string]string{"user-agent": "from-headers"}
+		got := ResolveHeaders(headers, "explicit-ua", "default-ua")
+		testcmp.AssertEqual(t, "explicit-ua", got["User-Agent"])
+		_, hasLower := got["user-agent"]
+		assert.False(t, hasLower, "old case-insensitive key should be removed")
+	})
+
+	t.Run("case-insensitive header key canonicalized when no explicit UA", func(t *testing.T) {
+		t.Parallel()
+		headers := map[string]string{"user-agent": "from-headers"}
+		got := ResolveHeaders(headers, "", "default-ua")
+		testcmp.AssertEqual(t, "from-headers", got["User-Agent"])
+		_, hasLower := got["user-agent"]
+		assert.False(t, hasLower, "non-canonical key should be removed")
+	})
+}
+
+func TestResolveHeaders_NoMutation(t *testing.T) {
+	t.Parallel()
+
+	original := map[string]string{"X-Custom": "value"}
+	_ = ResolveHeaders(original, "explicit", "default")
+
+	_, hasUA := original["User-Agent"]
+	require.False(t, hasUA, "input map must not be mutated")
+	testcmp.AssertEqual(t, "value", original["X-Custom"])
+}
+
+func TestResolveHeaders_PreservesOtherHeaders(t *testing.T) {
+	t.Parallel()
+
+	headers := map[string]string{
+		"X-Custom":      "custom-value",
+		"Authorization": "Bearer token",
+	}
+	got := ResolveHeaders(headers, "", "Charm Fantasy/1.0.0")
+	testcmp.AssertEqual(t, map[string]string{
+		"Authorization": "Bearer token",
+		"User-Agent":    "Charm Fantasy/1.0.0",
+		"X-Custom":      "custom-value",
+	}, got)
+}
+
+func TestResolveHeaders_DuplicateCaseInsensitiveKeys(t *testing.T) {
+	t.Parallel()
+
+	t.Run("explicit UA removes all variants", func(t *testing.T) {
+		t.Parallel()
+		headers := map[string]string{
+			"User-Agent": "canonical",
+			"user-agent": "lowercase",
+		}
+		got := ResolveHeaders(headers, "explicit", "default")
+		testcmp.AssertEqual(t, "explicit", got["User-Agent"])
+		_, hasLower := got["user-agent"]
+		assert.False(t, hasLower, "all case-insensitive UA keys must be removed")
+	})
+
+	t.Run("no explicit UA collapses to single canonical key", func(t *testing.T) {
+		t.Parallel()
+		headers := map[string]string{
+			"User-Agent": "canonical",
+			"user-agent": "lowercase",
+		}
+		got := ResolveHeaders(headers, "", "default")
+		_, hasLower := got["user-agent"]
+		hasCanonical := got["User-Agent"]
+		assert.False(t, hasLower, "non-canonical key should be removed")
+		assert.NotEmpty(t, hasCanonical, "canonical User-Agent key must exist")
+	})
+}
+
+func TestCallUserAgent(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		callUA string
+		wantUA string
+		wantOK bool
+	}{
+		{name: "no override", callUA: "", wantUA: "", wantOK: false},
+		{name: "explicit UA", callUA: "MyAgent/1.0", wantUA: "MyAgent/1.0", wantOK: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			ua, ok := CallUserAgent(tt.callUA)
+			testcmp.AssertEqual(t, tt.wantOK, ok)
+			testcmp.AssertEqual(t, tt.wantUA, ua)
+		})
+	}
+}

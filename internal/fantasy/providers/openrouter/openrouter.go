@@ -2,11 +2,11 @@
 package openrouter
 
 import (
-	jsonv2 "github.com/go-json-experiment/json"
+	"encoding/json"
 
 	"charm.land/fantasy"
 	"charm.land/fantasy/providers/openai"
-	"github.com/openai/openai-go/v2/option"
+	"github.com/charmbracelet/openai-go/option"
 )
 
 type options struct {
@@ -89,6 +89,14 @@ func WithHTTPClient(client option.HTTPClient) Option {
 	}
 }
 
+// WithUserAgent sets an explicit User-Agent header, overriding the default and any
+// value set via WithHeaders.
+func WithUserAgent(ua string) Option {
+	return func(o *options) {
+		o.openaiOptions = append(o.openaiOptions, openai.WithUserAgent(ua))
+	}
+}
+
 // WithObjectMode sets the object generation mode for the OpenRouter provider.
 // Supported modes: ObjectModeTool, ObjectModeText.
 // ObjectModeAuto and ObjectModeJSON are automatically converted to ObjectModeTool
@@ -101,11 +109,11 @@ func WithObjectMode(om fantasy.ObjectMode) Option {
 
 func structToMapJSON(s any) (map[string]any, error) {
 	var result map[string]any
-	jsonBytes, err := jsonv2.Marshal(s)
+	jsonBytes, err := json.Marshal(s)
 	if err != nil {
 		return nil, err
 	}
-	err = jsonv2.Unmarshal(jsonBytes, &result)
+	err = json.Unmarshal(jsonBytes, &result)
 	if err != nil {
 		return nil, err
 	}

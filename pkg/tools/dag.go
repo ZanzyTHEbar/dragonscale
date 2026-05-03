@@ -130,7 +130,7 @@ func (t *DagExpandTool) Execute(ctx context.Context, args map[string]interface{}
 
 	sessionKey, _ := args["session_key"].(string)
 	if sessionKey == "" {
-		sessionKey = t.deps.SessionFn()
+		sessionKey = ResolveSessionKey(ctx, t.deps.SessionFn)
 	}
 	if sessionKey == "" {
 		sessionKey = "default"
@@ -261,7 +261,7 @@ func (t *DagDescribeTool) Execute(ctx context.Context, args map[string]interface
 
 	sessionKey, _ := args["session_key"].(string)
 	if sessionKey == "" {
-		sessionKey = t.deps.SessionFn()
+		sessionKey = ResolveSessionKey(ctx, t.deps.SessionFn)
 	}
 	if sessionKey == "" {
 		sessionKey = "default"
@@ -391,7 +391,7 @@ func (t *DagGrepTool) Execute(ctx context.Context, args map[string]interface{}) 
 
 	sessionKey, _ := args["session_key"].(string)
 	if sessionKey == "" {
-		sessionKey = t.deps.SessionFn()
+		sessionKey = ResolveSessionKey(ctx, t.deps.SessionFn)
 	}
 	if sessionKey == "" {
 		sessionKey = "default"

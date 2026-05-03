@@ -12,8 +12,14 @@ Reference blueprint: `docs/execution/unified-kernel-blueprint.md`
 
 - [x] Single always-on runtime path (SecureBus + offloading + run-state persistence).
 - [x] Fail-fast boot invariants for kernel dependencies.
+- [x] Live ReAct transition persistence, authoritative step indexing, and true task tool-call metrics.
 - [x] Deterministic session continuity with projection pointers + integrity validation.
 - [x] Emergency-only recursive compression and provenance persistence.
+- [x] Active-context projection builder now owns hot-path assembly across system, recent history, retrieval, and DAG tiers.
+- [x] Session-correct working context + memory tool binding + durable session summaries.
+- [x] Semantic ContextTree scoring, preserved access state, and DAG projection segments are active in production.
+- [x] Runtime checkpoints persist and restore/fork sessions through the existing checkpoint schema.
+- [x] Baseline RLM reduction is wired into production context assembly for oversized DAG/recall/archival segments.
 - [x] Persistent DAG snapshots + lossless DAG tools (`dag_expand`, `dag_describe`, `dag_grep`).
 - [x] Subagent runtime parity with delegation scope/lineage/depth/fanout guardrails.
 - [x] Assistant-focused proactive eval suite (commitments/reminders/follow-ups/continuity).
@@ -22,6 +28,7 @@ Reference blueprint: `docs/execution/unified-kernel-blueprint.md`
 - [x] Map operators are now FlatBuffers-first end to end for persisted run/item state (`spec_fb`, `input_fb`, `output_fb`).
 - [x] Worker identity and deduplication for map jobs now resolve via deterministic keys (`map:{runID}:{itemIndex}`), with idempotent run reuse under concurrency.
 - [x] Devcontainer + `flatc` + `sqlc` generation pipeline is active (`make devcontainer-build`, `make devcontainer-up`, `make devcontainer-generate`, `make devcontainer-verify`).
+- [x] Audit rows now persist explicit outcome fields (`success`, `error_msg`, `tool_call_id`) and the eval harness enforces strict default assertions.
 
 ---
 
@@ -120,13 +127,15 @@ Deterministic engine compresses old messages into a hierarchical DAG while keepi
 
 ### 5d. RLM Memory Controller
 
-*Dedicated controller layer for Memory I/O — optimizes token usage, call frequency, read/write scheduling.*
+*Baseline recursive reduction is live today.
+The remaining roadmap work is a fuller controller layer for coalesced reads, buffered writes, and adaptive memory I/O policy.*
 
+- **Production baseline (shipped)** — Active-context assembly can route oversized DAG / recall / archival projection segments through `pkg/rlm` before prompt rendering.
 - **Read coalescing** — Batch multiple memory reads into a single DB round-trip. Reduce I/O calls per agent loop iteration.
 - **Write buffering** — Buffer memory writes and flush on consolidation boundaries (aligned with Focus checkpoints).
 - **Token budget enforcement** — Hard cap on tokens loaded from memory per turn. Controller decides what to fetch given the budget, using importance scores from the existing scoring pipeline.
 - **Adaptive fetch** — Controller adjusts retrieval depth based on task complexity signal (number of tool calls, error rate, context pressure).
-- **Recursive Language Models**: Utilize a full in-process RLM agent system to manage the memory store.
+- **Recursive DAG expansion** — Promote the current reducer into a deeper controller that can recurse over partitions and drive memory-heavy sub-queries end-to-end.
 
 *Extends*: `pkg/memory/store/` — new `Controller` layer wrapping `MemoryStore`.
 
@@ -253,8 +262,8 @@ flowchart LR
     - [ ] With this we can push all completed agent work to a "review" queue for human review and approval before being sent off
       - [ ] Example: 
         - [ ] emails, sms, any work where we want to ensure consistency, order, etc.
-- [ ] Add performance metrics to the eval harness
-  - [ ] Raw metrics of tool calls, LLM calls, token counts, duration, etc
+- [ ] Add richer performance metrics to the eval harness
+  - [x] Raw metrics of tool calls, LLM calls, token counts, duration, etc
   - [ ] Per-test scores
   - [ ] Side-by-side comparison matrix
   - [ ] Compare to other agent runtimes
@@ -278,9 +287,9 @@ flowchart LR
     - [ ] spi
     - [ ] pwm
     - [ ] etc
-- [ ] Migrate to Cobra CLI framework
-  - [ ] Use command-palette pattern for subcommands
-  - [ ] keep cli commands as pure cli that calls into the application
+- [x] Migrate to Cobra CLI framework
+  - [x] Use command-palette pattern for subcommands
+  - [x] keep cli commands as pure cli that calls into the application
 - [ ] Migrate to errbuilder-go (ZanzyTHEbar)
 - [ ] Migrate to assert-lib (ZanzyTHEbar)
 - [ ] Implement SubAgent Profiles
@@ -307,14 +316,17 @@ flowchart LR
   - [ ] Tools can then live in packages like `pkg/tools/filesystem.go` and `pkg/tools/network.go`  where we expose only a limited ABI/API to the agent loop
 - [ ] Extract out all inline prompts into separate files
   - [ ] Use dotprompt, poml, or any other structured prompt builder to build prompts
-- [ ] Isolated tool runtime + DAG executor + RLM engine — see [ADR-001](docs/adr/001-isolated-tool-runtime.md)
-  - [ ] Layer 1: Capability manifests (`CapableTool` interface)
-  - [ ] Layer 2: SecureBus + FlatBuffers command protocol (incl. DAG types) + leak scanning
-  - [ ] DAG executor: LLMCompiler-style parallel dispatch, topological wave execution, dependency resolution, Joiner synthesis, replanning loop
-  - [ ] Programmatic tool calling: PTC-style context isolation (intermediate results never enter LLM context), ToolSearch for on-demand tool discovery
-  - [ ] RLM engine: recursive context decomposition (rope DS, parallel fan-out, cheap sub-LM strategy, recursive DAG expansion)
+- [ ] Further expansion of isolated tool runtime + DAG executor + RLM engine — see [ADR-001](docs/adr/001-isolated-tool-runtime.md)
+  - [x] Layer 1: Capability manifests (`CapableTool` interface)
+  - [x] Layer 2: SecureBus + FlatBuffers command protocol (incl. DAG types) + leak scanning
+  - [x] DAG executor: dependency-aware parallel dispatch is active on the tool runtime path
+  - [x] Programmatic tool calling baseline: intermediate tool results are offloaded/indexed and only compact previews enter prompt assembly
+  - [x] RLM baseline: production context reduction over oversized projection segments
+  - [ ] Full recursive DAG expansion and deeper memory-controller orchestration
   - [ ] ReAct/DAG routing: automatic mode selection (`ModeReAct | ModeDAG | ModeAuto`)
-  - [ ] Layer 3: SecretStore + keyring-based secret management
+  - [~] Layer 3: SecretStore + keyring-based secret management
+    - [x] Env-backed encrypted secret store with XChaCha20-Poly1305 vault
+    - [ ] OS keyring / richer backend support
   - [ ] Layer 4: Daemon mode + Schnorr ZKP authentication
   - [ ] Layer 5: wazero WASM isolates (pure Go, no CGO), `CodeExec` command variant
 - [ ] Plug-in tool support: `pkg/tools/registry.go` — add `Search(query) []ToolInfo` for ToolSearch

@@ -1,15 +1,13 @@
 package fantasy
 
 import (
+	"encoding/json"
 	"errors"
+	"reflect"
 	"testing"
-
-	jsonv2 "github.com/go-json-experiment/json"
-	"github.com/google/go-cmp/cmp"
 )
 
 func TestMessageJSONSerialization(t *testing.T) {
-	t.Parallel()
 	tests := []struct {
 		name    string
 		message Message
@@ -158,14 +156,14 @@ func TestMessageJSONSerialization(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Marshal the message
-			data, err := jsonv2.Marshal(tt.message)
+			data, err := json.Marshal(tt.message)
 			if err != nil {
 				t.Fatalf("failed to marshal message: %v", err)
 			}
 
 			// Unmarshal back
 			var decoded Message
-			err = jsonv2.Unmarshal(data, &decoded)
+			err = json.Unmarshal(data, &decoded)
 			if err != nil {
 				t.Fatalf("failed to unmarshal message: %v", err)
 			}
@@ -201,29 +199,44 @@ func compareMessagePart(t *testing.T, index int, original, decoded MessagePart) 
 	case ContentTypeText:
 		orig := original.(TextPart)
 		dec := decoded.(TextPart)
-		if diff := cmp.Diff(orig, dec); diff != "" {
-			t.Errorf("content[%d] TextPart mismatch (-want +got):\n%s", index, diff)
+		if orig.Text != dec.Text {
+			t.Errorf("content[%d] text mismatch: got %q, want %q", index, dec.Text, orig.Text)
 		}
 
 	case ContentTypeReasoning:
 		orig := original.(ReasoningPart)
 		dec := decoded.(ReasoningPart)
-		if diff := cmp.Diff(orig, dec); diff != "" {
-			t.Errorf("content[%d] ReasoningPart mismatch (-want +got):\n%s", index, diff)
+		if orig.Text != dec.Text {
+			t.Errorf("content[%d] reasoning text mismatch: got %q, want %q", index, dec.Text, orig.Text)
 		}
 
 	case ContentTypeFile:
 		orig := original.(FilePart)
 		dec := decoded.(FilePart)
-		if diff := cmp.Diff(orig, dec); diff != "" {
-			t.Errorf("content[%d] FilePart mismatch (-want +got):\n%s", index, diff)
+		if orig.Filename != dec.Filename {
+			t.Errorf("content[%d] filename mismatch: got %q, want %q", index, dec.Filename, orig.Filename)
+		}
+		if orig.MediaType != dec.MediaType {
+			t.Errorf("content[%d] media type mismatch: got %q, want %q", index, dec.MediaType, orig.MediaType)
+		}
+		if !reflect.DeepEqual(orig.Data, dec.Data) {
+			t.Errorf("content[%d] file data mismatch", index)
 		}
 
 	case ContentTypeToolCall:
 		orig := original.(ToolCallPart)
 		dec := decoded.(ToolCallPart)
-		if diff := cmp.Diff(orig, dec); diff != "" {
-			t.Errorf("content[%d] ToolCallPart mismatch (-want +got):\n%s", index, diff)
+		if orig.ToolCallID != dec.ToolCallID {
+			t.Errorf("content[%d] tool call id mismatch: got %q, want %q", index, dec.ToolCallID, orig.ToolCallID)
+		}
+		if orig.ToolName != dec.ToolName {
+			t.Errorf("content[%d] tool name mismatch: got %q, want %q", index, dec.ToolName, orig.ToolName)
+		}
+		if orig.Input != dec.Input {
+			t.Errorf("content[%d] tool input mismatch: got %q, want %q", index, dec.Input, orig.Input)
+		}
+		if orig.ProviderExecuted != dec.ProviderExecuted {
+			t.Errorf("content[%d] provider executed mismatch: got %v, want %v", index, dec.ProviderExecuted, orig.ProviderExecuted)
 		}
 
 	case ContentTypeToolResult:
@@ -246,45 +259,40 @@ func compareToolResultOutput(t *testing.T, index int, original, decoded ToolResu
 	case ToolResultContentTypeText:
 		orig := original.(ToolResultOutputContentText)
 		dec := decoded.(ToolResultOutputContentText)
-		if diff := cmp.Diff(orig, dec); diff != "" {
-			t.Errorf("content[%d] ToolResultOutputContentText mismatch (-want +got):\n%s", index, diff)
+		if orig.Text != dec.Text {
+			t.Errorf("content[%d] tool result text mismatch: got %q, want %q", index, dec.Text, orig.Text)
 		}
 
 	case ToolResultContentTypeError:
 		orig := original.(ToolResultOutputContentError)
 		dec := decoded.(ToolResultOutputContentError)
-		if orig.Error == nil && dec.Error == nil {
-			return
-		}
-		if orig.Error == nil || dec.Error == nil {
-			t.Errorf("content[%d] ToolResultOutputContentError mismatch (-want +got): %v != %v", index, orig.Error, dec.Error)
-			return
-		}
-		if diff := cmp.Diff(orig.Error.Error(), dec.Error.Error()); diff != "" {
-			t.Errorf("content[%d] ToolResultOutputContentError mismatch (-want +got):\n%s", index, diff)
+		if orig.Error.Error() != dec.Error.Error() {
+			t.Errorf("content[%d] tool result error mismatch: got %q, want %q", index, dec.Error.Error(), orig.Error.Error())
 		}
 
 	case ToolResultContentTypeMedia:
 		orig := original.(ToolResultOutputContentMedia)
 		dec := decoded.(ToolResultOutputContentMedia)
-		if diff := cmp.Diff(orig, dec); diff != "" {
-			t.Errorf("content[%d] ToolResultOutputContentMedia mismatch (-want +got):\n%s", index, diff)
+		if orig.Data != dec.Data {
+			t.Errorf("content[%d] tool result media data mismatch", index)
+		}
+		if orig.MediaType != dec.MediaType {
+			t.Errorf("content[%d] tool result media type mismatch: got %q, want %q", index, dec.MediaType, orig.MediaType)
 		}
 	}
 }
 
 func TestHelperFunctions(t *testing.T) {
-	t.Parallel()
 	t.Run("NewUserMessage - text only", func(t *testing.T) {
 		msg := NewUserMessage("Hello")
 
-		data, err := jsonv2.Marshal(msg)
+		data, err := json.Marshal(msg)
 		if err != nil {
 			t.Fatalf("failed to marshal: %v", err)
 		}
 
 		var decoded Message
-		if err := jsonv2.Unmarshal(data, &decoded); err != nil {
+		if err := json.Unmarshal(data, &decoded); err != nil {
 			t.Fatalf("failed to unmarshal: %v", err)
 		}
 
@@ -316,13 +324,13 @@ func TestHelperFunctions(t *testing.T) {
 			},
 		)
 
-		data, err := jsonv2.Marshal(msg)
+		data, err := json.Marshal(msg)
 		if err != nil {
 			t.Fatalf("failed to marshal: %v", err)
 		}
 
 		var decoded Message
-		if err := jsonv2.Unmarshal(data, &decoded); err != nil {
+		if err := json.Unmarshal(data, &decoded); err != nil {
 			t.Fatalf("failed to unmarshal: %v", err)
 		}
 
@@ -352,13 +360,13 @@ func TestHelperFunctions(t *testing.T) {
 	t.Run("NewSystemMessage - single prompt", func(t *testing.T) {
 		msg := NewSystemMessage("You are a helpful assistant.")
 
-		data, err := jsonv2.Marshal(msg)
+		data, err := json.Marshal(msg)
 		if err != nil {
 			t.Fatalf("failed to marshal: %v", err)
 		}
 
 		var decoded Message
-		if err := jsonv2.Unmarshal(data, &decoded); err != nil {
+		if err := json.Unmarshal(data, &decoded); err != nil {
 			t.Fatalf("failed to unmarshal: %v", err)
 		}
 
@@ -379,13 +387,13 @@ func TestHelperFunctions(t *testing.T) {
 	t.Run("NewSystemMessage - multiple prompts", func(t *testing.T) {
 		msg := NewSystemMessage("First instruction", "Second instruction", "Third instruction")
 
-		data, err := jsonv2.Marshal(msg)
+		data, err := json.Marshal(msg)
 		if err != nil {
 			t.Fatalf("failed to marshal: %v", err)
 		}
 
 		var decoded Message
-		if err := jsonv2.Unmarshal(data, &decoded); err != nil {
+		if err := json.Unmarshal(data, &decoded); err != nil {
 			t.Fatalf("failed to unmarshal: %v", err)
 		}
 
@@ -404,7 +412,6 @@ func TestHelperFunctions(t *testing.T) {
 }
 
 func TestEdgeCases(t *testing.T) {
-	t.Parallel()
 	t.Run("empty text part", func(t *testing.T) {
 		msg := Message{
 			Role: MessageRoleUser,
@@ -413,13 +420,13 @@ func TestEdgeCases(t *testing.T) {
 			},
 		}
 
-		data, err := jsonv2.Marshal(msg)
+		data, err := json.Marshal(msg)
 		if err != nil {
 			t.Fatalf("failed to marshal: %v", err)
 		}
 
 		var decoded Message
-		if err := jsonv2.Unmarshal(data, &decoded); err != nil {
+		if err := json.Unmarshal(data, &decoded); err != nil {
 			t.Fatalf("failed to unmarshal: %v", err)
 		}
 
@@ -442,13 +449,13 @@ func TestEdgeCases(t *testing.T) {
 			},
 		}
 
-		data, err := jsonv2.Marshal(msg)
+		data, err := json.Marshal(msg)
 		if err != nil {
 			t.Fatalf("failed to marshal: %v", err)
 		}
 
 		var decoded Message
-		if err := jsonv2.Unmarshal(data, &decoded); err != nil {
+		if err := json.Unmarshal(data, &decoded); err != nil {
 			t.Fatalf("failed to unmarshal: %v", err)
 		}
 
@@ -471,13 +478,13 @@ func TestEdgeCases(t *testing.T) {
 			},
 		}
 
-		data, err := jsonv2.Marshal(msg)
+		data, err := json.Marshal(msg)
 		if err != nil {
 			t.Fatalf("failed to marshal: %v", err)
 		}
 
 		var decoded Message
-		if err := jsonv2.Unmarshal(data, &decoded); err != nil {
+		if err := json.Unmarshal(data, &decoded); err != nil {
 			t.Fatalf("failed to unmarshal: %v", err)
 		}
 
@@ -495,13 +502,13 @@ func TestEdgeCases(t *testing.T) {
 			},
 		}
 
-		data, err := jsonv2.Marshal(msg)
+		data, err := json.Marshal(msg)
 		if err != nil {
 			t.Fatalf("failed to marshal: %v", err)
 		}
 
 		var decoded Message
-		if err := jsonv2.Unmarshal(data, &decoded); err != nil {
+		if err := json.Unmarshal(data, &decoded); err != nil {
 			t.Fatalf("failed to unmarshal: %v", err)
 		}
 
@@ -513,7 +520,6 @@ func TestEdgeCases(t *testing.T) {
 }
 
 func TestInvalidJSONHandling(t *testing.T) {
-	t.Parallel()
 	t.Run("unknown message part type", func(t *testing.T) {
 		invalidJSON := `{
 			"role": "user",
@@ -527,7 +533,7 @@ func TestInvalidJSONHandling(t *testing.T) {
 		}`
 
 		var msg Message
-		err := jsonv2.Unmarshal([]byte(invalidJSON), &msg)
+		err := json.Unmarshal([]byte(invalidJSON), &msg)
 		if err == nil {
 			t.Error("expected error for unknown message part type, got nil")
 		}
@@ -553,7 +559,7 @@ func TestInvalidJSONHandling(t *testing.T) {
 		}`
 
 		var msg Message
-		err := jsonv2.Unmarshal([]byte(invalidJSON), &msg)
+		err := json.Unmarshal([]byte(invalidJSON), &msg)
 		if err == nil {
 			t.Error("expected error for unknown tool result output type, got nil")
 		}
@@ -563,7 +569,7 @@ func TestInvalidJSONHandling(t *testing.T) {
 		invalidJSON := `{"role": "user", "content": [`
 
 		var msg Message
-		err := jsonv2.Unmarshal([]byte(invalidJSON), &msg)
+		err := json.Unmarshal([]byte(invalidJSON), &msg)
 		if err == nil {
 			t.Error("expected error for malformed JSON, got nil")
 		}
@@ -578,7 +584,7 @@ type mockProviderData struct {
 func (m mockProviderData) Options()     {}
 func (m mockProviderData) Type() string { return "mock" }
 func (m mockProviderData) MarshalJSON() ([]byte, error) {
-	return jsonv2.Marshal(struct {
+	return json.Marshal(struct {
 		Type string `json:"type"`
 		mockProviderData
 	}{
@@ -592,7 +598,7 @@ func (m *mockProviderData) UnmarshalJSON(data []byte) error {
 		Type string `json:"type"`
 		mockProviderData
 	}
-	if err := jsonv2.Unmarshal(data, &aux); err != nil {
+	if err := json.Unmarshal(data, &aux); err != nil {
 		return err
 	}
 	*m = aux.mockProviderData
@@ -600,7 +606,6 @@ func (m *mockProviderData) UnmarshalJSON(data []byte) error {
 }
 
 func TestPromptSerialization(t *testing.T) {
-	t.Parallel()
 	t.Run("serialize prompt (message slice)", func(t *testing.T) {
 		prompt := Prompt{
 			NewSystemMessage("You are helpful"),
@@ -613,13 +618,13 @@ func TestPromptSerialization(t *testing.T) {
 			},
 		}
 
-		data, err := jsonv2.Marshal(prompt)
+		data, err := json.Marshal(prompt)
 		if err != nil {
 			t.Fatalf("failed to marshal prompt: %v", err)
 		}
 
 		var decoded Prompt
-		if err := jsonv2.Unmarshal(data, &decoded); err != nil {
+		if err := json.Unmarshal(data, &decoded); err != nil {
 			t.Fatalf("failed to unmarshal prompt: %v", err)
 		}
 
@@ -642,7 +647,6 @@ func TestPromptSerialization(t *testing.T) {
 }
 
 func TestStreamPartErrorSerialization(t *testing.T) {
-	t.Parallel()
 	t.Run("stream part with ProviderError containing OpenAI API error", func(t *testing.T) {
 		// Create a mock OpenAI API error
 		openaiErr := errors.New("invalid_api_key: Incorrect API key provided")
@@ -668,14 +672,14 @@ func TestStreamPartErrorSerialization(t *testing.T) {
 		}
 
 		// Marshal the stream part
-		data, err := jsonv2.Marshal(streamPart)
+		data, err := json.Marshal(streamPart)
 		if err != nil {
 			t.Fatalf("failed to marshal stream part: %v", err)
 		}
 
 		// Unmarshal back
 		var decoded StreamPart
-		err = jsonv2.Unmarshal(data, &decoded)
+		err = json.Unmarshal(data, &decoded)
 		if err != nil {
 			t.Fatalf("failed to unmarshal stream part: %v", err)
 		}
@@ -724,7 +728,7 @@ func TestStreamPartErrorSerialization(t *testing.T) {
 		}`
 
 		var streamPart StreamPart
-		err := jsonv2.Unmarshal([]byte(jsonData), &streamPart)
+		err := json.Unmarshal([]byte(jsonData), &streamPart)
 		if err != nil {
 			t.Fatalf("failed to unmarshal stream part: %v", err)
 		}

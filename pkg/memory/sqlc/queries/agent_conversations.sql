@@ -7,6 +7,12 @@ SELECT *
 FROM agent_conversations
 WHERE id = ?
 LIMIT 1;
+-- name: GetLatestAgentConversationByTitle :one
+SELECT *
+FROM agent_conversations
+WHERE title = ?
+ORDER BY created_at DESC
+LIMIT 1;
 -- name: ListAgentConversations :many
 SELECT *
 FROM agent_conversations

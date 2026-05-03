@@ -82,6 +82,15 @@ func TestValidateURL_BlockedIPs(t *testing.T) {
 	}
 }
 
+func TestValidateURL_BlockedDNSResolvedPrivateIP(t *testing.T) {
+	err := validateURLWithLookup("https://public-looking.example/path", func(host string) ([]string, error) {
+		return []string{"10.0.0.42"}, nil
+	})
+
+	assert.ErrorIs(t, err, ErrBlockedURL)
+	assert.Contains(t, err.Error(), "resolved IP")
+}
+
 func TestValidateURL_EmptyAndInvalid(t *testing.T) {
 	t.Parallel()
 	tests := []struct {

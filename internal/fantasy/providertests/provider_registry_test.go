@@ -1,65 +1,69 @@
 package providertests
 
 import (
+	"encoding/json"
 	"testing"
 
-	jsonv2 "github.com/go-json-experiment/json"
-	"github.com/google/go-cmp/cmp"
-
 	"charm.land/fantasy"
+	"charm.land/fantasy/internal/testcmp"
 	"charm.land/fantasy/providers/anthropic"
 	"charm.land/fantasy/providers/google"
 	"charm.land/fantasy/providers/openai"
 	"charm.land/fantasy/providers/openaicompat"
 	"charm.land/fantasy/providers/openrouter"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
+func nonNilJSONMapEntries(values map[string]any) map[string]any {
+	trimmed := make(map[string]any, len(values))
+	for key, value := range values {
+		if value != nil {
+			trimmed[key] = value
+		}
+	}
+	return trimmed
+}
+
 func TestProviderRegistry_Serialization_OpenAIOptions(t *testing.T) {
-	t.Parallel()
 	msg := fantasy.Message{
 		Role: fantasy.MessageRoleUser,
 		Content: []fantasy.MessagePart{
 			fantasy.TextPart{Text: "hi"},
 		},
 		ProviderOptions: fantasy.ProviderOptions{
-			openai.Name: &openai.ProviderOptions{User: fantasy.Opt("tester")},
+			openai.Name: &openai.ProviderOptions{User: new("tester")},
 		},
 	}
 
-	data, err := jsonv2.Marshal(msg)
+	data, err := json.Marshal(msg)
 	require.NoError(t, err)
 
 	var raw struct {
 		ProviderOptions map[string]map[string]any `json:"provider_options"`
 	}
-	require.NoError(t, jsonv2.Unmarshal(data, &raw))
+	require.NoError(t, json.Unmarshal(data, &raw))
 
 	po, ok := raw.ProviderOptions[openai.Name]
 	require.True(t, ok)
-	assert.Empty(t, cmp.Diff(openai.TypeProviderOptions, po["type"])) // no magic strings
+	testcmp.RequireEqual(t, openai.TypeProviderOptions, po["type"]) // no magic strings
 	// ensure inner data has the field we set
 	inner, ok := po["data"].(map[string]any)
 	require.True(t, ok)
-	assert.Empty(t, cmp.Diff("tester", inner["user"]))
+	testcmp.RequireEqual(t, map[string]any{"user": "tester"}, nonNilJSONMapEntries(inner))
 
 	var decoded fantasy.Message
-	require.NoError(t, jsonv2.Unmarshal(data, &decoded))
+	require.NoError(t, json.Unmarshal(data, &decoded))
 
 	got, ok := decoded.ProviderOptions[openai.Name]
 	require.True(t, ok)
 	opt, ok := got.(*openai.ProviderOptions)
 	require.True(t, ok)
 	require.NotNil(t, opt.User)
-	assert.Empty(t, cmp.Diff("tester", *opt.User))
+	testcmp.RequireEqual(t, &openai.ProviderOptions{User: new("tester")}, opt)
 }
 
 func TestProviderRegistry_Serialization_OpenAIResponses(t *testing.T) {
-	t.Parallel(
 	// Use ResponsesProviderOptions in provider options
-	)
-
 	msg := fantasy.Message{
 		Role: fantasy.MessageRoleUser,
 		Content: []fantasy.MessagePart{
@@ -67,42 +71,45 @@ func TestProviderRegistry_Serialization_OpenAIResponses(t *testing.T) {
 		},
 		ProviderOptions: fantasy.ProviderOptions{
 			openai.Name: &openai.ResponsesProviderOptions{
-				PromptCacheKey:    fantasy.Opt("cache-key-1"),
-				ParallelToolCalls: fantasy.Opt(true),
+				PromptCacheKey:    new("cache-key-1"),
+				ParallelToolCalls: new(true),
 			},
 		},
 	}
 
-	data, err := jsonv2.Marshal(msg)
+	data, err := json.Marshal(msg)
 	require.NoError(t, err)
 
 	// JSON should include the typed wrapper with constant TypeResponsesProviderOptions
 	var raw struct {
 		ProviderOptions map[string]map[string]any `json:"provider_options"`
 	}
-	require.NoError(t, jsonv2.Unmarshal(data, &raw))
+	require.NoError(t, json.Unmarshal(data, &raw))
 
 	po := raw.ProviderOptions[openai.Name]
-	assert.Empty(t, cmp.Diff(openai.TypeResponsesProviderOptions, po["type"])) // no magic strings
+	testcmp.RequireEqual(t, openai.TypeResponsesProviderOptions, po["type"]) // no magic strings
 	inner, ok := po["data"].(map[string]any)
 	require.True(t, ok)
-	assert.Empty(t, cmp.Diff("cache-key-1", inner["prompt_cache_key"]))
-	assert.Empty(t, cmp.Diff(true, inner["parallel_tool_calls"]))
+	testcmp.RequireEqual(t, map[string]any{
+		"prompt_cache_key":    "cache-key-1",
+		"parallel_tool_calls": true,
+	}, nonNilJSONMapEntries(inner))
 
 	// Unmarshal back and assert concrete type
 	var decoded fantasy.Message
-	require.NoError(t, jsonv2.Unmarshal(data, &decoded))
+	require.NoError(t, json.Unmarshal(data, &decoded))
 	got := decoded.ProviderOptions[openai.Name]
 	reqOpts, ok := got.(*openai.ResponsesProviderOptions)
 	require.True(t, ok)
 	require.NotNil(t, reqOpts.PromptCacheKey)
-	assert.Empty(t, cmp.Diff("cache-key-1", *reqOpts.PromptCacheKey))
 	require.NotNil(t, reqOpts.ParallelToolCalls)
-	assert.Empty(t, cmp.Diff(true, *reqOpts.ParallelToolCalls))
+	testcmp.RequireEqual(t, &openai.ResponsesProviderOptions{
+		PromptCacheKey:    new("cache-key-1"),
+		ParallelToolCalls: new(true),
+	}, reqOpts)
 }
 
 func TestProviderRegistry_Serialization_OpenAIResponsesReasoningMetadata(t *testing.T) {
-	t.Parallel()
 	resp := fantasy.Response{
 		Content: []fantasy.Content{
 			fantasy.TextContent{
@@ -117,7 +124,7 @@ func TestProviderRegistry_Serialization_OpenAIResponsesReasoningMetadata(t *test
 		},
 	}
 
-	data, err := jsonv2.Marshal(resp)
+	data, err := json.Marshal(resp)
 	require.NoError(t, err)
 
 	// Ensure the provider metadata is wrapped with type using constant
@@ -127,32 +134,36 @@ func TestProviderRegistry_Serialization_OpenAIResponsesReasoningMetadata(t *test
 			Data map[string]any `json:"data"`
 		} `json:"content"`
 	}
-	require.NoError(t, jsonv2.Unmarshal(data, &raw))
+	require.NoError(t, json.Unmarshal(data, &raw))
 	require.Greater(t, len(raw.Content), 0)
 	tc := raw.Content[0]
 	pm, ok := tc.Data["provider_metadata"].(map[string]any)
 	require.True(t, ok)
 	om, ok := pm[openai.Name].(map[string]any)
 	require.True(t, ok)
-	assert.Empty(t, cmp.Diff(openai.TypeResponsesReasoningMetadata, om["type"])) // no magic strings
+	testcmp.RequireEqual(t, openai.TypeResponsesReasoningMetadata, om["type"]) // no magic strings
 	inner, ok := om["data"].(map[string]any)
 	require.True(t, ok)
-	assert.Empty(t, cmp.Diff("item-123", inner["item_id"]))
+	testcmp.RequireEqual(t, map[string]any{
+		"item_id": "item-123",
+		"summary": []any{"part1", "part2"},
+	}, nonNilJSONMapEntries(inner))
 
 	// Unmarshal back
 	var decoded fantasy.Response
-	require.NoError(t, jsonv2.Unmarshal(data, &decoded))
+	require.NoError(t, json.Unmarshal(data, &decoded))
 	pmDecoded := decoded.Content[0].(fantasy.TextContent).ProviderMetadata
 	val, ok := pmDecoded[openai.Name]
 	require.True(t, ok)
 	meta, ok := val.(*openai.ResponsesReasoningMetadata)
 	require.True(t, ok)
-	assert.Empty(t, cmp.Diff("item-123", meta.ItemID))
-	assert.Empty(t, cmp.Diff([]string{"part1", "part2"}, meta.Summary))
+	testcmp.RequireEqual(t, &openai.ResponsesReasoningMetadata{
+		ItemID:  "item-123",
+		Summary: []string{"part1", "part2"},
+	}, meta)
 }
 
 func TestProviderRegistry_Serialization_AnthropicOptions(t *testing.T) {
-	t.Parallel()
 	sendReasoning := true
 	msg := fantasy.Message{
 		Role: fantasy.MessageRoleUser,
@@ -166,22 +177,21 @@ func TestProviderRegistry_Serialization_AnthropicOptions(t *testing.T) {
 		},
 	}
 
-	data, err := jsonv2.Marshal(msg)
+	data, err := json.Marshal(msg)
 	require.NoError(t, err)
 
 	var decoded fantasy.Message
-	require.NoError(t, jsonv2.Unmarshal(data, &decoded))
+	require.NoError(t, json.Unmarshal(data, &decoded))
 
 	got, ok := decoded.ProviderOptions[anthropic.Name]
 	require.True(t, ok)
 	opt, ok := got.(*anthropic.ProviderOptions)
 	require.True(t, ok)
 	require.NotNil(t, opt.SendReasoning)
-	assert.Empty(t, cmp.Diff(true, *opt.SendReasoning))
+	testcmp.RequireEqual(t, &anthropic.ProviderOptions{SendReasoning: &sendReasoning}, opt)
 }
 
 func TestProviderRegistry_Serialization_GoogleOptions(t *testing.T) {
-	t.Parallel()
 	msg := fantasy.Message{
 		Role: fantasy.MessageRoleUser,
 		Content: []fantasy.MessagePart{
@@ -191,26 +201,35 @@ func TestProviderRegistry_Serialization_GoogleOptions(t *testing.T) {
 			google.Name: &google.ProviderOptions{
 				CachedContent: "cached-123",
 				Threshold:     "BLOCK_ONLY_HIGH",
+				ThinkingConfig: &google.ThinkingConfig{
+					ThinkingLevel: fantasy.Opt(google.ThinkingLevelHigh),
+				},
 			},
 		},
 	}
 
-	data, err := jsonv2.Marshal(msg)
+	data, err := json.Marshal(msg)
 	require.NoError(t, err)
 
 	var decoded fantasy.Message
-	require.NoError(t, jsonv2.Unmarshal(data, &decoded))
+	require.NoError(t, json.Unmarshal(data, &decoded))
 
 	got, ok := decoded.ProviderOptions[google.Name]
 	require.True(t, ok)
 	opt, ok := got.(*google.ProviderOptions)
 	require.True(t, ok)
-	assert.Empty(t, cmp.Diff("cached-123", opt.CachedContent))
-	assert.Empty(t, cmp.Diff("BLOCK_ONLY_HIGH", opt.Threshold))
+	require.NotNil(t, opt.ThinkingConfig)
+	require.NotNil(t, opt.ThinkingConfig.ThinkingLevel)
+	testcmp.RequireEqual(t, &google.ProviderOptions{
+		CachedContent: "cached-123",
+		Threshold:     "BLOCK_ONLY_HIGH",
+		ThinkingConfig: &google.ThinkingConfig{
+			ThinkingLevel: fantasy.Opt(google.ThinkingLevelHigh),
+		},
+	}, opt)
 }
 
 func TestProviderRegistry_Serialization_OpenRouterOptions(t *testing.T) {
-	t.Parallel()
 	includeUsage := true
 	msg := fantasy.Message{
 		Role: fantasy.MessageRoleUser,
@@ -220,29 +239,30 @@ func TestProviderRegistry_Serialization_OpenRouterOptions(t *testing.T) {
 		ProviderOptions: fantasy.ProviderOptions{
 			openrouter.Name: &openrouter.ProviderOptions{
 				IncludeUsage: &includeUsage,
-				User:         fantasy.Opt("test-user"),
+				User:         new("test-user"),
 			},
 		},
 	}
 
-	data, err := jsonv2.Marshal(msg)
+	data, err := json.Marshal(msg)
 	require.NoError(t, err)
 
 	var decoded fantasy.Message
-	require.NoError(t, jsonv2.Unmarshal(data, &decoded))
+	require.NoError(t, json.Unmarshal(data, &decoded))
 
 	got, ok := decoded.ProviderOptions[openrouter.Name]
 	require.True(t, ok)
 	opt, ok := got.(*openrouter.ProviderOptions)
 	require.True(t, ok)
 	require.NotNil(t, opt.IncludeUsage)
-	assert.Empty(t, cmp.Diff(true, *opt.IncludeUsage))
 	require.NotNil(t, opt.User)
-	assert.Empty(t, cmp.Diff("test-user", *opt.User))
+	testcmp.RequireEqual(t, &openrouter.ProviderOptions{
+		IncludeUsage: &includeUsage,
+		User:         new("test-user"),
+	}, opt)
 }
 
 func TestProviderRegistry_Serialization_OpenAICompatOptions(t *testing.T) {
-	t.Parallel()
 	effort := openai.ReasoningEffortHigh
 	msg := fantasy.Message{
 		Role: fantasy.MessageRoleUser,
@@ -251,33 +271,32 @@ func TestProviderRegistry_Serialization_OpenAICompatOptions(t *testing.T) {
 		},
 		ProviderOptions: fantasy.ProviderOptions{
 			openaicompat.Name: &openaicompat.ProviderOptions{
-				User:            fantasy.Opt("test-user"),
+				User:            new("test-user"),
 				ReasoningEffort: &effort,
 			},
 		},
 	}
 
-	data, err := jsonv2.Marshal(msg)
+	data, err := json.Marshal(msg)
 	require.NoError(t, err)
 
 	var decoded fantasy.Message
-	require.NoError(t, jsonv2.Unmarshal(data, &decoded))
+	require.NoError(t, json.Unmarshal(data, &decoded))
 
 	got, ok := decoded.ProviderOptions[openaicompat.Name]
 	require.True(t, ok)
 	opt, ok := got.(*openaicompat.ProviderOptions)
 	require.True(t, ok)
 	require.NotNil(t, opt.User)
-	assert.Empty(t, cmp.Diff("test-user", *opt.User))
 	require.NotNil(t, opt.ReasoningEffort)
-	assert.Empty(t, cmp.Diff(openai.ReasoningEffortHigh, *opt.ReasoningEffort))
+	testcmp.RequireEqual(t, &openaicompat.ProviderOptions{
+		User:            new("test-user"),
+		ReasoningEffort: &effort,
+	}, opt)
 }
 
 func TestProviderRegistry_MultiProvider(t *testing.T) {
-	t.Parallel(
 	// Test with multiple providers in one message
-	)
-
 	sendReasoning := true
 	msg := fantasy.Message{
 		Role: fantasy.MessageRoleUser,
@@ -285,36 +304,35 @@ func TestProviderRegistry_MultiProvider(t *testing.T) {
 			fantasy.TextPart{Text: "test"},
 		},
 		ProviderOptions: fantasy.ProviderOptions{
-			openai.Name: &openai.ProviderOptions{User: fantasy.Opt("user1")},
+			openai.Name: &openai.ProviderOptions{User: new("user1")},
 			anthropic.Name: &anthropic.ProviderOptions{
 				SendReasoning: &sendReasoning,
 			},
 		},
 	}
 
-	data, err := jsonv2.Marshal(msg)
+	data, err := json.Marshal(msg)
 	require.NoError(t, err)
 
 	var decoded fantasy.Message
-	require.NoError(t, jsonv2.Unmarshal(data, &decoded))
+	require.NoError(t, json.Unmarshal(data, &decoded))
 
 	// Check OpenAI options
 	openaiOpt, ok := decoded.ProviderOptions[openai.Name]
 	require.True(t, ok)
 	openaiData, ok := openaiOpt.(*openai.ProviderOptions)
 	require.True(t, ok)
-	assert.Empty(t, cmp.Diff("user1", *openaiData.User))
+	testcmp.RequireEqual(t, &openai.ProviderOptions{User: new("user1")}, openaiData)
 
 	// Check Anthropic options
 	anthropicOpt, ok := decoded.ProviderOptions[anthropic.Name]
 	require.True(t, ok)
 	anthropicData, ok := anthropicOpt.(*anthropic.ProviderOptions)
 	require.True(t, ok)
-	assert.Empty(t, cmp.Diff(true, *anthropicData.SendReasoning))
+	testcmp.RequireEqual(t, &anthropic.ProviderOptions{SendReasoning: &sendReasoning}, anthropicData)
 }
 
 func TestProviderRegistry_ErrorHandling(t *testing.T) {
-	t.Parallel()
 	t.Run("unknown provider type", func(t *testing.T) {
 		invalidJSON := `{
 			"role": "user",
@@ -328,7 +346,7 @@ func TestProviderRegistry_ErrorHandling(t *testing.T) {
 		}`
 
 		var msg fantasy.Message
-		err := jsonv2.Unmarshal([]byte(invalidJSON), &msg)
+		err := json.Unmarshal([]byte(invalidJSON), &msg)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "unknown provider data type")
 	})
@@ -343,17 +361,14 @@ func TestProviderRegistry_ErrorHandling(t *testing.T) {
 		}`
 
 		var msg fantasy.Message
-		err := jsonv2.Unmarshal([]byte(invalidJSON), &msg)
+		err := json.Unmarshal([]byte(invalidJSON), &msg)
 		require.Error(t, err)
 	})
 }
 
 func TestProviderRegistry_AllTypesRegistered(t *testing.T) {
-	t.Parallel(
 	// Verify all expected provider types are registered
 	// We test that unmarshaling with proper type IDs doesn't fail with "unknown provider data type"
-	)
-
 	tests := []struct {
 		name         string
 		providerName string
@@ -383,11 +398,11 @@ func TestProviderRegistry_AllTypesRegistered(t *testing.T) {
 			}
 
 			// Marshal and unmarshal
-			data, err := jsonv2.Marshal(msg)
+			data, err := json.Marshal(msg)
 			require.NoError(t, err)
 
 			var decoded fantasy.Message
-			err = jsonv2.Unmarshal(data, &decoded)
+			err = json.Unmarshal(data, &decoded)
 			require.NoError(t, err)
 
 			// Verify the provider options exist
@@ -403,7 +418,9 @@ func TestProviderRegistry_AllTypesRegistered(t *testing.T) {
 		data         fantasy.ProviderOptionsData
 	}{
 		{"OpenAI Responses Reasoning Metadata", openai.Name, &openai.ResponsesReasoningMetadata{}},
+		{"OpenAI Web Search Call Metadata", openai.Name, &openai.WebSearchCallMetadata{}},
 		{"Anthropic Reasoning Metadata", anthropic.Name, &anthropic.ReasoningOptionMetadata{}},
+		{"Anthropic Web Search Result Metadata", anthropic.Name, &anthropic.WebSearchResultMetadata{}},
 		{"Google Reasoning Metadata", google.Name, &google.ReasoningMetadata{}},
 		{"OpenRouter Metadata", openrouter.Name, &openrouter.ProviderMetadata{}},
 	}
@@ -423,11 +440,11 @@ func TestProviderRegistry_AllTypesRegistered(t *testing.T) {
 			}
 
 			// Marshal and unmarshal
-			data, err := jsonv2.Marshal(resp)
+			data, err := json.Marshal(resp)
 			require.NoError(t, err)
 
 			var decoded fantasy.Response
-			err = jsonv2.Unmarshal(data, &decoded)
+			err = json.Unmarshal(data, &decoded)
 			require.NoError(t, err)
 
 			// Verify the provider metadata exists

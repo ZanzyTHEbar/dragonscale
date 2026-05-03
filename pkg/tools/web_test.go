@@ -1,6 +1,9 @@
 package tools
 
 import (
+	"context"
+	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -10,17 +13,24 @@ import (
 	"github.com/go-json-experiment/json/jsontext"
 )
 
+func newLocalWebFetchTool(server *httptest.Server, maxChars int) *WebFetchTool {
+	tool := NewWebFetchTool(maxChars)
+	tool.client = server.Client()
+	tool.validateURL = func(string) error { return nil }
+	return tool
+}
+
 // TestWebTool_WebFetch_Success verifies successful URL fetching
 func TestWebTool_WebFetch_Success(t *testing.T) {
 	t.Parallel()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("<html><body><h1>Test Page</h1><p>Content here</p></body></html>"))
+		w.Write([]byte("<html><head><title>Test Page</title></head><body><h1>Test Page</h1><p>Content here</p></body></html>"))
 	}))
 	defer server.Close()
 
-	tool := NewWebFetchTool(50000)
+	tool := newLocalWebFetchTool(server, 50000)
 	ctx := t.Context()
 	args := map[string]interface{}{
 		"url": server.URL,
@@ -42,6 +52,14 @@ func TestWebTool_WebFetch_Success(t *testing.T) {
 	if !strings.Contains(result.ForLLM, "bytes") && !strings.Contains(result.ForLLM, "extractor") {
 		t.Errorf("Expected ForLLM to contain summary, got: %s", result.ForLLM)
 	}
+
+	if !strings.Contains(result.ForLLM, "Title: Test Page") {
+		t.Errorf("Expected ForLLM to contain extracted title, got: %s", result.ForLLM)
+	}
+
+	if !strings.Contains(result.ForLLM, "Content here") {
+		t.Errorf("Expected ForLLM to contain fetched content, got: %s", result.ForLLM)
+	}
 }
 
 // TestWebTool_WebFetch_JSON verifies JSON content handling
@@ -57,7 +75,7 @@ func TestWebTool_WebFetch_JSON(t *testing.T) {
 	}))
 	defer server.Close()
 
-	tool := NewWebFetchTool(50000)
+	tool := newLocalWebFetchTool(server, 50000)
 	ctx := t.Context()
 	args := map[string]interface{}{
 		"url": server.URL,
@@ -152,7 +170,7 @@ func TestWebTool_WebFetch_Truncation(t *testing.T) {
 	}))
 	defer server.Close()
 
-	tool := NewWebFetchTool(1000) // Limit to 1000 chars
+	tool := newLocalWebFetchTool(server, 1000) // Limit to 1000 chars
 	ctx := t.Context()
 	args := map[string]interface{}{
 		"url": server.URL,
@@ -216,11 +234,11 @@ func TestWebTool_WebFetch_HTMLExtraction(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`<html><body><script>alert('test');</script><style>body{color:red;}</style><h1>Title</h1><p>Content</p></body></html>`))
+		w.Write([]byte(`<html><head><title>Title</title></head><body><script>alert('test');</script><style>body{color:red;}</style><h1>Title</h1><p>Content</p></body></html>`))
 	}))
 	defer server.Close()
 
-	tool := NewWebFetchTool(50000)
+	tool := newLocalWebFetchTool(server, 50000)
 	ctx := t.Context()
 	args := map[string]interface{}{
 		"url": server.URL,
@@ -236,6 +254,10 @@ func TestWebTool_WebFetch_HTMLExtraction(t *testing.T) {
 	// ForUser should contain extracted text (without script/style tags)
 	if !strings.Contains(result.ForUser, "Title") && !strings.Contains(result.ForUser, "Content") {
 		t.Errorf("Expected ForUser to contain extracted text, got: %s", result.ForUser)
+	}
+
+	if !strings.Contains(result.ForLLM, "Title: Title") {
+		t.Errorf("Expected ForLLM to contain extracted title, got: %s", result.ForLLM)
 	}
 
 	// Should NOT contain script or style tags
@@ -263,5 +285,89 @@ func TestWebTool_WebFetch_MissingDomain(t *testing.T) {
 	// Should mention missing domain
 	if !strings.Contains(result.ForLLM, "domain") && !strings.Contains(result.ForUser, "domain") {
 		t.Errorf("Expected domain error message, got ForLLM: %s", result.ForLLM)
+	}
+}
+
+func TestWebTool_WebFetch_BlocksInitialSSRFURL(t *testing.T) {
+	t.Parallel()
+	tool := NewWebFetchTool(50000)
+
+	result := tool.Execute(t.Context(), map[string]interface{}{
+		"url": "http://127.0.0.1:1/internal",
+	})
+
+	if !result.IsError {
+		t.Fatalf("Expected blocked URL error")
+	}
+	if !strings.Contains(result.ForLLM, "blocked URL") {
+		t.Fatalf("Expected blocked URL message, got: %s", result.ForLLM)
+	}
+}
+
+func TestWebTool_WebFetch_BlocksDNSRebindAtDial(t *testing.T) {
+	t.Parallel()
+	tool := NewWebFetchTool(50000)
+	tool.validateURL = func(string) error { return nil }
+	tool.lookupIPAddr = func(ctx context.Context, host string) ([]net.IPAddr, error) {
+		return []net.IPAddr{{IP: net.ParseIP("127.0.0.1")}}, nil
+	}
+	dialCalled := false
+	tool.dialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
+		dialCalled = true
+		return nil, fmt.Errorf("dial should not be called")
+	}
+
+	result := tool.Execute(t.Context(), map[string]interface{}{
+		"url": "http://public-looking.example/path",
+	})
+
+	if !result.IsError {
+		t.Fatalf("Expected dial-time DNS rebind block")
+	}
+	if dialCalled {
+		t.Fatalf("Dial should not be called for blocked resolved IP")
+	}
+	if !strings.Contains(result.ForLLM, "resolved IP") && !strings.Contains(result.ForLLM, "blocked range") {
+		t.Fatalf("Expected resolved IP block message, got: %s", result.ForLLM)
+	}
+}
+
+func TestWebTool_WebFetch_BlocksRedirectTarget(t *testing.T) {
+	t.Parallel()
+	blockedReached := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/start":
+			http.Redirect(w, r, "/blocked", http.StatusFound)
+		case "/blocked":
+			blockedReached = true
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("secret"))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	tool := newLocalWebFetchTool(server, 50000)
+	tool.validateURL = func(rawURL string) error {
+		if strings.Contains(rawURL, "/blocked") {
+			return fmt.Errorf("test SSRF block")
+		}
+		return nil
+	}
+
+	result := tool.Execute(t.Context(), map[string]interface{}{
+		"url": server.URL + "/start",
+	})
+
+	if !result.IsError {
+		t.Fatalf("Expected redirect block error")
+	}
+	if blockedReached {
+		t.Fatalf("Redirect target should be blocked before the follow-up request")
+	}
+	if !strings.Contains(result.ForLLM, "redirect blocked") {
+		t.Fatalf("Expected redirect blocked message, got: %s", result.ForLLM)
 	}
 }

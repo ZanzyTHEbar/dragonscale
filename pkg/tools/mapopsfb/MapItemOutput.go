@@ -17,11 +17,19 @@ func GetRootAsMapItemOutput(buf []byte, offset flatbuffers.UOffsetT) *MapItemOut
 	return x
 }
 
+func FinishMapItemOutputBuffer(builder *flatbuffers.Builder, offset flatbuffers.UOffsetT) {
+	builder.Finish(offset)
+}
+
 func GetSizePrefixedRootAsMapItemOutput(buf []byte, offset flatbuffers.UOffsetT) *MapItemOutput {
 	n := flatbuffers.GetUOffsetT(buf[offset+flatbuffers.SizeUint32:])
 	x := &MapItemOutput{}
 	x.Init(buf, n+offset+flatbuffers.SizeUint32)
 	return x
+}
+
+func FinishSizePrefixedMapItemOutputBuffer(builder *flatbuffers.Builder, offset flatbuffers.UOffsetT) {
+	builder.FinishSizePrefixed(offset)
 }
 
 func (rcv *MapItemOutput) Init(buf []byte, i flatbuffers.UOffsetT) {

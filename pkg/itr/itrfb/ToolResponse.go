@@ -17,11 +17,19 @@ func GetRootAsToolResponse(buf []byte, offset flatbuffers.UOffsetT) *ToolRespons
 	return x
 }
 
+func FinishToolResponseBuffer(builder *flatbuffers.Builder, offset flatbuffers.UOffsetT) {
+	builder.Finish(offset)
+}
+
 func GetSizePrefixedRootAsToolResponse(buf []byte, offset flatbuffers.UOffsetT) *ToolResponse {
 	n := flatbuffers.GetUOffsetT(buf[offset+flatbuffers.SizeUint32:])
 	x := &ToolResponse{}
 	x.Init(buf, n+offset+flatbuffers.SizeUint32)
 	return x
+}
+
+func FinishSizePrefixedToolResponseBuffer(builder *flatbuffers.Builder, offset flatbuffers.UOffsetT) {
+	builder.FinishSizePrefixed(offset)
 }
 
 func (rcv *ToolResponse) Init(buf []byte, i flatbuffers.UOffsetT) {

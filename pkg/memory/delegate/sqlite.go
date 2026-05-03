@@ -821,8 +821,11 @@ func (d *LibSQLDelegate) InsertAuditEntry(ctx context.Context, entry *memory.Aud
 		SessionKey: entry.SessionKey,
 		Action:     entry.Action,
 		Target:     entry.Target,
+		ToolCallID: entry.ToolCallID,
 		Input:      &entry.Input,
 		Output:     &entry.Output,
+		Success:    entry.Success,
+		ErrorMsg:   entry.ErrorMsg,
 		DurationMs: ptrInt64(int64(entry.DurationMS)),
 	})
 	if err != nil {
@@ -854,8 +857,11 @@ func (d *LibSQLDelegate) InsertAuditEntryBatch(ctx context.Context, entries []*m
 			SessionKey: entry.SessionKey,
 			Action:     entry.Action,
 			Target:     entry.Target,
+			ToolCallID: entry.ToolCallID,
 			Input:      &entry.Input,
 			Output:     &entry.Output,
+			Success:    entry.Success,
+			ErrorMsg:   entry.ErrorMsg,
 			DurationMs: ptrInt64(int64(entry.DurationMS)),
 		})
 		if err != nil {
@@ -1097,6 +1103,31 @@ func (d *LibSQLDelegate) UpdateMemoryWeight(ctx context.Context, memoryID ids.UU
 	})
 }
 
+// StoreTaskCompletion persists a completed run for downstream RL analysis.
+func (d *LibSQLDelegate) StoreTaskCompletion(ctx context.Context, agentID string, completion memory.TaskCompletionRecord, conversationID, runID ids.UUID) error {
+	tokensUsed := int64(completion.TokensUsed)
+	toolCalls := int64(completion.ToolCalls)
+	errorsCount := int64(completion.Errors)
+	userCorrections := int64(completion.UserCorrections)
+
+	_, err := d.queries.StoreTaskCompletion(ctx, memsqlc.StoreTaskCompletionParams{
+		ID:              ids.New(),
+		AgentID:         agentID,
+		ConversationID:  conversationID,
+		RunID:           runID,
+		Description:     completion.Description,
+		TokensUsed:      &tokensUsed,
+		ToolCalls:       &toolCalls,
+		Errors:          &errorsCount,
+		UserCorrections: &userCorrections,
+		Completed:       completion.Completed,
+	})
+	if err != nil {
+		return fmt.Errorf("store task completion: %w", err)
+	}
+	return nil
+}
+
 // UpdateMemorySelfReport updates the self-reported score for a memory.
 // Implements cortex.RLStore interface.
 func (d *LibSQLDelegate) UpdateMemorySelfReport(ctx context.Context, memoryID ids.UUID, score int) error {
@@ -1218,6 +1249,9 @@ func (d *LibSQLDelegate) GetRecentAuditEntries(ctx context.Context, since time.T
 	const pageSize int64 = 1000
 	offset := int64(0)
 	entries := make([]AuditEntry, 0, pageSize)
+	secureBusByCall := make(map[string]AuditEntry)
+	pendingLegacyByCall := make(map[string]AuditEntry)
+	pendingOrder := make([]string, 0, pageSize)
 
 	for {
 		rows, err := d.queries.ListAuditEntriesGlobalSincePaged(ctx, memsqlc.ListAuditEntriesGlobalSincePagedParams{
@@ -1235,34 +1269,58 @@ func (d *LibSQLDelegate) GetRecentAuditEntries(ctx context.Context, since time.T
 		for _, row := range rows {
 			lowerAction := strings.ToLower(strings.TrimSpace(row.Action))
 			toolName := strings.TrimSpace(row.Action)
-			if strings.HasPrefix(lowerAction, "tool_") && strings.TrimSpace(row.Target) != "" {
+			isSecureBus := strings.HasPrefix(lowerAction, "securebus_")
+			isLegacyToolAudit := strings.HasPrefix(lowerAction, "tool_")
+			switch {
+			case strings.HasPrefix(lowerAction, "tool_"),
+				strings.HasPrefix(lowerAction, "securebus_"),
+				strings.HasPrefix(lowerAction, "memory_"),
+				strings.HasPrefix(lowerAction, "doc_"),
+				strings.HasPrefix(lowerAction, "state_"),
+				lowerAction == "emergency_compression":
 				toolName = strings.TrimSpace(row.Target)
 			}
 			if toolName == "" {
 				toolName = strings.TrimSpace(row.Target)
 			}
 
-			success := true
-			if lowerAction == "tool_error" || strings.Contains(lowerAction, "error") || strings.Contains(lowerAction, "fail") {
-				success = false
-			}
-
 			entry := AuditEntry{
-				ID:        row.ID.String(),
-				Timestamp: row.CreatedAt,
-				ToolName:  toolName,
-				ToolInput: "",
-				Success:   success,
-				SessionID: row.SessionKey,
-				AgentID:   row.AgentID,
+				ID:         row.ID.String(),
+				Timestamp:  row.CreatedAt,
+				ToolName:   toolName,
+				ToolCallID: row.ToolCallID,
+				ToolInput:  "",
+				Success:    row.Success,
+				ErrorMsg:   row.ErrorMsg,
+				SessionID:  row.SessionKey,
+				AgentID:    row.AgentID,
 			}
 			if row.Input != nil {
 				entry.ToolInput = *row.Input
 			}
-			if !success && row.Output != nil {
-				entry.ErrorMsg = *row.Output
+
+			callKey := auditEntryDedupKey(row.AgentID, row.SessionKey, row.ToolCallID)
+			switch {
+			case isSecureBus && callKey != "":
+				if legacy, ok := pendingLegacyByCall[callKey]; ok {
+					entry = mergeAuditEntries(entry, legacy)
+					delete(pendingLegacyByCall, callKey)
+				}
+				secureBusByCall[callKey] = entry
+				entries = append(entries, entry)
+			case isLegacyToolAudit && callKey != "":
+				if secureBusEntry, seen := secureBusByCall[callKey]; seen {
+					mergeAuditEntriesIntoSlice(entries, callKey, mergeAuditEntries(secureBusEntry, entry))
+					secureBusByCall[callKey] = mergeAuditEntries(secureBusEntry, entry)
+					continue
+				}
+				if _, exists := pendingLegacyByCall[callKey]; !exists {
+					pendingOrder = append(pendingOrder, callKey)
+				}
+				pendingLegacyByCall[callKey] = entry
+			default:
+				entries = append(entries, entry)
 			}
-			entries = append(entries, entry)
 		}
 
 		if len(rows) < int(pageSize) {
@@ -1271,7 +1329,51 @@ func (d *LibSQLDelegate) GetRecentAuditEntries(ctx context.Context, since time.T
 		offset += int64(len(rows))
 	}
 
+	for _, callKey := range pendingOrder {
+		entry, ok := pendingLegacyByCall[callKey]
+		if !ok {
+			continue
+		}
+		entries = append(entries, entry)
+	}
+
 	return entries, nil
+}
+
+func auditEntryDedupKey(agentID, sessionKey, toolCallID string) string {
+	agentID = strings.TrimSpace(agentID)
+	sessionKey = strings.TrimSpace(sessionKey)
+	toolCallID = strings.TrimSpace(toolCallID)
+	if agentID == "" || sessionKey == "" || toolCallID == "" {
+		return ""
+	}
+	return agentID + "\x00" + sessionKey + "\x00" + toolCallID
+}
+
+func mergeAuditEntries(preferred, fallback AuditEntry) AuditEntry {
+	merged := preferred
+	if strings.TrimSpace(merged.ToolName) == "" {
+		merged.ToolName = fallback.ToolName
+	}
+	if strings.TrimSpace(merged.ToolInput) == "" {
+		merged.ToolInput = fallback.ToolInput
+	}
+	if strings.TrimSpace(merged.ErrorMsg) == "" {
+		merged.ErrorMsg = fallback.ErrorMsg
+	}
+	if !merged.Success && merged.ErrorMsg == "" {
+		merged.ErrorMsg = fallback.ErrorMsg
+	}
+	return merged
+}
+
+func mergeAuditEntriesIntoSlice(entries []AuditEntry, callKey string, merged AuditEntry) {
+	for i := range entries {
+		if auditEntryDedupKey(entries[i].AgentID, entries[i].SessionID, entries[i].ToolCallID) == callKey {
+			entries[i] = merged
+			return
+		}
+	}
 }
 
 // StoreDetectedPattern stores a detected pattern as a recall item.
@@ -1502,6 +1604,9 @@ func sqlcAuditToMemory(row memsqlc.AgentAuditLog) *memory.AuditEntry {
 		SessionKey: row.SessionKey,
 		Action:     row.Action,
 		Target:     row.Target,
+		ToolCallID: row.ToolCallID,
+		Success:    row.Success,
+		ErrorMsg:   row.ErrorMsg,
 		CreatedAt:  row.CreatedAt,
 	}
 	if row.Input != nil {

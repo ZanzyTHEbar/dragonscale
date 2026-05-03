@@ -15,7 +15,7 @@ import (
 
 func TestAgenticMapTool_Execute_Success(t *testing.T) {
 	t.Parallel()
-	provider := &MockLanguageModel{}
+	provider := newPromptEchoLanguageModel(t)
 	manager := NewSubagentManager(provider, "test-model", "/tmp/test", bus.NewMessageBus())
 	manager.SetRunLoop(func(_ context.Context, _ ToolLoopConfig, _, userPrompt, _, _ string) (*ToolLoopResult, error) {
 		return &ToolLoopResult{Content: "processed: " + userPrompt, Iterations: 1}, nil
@@ -49,7 +49,7 @@ func TestAgenticMapTool_Execute_Success(t *testing.T) {
 
 func TestAgenticMapTool_Execute_RetriesFailedItems(t *testing.T) {
 	t.Parallel()
-	provider := &MockLanguageModel{}
+	provider := newPromptEchoLanguageModel(t)
 	manager := NewSubagentManager(provider, "test-model", "/tmp/test", bus.NewMessageBus())
 	callCount := 0
 	manager.SetRunLoop(func(_ context.Context, _ ToolLoopConfig, _, userPrompt, _, _ string) (*ToolLoopResult, error) {
@@ -84,7 +84,7 @@ func TestAgenticMapTool_Execute_RetriesFailedItems(t *testing.T) {
 
 func TestAgenticMapTool_Execute_RequiresPlaceholders(t *testing.T) {
 	t.Parallel()
-	provider := &MockLanguageModel{}
+	provider := newPromptEchoLanguageModel(t)
 	manager := NewSubagentManager(provider, "test-model", "/tmp/test", bus.NewMessageBus())
 	tool := NewAgenticMapTool(manager)
 
@@ -100,7 +100,7 @@ func TestAgenticMapTool_Execute_RequiresPlaceholders(t *testing.T) {
 
 func TestAgenticMapTool_Execute_ContextCancelled(t *testing.T) {
 	t.Parallel()
-	provider := &MockLanguageModel{}
+	provider := newPromptEchoLanguageModel(t)
 	manager := NewSubagentManager(provider, "test-model", "/tmp/test", bus.NewMessageBus())
 	tool := NewAgenticMapTool(manager)
 

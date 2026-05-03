@@ -26,7 +26,7 @@
         };
         const toolNames = toolCalls.map(getToolName);
         const usedMemoryLikeTool = toolNames.includes('memory') || toolNames.includes('keyword_search') || toolNames.includes('semantic_search');
-        return { pass: true, score: usedMemoryLikeTool ? 1.0 : 0.5, reason: usedMemoryLikeTool ? 'used memory-capable tooling for commitments' : `no memory tool observed (tools: ${toolNames.join(', ')})` };
+        return { pass: usedMemoryLikeTool, score: usedMemoryLikeTool ? 1.0 : 0.0, reason: usedMemoryLikeTool ? 'used memory-capable tooling for commitments' : `no memory tool observed (tools: ${toolNames.join(', ')})` };
 
 - description: "follow-up escalation after missed commitment"
   vars:

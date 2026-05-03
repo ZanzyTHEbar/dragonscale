@@ -4,13 +4,23 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
 	"github.com/ZanzyTHEbar/dragonscale/internal/opsctl/app"
 	"github.com/ZanzyTHEbar/dragonscale/internal/opsctl/runner"
+	"github.com/ZanzyTHEbar/dragonscale/internal/testcmp"
 	"github.com/stretchr/testify/require"
 )
+
+func readRepoFile(t *testing.T, path string) string {
+	t.Helper()
+
+	content, err := os.ReadFile(filepath.Clean(filepath.Join("..", "..", "..", filepath.FromSlash(path))))
+	require.NoError(t, err)
+	return string(content)
+}
 
 func TestNewRegistryContainsCoreTasks(t *testing.T) {
 	t.Parallel()
@@ -44,10 +54,12 @@ func TestNewRegistryContainsCoreTasks(t *testing.T) {
 		"hooks",
 		"install",
 		"lint",
+		"mockgen-check",
 		"run",
 		"sqlc-check",
 		"sqlc-vet",
 		"test",
+		"test-containers",
 		"test-integration",
 		"uninstall",
 		"uninstall-all",
@@ -61,6 +73,80 @@ func TestNewRegistryContainsCoreTasks(t *testing.T) {
 	}
 }
 
+func TestFlatcPinMatchesGoRuntime(t *testing.T) {
+	t.Parallel()
+
+	installScript := readRepoFile(t, "scripts/install-flatc.sh")
+	versionRE := regexp.MustCompile(`(?m)^FLATC_VERSION="\$\{FLATC_VERSION:-([0-9.]+)\}"$`)
+	match := versionRE.FindStringSubmatch(installScript)
+	require.Len(t, match, 2)
+
+	goMod := readRepoFile(t, "go.mod")
+	require.Contains(t, goMod, "github.com/google/flatbuffers v"+match[1]+"+incompatible")
+	require.Contains(t, installScript, `FLATC_SHA256="${FLATC_SHA256:-9f87066dc5dfa7fe02090b55bab5f3e55df03e32c9b0cdf229004ade7d091039}"`)
+}
+
+func TestFlatcInstallSurfacesUsePinnedInstaller(t *testing.T) {
+	t.Parallel()
+
+	for _, path := range []string{
+		".github/workflows/pr.yml",
+		".github/workflows/eval.yml",
+		".devcontainer/Dockerfile",
+	} {
+		content := readRepoFile(t, path)
+		require.Contains(t, content, "scripts/install-flatc.sh", path)
+		require.NotContains(t, content, "flatbuffers-compiler", path)
+	}
+}
+
+func TestFlatcCheckUsesSchemaLocalFlatcCommands(t *testing.T) {
+	t.Parallel()
+
+	script := flatcCheckScript(nil)
+	require.Contains(t, script, "(cd pkg/itr && flatc --go -o . ./commands.fbs)")
+	require.Contains(t, script, "(cd pkg/tools && flatc --go -o . ./map_payloads.fbs)")
+	require.NotContains(t, script, "$GO generate ./pkg/itr ./pkg/tools")
+	require.Contains(t, script, "pkg/itr/itrfb/ pkg/tools/mapopsfb/")
+}
+
+func TestMockgenCheckUsesMockgenOnlyGeneration(t *testing.T) {
+	t.Parallel()
+
+	script := mockgenCheckScript(nil)
+	require.Contains(t, script, "$GO generate -run mockgen ./...")
+	require.Contains(t, script, "(cd internal/fantasy && $GO generate -run mockgen ./...)")
+	require.Contains(t, script, ":(glob)**/mock_*_test.go")
+	require.Contains(t, script, "trap 'rm -f")
+	require.NotContains(t, script, "$GO generate ./...")
+	require.NotContains(t, script, "flatc")
+	require.NotContains(t, script, "sqlc generate")
+}
+
+func TestDevcontainerVerifyTaskIncludesGeneratedCodeChecks(t *testing.T) {
+	t.Parallel()
+
+	specs := devcontainerVerifySpecs(&app.Context{Root: "/repo"})
+	require.Len(t, specs, 1)
+	joined := strings.Join(specs[0].Args, " ")
+
+	require.Contains(t, joined, "make flatc-check sqlc-check mockgen-check")
+}
+
+func TestFullEvalWorkflowUsesPromptfooThresholdGate(t *testing.T) {
+	t.Parallel()
+
+	workflow := readRepoFile(t, ".github/workflows/eval.yml")
+	prWorkflow := readRepoFile(t, ".github/workflows/pr.yml")
+	resultArtifact := regexp.MustCompile(`(?s)- name: Upload full eval result artifact\s+if: always\(\)\s+uses: actions/upload-artifact@v4\s+with:\s+name: full-eval-result-.*?\s+path: eval/results/latest\.json\s+if-no-files-found: warn`)
+
+	require.Contains(t, workflow, `PROMPTFOO_PASS_RATE_THRESHOLD: "100"`)
+	require.Contains(t, workflow, "SKIP_DEVCONTAINER_WRAPPER=1 make DEVCONTAINER_EXEC= eval")
+	require.Regexp(t, resultArtifact, workflow)
+	require.Contains(t, prWorkflow, "SKIP_DEVCONTAINER_WRAPPER=1 make DEVCONTAINER_EXEC= eval-test")
+	require.NotContains(t, prWorkflow, "make DEVCONTAINER_EXEC= eval 2>&1")
+}
+
 func TestRunTaskEnvUsesArgv(t *testing.T) {
 	t.Parallel()
 
@@ -69,15 +155,24 @@ func TestRunTaskEnvUsesArgv(t *testing.T) {
 	}
 
 	got := runTaskEnv(ctx)
-	require.Len(t, got, 1)
-	require.Equal(t, "ARGS=--verbose foo bar baz", got[0])
+	testcmp.RequireEqual(t, []string{"ARGS=--verbose foo bar baz"}, got)
+}
+
+func TestScriptHeaderDefaultsGoEnvironment(t *testing.T) {
+	script := scriptHeader()
+
+	require.Contains(t, script, `export GO="${GO:-go}"`)
+	require.Contains(t, script, `export GOFLAGS="${GOFLAGS:--v -trimpath -tags=stdjson}"`)
+	require.Contains(t, script, `export CGO_ENABLED="${CGO_ENABLED:-1}"`)
+	require.Contains(t, script, `export GOOS="${GOOS:-linux}"`)
+	require.Contains(t, script, `export GOARCH="${GOARCH:-`)
 }
 
 func TestQuoteArgs(t *testing.T) {
 	t.Parallel()
 
 	got := quoteArgs([]string{"foo bar", "x\ty", `a"b`})
-	require.Equal(t, []string{"\"foo bar\"", "\"x\\ty\"", `"a\"b"`}, got)
+	testcmp.RequireEqual(t, []string{"\"foo bar\"", "\"x\\ty\"", `"a\"b"`}, got)
 }
 
 func TestBuildAllTaskPreservesGoEnvironmentForwarding(t *testing.T) {
@@ -191,6 +286,64 @@ func TestBuildAllTaskRejectsNonLinuxTarget(t *testing.T) {
 	require.Len(t, fake.Calls, 0)
 }
 
+func TestDepsTaskPrefixesEachGoCommand(t *testing.T) {
+	t.Parallel()
+
+	ctx := &app.Context{
+		Root: t.TempDir(),
+		ExtraEnv: map[string]string{
+			"SKIP_DEVCONTAINER_WRAPPER": "1",
+		},
+	}
+	fake := &runner.FakeRunner{Result: runner.CommandResult{ExitCode: 0}}
+
+	var deps app.Task
+	for _, task := range NewRegistry(ctx.Root) {
+		if task.Name() == "deps" {
+			deps = task
+			break
+		}
+	}
+	require.NotNil(t, deps)
+
+	_, err := deps.Run(context.Background(), fake, ctx)
+	require.NoError(t, err)
+	require.Len(t, fake.Calls, 1)
+
+	script := strings.Join(fake.Calls[0].Args, " ")
+	require.Contains(t, script, "$GO mod download && $GO mod verify")
+	require.NotContains(t, script, "$GO mod download && mod verify")
+}
+
+func TestUpdateDepsTaskPrefixesEachGoCommand(t *testing.T) {
+	t.Parallel()
+
+	ctx := &app.Context{
+		Root: t.TempDir(),
+		ExtraEnv: map[string]string{
+			"SKIP_DEVCONTAINER_WRAPPER": "1",
+		},
+	}
+	fake := &runner.FakeRunner{Result: runner.CommandResult{ExitCode: 0}}
+
+	var updateDeps app.Task
+	for _, task := range NewRegistry(ctx.Root) {
+		if task.Name() == "update-deps" {
+			updateDeps = task
+			break
+		}
+	}
+	require.NotNil(t, updateDeps)
+
+	_, err := updateDeps.Run(context.Background(), fake, ctx)
+	require.NoError(t, err)
+	require.Len(t, fake.Calls, 1)
+
+	script := strings.Join(fake.Calls[0].Args, " ")
+	require.Contains(t, script, "$GO get -u ./... && $GO mod tidy")
+	require.NotContains(t, script, "$GO get -u ./... && mod tidy")
+}
+
 func TestEvalRunSpecsPreservesEvalConfig(t *testing.T) {
 	t.Parallel()
 
@@ -202,12 +355,12 @@ func TestEvalRunSpecsPreservesEvalConfig(t *testing.T) {
 	})
 
 	require.Len(t, specs, 2)
-	require.Equal(t, "echo", specs[0].Name)
-	require.Equal(t, []string{"DRAGONSCALE_EVAL_CONFIG=./configs/override.json"}, specs[0].Args)
-	require.Equal(t, "npx", specs[1].Name)
+	testcmp.RequireEqual(t, []runner.CommandSpec{
+		{Name: "echo", Args: []string{"DRAGONSCALE_EVAL_CONFIG=./configs/override.json"}},
+		{Name: "npx", Args: []string{"--yes", "promptfoo", "eval", "--config", "promptfooconfig.yaml", "--no-cache", "--no-progress-bar", "-j", "1"}},
+	}, projectCommandSpecs(specs))
 	require.Contains(t, strings.Join(specs[1].Env, " "), "DRAGONSCALE_EVAL_CONFIG=./configs/override.json")
 	require.NotContains(t, strings.Join(specs[1].Env, " "), "DRAGONSCALE_EVAL_CONFIG=./configs/default.json")
-	require.Contains(t, strings.Join(specs[1].Args, " "), "--yes promptfoo eval --config promptfooconfig.yaml --no-cache --no-progress-bar")
 
 	compareScript, err := os.ReadFile(filepath.Clean(filepath.Join("..", "..", "..", "eval", "scripts", "compare.sh")))
 	require.NoError(t, err)
@@ -216,7 +369,14 @@ func TestEvalRunSpecsPreservesEvalConfig(t *testing.T) {
 	require.Contains(t, content, "trap cleanup_compare_config EXIT INT TERM")
 	require.Contains(t, content, "DRAGONSCALE_EVAL_CONFIG: \"${EVAL_CONFIG}\"")
 	require.NotContains(t, content, "DRAGONSCALE_EVAL_HOST_HOME: \"/host_home\"")
+	require.Contains(t, content, "PROMPTFOO_ARGS=\"${DRAGONSCALE_PROMPTFOO_ARGS:---no-cache --no-progress-bar -j 1}\"")
+	require.Contains(t, content, "git -C \"$PROJECT_ROOT\" worktree add --force --detach")
 	require.Contains(t, content, "TEMP_CONFIG")
+
+	promptfooConfig := readRepoFile(t, "eval/promptfooconfig.yaml")
+	require.NotContains(t, promptfooConfig, "DRAGONSCALE_EVAL_CONFIG:")
+	reverifyConfig := readRepoFile(t, "eval/reverify-two-cases.yaml")
+	require.NotContains(t, reverifyConfig, "DRAGONSCALE_EVAL_CONFIG:")
 }
 
 func TestEvalRunSpecsUsesBaseConfigWhenSetAndDebugEnabled(t *testing.T) {
@@ -229,13 +389,11 @@ func TestEvalRunSpecsUsesBaseConfigWhenSetAndDebugEnabled(t *testing.T) {
 		},
 	})
 
-	require.Len(t, specs, 3)
-	require.Equal(t, "echo", specs[0].Name)
-	require.Equal(t, []string{"DRAGONSCALE_EVAL_BASE_CONFIG=/tmp/base.json"}, specs[0].Args)
-	require.Equal(t, "echo", specs[1].Name)
-	require.Equal(t, []string{"DRAGONSCALE_EVAL_CONFIG=./configs/default.json"}, specs[1].Args)
-	require.Equal(t, "npx", specs[2].Name)
-	require.Equal(t, []string{"--yes", "promptfoo", "eval", "--config", "promptfooconfig.yaml", "--no-cache", "--no-progress-bar"}, specs[2].Args)
+	testcmp.RequireEqual(t, []runner.CommandSpec{
+		{Name: "echo", Args: []string{"DRAGONSCALE_EVAL_BASE_CONFIG=/tmp/base.json"}},
+		{Name: "echo", Args: []string{"DRAGONSCALE_EVAL_CONFIG=./configs/default.json"}},
+		{Name: "npx", Args: []string{"--yes", "promptfoo", "eval", "--config", "promptfooconfig.yaml", "--no-cache", "--no-progress-bar", "-j", "1"}},
+	}, projectCommandSpecs(specs))
 }
 
 func TestEvalRunSpecsUsesPromptfooArgsOverride(t *testing.T) {
@@ -250,11 +408,13 @@ func TestEvalRunSpecsUsesPromptfooArgsOverride(t *testing.T) {
 
 	require.NotEmpty(t, specs)
 	last := specs[len(specs)-1]
-	require.Equal(t, "npx", last.Name)
-	require.Equal(t, []string{
-		"--yes", "promptfoo", "eval", "--config", "promptfooconfig.yaml",
-		"--no-cache", "--max-concurrency", "1",
-	}, last.Args)
+	testcmp.RequireEqual(t, runner.CommandSpec{
+		Name: "npx",
+		Args: []string{
+			"--yes", "promptfoo", "eval", "--config", "promptfooconfig.yaml",
+			"--no-cache", "--max-concurrency", "1",
+		},
+	}, runner.CommandSpec{Name: last.Name, Args: last.Args})
 }
 
 func TestEvalCompareTaskDisablesNestedDevcontainerExecution(t *testing.T) {
@@ -284,7 +444,8 @@ func TestEvalCompareTaskDisablesNestedDevcontainerExecution(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, fake.Calls, 1)
 	script := strings.Join(fake.Calls[0].Args, " ")
-	require.Contains(t, script, "cd eval && DEVCONTAINER_EXEC= EVAL_NPM_CMD=\"npx --yes\" ./scripts/compare.sh --repeat 3")
+	require.Contains(t, script, evalWorkspaceDir(ctx))
+	require.Contains(t, script, "DEVCONTAINER_EXEC= EVAL_NPM_CMD=\"npx --yes\" ./scripts/compare.sh --repeat 3")
 	joinedEnv := strings.Join(fake.Calls[0].Env, " ")
 	require.Contains(t, joinedEnv, "DEVCONTAINER_EXEC=npx --yes @devcontainers/cli exec --workspace-folder \"$PWD\" --")
 
@@ -293,6 +454,8 @@ func TestEvalCompareTaskDisablesNestedDevcontainerExecution(t *testing.T) {
 	content := string(compareScript)
 	require.Contains(t, content, "export DEVCONTAINER_EXEC=\"\"")
 	require.Contains(t, content, "make DEVCONTAINER_EXEC= eval-build")
+	require.Contains(t, content, "git -C \"$PROJECT_ROOT\" worktree add --force --detach")
+	require.Contains(t, content, "git -C \"$PROJECT_ROOT\" worktree remove --force")
 }
 
 func TestEvalCompareTaskPassesBaseConfigEnvToRunner(t *testing.T) {
@@ -349,6 +512,17 @@ func TestEvalCompareTaskPassesBaseConfigEnvToRunner(t *testing.T) {
 	}
 }
 
+func TestDefaultEnvForwardsOllamaContainerOptions(t *testing.T) {
+	ctx := &app.Context{ExtraEnv: map[string]string{
+		"DRAGONSCALE_OLLAMA_CONTAINER_IMAGE": "ollama/ollama:0.12.6",
+		"DRAGONSCALE_OLLAMA_CONTAINER_MODEL": "nomic-embed-text",
+	}}
+
+	env := strings.Join(defaultEnv(ctx), " ")
+	require.Contains(t, env, "DRAGONSCALE_OLLAMA_CONTAINER_IMAGE=ollama/ollama:0.12.6")
+	require.Contains(t, env, "DRAGONSCALE_OLLAMA_CONTAINER_MODEL=nomic-embed-text")
+}
+
 func TestLintTaskUsesCommandSpecs(t *testing.T) {
 	ctx := &app.Context{
 		Root: t.TempDir(),
@@ -360,13 +534,11 @@ func TestLintTaskUsesCommandSpecs(t *testing.T) {
 	task := findTaskByName(t, NewRegistry(ctx.Root), "lint")
 	_, err := task.Run(context.Background(), fake, ctx)
 	require.NoError(t, err)
-	require.Len(t, fake.Calls, 3)
-	require.Equal(t, "go", fake.Calls[0].Name)
-	require.Equal(t, []string{"fmt", "./..."}, fake.Calls[0].Args)
-	require.Equal(t, "go", fake.Calls[1].Name)
-	require.Equal(t, []string{"vet", "./..."}, fake.Calls[1].Args)
-	require.Equal(t, "go", fake.Calls[2].Name)
-	require.Equal(t, []string{"build", "./..."}, fake.Calls[2].Args)
+	testcmp.RequireEqual(t, []runner.CommandSpec{
+		{Name: "go", Args: []string{"fmt", "./..."}},
+		{Name: "go", Args: []string{"vet", "./..."}},
+		{Name: "go", Args: []string{"build", "./..."}},
+	}, projectCommandSpecs(fake.Calls))
 	require.NotContains(t, strings.Join(fake.Calls[0].Env, " "), "set -euo pipefail")
 }
 
@@ -384,12 +556,13 @@ func TestCheckTaskUsesCommandSpecs(t *testing.T) {
 	task := findTaskByName(t, NewRegistry(ctx.Root), "check")
 	_, err := task.Run(context.Background(), fake, ctx)
 	require.NoError(t, err)
-	require.Len(t, fake.Calls, 5)
-	require.Equal(t, []string{"mod", "download"}, fake.Calls[0].Args)
-	require.Equal(t, []string{"mod", "verify"}, fake.Calls[1].Args)
-	require.Equal(t, []string{"fmt", "./..."}, fake.Calls[2].Args)
-	require.Equal(t, []string{"vet", "./..."}, fake.Calls[3].Args)
-	require.Equal(t, []string{"test", "./..."}, fake.Calls[4].Args)
+	testcmp.RequireEqual(t, []runner.CommandSpec{
+		{Name: "go", Args: []string{"mod", "download"}},
+		{Name: "go", Args: []string{"mod", "verify"}},
+		{Name: "go", Args: []string{"fmt", "./..."}},
+		{Name: "go", Args: []string{"vet", "./..."}},
+		{Name: "go", Args: []string{"test", "./..."}},
+	}, projectCommandSpecs(fake.Calls))
 }
 
 func TestDevcontainerGenerateTaskUsesNpxExecCommand(t *testing.T) {
@@ -404,11 +577,13 @@ func TestDevcontainerGenerateTaskUsesNpxExecCommand(t *testing.T) {
 	_, err := task.Run(context.Background(), fake, ctx)
 	require.NoError(t, err)
 	require.Len(t, fake.Calls, 1)
-	require.Equal(t, "npx", fake.Calls[0].Name)
+	testcmp.RequireEqual(t, "npx", fake.Calls[0].Name)
 	require.Contains(t, fake.Calls[0].Args, "@devcontainers/cli")
 	require.Contains(t, fake.Calls[0].Args, "exec")
 	require.Contains(t, fake.Calls[0].Args, "bash")
 	require.Contains(t, strings.Join(fake.Calls[0].Args, " "), "go generate ./pkg/itr ./pkg/tools")
+	require.Contains(t, strings.Join(fake.Calls[0].Args, " "), "go generate -run mockgen ./...")
+	require.Contains(t, strings.Join(fake.Calls[0].Args, " "), "cd internal/fantasy")
 }
 
 func TestEvalTaskBuildsPromptfooCommandWithDefaultConfig(t *testing.T) {
@@ -426,12 +601,112 @@ func TestEvalTaskBuildsPromptfooCommandWithDefaultConfig(t *testing.T) {
 	_, err := task.Run(context.Background(), fake, ctx)
 	require.NoError(t, err)
 	require.Len(t, fake.Calls, 2)
-	require.Equal(t, "echo", fake.Calls[0].Name)
-	require.Equal(t, "npx", fake.Calls[1].Name)
-	require.Equal(t, filepath.Join(ctx.Root, "eval"), fake.Calls[1].Dir)
+	testcmp.RequireEqual(t, []runner.CommandSpec{
+		{Name: "echo", Dir: ctx.Root},
+		{Name: "npx", Dir: filepath.Join(ctx.Root, "eval")},
+	}, projectCommandNamesAndDirs(fake.Calls))
 	joinedEnv := strings.Join(fake.Calls[1].Env, " ")
 	require.Contains(t, joinedEnv, "DRAGONSCALE_EVAL_CONFIG=./configs/default.json")
 	require.Contains(t, strings.Join(fake.Calls[1].Args, " "), "--no-progress-bar")
+}
+
+func TestEvalTaskForwardsPromptfooPassRateThreshold(t *testing.T) {
+	t.Parallel()
+
+	ctx := &app.Context{
+		Root: t.TempDir(),
+		ExtraEnv: map[string]string{
+			"PROMPTFOO_PASS_RATE_THRESHOLD": "100",
+		},
+	}
+	fake := &runner.FakeRunner{Result: runner.CommandResult{ExitCode: 0}}
+
+	task := findTaskByName(t, NewRegistry(ctx.Root), "eval")
+	_, err := task.Run(context.Background(), fake, ctx)
+	require.NoError(t, err)
+	require.NotEmpty(t, fake.Calls)
+
+	joinedEnv := strings.Join(fake.Calls[len(fake.Calls)-1].Env, " ")
+	require.Contains(t, joinedEnv, "PROMPTFOO_PASS_RATE_THRESHOLD=100")
+}
+
+func TestEvalTaskForwardsProviderAuthEnv(t *testing.T) {
+	t.Parallel()
+
+	ctx := &app.Context{
+		Root: t.TempDir(),
+		ExtraEnv: map[string]string{
+			"OPENROUTER_API_KEY":                        "test-openrouter-key",
+			"OPENAI_API_KEY":                            "test-openai-key",
+			"DRAGONSCALE_PROVIDERS_OPENROUTER_API_KEY":  "dragon-openrouter-key",
+			"DRAGONSCALE_PROVIDERS_OPENROUTER_API_BASE": "https://openrouter.example/v1",
+			"DRAGONSCALE_PROVIDERS_OPENAI_API_KEY":      "dragon-openai-key",
+			"DRAGONSCALE_PROVIDERS_OPENAI_API_BASE":     "https://openai.example/v1",
+			"DRAGONSCALE_AGENTS_DEFAULTS_PROVIDER":      "openrouter",
+			"DRAGONSCALE_AGENTS_DEFAULTS_MODEL":         "openai/gpt-4o-mini",
+		},
+	}
+	fake := &runner.FakeRunner{Result: runner.CommandResult{ExitCode: 0}}
+
+	task := findTaskByName(t, NewRegistry(ctx.Root), "eval")
+	_, err := task.Run(context.Background(), fake, ctx)
+	require.NoError(t, err)
+	require.NotEmpty(t, fake.Calls)
+
+	joinedEnv := strings.Join(fake.Calls[len(fake.Calls)-1].Env, " ")
+	for _, expected := range []string{
+		"OPENROUTER_API_KEY=test-openrouter-key",
+		"OPENAI_API_KEY=test-openai-key",
+		"DRAGONSCALE_PROVIDERS_OPENROUTER_API_KEY=dragon-openrouter-key",
+		"DRAGONSCALE_PROVIDERS_OPENROUTER_API_BASE=https://openrouter.example/v1",
+		"DRAGONSCALE_PROVIDERS_OPENAI_API_KEY=dragon-openai-key",
+		"DRAGONSCALE_PROVIDERS_OPENAI_API_BASE=https://openai.example/v1",
+		"DRAGONSCALE_AGENTS_DEFAULTS_PROVIDER=openrouter",
+		"DRAGONSCALE_AGENTS_DEFAULTS_MODEL=openai/gpt-4o-mini",
+	} {
+		require.Contains(t, joinedEnv, expected)
+	}
+}
+
+func TestEvalProofFullTaskRunsLocalThresholdProof(t *testing.T) {
+	t.Parallel()
+
+	ctx := &app.Context{Root: t.TempDir()}
+	fake := &runner.FakeRunner{Result: runner.CommandResult{ExitCode: 0}}
+
+	task := findTaskByName(t, NewRegistry(ctx.Root), "eval-proof-full")
+	_, err := task.Run(context.Background(), fake, ctx)
+	require.NoError(t, err)
+	require.Len(t, fake.Calls, 1)
+
+	script := strings.Join(fake.Calls[0].Args, " ")
+	require.Contains(t, script, `PROMPTFOO_PASS_RATE_THRESHOLD="${PROMPTFOO_PASS_RATE_THRESHOLD:-100}"`)
+	require.Contains(t, script, "SKIP_DEVCONTAINER_WRAPPER=1 DEVCONTAINER_EXEC= make eval")
+	require.Contains(t, script, "eval/results/make-eval.log")
+}
+
+func TestEvalTestTaskBypassesDevcontainerWrapperWhenDisabled(t *testing.T) {
+	t.Parallel()
+
+	ctx := &app.Context{
+		Root: t.TempDir(),
+		ExtraEnv: map[string]string{
+			"DEVCONTAINER_EXEC":         "npx --yes @devcontainers/cli exec --workspace-folder \"$PWD\" --",
+			"SKIP_DEVCONTAINER_WRAPPER": "1",
+		},
+	}
+	fake := &runner.FakeRunner{Result: runner.CommandResult{ExitCode: 0}}
+
+	task := findTaskByName(t, NewRegistry(ctx.Root), "eval-test")
+	_, err := task.Run(context.Background(), fake, ctx)
+	require.NoError(t, err)
+	require.Len(t, fake.Calls, 1)
+	testcmp.RequireEqual(t, "bash", fake.Calls[0].Name)
+	joinedArgs := strings.Join(fake.Calls[0].Args, " ")
+	require.Contains(t, joinedArgs, "$GO test -v ./eval/go_evals/...")
+	require.NotContains(t, joinedArgs, "@devcontainers/cli")
+	joinedEnv := strings.Join(fake.Calls[0].Env, " ")
+	require.Contains(t, joinedEnv, "DEVCONTAINER_EXEC=npx --yes @devcontainers/cli exec --workspace-folder \"$PWD\" --")
 }
 
 func TestEvalViewTaskRunsInEvalDirectory(t *testing.T) {
@@ -444,10 +719,92 @@ func TestEvalViewTaskRunsInEvalDirectory(t *testing.T) {
 	task := findTaskByName(t, NewRegistry(ctx.Root), "eval-view")
 	_, err := task.Run(context.Background(), fake, ctx)
 	require.NoError(t, err)
+	testcmp.RequireEqual(t, []runner.CommandSpec{
+		{Name: "npx", Args: []string{"--yes", "promptfoo", "view"}, Dir: filepath.Join(ctx.Root, "eval")},
+	}, projectCommandSpecsWithDirs(fake.Calls))
+}
+
+func TestEvalRunSpecsPrependsBuildWhenRunnerMissingAndSourceTreeExists(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(root, "eval", "cmd", "eval-runner"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "eval", "cmd", "eval-runner", "main.go"), []byte("package main\nfunc main() {}\n"), 0o644))
+	require.NoError(t, os.MkdirAll(filepath.Join(root, "eval", "fixtures", "skills"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "eval", "fixtures", "sample_data.txt"), []byte("fixture"), 0o644))
+
+	specs := evalRunSpecs(&app.Context{Root: root})
+	require.GreaterOrEqual(t, len(specs), 10)
+	testcmp.RequireEqual(t, runner.CommandSpec{Name: "go", Args: []string{"generate", "./..."}, Dir: root}, projectCommandSpec(specs[0]))
+	testcmp.RequireEqual(t, []string{"mkdir", "rm", "cp"}, []string{specs[3].Name, specs[4].Name, specs[8].Name})
+	testcmp.RequireEqual(t, runner.CommandSpec{Name: "npx", Dir: filepath.Join(root, "eval")}, projectCommandNameAndDir(specs[len(specs)-1]))
+}
+
+func TestEvalRunSpecsPrependsBuildWhenRunnerAlreadyExists(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(root, "eval", "cmd", "eval-runner"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "eval", "cmd", "eval-runner", "main.go"), []byte("package main\nfunc main() {}\n"), 0o644))
+	require.NoError(t, os.MkdirAll(filepath.Join(root, "eval", "bin"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "eval", "bin", "eval-runner"), []byte("stale-binary"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(root, "eval", "fixtures", "skills"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "eval", "fixtures", "sample_data.txt"), []byte("fixture"), 0o644))
+
+	specs := evalRunSpecs(&app.Context{Root: root})
+	require.GreaterOrEqual(t, len(specs), 10)
+	testcmp.RequireEqual(t, runner.CommandSpec{Name: "go", Args: []string{"generate", "./..."}, Dir: root}, projectCommandSpec(specs[0]))
+	testcmp.RequireEqual(t, "npx", specs[len(specs)-1].Name)
+}
+
+func TestEvalRunSpecsPrependsFixturesWhenSourceTreeExists(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(root, "eval", "cmd", "eval-runner"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "eval", "cmd", "eval-runner", "main.go"), []byte("package main\nfunc main() {}\n"), 0o644))
+	require.NoError(t, os.MkdirAll(filepath.Join(root, "eval", "fixtures", "skills"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "eval", "fixtures", "sample_data.txt"), []byte("fixture"), 0o644))
+
+	specs := evalRunSpecs(&app.Context{Root: root})
+	require.GreaterOrEqual(t, len(specs), 10)
+	testcmp.RequireEqual(t, runner.CommandSpec{
+		Name: "mkdir",
+		Args: []string{"-p", filepath.Join(homeDir(), ".local", "share", "dragonscale", "sandbox")},
+		Dir:  root,
+	}, projectCommandSpec(specs[3]))
+	testcmp.RequireEqual(t, []string{"rm", "bash", "cp", "bash"}, []string{specs[4].Name, specs[7].Name, specs[8].Name, specs[9].Name})
+	testcmp.RequireEqual(t, "npx", specs[len(specs)-1].Name)
+	joinedArgs := strings.Join(specs[len(specs)-1].Args, " ")
+	require.Contains(t, joinedArgs, "promptfoo eval --config promptfooconfig.yaml")
+}
+
+func TestEvalTasksUseRepoRootPathsWhenCwdIsNested(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	nested := filepath.Join(root, "pkg", "agent")
+	require.NoError(t, os.MkdirAll(nested, 0o755))
+	ctx := &app.Context{
+		Root: root,
+		Cwd:  nested,
+	}
+	fake := &runner.FakeRunner{Result: runner.CommandResult{ExitCode: 0}}
+
+	evalView := findTaskByName(t, NewRegistry(ctx.Root), "eval-view")
+	_, err := evalView.Run(context.Background(), fake, ctx)
+	require.NoError(t, err)
 	require.Len(t, fake.Calls, 1)
-	require.Equal(t, filepath.Join(ctx.Root, "eval"), fake.Calls[0].Dir)
-	require.Equal(t, "npx", fake.Calls[0].Name)
-	require.Equal(t, []string{"--yes", "promptfoo", "view"}, fake.Calls[0].Args)
+	testcmp.RequireEqual(t, runner.CommandSpec{Name: "npx", Dir: filepath.Join(root, "eval")}, projectCommandNameAndDir(fake.Calls[0]))
+
+	fake.Calls = nil
+	evalCompare := findTaskByName(t, NewRegistry(ctx.Root), "eval-compare")
+	_, err = evalCompare.Run(context.Background(), fake, ctx)
+	require.NoError(t, err)
+	require.Len(t, fake.Calls, 1)
+	compareCmd := strings.Join(fake.Calls[0].Args, " ")
+	require.Contains(t, compareCmd, filepath.Join(root, "eval"))
+	require.Contains(t, compareCmd, "DEVCONTAINER_EXEC= EVAL_NPM_CMD=\"npx --yes\" ./scripts/compare.sh --repeat 3")
 }
 
 func TestEvalFixturesTaskCreatesFixtureCommands(t *testing.T) {
@@ -460,11 +817,91 @@ func TestEvalFixturesTaskCreatesFixtureCommands(t *testing.T) {
 	task := findTaskByName(t, NewRegistry(ctx.Root), "eval-fixtures")
 	_, err := task.Run(context.Background(), fake, ctx)
 	require.NoError(t, err)
-	require.GreaterOrEqual(t, len(fake.Calls), 5)
-	require.Equal(t, "mkdir", fake.Calls[0].Name)
-	require.Equal(t, "rm", fake.Calls[1].Name)
-	require.Equal(t, "bash", fake.Calls[4].Name)
-	require.Equal(t, "cp", fake.Calls[5].Name)
+	require.GreaterOrEqual(t, len(fake.Calls), 6)
+	testcmp.RequireEqual(t, []string{"mkdir", "rm", "bash", "cp"}, []string{fake.Calls[0].Name, fake.Calls[1].Name, fake.Calls[4].Name, fake.Calls[5].Name})
+}
+
+func TestGenerateTaskIncludesNestedFantasyMocks(t *testing.T) {
+	script := generateScript(&app.Context{})
+
+	require.Contains(t, script, "$GO generate ./...")
+	require.Contains(t, script, "(cd internal/fantasy && $GO generate -run mockgen ./...)")
+}
+
+func TestTestContainersTaskOptsIntoContainerTests(t *testing.T) {
+	ctx := &app.Context{
+		Root: t.TempDir(),
+		ExtraEnv: map[string]string{
+			"DEVCONTAINER_EXEC":                  "echo devcontainer exec",
+			"DRAGONSCALE_OLLAMA_CONTAINER_IMAGE": "ollama/ollama:0.12.6",
+			"DRAGONSCALE_OLLAMA_CONTAINER_MODEL": "nomic-embed-text",
+		},
+	}
+	fake := &runner.FakeRunner{Result: runner.CommandResult{ExitCode: 0}}
+	task := findTaskByName(t, NewRegistry(ctx.Root), "test-containers")
+
+	_, err := task.Run(context.Background(), fake, ctx)
+	require.NoError(t, err)
+	require.Len(t, fake.Calls, 1)
+	script := strings.Join(fake.Calls[0].Args, " ")
+	require.Contains(t, script, "export DRAGONSCALE_OLLAMA_CONTAINER_IMAGE='ollama/ollama:0.12.6'")
+	require.Contains(t, script, "export DRAGONSCALE_OLLAMA_CONTAINER_MODEL='nomic-embed-text'")
+	require.Contains(t, script, "DRAGONSCALE_RUN_CONTAINER_TESTS=1 $GO test -tags 'integration containers'")
+	require.Contains(t, script, "-timeout 20m")
+	require.Contains(t, script, "./pkg/memory/...")
+	require.NotContains(t, script, "devcontainer exec")
+}
+
+func TestContainerTestScriptQuotesOllamaOptions(t *testing.T) {
+	script := containerTestScript(&app.Context{ExtraEnv: map[string]string{
+		"DRAGONSCALE_OLLAMA_CONTAINER_IMAGE": "registry.example/ollama:tag'quoted",
+		"DRAGONSCALE_OLLAMA_CONTAINER_MODEL": "nomic'embed",
+	}})
+
+	require.Contains(t, script, `export DRAGONSCALE_OLLAMA_CONTAINER_IMAGE='registry.example/ollama:tag'"'"'quoted'`)
+	require.Contains(t, script, `export DRAGONSCALE_OLLAMA_CONTAINER_MODEL='nomic'"'"'embed'`)
+}
+
+func projectCommandSpecs(specs []runner.CommandSpec) []runner.CommandSpec {
+	projected := make([]runner.CommandSpec, len(specs))
+	for i, spec := range specs {
+		projected[i] = runner.CommandSpec{
+			Name: spec.Name,
+			Args: spec.Args,
+		}
+	}
+	return projected
+}
+
+func projectCommandSpecsWithDirs(specs []runner.CommandSpec) []runner.CommandSpec {
+	projected := make([]runner.CommandSpec, len(specs))
+	for i, spec := range specs {
+		projected[i] = projectCommandSpec(spec)
+	}
+	return projected
+}
+
+func projectCommandSpec(spec runner.CommandSpec) runner.CommandSpec {
+	return runner.CommandSpec{
+		Name: spec.Name,
+		Args: spec.Args,
+		Dir:  spec.Dir,
+	}
+}
+
+func projectCommandNamesAndDirs(specs []runner.CommandSpec) []runner.CommandSpec {
+	projected := make([]runner.CommandSpec, len(specs))
+	for i, spec := range specs {
+		projected[i] = projectCommandNameAndDir(spec)
+	}
+	return projected
+}
+
+func projectCommandNameAndDir(spec runner.CommandSpec) runner.CommandSpec {
+	return runner.CommandSpec{
+		Name: spec.Name,
+		Dir:  spec.Dir,
+	}
 }
 
 func findTaskByName(t *testing.T, tasks []app.Task, name string) app.Task {

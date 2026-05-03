@@ -1,10 +1,12 @@
 package store
 
 import (
+	"strings"
 	"testing"
 
 	jsonv2 "github.com/go-json-experiment/json"
 
+	"github.com/ZanzyTHEbar/dragonscale/pkg/memory"
 	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -75,6 +77,74 @@ func TestMemoryTool_Search(t *testing.T) {
 	assert.True(t, resp.Success)
 	assert.NotEmpty(t, resp.Results)
 	assert.Contains(t, resp.Results[0].Content, "goroutines")
+}
+
+func TestMemoryTool_SearchNoResultsUsesExplicitEmptyMessage(t *testing.T) {
+	t.Parallel()
+	tool := newTestMemoryTool(t)
+
+	resp := executeAndParse(t, tool, `{"action":"search","query":"xyzzy_nonexistent_topic_42","limit":5}`)
+	assert.True(t, resp.Success)
+	assert.Empty(t, resp.Results)
+	assert.Contains(t, resp.Message, "No results found for:")
+}
+
+func TestMemoryTool_SearchSuppressesPromptEchoArtifacts(t *testing.T) {
+	t.Parallel()
+	tool := newTestMemoryTool(t)
+	ctx := t.Context()
+
+	promptEcho := "Search your memory for 'xyzzy_nonexistent_topic_42' and tell me what you find."
+	require.NoError(t, tool.store.StoreRecall(ctx, &memory.RecallItem{
+		AgentID:    "agent-1",
+		SessionKey: "session-1",
+		Role:       "user",
+		Sector:     memory.SectorEpisodic,
+		Importance: 0.5,
+		Content:    promptEcho,
+		Tags:       "session-message",
+	}))
+	require.NoError(t, tool.store.SetWorkingContext(ctx, "agent-1", "session-1", promptEcho))
+
+	resp := executeAndParse(t, tool, `{"action":"search","query":"xyzzy_nonexistent_topic_42","limit":5}`)
+	assert.True(t, resp.Success)
+	assert.Empty(t, resp.Results)
+	assert.Contains(t, resp.Message, "No results found for:")
+}
+
+func TestMemoryTool_SearchKeepsRealMemoryWhenPromptEchoExists(t *testing.T) {
+	t.Parallel()
+	tool := newTestMemoryTool(t)
+	ctx := t.Context()
+
+	promptEcho := "Search your memory for 'xyzzy_nonexistent_topic_42' and tell me what you find."
+	require.NoError(t, tool.store.StoreRecall(ctx, &memory.RecallItem{
+		AgentID:    "agent-1",
+		SessionKey: "session-1",
+		Role:       "user",
+		Sector:     memory.SectorEpisodic,
+		Importance: 0.5,
+		Content:    promptEcho,
+		Tags:       "session-message",
+	}))
+	require.NoError(t, tool.store.StoreRecall(ctx, &memory.RecallItem{
+		AgentID:    "agent-1",
+		SessionKey: "session-1",
+		Role:       "assistant",
+		Sector:     memory.SectorSemantic,
+		Importance: 0.9,
+		Content:    "Regression ledger entry: xyzzy_nonexistent_topic_42 was intentionally left undefined.",
+		Tags:       "semantic-fact",
+	}))
+	require.NoError(t, tool.store.SetWorkingContext(ctx, "agent-1", "session-1", promptEcho))
+
+	resp := executeAndParse(t, tool, `{"action":"search","query":"xyzzy_nonexistent_topic_42","limit":5}`)
+	assert.True(t, resp.Success)
+	require.NotEmpty(t, resp.Results)
+	assert.Contains(t, resp.Results[0].Content, "intentionally left undefined")
+	for _, entry := range resp.Results {
+		assert.False(t, strings.Contains(strings.ToLower(entry.Content), "search your memory"))
+	}
 }
 
 func TestMemoryTool_Update(t *testing.T) {

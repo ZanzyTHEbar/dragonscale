@@ -17,11 +17,19 @@ func GetRootAsRecurse(buf []byte, offset flatbuffers.UOffsetT) *Recurse {
 	return x
 }
 
+func FinishRecurseBuffer(builder *flatbuffers.Builder, offset flatbuffers.UOffsetT) {
+	builder.Finish(offset)
+}
+
 func GetSizePrefixedRootAsRecurse(buf []byte, offset flatbuffers.UOffsetT) *Recurse {
 	n := flatbuffers.GetUOffsetT(buf[offset+flatbuffers.SizeUint32:])
 	x := &Recurse{}
 	x.Init(buf, n+offset+flatbuffers.SizeUint32)
 	return x
+}
+
+func FinishSizePrefixedRecurseBuffer(builder *flatbuffers.Builder, offset flatbuffers.UOffsetT) {
+	builder.FinishSizePrefixed(offset)
 }
 
 func (rcv *Recurse) Init(buf []byte, i flatbuffers.UOffsetT) {

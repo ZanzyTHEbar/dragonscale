@@ -56,5 +56,10 @@ Additional decisions:
 
 - Core wiring is in `pkg/agent/loop.go`, `pkg/agent/securebus_runtime.go`, and `pkg/runtime/bootstrap.go`.
 - Session continuity changes are in `pkg/session/manager.go`.
+- Live transition persistence, run-state bookkeeping, and runtime checkpoints are wired through `pkg/agent/agent_run.go`, `pkg/agent/checkpoint_runtime.go`, and `pkg/agent/state_store.go`.
+- Active-context assembly is now owned by `pkg/agent/active_context_builder.go` and rendered by `pkg/agent/context.go`.
+- Semantic ContextTree scoring and DAG projection segments are active in `pkg/agent/summarizer.go` and `pkg/agent/active_context_builder.go`.
+- Baseline RLM reduction is active in `pkg/agent/rlm_runtime.go` as part of the context-assembly hot path.
+- Explicit audit outcome persistence (`success`, `error_msg`, `tool_call_id`) is active in `pkg/memory/delegate/sqlite.go` and `pkg/memory/migrations/017_agent_audit_outcomes.go`.
 - Subagent control-flow parity improvements are in `pkg/agent/toolloop.go` and `pkg/tools/subagent.go`.
 

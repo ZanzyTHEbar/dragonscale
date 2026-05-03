@@ -45,7 +45,9 @@
         if (isDefault) return { pass: false, score: 0.2, reason: 'fell back to default empty response' };
         const graceful = out.includes('no results') || out.includes('nothing') || out.includes('not found') ||
                          out.includes("didn't find") || out.includes("don't have") || out.includes('no memories') ||
-                         out.includes('no matching') || out.length > 10;
+                         out.includes('no matching') || out.includes('no stored memories') ||
+                         out.includes('no stored memory') || out.includes('no entries') ||
+                         out.includes('no stored information') || out.includes('no actual stored information');
         return { pass: graceful, score: graceful ? 1.0 : 0.0, reason: graceful ? 'handled empty search gracefully' : 'no meaningful response' };
 
 - description: "agent responds to greeting with memory system active"

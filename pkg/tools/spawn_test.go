@@ -10,7 +10,7 @@ import (
 
 func TestSpawnTool_Execute_NestedDelegationGuardrails(t *testing.T) {
 	t.Parallel()
-	provider := &MockLanguageModel{}
+	provider := newPromptEchoLanguageModel(t)
 	manager := NewSubagentManager(provider, "test-model", "/tmp/test", bus.NewMessageBus())
 	manager.SetRunLoop(func(_ context.Context, _ ToolLoopConfig, _, _, _, _ string) (*ToolLoopResult, error) {
 		return &ToolLoopResult{Content: "ok", Iterations: 1}, nil

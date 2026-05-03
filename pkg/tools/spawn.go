@@ -76,9 +76,14 @@ func (t *SpawnTool) Execute(ctx context.Context, args map[string]interface{}) *T
 	if t.manager == nil {
 		return ErrorResult("Subagent manager not configured")
 	}
+	originChannel, originChatID := ResolveExecutionTarget(ctx, t.originChannel, t.originChatID)
+	callback := AsyncCallbackFromContext(ctx)
+	if callback == nil && (originChannel == "" || originChatID == "") {
+		callback = t.callback
+	}
 
 	// Pass callback to manager for async completion notification
-	result, err := t.manager.Spawn(ctx, task, label, delegatedScope, keptWork, t.originChannel, t.originChatID, t.callback)
+	result, err := t.manager.Spawn(ctx, task, label, delegatedScope, keptWork, originChannel, originChatID, callback)
 	if err != nil {
 		return ErrorResult(fmt.Sprintf("failed to spawn subagent: %v", err))
 	}

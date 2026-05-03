@@ -54,7 +54,6 @@ func geminiImageBuilder(model string) builderFunc {
 }
 
 func TestImageUploadAgent(t *testing.T) {
-	t.Parallel()
 	pairs := []builderPair{
 		{
 			name:    "anthropic-claude-sonnet-4",
@@ -91,7 +90,7 @@ func TestImageUploadAgent(t *testing.T) {
 				Prompt:          "Describe the image briefly in English.",
 				Files:           []fantasy.FilePart{file},
 				ProviderOptions: pair.providerOptions,
-				MaxOutputTokens: fantasy.Opt(int64(4000)),
+				MaxOutputTokens: new(int64(4000)),
 			})
 			require.NoError(t, err)
 			got := result.Response.Content.Text()
@@ -101,7 +100,6 @@ func TestImageUploadAgent(t *testing.T) {
 }
 
 func TestImageUploadAgentStreaming(t *testing.T) {
-	t.Parallel()
 	pairs := []builderPair{
 		{
 			name:    "anthropic-claude-sonnet-4",
@@ -138,7 +136,7 @@ func TestImageUploadAgentStreaming(t *testing.T) {
 				Prompt:          "Describe the image briefly in English.",
 				Files:           []fantasy.FilePart{file},
 				ProviderOptions: pair.providerOptions,
-				MaxOutputTokens: fantasy.Opt(int64(4000)),
+				MaxOutputTokens: new(int64(4000)),
 			})
 			require.NoError(t, err)
 			got := result.Response.Content.Text()

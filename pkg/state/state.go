@@ -24,6 +24,12 @@ type State struct {
 	// LastChatID is the last chat ID used for communication
 	LastChatID string `json:"last_chat_id,omitzero"`
 
+	// LastSessionKey is the last non-ephemeral user session processed.
+	LastSessionKey string `json:"last_session_key,omitzero"`
+
+	// LastSessionKeysByTarget tracks the last durable session key per channel/chat target.
+	LastSessionKeysByTarget map[string]string `json:"last_session_keys_by_target,omitzero"`
+
 	// Timestamp is the last time this state was updated
 	Timestamp time.Time `json:"timestamp"`
 }
@@ -107,6 +113,37 @@ func (sm *Manager) SetChannelAndChatID(ctx context.Context, channel, chatID stri
 	return sm.persist(ctx)
 }
 
+// SetLastSessionKey updates the last durable user session key.
+func (sm *Manager) SetLastSessionKey(ctx context.Context, sessionKey string) error {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+
+	sm.state.LastSessionKey = sessionKey
+	sm.state.Timestamp = time.Now()
+
+	return sm.persist(ctx)
+}
+
+// SetLastSessionKeyForTarget updates the last durable session key for a specific channel/chat target.
+func (sm *Manager) SetLastSessionKeyForTarget(ctx context.Context, channel, chatID, sessionKey string) error {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+
+	if sm.state.LastSessionKeysByTarget == nil {
+		sm.state.LastSessionKeysByTarget = make(map[string]string)
+	}
+	key := channel + ":" + chatID
+	if sessionKey == "" {
+		delete(sm.state.LastSessionKeysByTarget, key)
+	} else {
+		sm.state.LastSessionKeysByTarget[key] = sessionKey
+	}
+	sm.state.LastSessionKey = sessionKey
+	sm.state.Timestamp = time.Now()
+
+	return sm.persist(ctx)
+}
+
 // persist writes the current state to the delegate (KV) if available.
 // Must be called with the lock held.
 func (sm *Manager) persist(ctx context.Context) error {
@@ -139,6 +176,23 @@ func (sm *Manager) GetLastChatID() string {
 	sm.mu.RLock()
 	defer sm.mu.RUnlock()
 	return sm.state.LastChatID
+}
+
+// GetLastSessionKey returns the last durable session key from the state.
+func (sm *Manager) GetLastSessionKey() string {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+	return sm.state.LastSessionKey
+}
+
+// GetLastSessionKeyForTarget returns the last durable session key for a specific channel/chat target.
+func (sm *Manager) GetLastSessionKeyForTarget(channel, chatID string) string {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+	if sm.state.LastSessionKeysByTarget == nil {
+		return ""
+	}
+	return sm.state.LastSessionKeysByTarget[channel+":"+chatID]
 }
 
 // GetTimestamp returns the timestamp of the last state update.

@@ -17,11 +17,19 @@ func GetRootAsDAGPlan(buf []byte, offset flatbuffers.UOffsetT) *DAGPlan {
 	return x
 }
 
+func FinishDAGPlanBuffer(builder *flatbuffers.Builder, offset flatbuffers.UOffsetT) {
+	builder.Finish(offset)
+}
+
 func GetSizePrefixedRootAsDAGPlan(buf []byte, offset flatbuffers.UOffsetT) *DAGPlan {
 	n := flatbuffers.GetUOffsetT(buf[offset+flatbuffers.SizeUint32:])
 	x := &DAGPlan{}
 	x.Init(buf, n+offset+flatbuffers.SizeUint32)
 	return x
+}
+
+func FinishSizePrefixedDAGPlanBuffer(builder *flatbuffers.Builder, offset flatbuffers.UOffsetT) {
+	builder.FinishSizePrefixed(offset)
 }
 
 func (rcv *DAGPlan) Init(buf []byte, i flatbuffers.UOffsetT) {
