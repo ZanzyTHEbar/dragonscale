@@ -478,9 +478,21 @@ func (s *Service) DaemonStart(ctx context.Context, out io.Writer) error {
 	if pidData, err := os.ReadFile(pidPath); err == nil {
 		pidText := strings.TrimSpace(string(pidData))
 		if pidText != "" {
-			fmt.Fprintf(out, `Daemon already running (pid %s).\n`, pidText)
+			pid, convErr := strconv.Atoi(pidText)
+			if convErr != nil {
+				fmt.Fprintf(out, `Warning: stale pid file cleaned up (invalid pid %q)\n`, pidText)
+			} else if p, findErr := os.FindProcess(pid); findErr != nil {
+				fmt.Fprintf(out, `Warning: stale pid file cleaned up (pid %d not found)\n`, pid)
+			} else if sigErr := p.Signal(syscall.Signal(0)); sigErr != nil {
+				fmt.Fprintf(out, `Warning: stale pid file cleaned up (pid %d not alive)\n`, pid)
+			} else {
+				fmt.Fprintf(out, `Daemon already running with PID %d\n`, pid)
+				return nil
+			}
+			// Stale pid; clean up.
+			_ = os.Remove(pidPath)
+			_ = os.Remove(socketPath)
 		}
-		return nil
 	}
 
 	cfg, err := s.LoadConfig()

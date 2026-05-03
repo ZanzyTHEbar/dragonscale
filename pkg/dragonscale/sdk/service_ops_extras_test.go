@@ -449,3 +449,67 @@ func TestServiceDaemonStart_ShutsDownAndCleansRuntimeFiles(t *testing.T) {
 	require.NoFileExists(t, pidPath)
 	require.NoFileExists(t, socketPath)
 }
+
+func TestServiceDaemonStart_CleansStalePidFile(t *testing.T) {
+
+	tmpDir := t.TempDir()
+	homeDir := filepath.Join(tmpDir, "home")
+	xdgConfig := filepath.Join(tmpDir, "xdg-config")
+	xdgData := filepath.Join(tmpDir, "xdg-data")
+	require.NoError(t, os.MkdirAll(homeDir, 0o700))
+	require.NoError(t, os.MkdirAll(xdgConfig, 0o700))
+	require.NoError(t, os.MkdirAll(xdgData, 0o700))
+	t.Setenv("HOME", homeDir)
+	t.Setenv("XDG_CONFIG_HOME", xdgConfig)
+	t.Setenv("XDG_DATA_HOME", xdgData)
+
+	cfgPath, err := config.DefaultConfigPath()
+	require.NoError(t, err)
+	cfg := config.DefaultConfig()
+	cfg.Memory.DBPath = filepath.Join(tmpDir, "daemon-pid-cleanup.db")
+	require.NoError(t, config.SaveConfig(cfgPath, cfg))
+
+	svc := NewService()
+
+	// Pre-create a stale pid file with a nonexistent pid.
+	pidPath := svc.DaemonPIDPath()
+	require.NoError(t, os.MkdirAll(filepath.Dir(pidPath), 0o700))
+	require.NoError(t, os.WriteFile(pidPath, []byte("99999\n"), 0o600))
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	started := make(chan struct{})
+	errCh := make(chan error, 1)
+	go func() {
+		close(started)
+		errCh <- svc.DaemonStart(ctx, io.Discard)
+	}()
+	<-started
+
+	// Daemon should start despite the stale pid file.
+	socketPath := svc.DaemonSocketPath()
+	require.Eventually(t, func() bool {
+		select {
+		case err := <-errCh:
+			require.NoError(t, err)
+			return false
+		default:
+		}
+		_, socketErr := os.Stat(socketPath)
+		return socketErr == nil
+	}, 5*time.Second, 50*time.Millisecond)
+
+	// Stale pid should have been replaced with the current process pid.
+	pidData, err := os.ReadFile(pidPath)
+	require.NoError(t, err)
+	require.Equal(t, fmt.Sprintf("%d", os.Getpid()), strings.TrimSpace(string(pidData)))
+
+	cancel()
+	select {
+	case err := <-errCh:
+		require.NoError(t, err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("daemon did not stop after context cancellation")
+	}
+}
