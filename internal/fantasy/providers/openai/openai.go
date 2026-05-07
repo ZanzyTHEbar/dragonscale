@@ -24,18 +24,19 @@ type provider struct {
 }
 
 type options struct {
-	baseURL              string
-	apiKey               string
-	organization         string
-	project              string
-	name                 string
-	useResponsesAPI      bool
-	headers              map[string]string
-	userAgent            string
-	client               option.HTTPClient
-	sdkOptions           []option.RequestOption
-	objectMode           fantasy.ObjectMode
-	languageModelOptions []LanguageModelOption
+	baseURL               string
+	apiKey                string
+	organization          string
+	project               string
+	name                  string
+	useResponsesAPI       bool
+	useResponsesWebSocket bool
+	headers               map[string]string
+	userAgent             string
+	client                option.HTTPClient
+	sdkOptions            []option.RequestOption
+	objectMode            fantasy.ObjectMode
+	languageModelOptions  []LanguageModelOption
 }
 
 // Option defines a function that configures OpenAI provider options.
@@ -134,6 +135,15 @@ func WithUseResponsesAPI() Option {
 	}
 }
 
+// WithResponsesWebSocket streams Responses API calls over OpenAI's WebSocket
+// transport instead of HTTP SSE. It only applies when WithUseResponsesAPI is
+// also enabled and the selected model is a Responses API model.
+func WithResponsesWebSocket() Option {
+	return func(o *options) {
+		o.useResponsesWebSocket = true
+	}
+}
+
 // WithUserAgent sets an explicit User-Agent header, overriding the default and any
 // value set via WithHeaders.
 func WithUserAgent(ua string) Option {
@@ -185,7 +195,17 @@ func (o *provider) LanguageModel(_ context.Context, modelID string) (fantasy.Lan
 		if objectMode == fantasy.ObjectModeJSON {
 			objectMode = fantasy.ObjectModeAuto
 		}
-		return newResponsesLanguageModel(modelID, o.options.name, client, objectMode), nil
+		return newResponsesLanguageModel(modelID, o.options.name, client, objectMode, responsesTransportConfig{
+			useWebSocket:      o.options.useResponsesWebSocket,
+			baseURL:           o.options.baseURL,
+			apiKey:            o.options.apiKey,
+			headers:           resolved,
+			netDialContext:    responsesWebSocketNetDialContext(o.options.client),
+			netDialTLSContext: responsesWebSocketNetDialTLSContext(o.options.client),
+			proxy:             responsesWebSocketProxy(o.options.client),
+			tlsClientConfig:   responsesWebSocketTLSClientConfig(o.options.client),
+			handshakeTimeout:  responsesWebSocketHandshakeTimeout(o.options.client),
+		}), nil
 	}
 
 	languageModelOptions := append([]LanguageModelOption{}, o.options.languageModelOptions...)

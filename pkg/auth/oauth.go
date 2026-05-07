@@ -262,18 +262,30 @@ func pollDeviceCode(cfg OAuthProviderConfig, deviceAuthID, userCode string) (*Au
 }
 
 func RefreshAccessToken(cred *AuthCredential, cfg OAuthProviderConfig) (*AuthCredential, error) {
+	return RefreshAccessTokenWithClient(cred, cfg, http.DefaultClient)
+}
+
+func RefreshAccessTokenWithClient(cred *AuthCredential, cfg OAuthProviderConfig, client *http.Client) (*AuthCredential, error) {
 	if cred.RefreshToken == "" {
 		return nil, fmt.Errorf("no refresh token available")
+	}
+	if client == nil {
+		client = http.DefaultClient
 	}
 
 	data := url.Values{
 		"client_id":     {cfg.ClientID},
 		"grant_type":    {"refresh_token"},
 		"refresh_token": {cred.RefreshToken},
-		"scope":         {"openid profile email"},
 	}
 
-	resp, err := http.PostForm(cfg.Issuer+"/oauth/token", data)
+	req, err := http.NewRequest(http.MethodPost, cfg.Issuer+"/oauth/token", strings.NewReader(data.Encode()))
+	if err != nil {
+		return nil, fmt.Errorf("creating refresh request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("refreshing token: %w", err)
 	}

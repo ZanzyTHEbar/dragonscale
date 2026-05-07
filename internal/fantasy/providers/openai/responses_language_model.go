@@ -2,12 +2,17 @@ package openai
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
+	"net/http"
+	"net/url"
 	"reflect"
 	"strings"
+	"time"
 
 	"charm.land/fantasy"
 	"charm.land/fantasy/object"
@@ -22,19 +27,33 @@ import (
 const topLogprobsMax = 20
 
 type responsesLanguageModel struct {
-	provider   string
-	modelID    string
-	client     openai.Client
-	objectMode fantasy.ObjectMode
+	provider        string
+	modelID         string
+	client          openai.Client
+	objectMode      fantasy.ObjectMode
+	transportConfig responsesTransportConfig
+}
+
+type responsesTransportConfig struct {
+	useWebSocket      bool
+	baseURL           string
+	apiKey            string
+	headers           map[string]string
+	netDialContext    func(context.Context, string, string) (net.Conn, error)
+	netDialTLSContext func(context.Context, string, string) (net.Conn, error)
+	proxy             func(*http.Request) (*url.URL, error)
+	tlsClientConfig   *tls.Config
+	handshakeTimeout  time.Duration
 }
 
 // newResponsesLanguageModel implements a responses api model.
-func newResponsesLanguageModel(modelID string, provider string, client openai.Client, objectMode fantasy.ObjectMode) responsesLanguageModel {
+func newResponsesLanguageModel(modelID string, provider string, client openai.Client, objectMode fantasy.ObjectMode, transportConfig responsesTransportConfig) responsesLanguageModel {
 	return responsesLanguageModel{
-		modelID:    modelID,
-		provider:   provider,
-		client:     client,
-		objectMode: objectMode,
+		modelID:         modelID,
+		provider:        provider,
+		client:          client,
+		objectMode:      objectMode,
+		transportConfig: transportConfig,
 	}
 }
 
@@ -892,6 +911,9 @@ func (o responsesLanguageModel) Stream(ctx context.Context, call fantasy.Call) (
 	params, warnings, err := o.prepareParams(call)
 	if err != nil {
 		return nil, err
+	}
+	if o.transportConfig.useWebSocket {
+		return o.streamWebSocket(ctx, params, warnings, call), nil
 	}
 
 	stream := o.client.Responses.NewStreaming(ctx, *params, callUARequestOptions(call)...)

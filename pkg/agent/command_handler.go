@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/ZanzyTHEbar/dragonscale/pkg/auth"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/bus"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/config"
 )
@@ -29,12 +30,27 @@ func listConfiguredModels(cfg *config.Config) string {
 		current += fmt.Sprintf(" (provider: %s)", cfg.Agents.Defaults.Provider)
 	}
 
-	configured := cfg.Providers.ConfiguredNames()
-	if len(configured) == 0 {
-		return current + "\nNo providers configured — set API keys in config.json or environment variables."
+	configuredInfos := cfg.Providers.ConfiguredProviderInfos()
+	if chatGPTOAuthConfigured() {
+		configuredInfos = append(configuredInfos, config.ConfiguredProviderInfo{Name: "chatgpt", Source: "auth"})
+	}
+	if len(configuredInfos) == 0 {
+		return current + "\nNo providers configured — set API keys in config.json or environment variables. Hint: set DRAGONSCALE_PROVIDERS_OPENAI_API_KEY or run dragonscale auth login --provider openai for ChatGPT OAuth."
 	}
 
+	configured := make([]string, 0, len(configuredInfos))
+	for _, info := range configuredInfos {
+		configured = append(configured, fmt.Sprintf("%s(%s)", info.Name, info.Source))
+	}
 	return current + "\nConfigured providers: " + strings.Join(configured, ", ")
+}
+
+func chatGPTOAuthConfigured() bool {
+	cred, err := auth.GetCredential("openai")
+	if err != nil || cred == nil || cred.AuthMethod != "oauth" {
+		return false
+	}
+	return cred.RefreshToken != "" || (cred.AccessToken != "" && !cred.IsExpired())
 }
 
 func defaultSlashCommands() []SlashCommand {

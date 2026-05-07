@@ -122,3 +122,12 @@ func WithUseResponsesAPI() Option {
 		o.openaiOptions = append(o.openaiOptions, openai.WithUseResponsesAPI())
 	}
 }
+
+// WithResponsesWebSocket streams OpenAI Responses API models over WebSocket.
+// It only applies when WithUseResponsesAPI is also enabled and the selected
+// model is supported by the Responses API.
+func WithResponsesWebSocket() Option {
+	return func(o *options) {
+		o.openaiOptions = append(o.openaiOptions, openai.WithResponsesWebSocket())
+	}
+}

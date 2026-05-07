@@ -79,7 +79,8 @@
     "openai": {
       "api_key": "",
       "api_base": "",
-      "web_search": true
+      "web_search": true,
+      "responses_websocket": false
     },
     "openrouter": {
       "api_key": "",
@@ -117,6 +118,9 @@
     "opencode": {
       "api_key": "",
       "api_base": ""
+    },
+    "chatgpt": {
+      "auth_method": "oauth"
     }
   },
   "tools": {

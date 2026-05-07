@@ -280,38 +280,75 @@ type ProvidersConfig struct {
 	DeepSeek      ProviderConfig       `json:"deepseek"`
 	GitHubCopilot ProviderConfig       `json:"github_copilot"`
 	OpenCode      ProviderConfig       `json:"opencode"`
+	ChatGPT       ProviderConfig       `json:"chatgpt"`
 }
 
 // ConfiguredNames returns the names of providers that have credentials set
 // (either an API key or an API base URL for local inference servers).
 func (p ProvidersConfig) ConfiguredNames() []string {
-	entries := []struct {
-		name string
-		key  string
-	}{
-		{"anthropic", p.Anthropic.APIKey},
-		{"openai", p.OpenAI.APIKey},
-		{"openrouter", p.OpenRouter.APIKey},
-		{"gemini", p.Gemini.APIKey},
-		{"groq", p.Groq.APIKey},
-		{"zhipu", p.Zhipu.APIKey},
-		{"deepseek", p.DeepSeek.APIKey},
-		{"moonshot", p.Moonshot.APIKey},
-		{"nvidia", p.Nvidia.APIKey},
-		{"shengsuanyun", p.ShengSuanYun.APIKey},
-		{"ollama", p.Ollama.APIBase},
-		{"vllm", p.VLLM.APIBase},
-		{"github_copilot", p.GitHubCopilot.APIKey},
-		{"opencode-go", p.OpenCode.APIKey},
-		{"opencode-zen", p.OpenCode.APIKey},
-	}
-	var names []string
-	for _, e := range entries {
-		if e.key != "" {
-			names = append(names, e.name)
-		}
+	infos := p.ConfiguredProviderInfos()
+	names := make([]string, 0, len(infos))
+	for _, info := range infos {
+		names = append(names, info.Name)
 	}
 	return names
+}
+
+// ConfiguredProviderInfo describes a configured provider without exposing
+// secret values.
+type ConfiguredProviderInfo struct {
+	Name   string
+	Source string
+}
+
+// ConfiguredProviderInfos returns configured providers with coarse source
+// attribution. Source is best-effort after env overrides have been applied.
+func (p ProvidersConfig) ConfiguredProviderInfos() []ConfiguredProviderInfo {
+	entries := []struct {
+		name   string
+		env    string
+		key    string
+		isBase bool
+	}{
+		{"anthropic", "ANTHROPIC", p.Anthropic.APIKey, false},
+		{"openai", "OPENAI", p.OpenAI.APIKey, false},
+		{"openrouter", "OPENROUTER", p.OpenRouter.APIKey, false},
+		{"gemini", "GEMINI", p.Gemini.APIKey, false},
+		{"groq", "GROQ", p.Groq.APIKey, false},
+		{"zhipu", "ZHIPU", p.Zhipu.APIKey, false},
+		{"deepseek", "DEEPSEEK", p.DeepSeek.APIKey, false},
+		{"moonshot", "MOONSHOT", p.Moonshot.APIKey, false},
+		{"nvidia", "NVIDIA", p.Nvidia.APIKey, false},
+		{"shengsuanyun", "SHENGSUANYUN", p.ShengSuanYun.APIKey, false},
+		{"ollama", "OLLAMA", p.Ollama.APIBase, true},
+		{"vllm", "VLLM", p.VLLM.APIBase, true},
+		{"github_copilot", "GITHUB_COPILOT", p.GitHubCopilot.APIKey, false},
+		{"opencode-go", "OPENCODE", p.OpenCode.APIKey, false},
+		{"opencode-zen", "OPENCODE", p.OpenCode.APIKey, false},
+	}
+	var infos []ConfiguredProviderInfo
+	for _, e := range entries {
+		if e.key != "" {
+			infos = append(infos, ConfiguredProviderInfo{Name: e.name, Source: providerConfigSource(e.env, e.isBase)})
+		}
+	}
+	return infos
+}
+
+func providerConfigSource(envPrefix string, isBase bool) string {
+	if envPrefix == "" {
+		return "config"
+	}
+	if !isBase {
+		if _, ok := os.LookupEnv("DRAGONSCALE_PROVIDERS_" + envPrefix + "_API_KEY"); ok {
+			return "env"
+		}
+		return "config"
+	}
+	if _, ok := os.LookupEnv("DRAGONSCALE_PROVIDERS_" + envPrefix + "_API_BASE"); ok {
+		return "env"
+	}
+	return "config"
 }
 
 type ProviderConfig struct {
@@ -325,7 +362,8 @@ type ProviderConfig struct {
 
 type OpenAIProviderConfig struct {
 	ProviderConfig
-	WebSearch bool `json:"web_search" env:"DRAGONSCALE_PROVIDERS_OPENAI_WEB_SEARCH"`
+	WebSearch          bool `json:"web_search" env:"DRAGONSCALE_PROVIDERS_OPENAI_WEB_SEARCH"`
+	ResponsesWebSocket bool `json:"responses_websocket" env:"DRAGONSCALE_PROVIDERS_OPENAI_RESPONSES_WEBSOCKET"`
 }
 
 type providerEnvBinding struct {
@@ -573,6 +611,11 @@ func applyProviderSpecificEnvOverrides(cfg *Config) {
 			cfg.Providers.OpenAI.WebSearch = enabled
 		}
 	}
+	if value, ok := os.LookupEnv("DRAGONSCALE_PROVIDERS_OPENAI_RESPONSES_WEBSOCKET"); ok {
+		if enabled, err := strconv.ParseBool(value); err == nil {
+			cfg.Providers.OpenAI.ResponsesWebSocket = enabled
+		}
+	}
 }
 
 func providerEnvBindings(cfg *Config) []providerEnvBinding {
@@ -591,6 +634,7 @@ func providerEnvBindings(cfg *Config) []providerEnvBinding {
 		{name: "DEEPSEEK", target: &cfg.Providers.DeepSeek},
 		{name: "GITHUB_COPILOT", target: &cfg.Providers.GitHubCopilot},
 		{name: "OPENCODE", target: &cfg.Providers.OpenCode},
+		{name: "CHATGPT", target: &cfg.Providers.ChatGPT},
 	}
 }
 
