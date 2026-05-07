@@ -16,6 +16,7 @@ import (
 	"github.com/ZanzyTHEbar/dragonscale/internal/testcmp"
 	"github.com/ZanzyTHEbar/dragonscale/pkg"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/config"
+	dragonfantasy "github.com/ZanzyTHEbar/dragonscale/pkg/fantasy"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/ids"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/itr"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/memory"
@@ -61,6 +62,44 @@ func (t *daemonCountingTool) Execute(_ context.Context, args map[string]any) *to
 		text = t.text
 	}
 	return &tools.ToolResult{ForLLM: text, IsError: t.err}
+}
+
+func TestModelsListShowsProviderFreshness(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	cachePath, err := dragonfantasy.ModelCatalogPath()
+	require.NoError(t, err)
+	require.NoError(t, os.MkdirAll(filepath.Dir(cachePath), 0o700))
+
+	now := time.Now().UTC()
+	catalog := dragonfantasy.ModelCatalog{
+		FetchedAt:  now,
+		TTLSeconds: int64(time.Hour.Seconds()),
+		Providers: map[string]dragonfantasy.ModelCatalogProvider{
+			"fresh-provider": {
+				Name:       "fresh-provider",
+				FetchedAt:  now,
+				TTLSeconds: int64(time.Hour.Seconds()),
+				Models:     []dragonfantasy.ModelCatalogModel{{ID: "fresh-model"}},
+			},
+			"stale-provider": {
+				Name:       "stale-provider",
+				FetchedAt:  now.Add(-2 * time.Hour),
+				TTLSeconds: int64(time.Hour.Seconds()),
+				Models:     []dragonfantasy.ModelCatalogModel{{ID: "stale-model"}},
+			},
+		},
+	}
+	data, err := json.Marshal(catalog)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(cachePath, data, 0o600))
+
+	var out bytes.Buffer
+	require.NoError(t, NewService().ModelsList(t.Context(), &out, ModelsListOptions{}))
+	got := out.String()
+	require.Contains(t, got, "fresh-provider (1 models, fresh, fetched")
+	require.Contains(t, got, "stale-provider (1 models, stale, fetched")
+	require.Contains(t, got, "fresh-model")
+	require.Contains(t, got, "stale-model")
 }
 
 func newDaemonAuditBus(t *testing.T, tool tools.Tool) (*delegate.LibSQLDelegate, *securebus.Bus) {
@@ -111,6 +150,22 @@ func waitForDaemonAuditRow(t *testing.T, d *delegate.LibSQLDelegate, action, too
 		return false
 	}, 2*time.Second, 50*time.Millisecond)
 	return matched
+}
+
+func waitForDaemonPIDFile(t *testing.T, pidPath string) string {
+	t.Helper()
+
+	wantPID := fmt.Sprintf("%d", os.Getpid())
+	var pidText string
+	require.Eventually(t, func() bool {
+		pidData, err := os.ReadFile(pidPath)
+		if err != nil {
+			return false
+		}
+		pidText = strings.TrimSpace(string(pidData))
+		return pidText == wantPID
+	}, 5*time.Second, 50*time.Millisecond)
+	return pidText
 }
 
 func TestDaemonSecureBusAuditSink_PersistsBusNativeAuditRow(t *testing.T) {
@@ -429,10 +484,7 @@ func TestServiceDaemonStart_ShutsDownAndCleansRuntimeFiles(t *testing.T) {
 		return true
 	}, 5*time.Second, 50*time.Millisecond)
 
-	pidData, err := os.ReadFile(pidPath)
-	require.NoError(t, err)
-	pidText := strings.TrimSpace(string(pidData))
-	require.Equal(t, fmt.Sprintf("%d", os.Getpid()), pidText)
+	pidText := waitForDaemonPIDFile(t, pidPath)
 
 	var statusOut bytes.Buffer
 	require.NoError(t, svc.DaemonStatus(t.Context(), &statusOut))
@@ -501,9 +553,7 @@ func TestServiceDaemonStart_CleansStalePidFile(t *testing.T) {
 	}, 5*time.Second, 50*time.Millisecond)
 
 	// Stale pid should have been replaced with the current process pid.
-	pidData, err := os.ReadFile(pidPath)
-	require.NoError(t, err)
-	require.Equal(t, fmt.Sprintf("%d", os.Getpid()), strings.TrimSpace(string(pidData)))
+	waitForDaemonPIDFile(t, pidPath)
 
 	cancel()
 	select {
@@ -561,9 +611,7 @@ func TestServiceDaemonStart_StartsWhenLivePidHasNoSocket(t *testing.T) {
 		return socketErr == nil
 	}, 5*time.Second, 50*time.Millisecond)
 
-	pidData, err := os.ReadFile(pidPath)
-	require.NoError(t, err)
-	require.Equal(t, fmt.Sprintf("%d", os.Getpid()), strings.TrimSpace(string(pidData)))
+	waitForDaemonPIDFile(t, pidPath)
 
 	cancel()
 	select {

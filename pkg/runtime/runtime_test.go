@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/ZanzyTHEbar/dragonscale/pkg"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/auth"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/bus"
 	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
@@ -324,10 +325,142 @@ func TestLoadEvalConfig_OpenRouterPreferredOverOpenAI(t *testing.T) {
 	assert.Empty(t, cmp.Diff("test-openai-key", cfg.Providers.OpenAI.APIKey))
 }
 
+func TestLoadEvalConfig_DefaultsToOpenCodeGoAlias(t *testing.T) {
+	basePath := writeEvalBaseConfig(t, `{}`)
+	t.Setenv(EvalBaseConfigEnvVar, basePath)
+	t.Setenv(EvalConfigEnvVar, "")
+	t.Setenv("OPENCODE_API_KEY", "test-opencode-key")
+
+	cfg, err := LoadEvalConfig(0)
+	require.NoError(t, err)
+	assert.Empty(t, cmp.Diff("opencode-go", cfg.Agents.Defaults.Provider))
+	assert.Empty(t, cmp.Diff(evalOpenCodeGoModel, cfg.Agents.Defaults.Model))
+	assert.Empty(t, cmp.Diff("test-opencode-key", cfg.Providers.OpenCode.APIKey))
+	assert.Empty(t, cmp.Diff(evalOpenCodeGoAPIBaseURL, cfg.Providers.OpenCode.APIBase))
+}
+
+func TestLoadEvalConfig_OpenCodePreferredOverOpenRouter(t *testing.T) {
+	basePath := writeEvalBaseConfig(t, `{}`)
+	t.Setenv(EvalBaseConfigEnvVar, basePath)
+	t.Setenv(EvalConfigEnvVar, "")
+	t.Setenv("OPENCODE_API_KEY", "test-opencode-key")
+	t.Setenv("OPENROUTER_API_KEY", "test-openrouter-key")
+
+	cfg, err := LoadEvalConfig(0)
+	require.NoError(t, err)
+	assert.Empty(t, cmp.Diff("opencode-go", cfg.Agents.Defaults.Provider))
+	assert.Empty(t, cmp.Diff(evalOpenCodeGoModel, cfg.Agents.Defaults.Model))
+	assert.Empty(t, cmp.Diff("test-opencode-key", cfg.Providers.OpenCode.APIKey))
+	assert.Empty(t, cmp.Diff("test-openrouter-key", cfg.Providers.OpenRouter.APIKey))
+}
+
+func TestLoadEvalConfig_DefaultsOpenCodeGoModelWhenProviderExplicit(t *testing.T) {
+	basePath := writeEvalBaseConfig(t, `{}`)
+	t.Setenv(EvalBaseConfigEnvVar, basePath)
+	t.Setenv(EvalConfigEnvVar, "")
+	t.Setenv("OPENCODE_API_KEY", "test-opencode-key")
+	t.Setenv("DRAGONSCALE_AGENTS_DEFAULTS_PROVIDER", "opencode-go")
+
+	cfg, err := LoadEvalConfig(0)
+	require.NoError(t, err)
+	assert.Empty(t, cmp.Diff("opencode-go", cfg.Agents.Defaults.Provider))
+	assert.Empty(t, cmp.Diff(evalOpenCodeGoModel, cfg.Agents.Defaults.Model))
+	assert.Empty(t, cmp.Diff(evalOpenCodeGoAPIBaseURL, cfg.Providers.OpenCode.APIBase))
+}
+
+func TestLoadEvalConfig_DefaultsOpenCodeZenModelWhenProviderExplicit(t *testing.T) {
+	basePath := writeEvalBaseConfig(t, `{}`)
+	t.Setenv(EvalBaseConfigEnvVar, basePath)
+	t.Setenv(EvalConfigEnvVar, "")
+	t.Setenv("OPENCODE_ZEN_API_KEY", "test-opencode-key")
+	t.Setenv("DRAGONSCALE_AGENTS_DEFAULTS_PROVIDER", "opencode-zen")
+
+	cfg, err := LoadEvalConfig(0)
+	require.NoError(t, err)
+	assert.Empty(t, cmp.Diff("opencode-zen", cfg.Agents.Defaults.Provider))
+	assert.Empty(t, cmp.Diff(evalOpenCodeZenModel, cfg.Agents.Defaults.Model))
+	assert.Empty(t, cmp.Diff("test-opencode-key", cfg.Providers.OpenCode.APIKey))
+	assert.Empty(t, cmp.Diff(evalOpenCodeZenAPIBaseURL, cfg.Providers.OpenCode.APIBase))
+}
+
+func TestLoadEvalConfig_DoesNotOverrideExplicitProviderWithFallback(t *testing.T) {
+	basePath := writeEvalBaseConfig(t, `{}`)
+	t.Setenv(EvalBaseConfigEnvVar, basePath)
+	t.Setenv(EvalConfigEnvVar, "")
+	t.Setenv("DRAGONSCALE_AGENTS_DEFAULTS_PROVIDER", "opencode-zen")
+	t.Setenv("OPENROUTER_API_KEY", "test-openrouter-key")
+
+	cfg, err := LoadEvalConfig(0)
+	require.NoError(t, err)
+	assert.Empty(t, cmp.Diff("opencode-zen", cfg.Agents.Defaults.Provider))
+	assert.Empty(t, cmp.Diff(evalOpenCodeZenModel, cfg.Agents.Defaults.Model))
+	assert.Empty(t, cmp.Diff(evalOpenCodeZenAPIBaseURL, cfg.Providers.OpenCode.APIBase))
+	assert.Empty(t, cmp.Diff("test-openrouter-key", cfg.Providers.OpenRouter.APIKey))
+}
+
+func TestLoadEvalConfig_DefaultsToChatGPTWhenOAuthCredentialExists(t *testing.T) {
+	basePath := writeEvalBaseConfig(t, `{}`)
+	t.Setenv(EvalBaseConfigEnvVar, basePath)
+	t.Setenv(EvalConfigEnvVar, "")
+	t.Setenv("HOME", t.TempDir())
+	require.NoError(t, auth.SetCredential("openai", &auth.AuthCredential{
+		AccessToken:  "chatgpt-access-token",
+		RefreshToken: "chatgpt-refresh-token",
+		ExpiresAt:    time.Now().Add(time.Hour),
+		Provider:     "openai",
+		AuthMethod:   "oauth",
+	}))
+
+	cfg, err := LoadEvalConfig(0)
+	require.NoError(t, err)
+	assert.Empty(t, cmp.Diff("chatgpt", cfg.Agents.Defaults.Provider))
+	assert.Empty(t, cmp.Diff(evalChatGPTModel, cfg.Agents.Defaults.Model))
+	assert.Empty(t, cmp.Diff("", cfg.Providers.ChatGPT.APIBase))
+}
+
+func TestLoadEvalConfig_DefaultsChatGPTModelWhenProviderExplicit(t *testing.T) {
+	basePath := writeEvalBaseConfig(t, `{}`)
+	t.Setenv(EvalBaseConfigEnvVar, basePath)
+	t.Setenv(EvalConfigEnvVar, "")
+	t.Setenv("DRAGONSCALE_AGENTS_DEFAULTS_PROVIDER", "chatgpt")
+	t.Setenv("HOME", t.TempDir())
+	require.NoError(t, auth.SetCredential("openai", &auth.AuthCredential{
+		AccessToken:  "chatgpt-access-token",
+		RefreshToken: "chatgpt-refresh-token",
+		ExpiresAt:    time.Now().Add(time.Hour),
+		Provider:     "openai",
+		AuthMethod:   "oauth",
+	}))
+
+	cfg, err := LoadEvalConfig(0)
+	require.NoError(t, err)
+	assert.Empty(t, cmp.Diff("chatgpt", cfg.Agents.Defaults.Provider))
+	assert.Empty(t, cmp.Diff(evalChatGPTModel, cfg.Agents.Defaults.Model))
+}
+
+func TestLoadEvalConfig_OpenRouterPreferredOverChatGPTOAuth(t *testing.T) {
+	basePath := writeEvalBaseConfig(t, `{}`)
+	t.Setenv(EvalBaseConfigEnvVar, basePath)
+	t.Setenv(EvalConfigEnvVar, "")
+	t.Setenv("OPENROUTER_API_KEY", "test-openrouter-key")
+	t.Setenv("HOME", t.TempDir())
+	require.NoError(t, auth.SetCredential("openai", &auth.AuthCredential{
+		AccessToken:  "chatgpt-access-token",
+		RefreshToken: "chatgpt-refresh-token",
+		ExpiresAt:    time.Now().Add(time.Hour),
+		Provider:     "openai",
+		AuthMethod:   "oauth",
+	}))
+
+	cfg, err := LoadEvalConfig(0)
+	require.NoError(t, err)
+	assert.Empty(t, cmp.Diff("openrouter", cfg.Agents.Defaults.Provider))
+	assert.Empty(t, cmp.Diff(evalOpenRouterModel, cfg.Agents.Defaults.Model))
+}
+
 func TestLoadEvalConfig_RemoteAPIBaseOnlyDoesNotBlockAliasFallback(t *testing.T) {
 	basePath := writeEvalBaseConfig(t, `{
-	  "providers": {"zhipu": {"api_base": "https://zhipu.example/v1"}},
-	  "agents": {"defaults": {"provider": "zhipu", "model": "glm-4.7"}}
+	  "providers": {"zhipu": {"api_base": "https://zhipu.example/v1"}}
 	}`)
 	t.Setenv(EvalBaseConfigEnvVar, basePath)
 	t.Setenv(EvalConfigEnvVar, "")

@@ -234,8 +234,14 @@ func TestSessionManager_DelegatePersistence(t *testing.T) {
 	if len(items) != 2 {
 		t.Fatalf("expected 2 recall items in DB, got %d", len(items))
 	}
-	if items[0].Content != "hello from delegate" {
-		t.Errorf("expected first item content 'hello from delegate', got %q", items[0].Content)
+	contents := make(map[string]bool, len(items))
+	for _, item := range items {
+		contents[item.Content] = true
+	}
+	for _, content := range []string{"hello from delegate", "hi back"} {
+		if !contents[content] {
+			t.Errorf("expected recall item content %q to be persisted", content)
+		}
 	}
 }
 

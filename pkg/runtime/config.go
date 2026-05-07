@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/ZanzyTHEbar/dragonscale/pkg"
+	"github.com/ZanzyTHEbar/dragonscale/pkg/auth"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/config"
 )
 
@@ -16,11 +17,16 @@ const (
 	EvalBaseConfigEnvVar = "DRAGONSCALE_EVAL_BASE_CONFIG"
 	EvalHostHomeEnvVar   = "DRAGONSCALE_EVAL_HOST_HOME"
 
-	evalDefaultModel         = "glm-4.7"
-	evalOpenRouterModel      = "openai/gpt-4o-mini"
-	evalOpenAIModel          = "gpt-4o-mini"
-	evalOpenRouterAPIBaseURL = "https://openrouter.ai/api/v1"
-	evalOpenAIAPIBaseURL     = "https://api.openai.com/v1"
+	evalDefaultModel          = "glm-4.7"
+	evalChatGPTModel          = "gpt-5.5"
+	evalOpenCodeGoModel       = "kimi-k2.6"
+	evalOpenCodeZenModel      = "gpt-5.5"
+	evalOpenRouterModel       = "openai/gpt-4o-mini"
+	evalOpenAIModel           = "gpt-4o-mini"
+	evalOpenCodeGoAPIBaseURL  = "https://opencode.ai/zen/go/v1"
+	evalOpenCodeZenAPIBaseURL = "https://opencode.ai/zen/v1"
+	evalOpenRouterAPIBaseURL  = "https://openrouter.ai/api/v1"
+	evalOpenAIAPIBaseURL      = "https://api.openai.com/v1"
 )
 
 type LoadConfigOptions struct {
@@ -119,7 +125,7 @@ func ApplyEvalProviderDefaults(cfg *config.Config) {
 		cfg.Providers.OpenAI.APIKey = lookupFirstEnv("DRAGONSCALE_PROVIDERS_OPENAI_API_KEY", "OPENAI_API_KEY")
 	}
 	if cfg.Providers.OpenCode.APIKey == "" {
-		cfg.Providers.OpenCode.APIKey = lookupFirstEnv("DRAGONSCALE_PROVIDERS_OPENCODE_API_KEY", "OPENCODE_API_KEY", "OPENCODE_GO_API_KEY")
+		cfg.Providers.OpenCode.APIKey = lookupFirstEnv("DRAGONSCALE_PROVIDERS_OPENCODE_API_KEY", "OPENCODE_API_KEY", "OPENCODE_GO_API_KEY", "OPENCODE_ZEN_API_KEY")
 	}
 	if provider := lookupFirstEnv("DRAGONSCALE_AGENTS_DEFAULTS_PROVIDER"); provider != "" {
 		cfg.Agents.Defaults.Provider = provider
@@ -127,18 +133,22 @@ func ApplyEvalProviderDefaults(cfg *config.Config) {
 	if model := lookupFirstEnv("DRAGONSCALE_AGENTS_DEFAULTS_MODEL"); model != "" {
 		cfg.Agents.Defaults.Model = model
 	}
+	applyExplicitEvalProviderDefaults(cfg)
 
 	if hasUsableEvalProvider(cfg) {
+		return
+	}
+	if strings.TrimSpace(cfg.Agents.Defaults.Provider) != "" {
 		return
 	}
 
 	if cfg.Providers.OpenCode.APIKey != "" && cfg.Agents.Defaults.Provider == "" {
 		cfg.Agents.Defaults.Provider = "opencode-go"
 		if cfg.Providers.OpenCode.APIBase == "" {
-			cfg.Providers.OpenCode.APIBase = "https://opencode.ai/zen/go/v1"
+			cfg.Providers.OpenCode.APIBase = evalOpenCodeGoAPIBaseURL
 		}
 		if isDefaultOrEmptyEvalModel(cfg.Agents.Defaults.Model) {
-			cfg.Agents.Defaults.Model = "kimi-k2.6"
+			cfg.Agents.Defaults.Model = evalOpenCodeGoModel
 		}
 		return
 	}
@@ -161,6 +171,38 @@ func ApplyEvalProviderDefaults(cfg *config.Config) {
 		}
 		if isDefaultOrEmptyEvalModel(cfg.Agents.Defaults.Model) {
 			cfg.Agents.Defaults.Model = evalOpenAIModel
+		}
+		return
+	}
+
+	if hasChatGPTOAuthCredential() && cfg.Agents.Defaults.Provider == "" {
+		cfg.Agents.Defaults.Provider = "chatgpt"
+		if isDefaultOrEmptyEvalModel(cfg.Agents.Defaults.Model) {
+			cfg.Agents.Defaults.Model = evalChatGPTModel
+		}
+	}
+}
+
+func applyExplicitEvalProviderDefaults(cfg *config.Config) {
+	provider := strings.ToLower(strings.TrimSpace(cfg.Agents.Defaults.Provider))
+	switch provider {
+	case "opencode-go", "opencode_go", "oc-go":
+		if cfg.Providers.OpenCode.APIBase == "" {
+			cfg.Providers.OpenCode.APIBase = evalOpenCodeGoAPIBaseURL
+		}
+		if isDefaultOrEmptyEvalModel(cfg.Agents.Defaults.Model) {
+			cfg.Agents.Defaults.Model = evalOpenCodeGoModel
+		}
+	case "opencode-zen", "opencode_zen", "oc-zen":
+		if cfg.Providers.OpenCode.APIBase == "" {
+			cfg.Providers.OpenCode.APIBase = evalOpenCodeZenAPIBaseURL
+		}
+		if isDefaultOrEmptyEvalModel(cfg.Agents.Defaults.Model) {
+			cfg.Agents.Defaults.Model = evalOpenCodeZenModel
+		}
+	case "chatgpt":
+		if hasChatGPTOAuthCredential() && isDefaultOrEmptyEvalModel(cfg.Agents.Defaults.Model) {
+			cfg.Agents.Defaults.Model = evalChatGPTModel
 		}
 	}
 }
@@ -192,6 +234,8 @@ func hasUsableEvalProvider(cfg *config.Config) bool {
 	}
 
 	switch {
+	case strings.HasPrefix(model, "opencode-go/") || strings.HasPrefix(model, "opencode_go/") || strings.HasPrefix(model, "oc-go/") || strings.HasPrefix(model, "opencode-zen/") || strings.HasPrefix(model, "opencode_zen/") || strings.HasPrefix(model, "oc-zen/"):
+		return providerKeyConfigured(cfg.Providers.OpenCode.APIKey)
 	case strings.HasPrefix(model, "openai/") || strings.Contains(model, "gpt"):
 		return providerKeyConfigured(cfg.Providers.OpenAI.APIKey)
 	case strings.HasPrefix(model, "openrouter/"), strings.HasPrefix(model, "meta-llama/"), strings.HasPrefix(model, "deepseek/"), strings.HasPrefix(model, "google/"):
@@ -235,11 +279,21 @@ func evalProviderConfigured(cfg *config.Config, provider string) bool {
 		return providerKeyConfigured(cfg.Providers.ShengSuanYun.APIKey)
 	case "github_copilot":
 		return providerKeyConfigured(cfg.Providers.GitHubCopilot.APIKey)
-	case "opencode-go", "opencode-zen":
+	case "opencode-go", "opencode_go", "oc-go", "opencode-zen", "opencode_zen", "oc-zen":
 		return providerKeyConfigured(cfg.Providers.OpenCode.APIKey)
+	case "chatgpt":
+		return hasChatGPTOAuthCredential()
 	default:
 		return false
 	}
+}
+
+func hasChatGPTOAuthCredential() bool {
+	cred, err := auth.GetCredential("openai")
+	if err != nil || cred == nil || cred.AuthMethod != "oauth" {
+		return false
+	}
+	return cred.RefreshToken != "" || (cred.AccessToken != "" && !cred.IsExpired())
 }
 
 func providerKeyConfigured(apiKey string) bool {
@@ -280,6 +334,7 @@ func EnsureMinProviderTimeout(cfg *config.Config, minTimeout time.Duration) {
 		&cfg.Providers.DeepSeek,
 		&cfg.Providers.GitHubCopilot,
 		&cfg.Providers.OpenCode,
+		&cfg.Providers.ChatGPT,
 	}
 	for _, p := range providers {
 		set(p)
