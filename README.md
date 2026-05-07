@@ -291,6 +291,7 @@ The Fantasy SDK handles provider routing. Configure any supported provider:
 |----------|-----------|-------|
 | OpenCode Go | `opencode-go` | Low-cost subscription ($10/mo) for open coding models |
 | OpenCode Zen | `opencode-zen` | Pay-as-you-go AI gateway with curated models |
+| ChatGPT (OAuth) | `chatgpt` | ChatGPT Plus/Pro subscription via OAuth token |
 | OpenRouter | `openrouter` | Access to all models via single API key |
 | Anthropic | `anthropic` | Claude direct |
 | OpenAI | `openai` | GPT direct |
@@ -306,9 +307,16 @@ The Fantasy SDK handles provider routing. Configure any supported provider:
 ```
 
 Set `agents.defaults.provider` to `opencode-go` or `opencode-zen` to select the subscription tier.
+You can also route by model prefix, for example `opencode-go/kimi-k2.6` or `opencode-zen/gpt-5.5`; DragonScale strips the provider prefix before sending the model ID upstream.
 API keys and billing: [OpenCode Auth](https://opencode.ai/auth).
 
-**ChatGPT Plus/Pro subscriptions** are not directly supported. DragonScale currently requires a standard API key. OpenCode Go and OpenCode Zen are the closest subscription-based alternatives. For OpenAI models specifically, use a standard [OpenAI Platform API key](https://platform.openai.com) with provider `openai`.
+**ChatGPT Plus/Pro subscriptions** are supported via the OAuth-only `chatgpt` provider. Authenticate with `dragonscale auth login --provider openai`, then set `agents.defaults.provider` to `chatgpt` and use a supported Codex model such as `gpt-5.5`. Eval auto-detects stored ChatGPT OAuth only when no explicit provider and no configured API-key provider are available. For standard OpenAI Platform API keys, use the `openai` provider instead.
+
+**OpenAI Responses WebSocket streaming** is opt-in for OpenAI Platform API keys. Set `providers.openai.responses_websocket=true` (or `DRAGONSCALE_PROVIDERS_OPENAI_RESPONSES_WEBSOCKET=true`) with a Responses-capable model such as `gpt-5.5` to stream via `wss://api.openai.com/v1/responses` instead of HTTP SSE.
+
+Provider model lists can be refreshed on demand with `dragonscale models refresh --provider opencode-go --force` or `dragonscale models refresh --force` for all configured OpenAI-compatible providers plus public OpenCode catalogs. The cache is stored under DragonScale's user cache directory and is used only as a disk-backed fallback after static provider routing, so normal agent startup never performs model-list network calls. Use `dragonscale models list` to inspect cached models and freshness status.
+
+Live provider integration tests are skipped by default. To validate all live provider paths, run with `DRAGONSCALE_RUN_LIVE_PROVIDER_TESTS=true`. For partial runs, use `DRAGONSCALE_RUN_LIVE_CHATGPT_TESTS=true go test ./pkg/fantasy -run TestLiveChatGPTCodexOAuthResponses -v` or `cd internal/fantasy && DRAGONSCALE_RUN_LIVE_OPENAI_RESPONSES_WS_TESTS=true go test ./providers/openai -run TestLiveOpenAIResponsesWebSocketStream -v`. ChatGPT requires `DRAGONSCALE_LIVE_CHATGPT_REFRESH_TOKEN` and optionally `DRAGONSCALE_LIVE_CHATGPT_ACCESS_TOKEN`, `DRAGONSCALE_LIVE_CHATGPT_ACCOUNT_ID`, and `DRAGONSCALE_LIVE_CHATGPT_MODEL`. OpenAI Responses WebSocket requires `FANTASY_OPENAI_API_KEY` or `OPENAI_API_KEY`, and optionally `DRAGONSCALE_LIVE_OPENAI_RESPONSES_WS_MODEL`.
 
 API key links: [OpenRouter](https://openrouter.ai/keys) · [Anthropic](https://console.anthropic.com) · [OpenAI](https://platform.openai.com) · [Gemini](https://aistudio.google.com/api-keys) · [Groq](https://console.groq.com)
 

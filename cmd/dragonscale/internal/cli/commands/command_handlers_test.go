@@ -96,6 +96,40 @@ func TestStatusCommandRequiresService(t *testing.T) {
 	}
 }
 
+func TestModelsRefreshCommandRequiresService(t *testing.T) {
+	cmd := buildModelsRefreshCommand(nil)
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SilenceUsage = true
+
+	for _, name := range []string{"provider", "force"} {
+		if cmd.Flags().Lookup(name) == nil {
+			t.Fatalf("missing models refresh flag: %s", name)
+		}
+	}
+
+	err := cmd.Execute()
+	if err == nil || err.Error() != "service is not initialized" {
+		t.Fatalf("unexpected error for models refresh: %v", err)
+	}
+}
+
+func TestModelsListCommandRequiresService(t *testing.T) {
+	cmd := buildModelsListCommand(nil)
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SilenceUsage = true
+
+	if cmd.Flags().Lookup("provider") == nil {
+		t.Fatal("missing models list provider flag")
+	}
+
+	err := cmd.Execute()
+	if err == nil || err.Error() != "service is not initialized" {
+		t.Fatalf("unexpected error for models list: %v", err)
+	}
+}
+
 func TestDaemonStatusCommandRequiresService(t *testing.T) {
 	cmd := buildDaemonStatusCommand(nil)
 	cmd.SetOut(&bytes.Buffer{})

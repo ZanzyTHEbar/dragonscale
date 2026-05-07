@@ -80,6 +80,7 @@ func TestBuildRoot_RegistersExpectedCommands(t *testing.T) {
 		"secret",
 		"daemon",
 		"memory",
+		"models",
 		"onboard",
 		"status",
 		"version",

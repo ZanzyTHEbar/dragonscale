@@ -33,6 +33,7 @@ type CLIService interface {
 	SecretService
 	DaemonService
 	MemoryService
+	ModelsService
 	StatusService
 }
 
@@ -175,6 +176,23 @@ type MemoryService interface {
 	MemoryDBStatus(context.Context, io.Writer) error
 }
 
+// ModelsRefreshOptions configures provider model-catalog refreshes.
+type ModelsRefreshOptions struct {
+	Provider string
+	Force    bool
+}
+
+// ModelsListOptions configures provider model-catalog listing.
+type ModelsListOptions struct {
+	Provider string
+}
+
+// ModelsService defines provider model catalog operations.
+type ModelsService interface {
+	ModelsRefresh(context.Context, io.Writer, ModelsRefreshOptions) error
+	ModelsList(context.Context, io.Writer, ModelsListOptions) error
+}
+
 var (
 	_ VersionService    = (*Service)(nil)
 	_ CLIService        = (*Service)(nil)
@@ -188,4 +206,5 @@ var (
 	_ SecretService     = (*Service)(nil)
 	_ DaemonService     = (*Service)(nil)
 	_ MemoryService     = (*Service)(nil)
+	_ ModelsService     = (*Service)(nil)
 )

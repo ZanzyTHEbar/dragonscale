@@ -16,6 +16,7 @@ func RegisterAll() {
 	registerSecretCommand()
 	registerDaemonCommand()
 	registerMemoryCommand()
+	registerModelsCommand()
 	registerOnboardCommand()
 	registerStatusCommand()
 	registerVersionCommand()

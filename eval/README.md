@@ -191,15 +191,19 @@ The comparison flow uses a temporary git worktree for the base ref, so the activ
 - `DRAGONSCALE_EVAL_HOST_HOME` - Optional path to a host-style home directory used for host-mounted config discovery (commonly `/host_home` when set by devcontainer via `.devcontainer/devcontainer.json`).
 - Base config discovery order: `DRAGONSCALE_EVAL_BASE_CONFIG` (if set and valid), then `{DRAGONSCALE_EVAL_HOST_HOME}/.config/dragonscale/config.json` (if host home is set), then XDG at `~/.config/dragonscale/config.json`.
 - Provider auth for local provider-backed eval:
-  - Preferred DragonScale vars: `DRAGONSCALE_PROVIDERS_OPENROUTER_API_KEY`, `DRAGONSCALE_PROVIDERS_OPENAI_API_KEY`
-  - Convenience aliases: `OPENROUTER_API_KEY`, `OPENAI_API_KEY`
+  - Preferred DragonScale vars: `DRAGONSCALE_PROVIDERS_OPENCODE_API_KEY`, `DRAGONSCALE_PROVIDERS_OPENROUTER_API_KEY`, `DRAGONSCALE_PROVIDERS_OPENAI_API_KEY`
+  - Convenience aliases: `OPENCODE_API_KEY`, `OPENCODE_GO_API_KEY`, `OPENCODE_ZEN_API_KEY`, `OPENROUTER_API_KEY`, `OPENAI_API_KEY`
   - Optional model/provider overrides: `DRAGONSCALE_AGENTS_DEFAULTS_PROVIDER`, `DRAGONSCALE_AGENTS_DEFAULTS_MODEL`
-- When no provider-backed base config is found, eval defaults to OpenRouter first (`openai/gpt-4o-mini`) when an OpenRouter key is present, then OpenAI (`gpt-4o-mini`) when an OpenAI key is present.
+- When no provider-backed base config is found, eval defaults to OpenCode Go first (`kimi-k2.6`) when an OpenCode key is present, then OpenRouter (`openai/gpt-4o-mini`), then OpenAI (`gpt-4o-mini`), then ChatGPT OAuth (`gpt-5.5`) if stored OAuth credentials are available.
 - OpenCode Go / Zen auth:
-  - `OPENCODE_API_KEY`, `OPENCODE_GO_API_KEY` aliases map to `DRAGONSCALE_PROVIDERS_OPENCODE_API_KEY`
+  - `OPENCODE_API_KEY`, `OPENCODE_GO_API_KEY`, `OPENCODE_ZEN_API_KEY` aliases map to `DRAGONSCALE_PROVIDERS_OPENCODE_API_KEY`
   - `DRAGONSCALE_PROVIDERS_OPENCODE_API_BASE` defaults to `https://opencode.ai/zen/go/v1` for `opencode-go` and `https://opencode.ai/zen/v1` for `opencode-zen`
   - Eval auto-routing prefers `opencode-go` when an OpenCode key is present and no explicit provider is set
   - Example: `OPENCODE_API_KEY=oc-... SKIP_DEVCONTAINER_WRAPPER=1 make DEVCONTAINER_EXEC= eval-proof-full`
+  - Live model lists are available at `https://opencode.ai/zen/go/v1/models` and `https://opencode.ai/zen/v1/models`.
+- OpenAI Responses WebSocket streaming is opt-in with `DRAGONSCALE_PROVIDERS_OPENAI_RESPONSES_WEBSOCKET=true` and only applies to direct `openai` Responses-capable models.
+- Provider model catalogs can be refreshed explicitly with `dragonscale models refresh --force` or a scoped command such as `dragonscale models refresh --provider opencode-go --force`. Broad refresh covers configured OpenAI-compatible providers plus public OpenCode catalogs. The cache is disk-backed and only used as a fallback after static provider routing; eval startup does not perform model-list network calls. Use `dragonscale models list` to inspect cached models and freshness status.
+- Live provider integration tests are skipped unless `DRAGONSCALE_RUN_LIVE_PROVIDER_TESTS=true` is set. Partial runs can use `DRAGONSCALE_RUN_LIVE_CHATGPT_TESTS=true go test ./pkg/fantasy -run TestLiveChatGPTCodexOAuthResponses -v` or `cd internal/fantasy && DRAGONSCALE_RUN_LIVE_OPENAI_RESPONSES_WS_TESTS=true go test ./providers/openai -run TestLiveOpenAIResponsesWebSocketStream -v`. ChatGPT/Codex live coverage requires `DRAGONSCALE_LIVE_CHATGPT_REFRESH_TOKEN`; OpenAI Responses WebSocket live coverage requires `FANTASY_OPENAI_API_KEY` or `OPENAI_API_KEY`.
 - `promptfooconfig.yaml` intentionally does not set provider-level `DRAGONSCALE_EVAL_CONFIG`; opsctl supplies the default/override so promptfoo does not overwrite caller-provided config before launching `eval-runner`.
 - For direct promptfoo runs that bypass `make eval`/opsctl, set the overlay explicitly, for example `cd eval && DRAGONSCALE_EVAL_CONFIG=./configs/default.json npx promptfoo eval -c reverify-two-cases.yaml`.
 - Do not commit provider config files containing API keys. CI should continue to use the `DRAGONSCALE_EVAL_BASE_CONFIG` secret-materialization workflow.

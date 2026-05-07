@@ -18,6 +18,7 @@ import (
 
 	"github.com/ZanzyTHEbar/dragonscale/pkg"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/config"
+	dragonfantasy "github.com/ZanzyTHEbar/dragonscale/pkg/fantasy"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/ids"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/itr"
 	"github.com/ZanzyTHEbar/dragonscale/pkg/logger"
@@ -717,6 +718,76 @@ func (s *Service) MemoryDBStatus(ctx context.Context, out io.Writer) error {
 	}
 
 	return err
+}
+
+func (s *Service) ModelsRefresh(ctx context.Context, out io.Writer, opts ModelsRefreshOptions) error {
+	cfg, err := s.LoadConfig()
+	if err != nil {
+		return err
+	}
+	catalog, err := dragonfantasy.RefreshModelCatalog(ctx, cfg, dragonfantasy.ModelCatalogRefreshOptions{
+		Provider: opts.Provider,
+		Force:    opts.Force,
+	})
+	if err != nil {
+		return err
+	}
+	providerNames := make([]string, 0, len(catalog.Providers))
+	for name := range catalog.Providers {
+		providerNames = append(providerNames, name)
+	}
+	sort.Strings(providerNames)
+	modelCount := 0
+	for _, name := range providerNames {
+		modelCount += len(catalog.Providers[name].Models)
+	}
+	cachePath, _ := dragonfantasy.ModelCatalogPath()
+	fmt.Fprintf(out, "Model catalog contains %d providers and %d models", len(providerNames), modelCount)
+	if cachePath != "" {
+		fmt.Fprintf(out, " into %s", cachePath)
+	}
+	fmt.Fprintln(out, ".")
+	return nil
+}
+
+func (s *Service) ModelsList(ctx context.Context, out io.Writer, opts ModelsListOptions) error {
+	_ = ctx
+	catalog, err := dragonfantasy.LoadModelCatalog("")
+	if err != nil {
+		return fmt.Errorf("load model catalog: %w (run `dragonscale models refresh` first)", err)
+	}
+	providerFilter := strings.ToLower(strings.TrimSpace(opts.Provider))
+	providerNames := make([]string, 0, len(catalog.Providers))
+	for name := range catalog.Providers {
+		if providerFilter == "" || name == providerFilter {
+			providerNames = append(providerNames, name)
+		}
+	}
+	sort.Strings(providerNames)
+	if len(providerNames) == 0 {
+		return fmt.Errorf("provider %q not found in model catalog", opts.Provider)
+	}
+	fmt.Fprintf(out, "Model catalog fetched at %s\n", catalog.FetchedAt.Format(time.RFC3339))
+	for _, name := range providerNames {
+		provider := catalog.Providers[name]
+		status := "stale"
+		if catalog.ProviderIsFresh(name, 0) {
+			status = "fresh"
+		}
+		fetchedAt := provider.FetchedAt
+		if fetchedAt.IsZero() {
+			fetchedAt = catalog.FetchedAt
+		}
+		if fetchedAt.IsZero() {
+			fmt.Fprintf(out, "\n%s (%d models, %s)\n", name, len(provider.Models), status)
+		} else {
+			fmt.Fprintf(out, "\n%s (%d models, %s, fetched %s)\n", name, len(provider.Models), status, fetchedAt.Format(time.RFC3339))
+		}
+		for _, model := range provider.Models {
+			fmt.Fprintf(out, "  %s\n", model.ID)
+		}
+	}
+	return nil
 }
 
 func (s *Service) secretStore() (*security.SecretStore, error) {
